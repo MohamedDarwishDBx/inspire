@@ -119,6 +119,12 @@ function answerSql(body) {
   if (/^\s*DESCRIBE TABLE\b/i.test(sql) && sql.includes('__inspire_usecases') && state.usecaseColumns) {
     return sqlResult(['col_name', 'data_type'], state.usecaseColumns.map((name) => [name, 'string']));
   }
+  if (/^\s*DESCRIBE TABLE\b/i.test(sql) && !sql.includes('__inspire_usecases')) {
+    const name = sql.replace(/^\s*DESCRIBE TABLE\s+/i, '').replace(/`/g, '');
+    const cols = (state.tableColumns || {})[name];
+    if (!cols) return { statement_id: 's1', status: { state: 'FAILED', error: { message: `[TABLE_OR_VIEW_NOT_FOUND] The table ${name} cannot be found` } } };
+    return sqlResult(['col_name', 'data_type'], cols.map((c) => [c, 'string']));
+  }
   if (/^\s*SELECT session_id,/.test(sql) && sql.includes('__inspire_usecases')) {
     const lacking = (state.usecaseColumns ? USECASE_RULE_COLUMNS.filter((c) => !state.usecaseColumns.includes(c) && new RegExp(`\\b${c}\\b`).test(sql)) : []);
     if (lacking.length) return { statement_id: 's1', status: { state: 'FAILED', error: { message: `[UNRESOLVED_COLUMN] A column with name \`${lacking[0]}\` cannot be resolved.` } } };
