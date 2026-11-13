@@ -657,6 +657,7 @@ def test_kpi_baselines_are_measured_round_robin_and_a_capped_skip_is_logged(agen
     warnings = " ".join(str(c) for c in obj.logger.warning.call_args_list)
     assert "3 KPI baselines were not measured: the cap on distinct KPI queries (3) was reached" in warnings
     roomy = harness(agent_ns, answers={})
+    roomy.discovery_type = "AI Enhanced Discovery"
     roomy.deep_evidence = types.SimpleNamespace(max_kpi_baselines=10, measure_kpi=lambda spec: 1.0)
     roomy.logger = MagicMock()
     assert roomy._measure_kpi_baselines([{"KPIs": [{"name": "A", "computable": True, "query": "SELECT 1"}]}])["skipped"] == 0

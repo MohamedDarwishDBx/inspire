@@ -59,7 +59,9 @@ def test_the_joined_signal_read_over_a_scoped_source_parses_as_databricks_sql(ag
     import sqlglot
     data = {"column_roles": {}, "filters": [{"table": SALES, "column": "ws_quantity", "op": "in", "values": ["5"]}]}
     use_case = {"No": "N01-U01", "_implement_data": data}
-    scopes = agent_ns["implement_use_case_scopes"](use_case, [SALES], "main.s")
+    # The rows-only scope names no columns, so the build reads the table's columns (REQ-171, fail-closed when unreadable).
+    columns = {SALES: ["ws_sold_date_sk", "ws_quantity"]}
+    scopes = agent_ns["implement_use_case_scopes"](use_case, [SALES], "main.s", columns_of=lambda table: columns[table])
     table_sql = agent_ns["scoped_read_source"](SALES, scopes)
     spec = {"roles": {"time": "inspire_time_date", "measure": "ws_quantity"},
             "date_joins": {"time": {"key": "ws_sold_date_sk", "table": DATES, "ref_column": "d_date_sk", "date": "d_date",

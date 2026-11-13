@@ -17,6 +17,13 @@ class _Deep:
         self.reads.append((kind, table, sql))
         return [{"v": v, "n": n} for v, n in self.rows]
 
+    # The value picker is DeepEvidence.value_counts (REQ-070): the real builder and method run over this stub's _read.
+    def value_counts_sql(self, table, column):
+        return self.ns["DeepEvidence"].value_counts_sql(table, column)
+
+    def value_counts(self, table, column):
+        return self.ns["DeepEvidence"].value_counts(self, table, column)
+
     def measure_kpi(self, spec, scopes=None):
         if spec.get("filter_value") in self.measured:
             return self.measured[spec["filter_value"]]
