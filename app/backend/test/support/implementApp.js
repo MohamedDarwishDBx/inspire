@@ -3,6 +3,7 @@ const { registerImplementRoutes } = require('../../implementRoutes');
 const { IMPLEMENT_COLUMNS } = require('../../lib/inspireImplement');
 const { noPersonTokenBody } = require('../../lib/routePolicy');
 const { sqlCancelledError } = require('../../lib/sqlStatements');
+const { withServicePrincipal } = require('./appRecord');
 
 function sqlResultToObjects(result) {
   return result.rows || [];
@@ -208,9 +209,9 @@ function makeApp(overrides = {}, { mount } = {}) {
       if (builtApp && !state.appsByName && state.builtAppSp !== undefined) return json({ name: decodeURIComponent(builtApp[1]), service_principal_client_id: state.builtAppSp, service_principal_name: 'app-sp' });
       if (path.match(/\/api\/2\.0\/apps\/.+/) && !path.includes('page_size') && state.appsByName) {
         const found = state.appsByName[decodeURIComponent(path.split('/').pop())];
-        return json(found || { error_code: 'NOT_FOUND' }, found ? found.status_code || 200 : 404);
+        return json(withServicePrincipal(found) || { error_code: 'NOT_FOUND' }, found ? found.status_code || 200 : 404);
       }
-      if (path.match(/\/api\/2\.0\/apps\/.+/ ) && !path.includes('page_size')) return json(state.app, state.appExists ? 200 : 404);
+      if (path.match(/\/api\/2\.0\/apps\/.+/ ) && !path.includes('page_size')) return json(withServicePrincipal(state.app), state.appExists ? 200 : 404);
       if (path.includes('/api/2.0/apps')) return json(state.appsList, state.appsOk ? 200 : 404);
       if (path.includes('/genie/spaces')) return json({}, state.spacesOk ? 200 : 404);
       if (path.startsWith('/api/2.0/lakeview/dashboards/') && path.endsWith('/published')) return json({}, state.dashboardPublished === false ? 404 : 200);
