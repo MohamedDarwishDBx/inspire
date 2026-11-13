@@ -42,7 +42,7 @@ test('the table listing returns the tables without the metric views, and names t
   } finally {
     console.log = log;
   }
-  assert.ok(logged.some((line) => line.includes('[METRIC-VIEW SKIPPED] 1 metric views left out: customer_value_metrics')));
+  assert.ok(logged.some((line) => line.includes('[METRIC-VIEW SKIPPED] 1 metric view left out: customer_value_metrics')));
 });
 
 test('the listing route and its SQL fallback keep the skipped metric views out (wiring)', () => {
