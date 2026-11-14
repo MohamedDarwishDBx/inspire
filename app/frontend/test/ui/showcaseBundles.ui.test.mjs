@@ -117,8 +117,8 @@ test('the kinds demo names every use case in the kinds style on Review, with its
     assert.equal(await ui.page.getByRole('region', { name: 'Use case list' }).evaluate((el) => getComputedStyle(el).scrollBehavior), 'auto',
       'the list scrolls a card into view at once, so a card never glides away from the pointer (must-exclude: scroll-smooth)');
     for (const u of useCasesOf(bundle)) {
-      assert.equal(u.name_with_technique, `${u.Name} using ${u['Analytics Technique'].toLowerCase()}`, `${u.id} keeps the technique out of the name and shows it once`);
-      assert.ok(text.includes(u.name_with_technique), `${u.id} shows ${u.name_with_technique}`);
+      assert.equal(u.name_with_technique, u.Name, `${u.id} keeps the technique out of the name (REQ-175)`);
+      assert.ok(text.includes(u.Name), `${u.id} shows ${u.Name}`);
       assert.ok(await ui.page.locator(`[data-kind-chip="${u.use_case_kind}"]`).count() > 0, `${u.id} shows its kind ${u.use_case_kind}`);
     }
     assert.deepEqual(new Set(useCasesOf(bundle).map((u) => u.use_case_kind)).size, USE_CASES.length, 'each use case shows a different kind');
