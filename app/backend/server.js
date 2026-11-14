@@ -52,7 +52,7 @@ const {
   discoverReads, discoverWrites, listCatalogs, listSchemas, listTables, outputPlan, runReadPlan, scopeTables, skippedTablesDetail, ucMetadataParts,
   writeRefusalBody,
 } = require('./lib/ucReads');
-const { isMetricViewType, metricViewSkipLine } = require('./lib/metricViews');
+const { isMetricViewType, metricViewSkipLine, probeTableTypes, tableTypeUnknownLine, UNUSABLE_REASON } = require('./lib/metricViews');
 const { createSourceAccess } = require('./lib/sourceAccess');
 const { withBusyRetry } = require('./lib/busyRetry');
 const { registerShowcaseRoutes, showcaseWriteGuard } = require('./lib/showcase');
@@ -408,6 +408,7 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
     // SHOW TABLES does not say which names are metric views, so the catalog's own table types decide. When information_schema
     // cannot be read, each name the REST listing did not type is read with DESCRIBE TABLE EXTENDED ... AS JSON instead.
     const metricViewNames = new Set();
+    const unknownNames = new Set();
     const probedTypes = new Map();
     try {
       const typed = await executeSql(host, token, warehouseId,
@@ -418,14 +419,15 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
       console.warn(`   ⚠️ metric view check failed for ${catalog}.${schema}: ${err.message}`);
       const names = rows.map((r) => r.tableName ?? r.table_name ?? r.name)
         .filter((n) => typeof n === 'string' && n && !known.has(`${catalog}.${schema}.${n}`));
-      let unreadable = 0;
-      for (const name of names) {
-        const type = await tableTypeByDescribe(host, token, warehouseId, catalog, schema, name);
-        if (!type) { unreadable += 1; continue; }
-        probedTypes.set(name, type);
-        if (isMetricViewType(type)) metricViewNames.add(name);
+      const { types, beyond } = await probeTableTypes(names,
+        (name) => tableTypeByDescribe(host, token, warehouseId, catalog, schema, name));
+      for (const [name, type] of types) {
+        if (!type) unknownNames.add(name);
+        else if (isMetricViewType(type)) metricViewNames.add(name);
+        else probedTypes.set(name, type);
       }
-      if (unreadable) console.log(`[METRIC-VIEW PROBE] type unreadable for ${unreadable} of ${names.length} tables in ${catalog}.${schema}: kept listed`);
+      for (const name of beyond) unknownNames.add(name);
+      if (unknownNames.size) console.log(tableTypeUnknownLine(unknownNames.size, `${catalog}.${schema}`));
     }
     if (metricViewNames.size) console.log(metricViewSkipLine([...metricViewNames]));
     const out = [];
@@ -444,6 +446,8 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
         comment: '',
         owner: '',
         columns: 0,
+        // Fail closed: a table whose type cannot be read is shown as not usable, with the plain reason.
+        ...(unknownNames.has(tname) ? { usable: false, unusable_reason: UNUSABLE_REASON } : {}),
       });
     }
     return out;

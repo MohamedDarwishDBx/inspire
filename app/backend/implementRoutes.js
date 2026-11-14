@@ -766,10 +766,13 @@ function registerImplementRoutes(app, deps) {
       const token = P.personTokenOf(req);
       if (!token) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_NO_SIGN_IN });
       const search = (async () => {
-        const found = await sqlRows(req.dbHost, token, warehouseId, statement);
-        // A metric view is never a swap: its type is read per candidate and a view is dropped before the probe.
-        const types = await Promise.all(found.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))));
-        const rows = found.filter((_r, i) => !MV.isMetricViewType(types[i]));
+        const candidates = await sqlRows(req.dbHost, token, warehouseId, statement);
+        // A metric view is never a swap: its type is read per candidate and a view is dropped before the probe. A candidate
+        // whose type cannot be read is not offered (fail closed): it is listed as not usable, with the plain reason.
+        const types = await Promise.all(candidates.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))));
+        const rows = candidates.filter((_r, i) => types[i] && !MV.isMetricViewType(types[i]));
+        const unusable = copyOnly ? [] : candidates.filter((_r, i) => !types[i])
+          .map((r) => ({ table: candidateOf(r), reason: MV.UNUSABLE_REASON }));
         const readable = await Promise.all(rows.map((r) => sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(candidateOf(r)))
           .then(() => true, () => false)));
         const copies = I.builtInSampleTable(table);
@@ -779,13 +782,13 @@ function registerImplementRoutes(app, deps) {
           const copy = copies && Boolean(Number(r.owned)) && total > 0 && matched === total;
           return { table: candidateOf(r), matched, total, copy };
         });
-        return copyOnly ? swaps.filter((s) => s.copy) : swaps;
+        return { swaps: copyOnly ? swaps.filter((s) => s.copy) : swaps, unusable };
       })();
       const timer = new Promise((resolve) => { setTimeout(() => resolve(null), SWAP_SEARCH_LIMIT_MS).unref(); });
       const found = await Promise.race([search, timer]);
-      if (found === null) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
-      const swaps = found;
-      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)], why: '' });
+      if (found === null) return res.json({ table, swaps: [], unusable: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
+      const swaps = found.swaps;
+      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)], unusable: found.unusable, why: '' });
     } catch (err) {
       sendError(res, err);
     }
