@@ -282,7 +282,8 @@ def test_the_build_proof_runs_the_notebook_again_with_all_into_a_scratch_table_a
     assert gate is None
     [(table, overrides)] = calls["previews"]
     assert table == "main.inspire.n01_out_inspire_group_proof" and overrides == {
-        "result_table": "main.inspire.n01_out_inspire_group_proof", "group_by": "all", "model_name": "main.inspire.n01_model_inspire_group_proof"}
+        "result_table": "main.inspire.n01_out_inspire_group_proof", "group_by": "all", "grouping_proof": "1",
+        "model_name": "main.inspire.n01_model_inspire_group_proof"}
     restore = [s for s in spark.statements if s.startswith("UPDATE ")][-1]
     assert "SET `last_preview_run_id` = CAST(:p0 AS BIGINT)," in restore
     assert calls["updates"][-1] == {"sid": 7, "uc": "N01-U01", "v": 2, "p0": 9001}, "the App keeps showing the real preview run"
