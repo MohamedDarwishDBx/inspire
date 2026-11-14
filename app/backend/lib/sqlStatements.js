@@ -1,3 +1,4 @@
+const { parseExactJson } = require('./exactJson');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { plural } = require('./plural');
 const { busyDelayMs, isTransientStatus } = require('./busyRetry');
@@ -70,7 +71,7 @@ function sqlCancelledError(statementId) {
 function errorCodeOf(source) {
   let body = source;
   if (typeof source === 'string') {
-    try { body = JSON.parse(source); } catch { return undefined; }
+    try { body = parseExactJson(source); } catch { return undefined; }
   }
   return body && typeof body.error_code === 'string' && body.error_code ? body.error_code : undefined;
 }

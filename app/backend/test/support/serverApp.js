@@ -125,6 +125,12 @@ function answerSql(body) {
     if (!cols) return { statement_id: 's1', status: { state: 'FAILED', error: { message: `[TABLE_OR_VIEW_NOT_FOUND] The table ${name} cannot be found` } } };
     return sqlResult(['col_name', 'data_type'], cols.map((c) => [c, 'string']));
   }
+  // The type read of a picked table: a table the state names columns for is a MANAGED table; any other reads as no row.
+  const infoType = /^\s*SELECT table_type FROM `([^`]+)`\.information_schema\.tables\b/i.exec(sql);
+  if (infoType) {
+    const name = `${infoType[1]}.${paramOf(body, 's')}.${paramOf(body, 't')}`.toLowerCase();
+    return sqlResult(['table_type'], (state.tableColumns || {})[name] ? [['MANAGED']] : []);
+  }
   // The column read of a picked table answers from the same tableColumns as DESCRIBE, the way information_schema lists what the
   // caller can see: a table the state does not name reads as no rows.
   const infoColumns = /^\s*SELECT column_name, data_type, ordinal_position FROM `([^`]+)`\.information_schema\.columns\b/i.exec(sql);

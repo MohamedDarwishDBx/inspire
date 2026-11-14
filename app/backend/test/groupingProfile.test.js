@@ -77,7 +77,8 @@ async function withApp(made, fn) {
   }
 }
 
-const tableReads = (calls) => calls.filter((c) => !c.sql.includes('__inspire_usecases') && !c.sql.includes('__inspire_implement'));
+const typeChecks = (calls) => calls.filter((c) => /^SELECT table_type FROM `[^`]+`\.information_schema\.tables\b/.test(c.sql));
+const tableReads = (calls) => calls.filter((c) => !c.sql.includes('__inspire_usecases') && !c.sql.includes('__inspire_implement') && !typeChecks([c]).length);
 
 test('the profile reads the main table with the person token only, bounded, and answers the agreed shape', async () => {
   const made = profiled();
@@ -119,6 +120,9 @@ test('the profile reads the main table with the person token only, bounded, and 
     assert.ok(!Number.isNaN(Date.parse(d.read_at)));
     const reads = tableReads(made.sqlCalls);
     assert.equal(reads.length, 9, reads.map((c) => c.sql.slice(0, 60)).join('\n'));
+    const checks = typeChecks(made.sqlCalls);
+    assert.equal(checks.length, 1, 'the main table type is checked once before it is read (REQ-180)');
+    assert.equal(checks[0].token, PERSON, 'the type check runs with the person token');
     assert.ok(reads.some((c) => /LIMIT 3$/.test(c.sql)), 'the worked example reads three rows of the main table, bounded');
     assert.ok(reads.every((c) => c.token === PERSON), 'every read of the use case table is the person token');
     assert.ok(reads.every((c) => c.options.signal && c.options.byteLimit === GP.PROFILE_BYTE_LIMIT && c.options.rowLimit > 0 && c.options.waitTimeout === '10s'));
