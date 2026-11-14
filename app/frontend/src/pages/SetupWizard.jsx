@@ -525,7 +525,7 @@ export default function SetupWizard({ settings, update, onComplete }) {
                   )}
 
                   {publishResult && !publishResult.ok && (
-                    <PlainMessage text={`Inspire could not publish the notebook: ${publishResult.message}`} copy role="alert" data-publish-error=""
+                    <PlainMessage text={`Inspire could not publish the notebook: ${publishResult.message}`} securable="workspace" copy role="alert" data-publish-error=""
                       className="px-4 py-3 rounded-xl border border-error/20 bg-error-bg text-xs text-error-fg" />
                   )}
 

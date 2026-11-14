@@ -196,3 +196,19 @@ test('a settings change the agent refused shows as a refused settings change wit
     await ui.close();
   }
 });
+
+test('a refused Job runs list on the Build page asks your workspace admin, never the data owner', async () => {
+  const ui = await openBuild({ ...STATE, runsStatus: 403, runs: { error_code: 'PERMISSION_DENIED', message: 'PERMISSION_DENIED: User cannot list the runs of this job' } });
+  const { page } = ui;
+  try {
+    const history = (await openAsset(page, 'job')).getByRole('region', { name: 'History', exact: true });
+    await history.getByRole('button').first().click();
+    const line = history.locator('p', { hasText: 'so ask your workspace admin to give you access' });
+    await line.first().waitFor({ timeout: 15000 });
+    assert.equal(await line.first().textContent(), 'User cannot list the runs of this job, so ask your workspace admin to give you access.');
+    assert.equal(await history.locator('p', { hasText: 'data owner' }).count(), 0, 'no data-owner sentence for a job run');
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});

@@ -942,7 +942,7 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
               <div className="mt-3 text-xs" data-testid="monitor-failure-choices">
                 <ChoiceList choices={monitorFailureChoices({ cannotRead, runUrl: runInfo?.run_page_url || '', canRunAgain: Boolean(runId && onRunAgain && !showcase && runEndedBadly(runInfo)) })} mark="data-failure-choice" onPick={pickFailure} />
                 {again.busy && <p role="status" className="mt-2 text-text-secondary"><Loader2 size={12} className="inline animate-spin me-1" aria-hidden="true" />Starting the run again…</p>}
-                {again.error && <PlainMessage text={`Inspire could not run it again: ${again.error}`} copy role="alert" data-run-again-error="" className="mt-2 text-error-fg" />}
+                {again.error && <PlainMessage text={`Inspire could not run it again: ${again.error}`} securable="workspace" copy role="alert" data-run-again-error="" className="mt-2 text-error-fg" />}
                 {sent && <p role="status" className="mt-2 text-text-secondary select-all">{sent}</p>}
               </div>
             </div>

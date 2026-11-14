@@ -71,3 +71,59 @@ test('Setup shows why the policy refused to publish the notebook, and offers Pub
     await ui.close();
   }
 });
+
+test('Setup asks your workspace admin, never the data owner, when Databricks refuses to publish the notebook', async () => {
+  const message = 'PERMISSION_DENIED: User cannot write to the folder /Shared/inspire-ai';
+  const ui = await openUi('setup', {}, '', {
+    mount: (app) => {
+      app.get('/api/defaults', (_req, res) => res.json({ envSkipsSetupWizard: false }));
+      app.get('/api/health', (_req, res) => res.json({ isDatabricksApp: false }));
+      app.post('/api/setup/create-database', (_req, res) => res.json({ ok: true }));
+      app.post('/api/setup/verify', (_req, res) => res.json({ ok: true, checks: { warehouse: { ok: true, message: 'The warehouse answers' } } }));
+      app.post('/api/notebook/republish', (_req, res) => res.status(403).json({ error: message }));
+    },
+  });
+  try {
+    for (let i = 0; i < 4; i += 1) {
+      const next = ui.page.getByRole('button', { name: 'Continue' });
+      await next.waitFor();
+      await next.click();
+    }
+    await ui.page.getByRole('button', { name: 'Run Verification' }).click();
+    await ui.page.getByRole('button', { name: 'Publish Notebook to Workspace' }).click();
+    const alert = ui.page.getByRole('alert').filter({ hasText: 'User cannot write to the folder' });
+    await alert.waitFor({ timeout: 10000 });
+    const sentence = (await alert.innerText()).split('\n')[0];
+    assert.match(sentence, /so ask your workspace admin to give you access\.$/);
+    assert.doesNotMatch(sentence, /data owner/);
+    assert.deepEqual(ui.pageErrors.filter((e) => !/403/.test(e)), []);
+  } finally {
+    await ui.close();
+  }
+});
+
+test('Config asks your workspace admin, never the data owner, when Databricks refuses to publish the notebook', async () => {
+  const message = 'PERMISSION_DENIED: User cannot write the notebook to /Shared/inspire-ai/dbx_inspire_ai_agent';
+  const ui = await openUi('config', {}, '', {
+    mount: (app) => {
+      app.get('/api/me', (_req, res) => res.json({ person: { username: 'owner@example.com' } }));
+      app.get('/api/warehouses', (_req, res) => res.json({ warehouses: [] }));
+      app.get('/api/dbc/info', (_req, res) => res.json({}));
+      app.post('/api/publish', (_req, res) => res.status(403).json({ error: message }));
+    },
+  });
+  try {
+    const publish = ui.page.getByRole('button', { name: 'Publish', exact: true });
+    await publish.waitFor({ timeout: 15000 });
+    await until(async () => await publish.isEnabled(), 'the publish button is enabled');
+    await publish.click();
+    const alert = ui.page.locator('[data-publish-error]');
+    await alert.waitFor({ timeout: 10000 });
+    const sentence = await alert.innerText();
+    assert.match(sentence, /so ask your workspace admin to give you access/);
+    assert.doesNotMatch(sentence, /data owner/);
+    assert.deepEqual(ui.pageErrors.filter((e) => !/403/.test(e)), []);
+  } finally {
+    await ui.close();
+  }
+});
