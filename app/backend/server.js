@@ -1444,7 +1444,8 @@ app.get('/api/workspace/export', rejectUnsafeQueryPath, requireToken, async (req
         return res.send(Buffer.from(await resp2.arrayBuffer()));
       }
       lastStatus = resp2.status;
-      lastErr = await resp2.text();
+      logApiBody('Read file', resp2.status, await resp2.text());
+      lastErr = apiRefusalText('read that file', resp2.status);
     }
 
     return PM_ERROR.sendFailure(res, lastStatus, lastErr, { tried: candidates });
