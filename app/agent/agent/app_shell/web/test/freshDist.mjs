@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 export const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const WEB_INPUTS = ['index.html', 'package.json', 'package-lock.json', 'vite.config.js', 'src'];
+// Files outside web/ that the build inlines. Mirrors SHARED_INPUTS in embed.py.
+export const SHARED_DIR = resolve(WEB, '..', '..', '..', '..', 'shared');
+export const SHARED_INPUTS = ['bootGuard.js', 'bootGuardPlugin.mjs'];
 export const DIST_OUTPUTS = ['index.html', join('assets', 'app.js')];
 const LOCK_POLL_MS = 250;
 const LOCK_WAIT_MS = 600000;
@@ -23,7 +26,8 @@ export function staleReason(web = WEB) {
   const missing = DIST_OUTPUTS.filter((name, i) => !existsSync(outputs[i]));
   if (missing.length) return `dist has no ${missing.join(' and no ')}`;
   const built = Math.min(...outputs.map((file) => lstatSync(file).mtimeMs));
-  const changed = WEB_INPUTS.filter((name) => newestInput(join(web, name)) > built);
+  const changed = [...WEB_INPUTS.filter((name) => newestInput(join(web, name)) > built),
+    ...SHARED_INPUTS.filter((name) => newestInput(join(SHARED_DIR, name)) > built).map((name) => `shared/${name}`)];
   return changed.length ? `${changed.join(', ')} changed after dist was built` : '';
 }
 
