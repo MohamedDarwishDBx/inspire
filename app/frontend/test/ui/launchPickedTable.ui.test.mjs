@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, idle, openUi, until } from './uiSupport.mjs';
+import { closeBrowser, idle, openUi, until, waitForLaunchReady } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -17,6 +17,7 @@ const launchOf = async (page, made) => {
   await idle(page);
   const block = await page.locator('#launch-block').count() ? await page.locator('#launch-block').innerText() : '';
   const btn = page.getByRole('button', { name: 'Get Started' });
+  await waitForLaunchReady(page);
   assert.equal(await btn.isDisabled(), false, `Get Started is disabled (block: '${block}', described by: ${await btn.getAttribute('aria-describedby')})`);
   const before = made.launches.length;
   await btn.click();
