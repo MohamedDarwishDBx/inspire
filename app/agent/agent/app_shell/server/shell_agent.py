@@ -1442,6 +1442,7 @@ class Agent:
                  "domain": page.get("domain"), "outline": page_outline(page), "source_data": page_sources(page), "on_screen": on_screen,
                  "earlier_turns": earlier,
                  "person_asks": job["question"]}
+        self.source_columns(ws, who, page, about["source_data"])
         tables, scoped = source_scope(about["source_data"])
         known = topic_words(json.dumps({k: v for k, v in about.items() if k not in ("person_asks", "earlier_turns")}, ensure_ascii=False,
                                        default=str)) | scoped
@@ -1456,6 +1457,20 @@ class Agent:
         print(f"[AGENT-TOPIC FIRED] page={page.get('id')} verdict={verdict} by={by} "
               f"anchored={bool(on_screen)}", flush=True)
         return verdict == "RELATED"
+
+    def source_columns(self, ws, who: str, page: dict, sources: list) -> None:
+        """A dataset whose SQL names no columns (SELECT *, or SQL the parser cannot read) gets its real columns from the App's own
+        cached LIMIT 0 column read, the same list_columns that page_types uses; a failed read leaves the entry as it was."""
+        names = {cut(d.get("name"), TOPIC_NAME_CHARS): d.get("name") for d in page.get("datasets") or [] if isinstance(d, dict) and d.get("name")}
+        for source in sources:
+            if source.get("columns") or names.get(source.get("dataset")) is None:
+                continue
+            try:
+                found = list(self.shell.list_columns(ws, who, page, names[source["dataset"]]))
+            except (HttpError, QueryError):
+                continue
+            if found:
+                source["columns"] = [cut(c, TOPIC_NAME_CHARS) for c in found[:TOPIC_SOURCE_COLUMNS]]
 
     def context(self, job: dict, ws, who: str) -> dict:
         page, headers = job["page"], job["headers"]
