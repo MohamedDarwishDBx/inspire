@@ -2,9 +2,10 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, searchForWorkspaceRoot } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import bootGuard from '../shared/bootGuardPlugin.mjs'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), bootGuard()],
   resolve: { dedupe: ['react', 'react-dom', 'react/jsx-runtime'] },
   server: {
     fs: {
