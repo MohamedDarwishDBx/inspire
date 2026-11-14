@@ -3865,13 +3865,37 @@ class Shell:
                              f"table's key for one record, in the {shell_sql.RECORDS_DATASET} dataset"))
         return problems
 
+    def flagged_records(self, ws, who, page: dict):
+        """The run's own count of the records its rule flagged (Act now plus Review) across the whole scope, read from the run summary
+        row the App already writes (summary_query). None when the page has no result table, no run has written a summary, or the
+        counts are missing, so the caller falls back to the chart measures."""
+        if not page.get("result_table"):
+            return None
+        sql, params = shell_sql.summary_query(page)
+        try:
+            row = (self.run(ws, who, sql, params, 1).get("rows") or [None])[0]
+        except (HttpError, QueryError, ValueError):
+            return None
+        if not row:
+            return None
+        flagged = [count_of(row.get("act_now_records")), count_of(row.get("review_records"))]
+        return None if None in flagged else int(sum(flagged))
+
     def rule_finds_nothing(self, page: dict, chart: dict, ws, who=None, every_measure: bool = False) -> bool:
-        """True when the chart's money measures are zero for every group with no filter applied: the rule has no money exception in
-        its scope. A chart with a count of the records the rule tested still reads True, because a tested record is not an
-        exception. every_measure=True counts every measure (the zero-state panel says 'none found', so no tested record may show)."""
+        """True when the rule has no exception in the whole scope (no filter applied). The check (every_measure=False) decides from the
+        rule's own output: the records the run flagged. Without a run summary it falls back to the chart's stake measures only
+        (shell_sql.stake_measure), so a tested-records count never reads as an exception. The zero-state panel (every_measure=True)
+        keeps the strict reading: every measure must be zero, so 'none found' never sits over records that were tested."""
         measures = list(enumerate(chart.get("y") or []))
-        money = [i for i, y in measures if y.get("format") == "currency"]
-        checked = [i for i, _y in measures] if every_measure or not money else money
+        if not every_measure:
+            flagged = self.flagged_records(ws, who, page)
+            if flagged is not None:
+                return flagged == 0
+            checked = [i for i, y in measures if shell_sql.stake_measure(y)]
+            if not checked:
+                return False
+        else:
+            checked = [i for i, _y in measures]
         sql, params = shell_sql.chart_query(page, chart["id"], {})
         rows = self.run(ws, who, sql, params, shell_sql.CAPS["chart_rows"]).get("rows") or []
         return not any(abs(shell_sql.as_number(row.get(f"y{i}")) or 0) > 1e-12 for row in rows for i in checked)
@@ -4067,7 +4091,7 @@ class Shell:
                                                   f"whole scope (zero matches, not a filter problem)"))
                     else:
                         failed([f"{where}: KPI {kpi['id']} has no value at the default filters"])
-            counts = {}
+            counts, zero_scopes = {}, {}
             for kind in ("chart", "table"):
                 for item in page.get(f"{kind}s") or []:
                     rows = (data[f"{kind}s"].get(item["id"]) or {}).get("rows") or []
@@ -4075,10 +4099,14 @@ class Shell:
                         continue
                     counts[(kind, item["id"])] = len(rows)
                     if not rows and self.scope_empty(page, kind, item, probe.ws):
+                        zero_scopes[(kind, item["id"])] = 0
                         found.append((CHECK_NOTE, f"{where}: {kind} {item['id']} holds no rows in its whole scope, so it is empty because "
                                                   f"nothing matched (zero matches, not a filter problem)"))
                     elif not rows:
                         failed([f"{where}: {kind} {item['id']} returned no rows at the default filters"])
+                    elif kind == "chart" and len(rows) < 2 and self.rule_finds_nothing(page, item, probe.ws):
+                        found.append((CHECK_NOTE, f"{where}: chart {item['id']} draws one group at the default filters and its rule finds "
+                                                  f"no exception in the scope, so the zero result is accepted"))
                     elif kind == "chart" and len(rows) < 2:
                         design([f"{where}: chart {item['id']} draws one group at the default filters, so it compares "
                                 f"nothing; chart a column with 2 or more values"])
@@ -4100,7 +4128,8 @@ class Shell:
                 found.extend(self.check_records(headers, page, defaults, probe, where, counts))
                 failed(self.check_overview(page, probe, where))
                 failed(self.check_impact(page, probe, where) if self.screen("impact") else [])
-            short, held = shell_sql.row_shortfalls(page, counts, self.check_held_rows(headers, page, defaults, counts, probe))
+            held_rows = {**self.check_held_rows(headers, page, defaults, counts, probe), **zero_scopes}
+            short, held = shell_sql.row_shortfalls(page, counts, held_rows)
             design([f"{where}: {p}" for p in short])
             found.extend((CHECK_NOTE, f"{where}: {n}") for n in held)
             failed(self.check_lakebase_reads(headers, page, defaults, where))

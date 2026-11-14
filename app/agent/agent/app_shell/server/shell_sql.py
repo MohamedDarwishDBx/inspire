@@ -6197,6 +6197,12 @@ def stake_label(impact) -> str:
     return f"{words[:1].upper()}{words[1:]}"
 
 
+def stake_measure(item) -> bool:
+    """A chart measure that counts what is at stake: a currency measure, or one the App labels with its own stake words
+    (stake_label, such as 'Amount at stake' when Genie wrote the format as a plain number). A tested-records count is not one."""
+    return item.get("format") == "currency" or str(item.get("label") or "").strip().lower().endswith(" at stake")
+
+
 def _digest_money(amount: str, currency: str, kept: bool) -> str:
     unit = f", {sql_text(' ' + currency)}" if str(currency or "").strip() else ""
     return f"concat(format_number(COALESCE({amount}, 0), 0){unit})" if kept else "'Not measured yet'"
