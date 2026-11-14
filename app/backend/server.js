@@ -52,7 +52,7 @@ const {
   discoverReads, discoverWrites, listCatalogs, listSchemas, listTables, outputPlan, runReadPlan, scopeTables, skippedTablesDetail, ucMetadataParts,
   writeRefusalBody,
 } = require('./lib/ucReads');
-const { isMetricViewType, metricViewSkipLine, probeTableTypes, tableTypeUnknownLine, UNUSABLE_REASON } = require('./lib/metricViews');
+const { isMetricViewType, metricViewSkipLine, probeTableTypes, tableTypeOfDescribe, tableTypeUnknownLine, UNUSABLE_REASON } = require('./lib/metricViews');
 const { createSourceAccess } = require('./lib/sourceAccess');
 const { withBusyRetry } = require('./lib/busyRetry');
 const { registerShowcaseRoutes, showcaseWriteGuard } = require('./lib/showcase');
@@ -390,9 +390,7 @@ async function tableTypeByDescribe(host, token, warehouseId, catalog, schema, na
   try {
     const result = await executeSql(host, token, warehouseId,
       `DESCRIBE TABLE EXTENDED ${quotedIdent(catalog)}.${quotedIdent(schema)}.${quotedIdent(name)} AS JSON`);
-    const raw = result.result?.data_array?.[0]?.[0];
-    const meta = typeof raw === 'string' && raw.trim().startsWith('{') ? JSON.parse(raw) : {};
-    return meta.type ? String(meta.type).trim().toUpperCase() : null;
+    return tableTypeOfDescribe(result.result?.data_array?.[0]?.[0]);
   } catch (err) {
     return null;
   }
@@ -400,7 +398,7 @@ async function tableTypeByDescribe(host, token, warehouseId, catalog, schema, na
 
 // `known` holds the full names the REST listing already typed (and the metric views it hid); only the other names are probed.
 async function listTablesSql(host, token, warehouseId, catalog, schema, known = new Set()) {
-  if (!warehouseId || !catalog || !schema) return [];
+  if (!warehouseId || !catalog || !schema) return { rows: [], leftOut: 0 };
   try {
     const stmt = `SHOW TABLES IN ${quotedIdent(catalog)}.${quotedIdent(schema)}`;
     const result = await executeSql(host, token, warehouseId, stmt);
@@ -409,6 +407,8 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
     // cannot be read, each name the REST listing did not type is read with DESCRIBE TABLE EXTENDED ... AS JSON instead.
     const metricViewNames = new Set();
     const unknownNames = new Set();
+    const leftOutNames = new Set();
+    let leftOut = 0;
     const probedTypes = new Map();
     try {
       const typed = await executeSql(host, token, warehouseId,
@@ -426,14 +426,16 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
         else if (isMetricViewType(type)) metricViewNames.add(name);
         else probedTypes.set(name, type);
       }
-      for (const name of beyond) unknownNames.add(name);
+      // Names beyond the probe cap are not typed and not shown: they are counted, and the picker says so.
+      for (const name of beyond) leftOutNames.add(name);
+      leftOut = beyond.length;
       if (unknownNames.size) console.log(tableTypeUnknownLine(unknownNames.size, `${catalog}.${schema}`));
     }
     if (metricViewNames.size) console.log(metricViewSkipLine([...metricViewNames]));
     const out = [];
     for (const row of rows) {
       const tname = row.tableName ?? row.table_name ?? row.name;
-      if (!tname || typeof tname !== 'string' || metricViewNames.has(tname)) continue;
+      if (!tname || typeof tname !== 'string' || metricViewNames.has(tname) || leftOutNames.has(tname)) continue;
       out.push({
         name: tname,
         full_name: `${catalog}.${schema}.${tname}`,
@@ -450,10 +452,10 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
         ...(unknownNames.has(tname) ? { usable: false, unusable_reason: UNUSABLE_REASON } : {}),
       });
     }
-    return out;
+    return { rows: out, leftOut };
   } catch (err) {
     console.warn(`   ⚠️ SHOW TABLES fallback failed for ${catalog}.${schema}: ${err.message}`);
-    return [];
+    return { rows: [], leftOut: 0 };
   }
 }
 
@@ -1857,11 +1859,13 @@ app.get('/api/tables/:catalog/:schema', requireToken, async (req, res) => {
       byKey.set(row.full_name, row);
     }
     const countAfterRest = byKey.size;
+    let leftOut = 0;
     if (warehouseId) {
-      const sqlRows = await listTablesSql(req.dbHost, token, warehouseId, catalog, schema,
+      const listed = await listTablesSql(req.dbHost, token, warehouseId, catalog, schema,
         new Set([...byKey.keys(), ...hiddenMetricViews]));
+      leftOut = listed.leftOut;
       const hidden = new Set(hiddenMetricViews);
-      for (const row of sqlRows) {
+      for (const row of listed.rows) {
         if (!byKey.has(row.full_name) && !hidden.has(row.full_name)) byKey.set(row.full_name, row);
       }
     }
@@ -1870,7 +1874,9 @@ app.get('/api/tables/:catalog/:schema', requireToken, async (req, res) => {
     if (raw.length === 0 && tables.length === 0 && restErr) {
       return PM_ERROR.sendFailure(res, restStatus, restErr);
     }
-    res.json({ tables, count: tables.length, truncated: restCut && byKey.size === countAfterRest });
+    // Tables past the probe cap are not listed: the count says how many, so the picker can name them (nothing is lost silently).
+    res.json({ tables, count: tables.length, truncated: restCut && byKey.size === countAfterRest,
+      ...(leftOut ? { left_out: { count: leftOut, schema: `${catalog}.${schema}` } } : {}) });
   } catch (err) {
     PM_ERROR.sendFailure(res, 500, err.message);
   }

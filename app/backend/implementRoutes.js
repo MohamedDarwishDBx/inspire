@@ -175,11 +175,13 @@ function registerImplementRoutes(app, deps) {
 
   // A metric view is not a table: a route that reads a picked table's rows refuses it first, with one plain line.
   // A failed type lookup does not block the read; the read then reports its own error.
-  async function refuseMetricView(req, warehouseId, table) {
+  // With unknownType, a table whose type cannot be read is refused too (fail closed), from the same single type lookup.
+  async function refuseMetricView(req, warehouseId, table, { unknownType = false } = {}) {
     if (!table) return;
-    if (MV.isMetricViewType(await tableTypeOf(req, () => personReadToken(req), warehouseId, table))) {
-      throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
-    }
+    const token = personReadToken(req);
+    const type = await tableTypeOf(req, () => token, warehouseId, table);
+    if (MV.isMetricViewType(type)) throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
+    if (unknownType && !type) throw Object.assign(new Error(MV.unknownTypeRefusal(table)), { statusCode: 400 });
   }
 
   // The type of one table from information_schema, or null when the lookup fails (the caller then decides, as before).
@@ -739,7 +741,7 @@ function registerImplementRoutes(app, deps) {
     try {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
-      await refuseMetricView(req, warehouseId, table);
+      await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.columnsStatement(table);
       const token = personReadToken(req);
       const [rows, read, keyRows] = await I.readPickedTable(table, () => Promise.all([sqlRows(req.dbHost, token, warehouseId, statement),
@@ -786,9 +788,10 @@ function registerImplementRoutes(app, deps) {
       })();
       const timer = new Promise((resolve) => { setTimeout(() => resolve(null), SWAP_SEARCH_LIMIT_MS).unref(); });
       const found = await Promise.race([search, timer]);
-      if (found === null) return res.json({ table, swaps: [], unusable: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
+      if (found === null) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
       const swaps = found.swaps;
-      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)], unusable: found.unusable, why: '' });
+      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)],
+        ...(found.unusable.length ? { unusable: found.unusable } : {}), why: '' });
     } catch (err) {
       sendError(res, err);
     }
@@ -800,9 +803,11 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       const source = q(req, 'source');
       const token = personReadToken(req);
-      if (MV.isMetricViewType(await tableTypeOf(req, () => token, warehouseId, table))) {
+      const type = await tableTypeOf(req, () => token, warehouseId, table);
+      if (MV.isMetricViewType(type)) {
         return res.json({ table, readable: false, reason: MV.metricViewRefusal(table) });
       }
+      if (!type) return res.json({ table, readable: false, reason: MV.unknownTypeRefusal(table) });
       try {
         await sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(table));
       } catch (err) {

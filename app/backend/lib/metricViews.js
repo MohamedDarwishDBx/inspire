@@ -1,8 +1,25 @@
 /** Metric views are not tables: they are not listed, counted or read as a table. */
 
+const { parseExactJson } = require('./exactJson');
+
 const METRIC_VIEW_TABLE_TYPES = ['METRIC_VIEW', 'METRIC VIEW'];
 
 const isMetricViewType = (type) => METRIC_VIEW_TABLE_TYPES.includes(String(type || '').trim().toUpperCase());
+
+/**
+ * The table type from one DESCRIBE TABLE EXTENDED ... AS JSON payload (its documented "type" field), upper case. The one parser of
+ * that payload. A payload that is not JSON, or names no type, reads as null: an unknown type, which the caller fails closed on.
+ */
+function tableTypeOfDescribe(raw) {
+  let meta;
+  try {
+    meta = typeof raw === 'string' && raw.trim().startsWith('{') ? parseExactJson(raw) : null;
+  } catch {
+    return null;
+  }
+  const kind = meta && typeof meta === 'object' && meta.type ? String(meta.type).trim().toUpperCase() : '';
+  return kind || null;
+}
 
 /** Split listed tables into the ones kept and the metric views left out. */
 function splitMetricViews(items, typeOf) {
@@ -58,7 +75,12 @@ async function probeTableTypes(names, typeOf) {
   return { types, beyond };
 }
 
+/** The named refusal a Data Filters or Data step read gives for a table whose type cannot be read (fail closed). */
+function unknownTypeRefusal(name) {
+  return `${name} is not usable. ${UNUSABLE_REASON}`;
+}
+
 module.exports = {
   METRIC_VIEW_TABLE_TYPES, isMetricViewType, splitMetricViews, metricViewSkipLine, metricViewRefusal,
-  UNUSABLE_REASON, tableTypeUnknownLine, probeTableTypes, TABLE_TYPE_PROBE_CAP,
+  UNUSABLE_REASON, unknownTypeRefusal, tableTypeUnknownLine, probeTableTypes, TABLE_TYPE_PROBE_CAP, tableTypeOfDescribe,
 };
