@@ -183,9 +183,14 @@ function registerImplementRoutes(app, deps) {
     const token = personReadToken(req);
     const types = await Promise.all(named.map((t) => tableTypeOf(req, () => token, warehouseId, t)));
     named.forEach((table, i) => {
-      if (MV.isMetricViewType(types[i])) throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
-      if (unknownType && !types[i]) throw Object.assign(new Error(MV.unknownTypeRefusal(table)), { statusCode: 400 });
+      if (MV.isMetricViewType(types[i])) throw tableRefusal(MV.metricViewRefusal(table));
+      if (unknownType && !types[i]) throw tableRefusal(MV.unknownTypeRefusal(table));
     });
+  }
+
+  // A refusal is a 400 the caller must surface as-is: a route that catches read errors to keep going never swallows it.
+  function tableRefusal(message) {
+    return Object.assign(new Error(message), { statusCode: 400, refusal: true });
   }
 
   async function refuseMetricView(req, warehouseId, table, { unknownType = false } = {}) {
@@ -1341,6 +1346,7 @@ function registerImplementRoutes(app, deps) {
       const got = await tableChangeOf(req, warehouseId, history, spec, useCase);
       return { change: got && got.change.class ? got.change : null, error: '' };
     } catch (err) {
+      if (err && err.refusal) throw err;
       return { change: null, error: err.message || String(err) };
     }
   }
@@ -1384,6 +1390,7 @@ function registerImplementRoutes(app, deps) {
       const mergeIssues = I.mergeProblems(spec, targets, I.carriedAssets(history));
       if (mergeIssues.length) throw I.badRequest(mergeIssues.join('; '));
     }
+    if (spec?.money?.rate_table) await refuseTableTypes(req, warehouseId, [spec.money.rate_table.table], { unknownType: true });
     const [stalled, tables, empty, unshared] = await Promise.all([stalledOf(req, history[0]), ownerTableChange(req, warehouseId, history, spec, useCase, person),
       emptyDataWarning(req, warehouseId, spec, useCase, parseTableScopeText(session.table_scope).scopes), newAppReads(req, warehouseId, spec, useCase)]);
     const plan = I.planSubmission(history, spec, stalled, { requester: person.username, tableChange: tables.change });
@@ -1457,6 +1464,7 @@ function registerImplementRoutes(app, deps) {
       if (counted.row_count !== 0) return '';
       return await emptyScopeWarningOf(scope, I.sourceTables(spec, I.useCaseTables(useCase)), (table) => countOf(table, { columns: [], filters: [], window: {} }));
     } catch (err) {
+      if (err && err.refusal) throw err;
       console.warn(`implement row count failed for ${scope.table}: ${err.message || err}`);
       return `Inspire could not count the rows in ${scope.table}. The build checks the data itself.`;
     }
@@ -1508,7 +1516,6 @@ function registerImplementRoutes(app, deps) {
         { rowLimit: 500, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' }));
     };
     const scopes = await launchScopesOf(req, warehouseId);
-    if (spec?.money?.rate_table) await refuseTableTypes(req, warehouseId, [spec.money.rate_table], { unknownType: true });
     Object.assign(params, await JC.implementCurrencyParams(spec?.money, { runSql, scopes }));
     if (!params['02_inspire_database']) params['02_inspire_database'] = inspire_database;
     if (!sessionParams['01_uc_metadata']) {

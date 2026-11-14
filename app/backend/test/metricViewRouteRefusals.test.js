@@ -36,8 +36,9 @@ async function plan(url, spec = SPEC) {
   return { status: resp.status, data: await resp.json() };
 }
 
-// The statements that read a table's rows (its FROM clause), never the information_schema type or column lookups.
-const rowReadsOf = (made, table) => made.sqlCalls.filter((c) => String(c.sql).includes(`FROM ${table}`));
+// The statements that read a table's rows: any FROM the table, except the zero-row permission probe (SELECT * ... LIMIT 0), which
+// reads no data. The information_schema type and column lookups name the catalog, not the table, so they never match.
+const rowReadsOf = (made, table) => made.sqlCalls.filter((c) => String(c.sql).includes(`FROM ${table}`) && !/ LIMIT 0$/.test(String(c.sql)));
 const countsOf = (made) => made.sqlCalls.filter((c) => /^SELECT COUNT\(\*\) AS row_count/.test(String(c.sql)));
 // A built version by the owner: a picked table swapped in is an owner table change, read with the person's own sign-in.
 const BUILT = { session_id: '42', use_case_id: 'N01-U01', spec_version: 1, status: 'ready', created_by: OWNER, updated_at: '2026-10-21T04:00:00Z',
@@ -130,5 +131,18 @@ test('plan still reads a readable managed table swapped in for a picked table (p
     assert.equal(got.status, 200, JSON.stringify(got.data));
     assert.equal(got.data.summary.table_change_error, undefined);
     assert.ok(columnReads(made).length >= 1, 'the swapped-in managed table is read as before');
+  });
+});
+
+// The submit path runs the same plan checks (prepareSubmission), so a readable managed rate table still builds. This guards the
+// rate-table check from refusing every rate table: the check must name the table, not the rate-table object.
+test('submit builds with a readable managed rate table, so the rate table check refuses only a metric view or unreadable type (regression guard)', async () => {
+  const spec = { ...SPEC, money: { currency: 'convert', base: 'AED', rate_table: RATE_TABLE } };
+  await withApp({ columns: [{ column_name: 'order_id', data_type: 'STRING', ordinal_position: 1 }] }, async (url, made) => {
+    const resp = await fetch(`${url}/api/inspire/implement/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...DB, spec }) });
+    const got = await resp.json();
+    assert.equal(resp.status, 200, JSON.stringify(got));
+    assert.equal(made.jobs.length, 1, 'the build started');
   });
 });
