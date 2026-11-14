@@ -1290,9 +1290,10 @@ def list_column_filters(page: dict, types=None, actions: bool = False) -> list:
     # REQ-191: a column the list's column_filters names, on or off, is decided there; a grouping never re-adds an off filter.
     stated = records.get(COLUMN_FILTERS)
     decided = {e["column"].lower() for e in stated if isinstance(e, dict) and isinstance(e.get("column"), str)} if isinstance(stated, list) else set()
+    all_off = stated is False  # column_filters false turns every column filter off, Grouping filters included (D-AUTO)
     for g in entries:
         key = g["column"].lower()
-        if key in seen or key in decided or key not in listed:
+        if all_off or key in seen or key in decided or key not in listed:
             continue
         seen.add(key)
         label, column = listed[key]
