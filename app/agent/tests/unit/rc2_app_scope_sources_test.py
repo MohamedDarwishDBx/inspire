@@ -23,3 +23,45 @@ def test_a_generated_builds_app_settings_carry_every_source_table_with_its_colum
     written = inst._implement_app_settings(context, {"shell_core": core}, {"id": "n05_u02"}, None, "off", {"app_access": "sp"})
     assert written["scope_sources"] == [{"table": STORES, "columns": ["store_id", "city"]},
                                         {"table": SALES, "columns": ["franchise", "TotalPrice", "transaction_id"]}]
+
+
+class _Log:
+    def __init__(self):
+        self.lines = []
+
+    def info(self, text):
+        self.lines.append(text)
+
+    warning = info
+
+
+def test_a_failed_column_read_lists_the_table_by_name_and_logs_one_plain_line(agent_ns):
+    inst = _inst(agent_ns)
+    log = _Log()
+    inst.logger = log
+
+    def columns(table):
+        if table == STORES:
+            raise RuntimeError("information_schema is unavailable")
+        return {SALES: ["franchise", "TotalPrice", "transaction_id"]}[table]
+
+    inst._implement_scope_columns = columns
+    use_case = {"Name": "Plan Weekly Product Supply", "Tables Involved": STORES, "Primary Table": SALES}
+    context = {"uc_id": "N05-U02", "key": (5150, "N05-U02", 3), "use_case": use_case, "job_id": 77, "spec": {"outputs": {}}, "urls": {},
+               "app_host": {"name": "supply-desk-ab12", "merged": False}}
+    core = type("Core", (), {"SETTINGS_VERSION": 2})
+    written = inst._implement_app_settings(context, {"shell_core": core}, {"id": "n05_u02"}, None, "off", {"app_access": "sp"})
+    assert written["scope_sources"] == [{"table": STORES, "columns": []}, {"table": SALES, "columns": ["franchise", "TotalPrice", "transaction_id"]}]
+    named = [line for line in log.lines if "listed by name only" in line]
+    assert len(named) == 1 and STORES in named[0] and "\n" not in named[0]
+
+
+def test_the_producer_never_raises_on_a_failed_read_and_logs_once(fresh_ns):
+    log = _Log()
+
+    def boom(table):
+        raise ValueError("denied")
+
+    listed = fresh_ns["implement_app_scope_sources"]([SALES], boom, log)
+    assert listed == [{"table": SALES, "columns": []}] and len(log.lines) == 1
+    assert "listed by name only" in log.lines[0]
