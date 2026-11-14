@@ -1287,12 +1287,16 @@ def list_column_filters(page: dict, types=None, actions: bool = False) -> list:
              for f in column_filters(records.get(COLUMN_FILTERS), shown, types)]
     listed = {c.lower(): (label, c) for c, (label, _kind) in shown.items()}
     grouped, seen = [], {f["column"].lower() for f in found}
+    # REQ-191: a column the list's column_filters names, on or off, is decided there; a grouping never re-adds an off filter.
+    stated = records.get(COLUMN_FILTERS)
+    decided = {e["column"].lower() for e in stated if isinstance(e, dict) and isinstance(e.get("column"), str)} if isinstance(stated, list) else set()
+    all_off = stated is False  # column_filters false turns every column filter off, Grouping filters included (D-AUTO)
     for g in entries:
         key = g["column"].lower()
-        if key in seen:
+        if all_off or key in seen or key in decided or key not in listed:
             continue
         seen.add(key)
-        label, column = listed.get(key, (g.get("label") or _column_label(g["column"]), g["column"]))
+        label, column = listed[key]
         grouped.append({"column": column, "type": "multi_select", "label": label, "grouping": True})
     taken = {f["column"] for f in found + grouped}
     offered = actions and records.get(COLUMN_FILTERS) is not False

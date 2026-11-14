@@ -56,11 +56,11 @@ def test_a_page_with_no_grouping_gets_no_grouping_filter_and_no_grouping():
     assert shell_sql.grouping_entries(with_grouping(page, [])) == []
 
 
-def test_a_grouping_column_the_work_list_does_not_show_still_gets_a_top_filter_with_its_business_label():
+def test_a_grouping_column_the_work_list_does_not_show_is_named_but_gets_no_top_filter():
+    # REQ-191: the previous contract gave a top filter here too, and its values query failed live (no such column in the list).
     page = with_grouping(returns_page(), ["region_code"])
     assert page["grouping"]["group_by"] == [{"column": "region_code", "label": "Region code"}]
-    found = grouping_filters(page)
-    assert [(f["column"], f["label"], f["type"]) for f in found] == [("region_code", "Region code", "multi_select")]
+    assert grouping_filters(page) == []
 
 
 def test_a_grouping_flag_on_an_existing_list_filter_marks_it_without_a_duplicate():
