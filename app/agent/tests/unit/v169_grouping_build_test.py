@@ -118,12 +118,12 @@ def test_the_cell_check_runs_the_grouping_check_with_the_spec_grouping(agent_ns)
 
 
 @pytest.mark.parametrize("technique,candidates,chosen,recommended,applies,default,columns", [
-    ("Anomaly Detection", ["region", "country"], "", ["region", "country"], True, "region, country", ["region", "country"]),
+    ("Peer Benchmarking", ["region", "country"], "", ["region", "country"], True, "region, country", ["region", "country"]),
     ("Anomaly Detection", ["region"], "", [], True, "all", ["region"]),
     ("Sentiment Analysis", ["region"], "", [], False, "", []),
     ("Anomaly Detection", [], "", [], False, "", []),
     ("Sentiment Analysis", ["region"], "region", [], True, "region", ["region"]),
-    ("Anomaly Detection", ["region"], "store_type", [], True, "store_type", ["region", "store_type"]),
+    ("Peer Benchmarking", ["region"], "store_type", [], True, "store_type", ["region", "store_type"]),
     ("Anomaly Detection", ["region"], "all", ["region"], True, "all", ["region"]),
 ])
 def test_the_build_plan_follows_the_person_first_then_the_technique_and_the_recommendation(agent_ns, technique, candidates, chosen,
