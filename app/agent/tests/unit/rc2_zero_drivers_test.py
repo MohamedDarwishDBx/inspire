@@ -77,3 +77,17 @@ def test_the_clearing_does_not_touch_a_monitor_chart_that_is_not_a_driver(agent_
     before = copy.deepcopy([c for c in page["charts"] if c["id"] != "by_rule"])
     _check(agent_ns, tmp_path, page)
     assert [c for c in page["charts"] if c["id"] != "by_rule"] == before
+
+
+def test_the_app_prompt_asks_for_drivers_only_on_the_decision_queue_and_the_dashboard(agent_ns, tmp_path):
+    shell_sql = _app_shell(agent_ns, tmp_path)[1]["shell_sql"]
+    brief = agent_ns["implement_drivers_brief"]
+    optional = brief("app", "monitor_triage", RESULT, shell_sql, {})
+    assert optional.startswith("- Drivers: optional on the Monitor and triage layout") and f"`{RESULT}` directly" in optional
+    assert "at least 1 chart" not in optional
+    required_queue = brief("app", shell_sql.DEFAULT_LAYOUT, RESULT, shell_sql, {})
+    assert "at least 1 chart that shows what drives this use case's result" in required_queue
+    assert "the dashboard draws the Drivers charts" not in required_queue
+    required_dash = brief("dashboard", "monitor_triage", RESULT, shell_sql, {"dashboard": True})
+    assert "at least 1 chart that shows what drives this use case's result" in required_dash
+    assert "the dashboard draws the Drivers charts in its own Drivers section" in required_dash
