@@ -401,7 +401,7 @@ function registerImplementRoutes(app, deps) {
     const held = I.resultTableHolderProblem(table, holder, sid, useCaseId);
     if (held) safety = { ok: false, detail: held };
     else if (access.exists && access.write.ok) {
-      const columns = await sqlRows(req.dbHost, req.dbToken, warehouseId, I.columnsStatement(table));
+      const columns = await I.readPickedTable(table, () => sqlRows(req.dbHost, req.dbToken, warehouseId, I.columnsStatement(table)));
       let problem = I.resultTableProblem(access.table, columns, 0);
       if (!problem && columns.length) {
         const counted = await sqlRows(req.dbHost, req.dbToken, warehouseId, I.otherUseCaseRowsStatement(table, useCaseId));
@@ -736,8 +736,8 @@ function registerImplementRoutes(app, deps) {
       await refuseMetricView(req, warehouseId, table);
       const statement = I.columnsStatement(table);
       const token = personReadToken(req);
-      const [rows, read, keyRows] = await Promise.all([sqlRows(req.dbHost, token, warehouseId, statement), readColumnTags(req, token, warehouseId, [table]),
-        sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table))]);
+      const [rows, read, keyRows] = await I.readPickedTable(table, () => Promise.all([sqlRows(req.dbHost, token, warehouseId, statement),
+        readColumnTags(req, token, warehouseId, [table]), sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table))]));
       const prefix = String(table).replace(/`/g, '').toLowerCase();
       const columns = rows.map((c) => {
         const tags = read.tags[`${prefix}.${String(c.column_name).toLowerCase()}`] || {};
@@ -1295,7 +1295,7 @@ function registerImplementRoutes(app, deps) {
     const tables = I.uniqueTables(changes.flatMap((c) => [c.replaced, c.chosen]));
     const token = P.personTokenOf(req);
     if (tables.length && !token) throw I.badRequest(I.IMPLEMENT_TABLES_NO_SIGN_IN, 401);
-    const read = await Promise.all(tables.map((t) => sqlRows(req.dbHost, token, warehouseId, I.columnsStatement(t))));
+    const read = await Promise.all(tables.map((t) => I.readPickedTable(t, () => sqlRows(req.dbHost, token, warehouseId, I.columnsStatement(t)))));
     const unseen = tables.filter((_t, i) => !read[i].length);
     if (unseen.length) throw I.badRequest(I.implementTablesUnreadable(unseen), 409);
     const columnsOf = (name) => read[tables.findIndex((t) => t.toLowerCase() === name.toLowerCase())];
@@ -2088,7 +2088,7 @@ function registerImplementRoutes(app, deps) {
         const [cat, sch, tbl] = table.split('.');
         const columnsAsked = I.columnsStatement(table);
         const keysAsked = GP.keysStatement(cat, sch, tbl);
-        const [allColumns, keyRows] = await Promise.all([rows(columnsAsked.sql, columnsAsked.parameters, GP.PROFILE_META_ROWS),
+        const [allColumns, keyRows] = await Promise.all([I.readPickedTable(table, () => rows(columnsAsked.sql, columnsAsked.parameters, GP.PROFILE_META_ROWS)),
           rows(keysAsked.sql, keysAsked.parameters, GP.PROFILE_META_ROWS).catch((err) => {
             if (['SQL_DEADLINE', 'SQL_CANCELLED'].includes(err && err.code)) throw err;
             console.warn(`grouping profile: the declared keys of ${table} could not be read, so Data groups use no declared key: ${err.message}`);
@@ -2322,7 +2322,7 @@ function registerImplementRoutes(app, deps) {
   async function alignControlLogOwner(req, ctx) {
     if (ownedControlLogs.has(ctx.logTable)) return '';
     try {
-      const rows = await sqlRows(req.dbHost, req.dbToken, ctx.warehouseId, C.controlLogOwnerSql(ctx.catalog, ctx.schema));
+      const rows = await I.readPickedTable(ctx.logTable, () => sqlRows(req.dbHost, req.dbToken, ctx.warehouseId, C.controlLogOwnerSql(ctx.catalog, ctx.schema)));
       const fix = C.controlLogOwnerFix(rows, ctx.logTable);
       if (fix) await executeSql(req.dbHost, req.dbToken, ctx.warehouseId, fix);
       ownedControlLogs.add(ctx.logTable);
