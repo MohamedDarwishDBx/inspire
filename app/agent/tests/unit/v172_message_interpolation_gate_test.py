@@ -33,6 +33,8 @@ CATEGORIES = {
 REVIEWED = {
     'count': {
         ('_call_ai_query_impl', '_attempt_timeout'),
+        # REQ-181: the Genie round number of the App page check, an integer the loop counts.
+        ('_implement_page_file', "turn.get('round')"),
         ('_call_ai_query_impl', '_target_split_limit'),
         ('_call_ai_query_impl', 'best_limit'),
         ('_call_ai_query_impl', 'effective_limit'),
@@ -383,6 +385,8 @@ REVIEWED = {
         ('_implement_page_check', 'problems'),
         ('_implement_page_file', "'; '.join(errors + drawn_errors)"),
         ('_implement_page_file', "'; '.join(problems)"),
+        # REQ-181: the refusal is built only from the label and the reviewed problem list above.
+        ('_implement_page_file', 'refusal'),
         ('_implement_page_file', "'; '.join(owned)"),
         ('_implement_page_file', "'; '.join(shape)"),
         ('_implement_page_file', "', '.join(reappeared)"),
