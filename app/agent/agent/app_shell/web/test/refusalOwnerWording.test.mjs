@@ -35,3 +35,28 @@ test('a stopped SQL warehouse keeps its own owner: the warehouse owner is comput
   const { plain } = splitTechnical('The SQL warehouse is stopped');
   assert.match(plain, /ask its owner to, then try again\.$/);
 });
+
+// The securable is the object kind the caller already knows. Data denials keep the data owner; compute and workspace
+// denials name the workspace admin, because a warehouse, job run or folder has no data owner to ask.
+const WAREHOUSE_LIST = 'PERMISSION_DENIED: User is not allowed to list SQL warehouses.';
+const JOB_RUN = 'PERMISSION_DENIED: User cannot view job run 777';
+
+test('a refused SQL warehouse list asks your workspace admin, never the data owner', () => {
+  const { plain, details } = splitTechnical(WAREHOUSE_LIST, { securable: 'compute' });
+  assert.equal(plain, 'User is not allowed to list SQL warehouses, so ask your workspace admin to give you access.');
+  assert.ok(!/data owner/.test(plain), plain);
+  assert.equal(details.length, 1, 'the raw error stays under Details');
+});
+
+test('a refused job run read asks your workspace admin, never the data owner', () => {
+  const { plain } = splitTechnical(JOB_RUN, { securable: 'workspace' });
+  assert.equal(plain, 'User cannot view job run 777, so ask your workspace admin to give you access.');
+});
+
+test('the same refusal with no securable, or a data securable, still asks your data owner', () => {
+  const data = 'User cannot view job run 777, so ask your data owner or a workspace admin to give you access.';
+  assert.equal(splitTechnical(JOB_RUN).plain, data);
+  assert.equal(splitTechnical(JOB_RUN, { securable: 'data' }).plain, data);
+  assert.equal(splitTechnical(WAREHOUSE_LIST, { securable: 'data' }).plain,
+    'User is not allowed to list SQL warehouses, so ask your data owner or a workspace admin to give you access.');
+});

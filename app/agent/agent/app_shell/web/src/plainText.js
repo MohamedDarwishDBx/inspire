@@ -99,7 +99,7 @@ export function failureCauseOf(text) {
   return causeIn(unwrapJson(String(text ?? '')));
 }
 
-function plainCause(raw) {
+function plainCause(raw, securable) {
   const cause = causeIn(raw);
   if (!cause) return null;
   const at = raw.search(cause.test);
@@ -107,13 +107,13 @@ function plainCause(raw) {
   const head = colon > 0 && colon < at ? raw.slice(0, colon).trim() : '';
   const prefix = head && head.length <= 160 && !causes.some((c) => c.test.test(head)) && !/[A-Z][A-Z0-9]*_[A-Z0-9_]+|[{}[\]]|\(\d{3}\)|^(?:SQL|HTTP|API|REST)\b/.test(head) ? head : '';
   const rest = (prefix ? raw.slice(colon + 2) : raw).trim();
-  const clause = cause.text(rest);
+  const clause = cause.text(rest, securable);
   return { plain: prefix ? `${prefix}: ${clause}.` : `${capital(clause)}.`, details: [rest], kind: cause.kind };
 }
 
-export function splitTechnical(text) {
+export function splitTechnical(text, { securable = '' } = {}) {
   const raw = unwrapJson(String(text ?? ''));
-  const caused = plainCause(raw);
+  const caused = plainCause(raw, securable);
   if (caused) return { plain: caused.plain, details: caused.details };
   const details = [];
   const keep = (m) => { details.push(m.trim().replace(/^\(|\)$/g, '').replace(/^(?:not mocked|at|from)\s+(?=\/|https?:)/, '').replace(/^\[|\]?:?$/g, '')); return ''; };

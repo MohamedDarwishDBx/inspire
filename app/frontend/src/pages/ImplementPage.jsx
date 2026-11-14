@@ -1640,7 +1640,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
             </div>
           ))}
           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-secondary pt-2">Job runs</div>
-          {status?.runs?.ok === false && <PlainMessage as="p" text={status.runs.error} className="text-[12px] text-error-fg" />}
+          {status?.runs?.ok === false && <PlainMessage as="p" text={status.runs.error} securable="workspace" className="text-[12px] text-error-fg" />}
           {(status?.runs?.runs || []).map((run) => (
             <div key={run.run_id} className="border border-border rounded-lg bg-surface px-3 py-2 text-[12px]">
               <div>{runStateText(run.state) || RUN_STATE_UNKNOWN} · {runProfileText(run.profile)} · {run.trigger === 'PERIODIC' ? 'scheduled' : 'started by hand'}</div>

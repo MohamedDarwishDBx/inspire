@@ -16,6 +16,14 @@ function statedReason(raw) {
   return said;
 }
 
+// The securable is the object kind the caller passes with the refusal. Only data has a data owner to ask. A compute object
+// (SQL warehouse) or a workspace object (job run, folder) is the workspace admin's to grant. Omitted means data.
+const ASK_DATA_OWNER = 'ask your data owner or a workspace admin to give you access';
+const ASK_WORKSPACE_ADMIN = 'ask your workspace admin to give you access';
+function askFor(securable) {
+  return securable === 'compute' || securable === 'workspace' ? ASK_WORKSPACE_ADMIN : ASK_DATA_OWNER;
+}
+
 export const FAILURE_CAUSES = [
   { kind: 'network', transient: true, test: /^(?:TypeError:\s*)?(?:Failed to fetch|NetworkError when attempting to fetch resource\.?|Load failed|Network request failed|network error)$|\b(?:fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up)\b/i,
     text: () => 'Inspire lost its connection to Databricks, so try again in a minute and ask a workspace admin if it keeps happening' },
@@ -34,11 +42,12 @@ export const FAILURE_CAUSES = [
   { kind: 'not_found', test: /\b(?:TABLE_OR_VIEW_NOT_FOUND|SCHEMA_NOT_FOUND|CATALOG_NOT_FOUND|NO_SUCH_CATALOG_EXCEPTION|(?:CATALOG|SCHEMA|TABLE)_DOES_NOT_EXIST)\b|\b(?:Catalog|Schema|Table)\s+'[^']+'\s+does not exist\b/,
     text: (raw) => `${objectOf(raw, OBJECT_NAMED) || 'a table it needs'} does not exist, so check that it was not renamed or dropped, or pick another one` },
   { kind: 'denied', test: /\bPERMISSION_DENIED\b|\bINSUFFICIENT_PERMISSIONS\b|\bInsufficient privileges\b|\bUser does not have\b|\(HTTP 403\)/i,
-    text: (raw) => {
+    text: (raw, securable) => {
+      const ask = askFor(securable);
       const object = objectOf(raw, OBJECT_ON);
-      if (object) return `access to ${object} was refused, so ask your data owner or a workspace admin to give you access`;
+      if (object) return `access to ${object} was refused, so ${ask}`;
       const reason = statedReason(raw);
-      return `${reason || 'access to what it needs was refused'}, so ask your data owner or a workspace admin to give you access`;
+      return `${reason || 'access to what it needs was refused'}, so ${ask}`;
     } },
   { kind: 'server', transient: true, test: /\bINTERNAL_ERROR\b|\bInternal (?:server )?error\b|\(HTTP 50[0-4]\)|\bBad Gateway\b|\bService Unavailable\b/i,
     text: () => 'Databricks had a problem on its side, so try again in a minute' },

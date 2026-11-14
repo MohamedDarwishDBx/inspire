@@ -2935,7 +2935,7 @@ function BuildWarehouseField({ value, warehouses, warehousesError, onWarehousesR
       )}
       {note && <p data-build-warehouse-note="" className="text-[11px] text-warning-fg">{note}</p>}
       {warehousesError && <PlainMessage text={`Inspire could not list the SQL warehouses: ${warehousesError}`} after="Type the warehouse id instead."
-        onRetry={onWarehousesRetry} copy data-build-warehouse-error="" className="text-[11px] text-warning-fg" />}
+        securable="compute" onRetry={onWarehousesRetry} copy data-build-warehouse-error="" className="text-[11px] text-warning-fg" />}
       {!note && !warehousesError && state && <p data-build-warehouse-state="" className="text-[11px] text-text-tertiary">{state}</p>}
     </div>
   );
@@ -2959,7 +2959,7 @@ function AppWarehouseField({ spec, lakebase, warehouses, warehousesError, onWare
         </select>
       </label>
       {warehousesError && <PlainMessage text={`Inspire could not list the SQL warehouses: ${warehousesError}`} after={buildWarehouseNote(listed, build)}
-        onRetry={onWarehousesRetry} copy data-app-warehouse-error="" className="text-[11px] text-text-tertiary" />}
+        securable="compute" onRetry={onWarehousesRetry} copy data-app-warehouse-error="" className="text-[11px] text-text-tertiary" />}
       {chosen !== build && !warehousesError && <p className="text-[11px] text-text-tertiary">{buildWarehouseNote(listed, build)}</p>}
       {check && !check.ok && <p data-app-warehouse-check="" className="text-[11px] text-error-fg">{check.detail}</p>}
     </div>
