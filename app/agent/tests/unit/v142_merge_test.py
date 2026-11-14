@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from v120_artifacts_support import FakeSpark
+from v120_artifacts_support import FakeSpark, absent_scope_views
 from v142_genie_test import COLUMNS as GENIE_COLUMNS, _definition, _rich_space
 from v140_implement_test import (FIXTURE, OURS_APP, READS, SHELL_FILES, TRUTH, VALID, _app_flow, _app_shell, _churn_page, _contract, _dashboard,
                                  _deploy_inspire, _FileRunner, _inspire, _left_by, _NB_SPEC, _not_access_reads, _output_context,
@@ -87,6 +87,7 @@ def _merge_flow(ns, tmp_path, monkeypatch, app=HOST_APP, files=None, outputs=Non
     inst, context, seen = _app_flow(ns, work, outputs={"merge": {"app": "sales-desk"}, **(outputs or {})},
                                     assets={"genie_space": "gA"} if assets is None else assets, **stubs)
     del inst._implement_app_host
+    inst.spark.responder = absent_scope_views
     _serve_files(ns, monkeypatch, _host_files(ns, tmp_path) if files is None else files)
     apps = {("GET", "/api/2.0/apps/sales-desk"): RuntimeError("RESOURCE_DOES_NOT_EXIST: app sales-desk") if app is None else app}
     inst._implement_api, calls = _router({**apps, **(routes or {})})
@@ -284,7 +285,8 @@ def test_a_user_app_with_two_viewers_grants_both_and_lists_the_one_refused_grant
         {"service_principal_name": "sp-7", "all_permissions": [{"permission_level": "CAN_MANAGE"}]}]}
     inst, context, _calls, _imported = _deploy_inspire(agent_ns, [host, sharing] + DEPLOYED, access=[])
     view = "main.s.orders_scope"
-    inst._genie_scopes = lambda use_case: {"main.s.orders": {"table": "main.s.orders", "view": view, "view_sql": "SELECT 1", "ready": True}}
+    inst._genie_scopes = lambda use_case: {"main.s.orders": {"table": "main.s.orders", "view": view, "view_sql": "SELECT 1", "source": "(SELECT 1)",
+                                                                      "view_ref": ".".join(f"`{p}`" for p in view.split(".")), "ready": True}}
     context["app_host"] = dict(agent_ns["implement_app_host"]("sales-desk"), app=host, merged=True, source=SOURCE, settings={
         "auth": "user", "options": {"modify": False, "decisions": False}})
     attempts = []
@@ -321,7 +323,8 @@ def test_the_build_persists_the_scope_view_and_the_source_table_the_app_reads_di
     host = dict(HOST_APP, user_api_scopes=["sql:restricted-query", "genie"])
     inst, context, _calls, _imported = _deploy_inspire(agent_ns, [host, {"access_control_list": []}] + DEPLOYED, access=[])
     view, source = "main.s.orders_scope", "main.s.returns"
-    inst._genie_scopes = lambda use_case: {"main.s.orders": {"table": "main.s.orders", "view": view, "view_sql": "SELECT 1", "ready": True}}
+    inst._genie_scopes = lambda use_case: {"main.s.orders": {"table": "main.s.orders", "view": view, "view_sql": "SELECT 1", "source": "(SELECT 1)",
+                                                                      "view_ref": ".".join(f"`{p}`" for p in view.split(".")), "ready": True}}
     context["app_host"] = dict(agent_ns["implement_app_host"]("sales-desk"), app=host, merged=True, source=SOURCE, settings={
         "auth": "user", "options": {"modify": False, "decisions": False}})
     fields = inst._implement_deploy_app(context, "sales-desk", SHELL_FILES, [view, source, context["result_table"]], "gA", poll_s=0)

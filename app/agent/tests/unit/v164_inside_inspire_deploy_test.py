@@ -9,7 +9,7 @@ import types
 
 import pytest
 
-from v120_artifacts_support import CapturingLogger, FakeSpark
+from v120_artifacts_support import CapturingLogger, FakeSpark, absent_scope_views
 from v140_implement_test import TRUTH, VALID, _churn_page, _contract, _FileRunner, _inspire, _left_by, _spec, _workspace_columns
 from v142_dash_test import ROWS, _flow, _runner as _pages
 from v142_merge_test import _serve_files
@@ -55,6 +55,7 @@ def _dirs(inst):
 def _builder(ns, tmp_path, monkeypatch, hosted=True, asset_status=None, assets=None, version=2, listing=None, files=None):
     _serve_files(ns, monkeypatch, files or {})
     inst, context, seen = _flow(ns, tmp_path, outputs={"dashboard": False, **OWN}, asset_status=asset_status, assets=assets)
+    inst.spark.responder = absent_scope_views
     if hosted:
         context["spec"] = _hosted_spec(ns, dashboard=False)
         del inst._implement_deploy_app
@@ -75,7 +76,11 @@ def _builder(ns, tmp_path, monkeypatch, hosted=True, asset_status=None, assets=N
 def _own_files(ns, tmp_path, monkeypatch):
     inst, context, seen = _builder(ns, tmp_path / "own", monkeypatch, hosted=False)
     inst._implement_app(context, _pages(_churn_page(ns)))
-    return seen["deployed"][0][1]
+    # The deploy stub captures the files the page check read, under candidate view names. Publish writes the same files under the
+    # live names (scope_publish_rename), so the expected text drops the candidate suffix.
+    suffix = ns["CANDIDATE_VIEW_SUFFIX"]
+    return {name: (text.replace(suffix, "") if isinstance(text, str) else text.replace(suffix.encode(), b""))
+            for name, text in seen["deployed"][0][1].items()}
 
 
 def _settings(files):
@@ -313,7 +318,7 @@ def test_sharing_a_page_inside_inspire_gives_its_viewers_its_warehouse_and_no_ap
 
 
 def _hosted_locked(ns, tmp_path, monkeypatch):
-    inst, previous = _locked(ns, previous_outputs=HOSTED)
+    inst, previous = _locked(ns, previous_outputs=HOSTED, responder=absent_scope_views)
     _workspace_columns(inst)
     del inst._implement_app
     carried = {k: v for k, v in BUILT.items() if k not in ("app_name", "app_url")}
