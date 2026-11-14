@@ -1,7 +1,19 @@
 import { apiErrorDetail, parseApiErrorMessage } from './ucPermissionErrors.js';
 import { raisePermissions } from './permissionBus.js';
+import { withDeadline } from './startDeadline.js';
 
 export const SHOWCASE_HEADER = 'X-Inspire-Showcase';
+
+// A boot read (the App and Setup page reads that gate the first screen) answers within this bound. One that never answers
+// rejects with the bound's error, flagged deadline: true, so the page shows its load error with Try again instead of a spinner forever.
+export const BOOT_ANSWER_MS = 20000;
+export const BOOT_TIMEOUT_TEXT = `Inspire did not answer within ${BOOT_ANSWER_MS / 1000} seconds while it connected to the workspace.`;
+const bootTimedOut = () => Object.assign(new Error(BOOT_TIMEOUT_TEXT), { deadline: true });
+// Parsed JSON, or null when the server answers with a failure status. The body is read inside the deadline too.
+export const bootRead = (url, init = {}) => withDeadline(async (signal) => {
+  const resp = await fetch(url, { ...init, signal });
+  return resp.ok ? resp.json() : null;
+}, { ms: BOOT_ANSWER_MS, error: bootTimedOut() });
 
 export function requestHeaders(token, databricksHost, extra = {}, showcase = '') {
   const headers = { ...extra };

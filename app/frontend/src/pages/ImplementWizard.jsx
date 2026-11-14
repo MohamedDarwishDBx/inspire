@@ -2310,9 +2310,6 @@ export default function ImplementWizard({
         {Object.values(checkNotes).filter(Boolean).map((note) => (
           <p key={note} role="note" data-check-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs text-warning-fg">{note}</p>
         ))}
-        {lastStep && accessVerdict === 'pending' && (
-          <p role="status" data-access-verdict="pending" className="text-xs text-text-secondary">{ACCESS_CHECKING}</p>
-        )}
         {lastStep && (accessVerdict === 'error' || accessVerdict === 'unknown') && (
           <div role="alert" data-access-verdict={accessVerdict} className="flex items-center justify-between gap-3 bg-error-bg border border-error/20 rounded-md px-3 py-2 text-xs text-error-fg">
             <span>{ACCESS_UNKNOWN}</span>
@@ -2334,6 +2331,12 @@ export default function ImplementWizard({
             <ChevronLeft size={14} /> Back
           </button>
           <div className="flex items-center gap-2">
+            {/* The Build button already reads Checking access while the check runs, so the status is announced, not shown. Absolute, so it takes no room and the footer keeps its height. */}
+            {lastStep && (
+              <p role="status" data-access-verdict={accessVerdict === 'pending' ? 'pending' : undefined} className="sr-only">
+                {accessVerdict === 'pending' ? ACCESS_CHECKING : ''}
+              </p>
+            )}
             {mode === 'mvp' && stepIndex > 0 && !lastStep && sourceAccessRefused && (
               <p data-source-refused="" className="text-[11px] text-warning-fg">{SOURCE_REFUSED_REASON}</p>
             )}
@@ -2368,7 +2371,7 @@ export default function ImplementWizard({
               <button
                 type="button"
                 disabled={implementBlocked}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-db-red-solid disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-1.5 min-w-52 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-db-red-solid disabled:opacity-50"
                 onClick={submit}
               >
                 {(busy || checksBusy || !placeSettled) && <Loader2 size={14} className="animate-spin" />}

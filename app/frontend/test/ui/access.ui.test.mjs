@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { closeBrowser, goToStep, idle, onStep, openUi, profileAt } from './uiSupport.mjs';
 import { REVIEW_STATE } from './reviewFixtures.js';
 import { GROUPING_INSTRUCTION, GROUPING_PROFILE, HARNESS_SESSION_ID, HARNESS_SETTINGS, HARNESS_USE_CASE, OWNER } from './implementFixtures.js';
-import { defaultSpecFromUseCase } from '../../src/lib/implementWizard.js';
+import { BUILD_IT_LABEL, defaultSpecFromUseCase } from '../../src/lib/implementWizard.js';
 import { activeRing, sideScroll, unnamedControls, weakFocus } from '../../../agent/agent/app_shell/web/test/access.mjs';
 
 test.after(closeBrowser);
@@ -202,6 +202,44 @@ for (const theme of ['light', 'dark']) {
       assert.ok(parseFloat(await firstRun.evaluate((el) => getComputedStyle(el).outlineOffset)) > 0, 'the First run Change link ring sits outside its box, not over its text');
       const ring = await activeRing(ui.page);
       assert.ok(ring && ring.ok, `${theme}: the First run Change link ring: ${JSON.stringify(ring)}`);
+      assert.deepEqual(ui.pageErrors, []);
+    } finally {
+      await ui.close();
+    }
+  });
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`the Build footer swaps Checking access for Build without moving the dialog: no layout shift across the label change, ${theme} theme`, async () => {
+    const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' }, useCase: { ...HARNESS_USE_CASE, genie_instruction: GROUPING_INSTRUCTION } }, '',
+      { init: async (page) => { await sized(SCREEN, theme)(page); await profileAt([], GROUPING_PROFILE)(page); } });
+    try {
+      await ui.page.evaluate(() => {
+        window.__shifts = [];
+        new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) {
+            window.__shifts.push({
+              at: Math.round(e.startTime), value: e.value, recent: e.hadRecentInput,
+              sources: (e.sources || []).map((s) => {
+                const n = s.node;
+                const r = s.previousRect; const c = s.currentRect;
+                return `${n ? n.tagName.toLowerCase() : 'none'} ${n?.className?.toString().slice(0, 60) || ''} `
+                  + `h ${r.height}->${c.height} y ${r.y}->${c.y} x ${r.x}->${c.x}`;
+              }),
+            });
+          }
+        }).observe({ type: 'layout-shift', buffered: true });
+      });
+      await goToStep(ui.page, 'Data');
+      await goToStep(ui.page, 'Review & build');
+      // The window opens while the footer still reads Checking access, and closes once it reads Build.
+      await ui.page.getByRole('button', { name: /^Checking access/ }).waitFor({ timeout: 15000 });
+      await idle(ui.page);
+      await ui.page.evaluate(() => { window.__shifts = []; });
+      await ui.page.getByRole('button', { name: BUILD_IT_LABEL }).waitFor({ timeout: 15000 });
+      await idle(ui.page);
+      const shifts = await ui.page.evaluate(() => window.__shifts.filter((s) => s.value > 0));
+      assert.deepEqual(shifts, [], `${theme}: the Build footer moved the dialog while its label changed`);
       assert.deepEqual(ui.pageErrors, []);
     } finally {
       await ui.close();

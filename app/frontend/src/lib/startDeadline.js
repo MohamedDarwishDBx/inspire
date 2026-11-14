@@ -10,13 +10,14 @@ export function startDeadlineError(label = 'Inspire', ms = START_DEADLINE_MS) {
 }
 
 // send(signal) starts the request. The race makes the deadline hold even when fetch ignores the abort signal.
-export async function withStartDeadline(send, { ms = START_DEADLINE_MS, label = 'Inspire' } = {}) {
+// The caller names the error the deadline raises, so a read and a start each say what they mean.
+export async function withDeadline(send, { ms, error }) {
   const controller = new AbortController();
   let timer = null;
   const deadline = new Promise((_, reject) => {
     timer = setTimeout(() => {
       controller.abort();
-      reject(startDeadlineError(label, ms));
+      reject(error);
     }, ms);
   });
   try {
@@ -24,4 +25,8 @@ export async function withStartDeadline(send, { ms = START_DEADLINE_MS, label = 
   } finally {
     clearTimeout(timer);
   }
+}
+
+export function withStartDeadline(send, { ms = START_DEADLINE_MS, label = 'Inspire' } = {}) {
+  return withDeadline(send, { ms, error: startDeadlineError(label, ms) });
 }

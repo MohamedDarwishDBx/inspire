@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import DatabricksLogo from '../components/DatabricksLogo';
 import { normalizeDatabricksHost } from '../lib/normalizeDatabricksHost';
-import { responseError } from '../lib/apiClient';
+import { BOOT_TIMEOUT_TEXT, bootRead, responseError } from '../lib/apiClient';
 import CatalogPicker from '../components/CatalogPicker';
 import { CopySendChoice, PlainMessage, RetryChoice } from '../components/TechnicalDetails';
 
@@ -35,6 +35,8 @@ export default function SetupWizard({ settings, update, onComplete }) {
   const [catalogsCut, setCatalogsCut] = useState(false);
   const [catalogsWhy, setCatalogsWhy] = useState('');
   const [catalogsRound, setCatalogsRound] = useState(0);
+  // The key of the catalog read that has settled. Busy is derived from it, so the render that enters the Database step is already busy.
+  const [catalogsSettled, setCatalogsSettled] = useState('');
   const [schemas, setSchemas] = useState([]);
   const [verification, setVerification] = useState(null);
   const [verifying, setVerifying] = useState(false);
@@ -42,6 +44,12 @@ export default function SetupWizard({ settings, update, onComplete }) {
   const [publishResult, setPublishResult] = useState(null);
   const [creatingDb, setCreatingDb] = useState(false);
   const [isDatabricksApp, setIsDatabricksApp] = useState(false);
+  // The one alert for a page read that never answered: its text, and the action Try again runs.
+  const [readError, setReadError] = useState({ text: '', retry: null });
+  const [detectRound, setDetectRound] = useState(0);
+  const [warehouseRound, setWarehouseRound] = useState(0);
+  const failRead = (err, retry) => { if (err?.deadline) setReadError({ text: BOOT_TIMEOUT_TEXT, retry }); };
+  const retryDetect = () => setDetectRound((n) => n + 1);
 
   const { databricksHost, token, warehouseId, inspireDatabase, authMode } = settings;
 
@@ -57,21 +65,18 @@ export default function SetupWizard({ settings, update, onComplete }) {
   useEffect(() => {
     (async () => {
       try {
-        const defResp0 = await fetch('/api/defaults');
-        const defaults0 = await defResp0.json();
+        const defaults0 = (await bootRead('/api/defaults')) || {};
         if (defaults0.envSkipsSetupWizard) {
           onComplete();
           return;
         }
 
-        const healthResp = await fetch('/api/health');
-        const health = await healthResp.json();
+        const health = (await bootRead('/api/health')) || {};
 
         if (health.isDatabricksApp) {
           setIsDatabricksApp(true);
 
-          const defResp = await fetch('/api/defaults');
-          const defaults = await defResp.json();
+          const defaults = (await bootRead('/api/defaults')) || {};
 
           if (defaults.databricksHost) update('databricksHost', (chosen) => chosen || defaults.databricksHost);
           if (defaults.warehouseId) update('warehouseId', (chosen) => chosen || defaults.warehouseId);
@@ -95,31 +100,33 @@ export default function SetupWizard({ settings, update, onComplete }) {
               });
             } catch {}
 
-            // Auto-publish notebook
+            // Auto-publish notebook. A read that never answers stops here: the page says so, and Try again runs the detect again.
             try {
-              const nbResp = await fetch('/api/notebook', { headers: autoHeaders });
-              if (nbResp.ok) {
-                const nbData = await nbResp.json();
-                if (nbData.path) update('notebookPath', nbData.path);
-              }
-            } catch {}
+              const nbData = await bootRead('/api/notebook', { headers: autoHeaders });
+              if (nbData?.path) update('notebookPath', nbData.path);
+            } catch (err) {
+              failRead(err, retryDetect);
+              return;
+            }
 
             // Complete setup immediately
             onComplete();
             return;
           }
         }
-      } catch {}
+      } catch (err) {
+        // Other failures keep the form as it is.
+        failRead(err, retryDetect);
+      }
     })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detectRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load warehouses when auth is ready (or in Databricks App mode where token is auto-injected)
   useEffect(() => {
     if ((!token && !isDatabricksApp) || step < 2) return;
-    fetch('/api/warehouses', { headers: headers() })
-      .then(r => r.json())
+    bootRead('/api/warehouses', { headers: headers() })
       .then(data => {
-        const whs = data.warehouses || [];
+        const whs = data?.warehouses || [];
         setWarehouses(whs);
         // Auto-select first running serverless warehouse
         if (whs.length > 0) {
@@ -128,12 +135,16 @@ export default function SetupWizard({ settings, update, onComplete }) {
           if (first) update('warehouseId', (chosen) => chosen || first.id);
         }
       })
-      .catch(() => {});
-  }, [token, databricksHost, step]);
+      .catch((err) => failRead(err, () => setWarehouseRound((n) => n + 1)));
+  }, [token, databricksHost, step, warehouseRound]);
 
   // Load catalogs when warehouse is ready (warehouse_id enables SQL fallback for SP / UC REST gaps)
+  // The read is busy from the render that enters the Database step until its own key settles (step is in the key, so a re-entry is busy too).
+  const catalogKey = [step, token, databricksHost, warehouseId, isDatabricksApp, catalogsRound].join('|');
+  const catalogsBusy = step >= 3 && (Boolean(token) || isDatabricksApp) && catalogsSettled !== catalogKey;
   useEffect(() => {
-    if ((!token && !isDatabricksApp) || step < 3) return;
+    if ((!token && !isDatabricksApp) || step < 3) return undefined;
+    let current = true;
     const q = warehouseId ? `?warehouse_id=${encodeURIComponent(warehouseId)}` : '';
     fetch(`/api/catalogs${q}`, { headers: headers() })
       .then(async (r) => {
@@ -141,14 +152,20 @@ export default function SetupWizard({ settings, update, onComplete }) {
         return r.json();
       })
       .then(data => {
+        if (!current) return;
         setCatalogs(data.catalogs || []);
         setCatalogsCut(Boolean(data.truncated));
         setCatalogsWhy('');
+        setCatalogsSettled(catalogKey);
       })
       .catch((e) => {
+        if (!current) return;
         setCatalogs([]);
         setCatalogsWhy(e.message);
+        setCatalogsSettled(catalogKey);
       });
+    // A read the step has left answers into nothing: a newer read owns the busy flag.
+    return () => { current = false; };
   }, [token, databricksHost, step, warehouseId, isDatabricksApp, headers, catalogsRound]);
 
   // Load schemas when catalog selected
@@ -222,7 +239,7 @@ export default function SetupWizard({ settings, update, onComplete }) {
       case 0: return !!databricksHost || isDatabricksApp;
       case 1: return !!token || isDatabricksApp;
       case 2: return !!warehouseId;
-      case 3: return !!inspireDatabase && inspireDatabase.includes('.');
+      case 3: return !catalogsBusy && !!inspireDatabase && inspireDatabase.includes('.');
       case 4: return verification?.ok;
       default: return false;
     }
@@ -248,6 +265,10 @@ export default function SetupWizard({ settings, update, onComplete }) {
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center px-6 py-12">
       <div className="max-w-2xl w-full">
+        {readError.text && (
+          <PlainMessage text={readError.text} role="alert" data-setup-error="" className="mb-4 px-4 py-3 rounded-xl border border-error/20 bg-error-bg text-xs text-error-fg"
+            onRetry={() => { const { retry } = readError; setReadError({ text: '', retry: null }); retry(); }} />
+        )}
         {/* Header */}
         <div className="text-center mb-10">
           <div className="flex items-center justify-center gap-3 mb-4">
@@ -439,6 +460,9 @@ export default function SetupWizard({ settings, update, onComplete }) {
                   </datalist>
                 </div>
               </div>
+              {catalogsBusy && (
+                <p role="status" className="text-xs text-text-secondary flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Loading catalogs...</p>
+              )}
               {catalogsWhy && <PlainMessage as="p" text={catalogsWhy} onRetry={() => setCatalogsRound((n) => n + 1)} copy role="note" data-uc-why="" className="text-xs text-text-secondary" />}
               {inspireDatabase && inspireDatabase.includes('.') && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-info-bg text-info-fg text-xs">
