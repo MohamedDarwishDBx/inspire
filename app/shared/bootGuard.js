@@ -9,7 +9,11 @@
 (function () {
   var RELOAD_KEY = 'inspire-chunk-reload';
   var RELOAD_WINDOW_MS = 30000;
-  var BOOT_DEADLINE_MS = 20000;
+  // A boot is reloaded only when it is dead: the root has not rendered, and no resource has finished for QUIET_MS.
+  // A slow network keeps resources finishing, so it is never reloaded before HARD_CAP_MS.
+  var QUIET_MS = 8000;
+  var HARD_CAP_MS = 90000;
+  var POLL_MS = 1000;
   var MESSAGE = 'Inspire could not finish loading because the network connection changed. Reload to try again.';
 
   function lastReload() {
@@ -60,6 +64,20 @@
     if (notMounted()) { event.preventDefault(); fail(); return; }
     if (reloadOnce()) event.preventDefault();
   });
-  // A stalled boot (no response from the module graph) gets the same single reload, then the message.
-  window.setTimeout(fail, BOOT_DEADLINE_MS);
+  // A stalled boot gets the same single reload, then the message. Progress is the count of finished resource loads: module
+  // requests and fetches show up in the resource timing buffer when they finish. The buffer is raised so a long boot does not fill it.
+  if (performance.setResourceTimingBufferSize) performance.setResourceTimingBufferSize(2000);
+  var started = Date.now();
+  var lastProgress = started;
+  var finished = 0;
+  var timer = window.setInterval(function () {
+    if (!notMounted()) { window.clearInterval(timer); return; }
+    var now = Date.now();
+    var count = performance.getEntriesByType('resource').length;
+    if (count !== finished) { finished = count; lastProgress = now; }
+    if (now - lastProgress >= QUIET_MS || now - started >= HARD_CAP_MS) {
+      window.clearInterval(timer);
+      fail();
+    }
+  }, POLL_MS);
 })();
