@@ -6,6 +6,7 @@ const childProcess = require('child_process');
 const { redactSecrets: redactAny } = require('./redact');
 const { IMPLEMENT_APP_HOSTED_ID_RE: HOSTED_ID_RE } = require('./inspireImplement');
 const { forwardedTokenOf } = require('./requestPerson');
+const { apiRefusalText, logApiBody } = require('./apiRefusal');
 const { parseExactJson } = require('./exactJson');
 const HOSTED_MAX_CHILDREN = 3;
 const HOSTED_IDLE_MS = 15 * 60 * 1000;
@@ -175,13 +176,19 @@ function workspaceFiles(dbFetch) {
   return (host, token) => ({
     async list(folder) {
       const resp = await dbFetch(host, token, `/api/2.0/workspace/list?path=${encodeURIComponent(folder)}`);
-      if (!resp.ok) throw new Error(`the page folder ${folder} could not be listed (${resp.status}): ${String(await resp.text()).slice(0, 300)}`);
+      if (!resp.ok) {
+        logApiBody(`List the page folder ${folder}`, resp.status, await resp.text());
+        throw new Error(apiRefusalText(`list the page folder ${folder}`, resp.status));
+      }
       const data = await resp.json();
       return Array.isArray(data.objects) ? data.objects : [];
     },
     async read(file) {
       const resp = await dbFetch(host, token, `/api/2.0/workspace/export?path=${encodeURIComponent(file)}&direct_download=true`);
-      if (!resp.ok) throw new Error(`${file} could not be read (${resp.status}): ${String(await resp.text()).slice(0, 300)}`);
+      if (!resp.ok) {
+        logApiBody(`Read ${file}`, resp.status, await resp.text());
+        throw new Error(apiRefusalText(`read ${file}`, resp.status));
+      }
       return Buffer.from(await resp.arrayBuffer());
     },
   });

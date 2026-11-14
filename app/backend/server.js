@@ -61,6 +61,7 @@ const { LIVE_STEP_STATUSES, liveDomainsOf, liveUseCasesOf } = require('../fronte
 const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('./lib/runSummary');
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
 const PM_ERROR = require('./lib/permissionError');
+const { apiRefusalText, logApiBody } = require('./lib/apiRefusal');
 const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
 const { keepLongInteger, parseExactJson } = require('./lib/exactJson');
 const { int64Id, isInt64Id, jsonWithInt64Ids } = require('./lib/int64Id');
@@ -1038,9 +1039,8 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
     });
 
     if (!createResp.ok) {
-      const errText = await createResp.text();
-      console.error(`❌ Job create failed (${createResp.status}): ${errText}`);
-      const err = new Error(`Job creation failed: ${errText}`);
+      logApiBody('Job create', createResp.status, await createResp.text());
+      const err = new Error(apiRefusalText('create the job for this run', createResp.status));
       err.statusCode = createResp.status;
       throw err;
     }
@@ -1064,11 +1064,8 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    console.error(`❌ Job run failed (${response.status}): ${errText}`);
-    let errorMsg;
-    try { errorMsg = JSON.parse(errText).message || errText; } catch { errorMsg = errText; }
-    const err = new Error(errorMsg);
+    logApiBody('Job run', response.status, await response.text());
+    const err = new Error(apiRefusalText('start the run', response.status));
     err.statusCode = response.status;
     throw err;
   }
@@ -1309,7 +1306,7 @@ app.post('/api/auth/sp-token', async (req, res) => {
     if (!resp.ok) {
       const errText = await resp.text();
       console.error(`SP token failed (${resp.status}): ${errText.substring(0, 200)}`);
-      return res.status(resp.status).json({ error: `Azure AD token request failed: ${errText}` });
+      return res.status(resp.status).json({ error: apiRefusalText('get a sign-in token', resp.status) });
     }
 
     const data = await resp.json();
@@ -1364,7 +1361,8 @@ app.get('/api/workspace/list', rejectUnsafeQueryPath, requireToken, async (req, 
         const response = await dbFetch(req.dbHost, req.dbToken, fsApiPath('directories', wsPath));
         if (!response.ok) {
           lastStatus = response.status;
-          lastErr = await response.text();
+          logApiBody('List folder', response.status, await response.text());
+          lastErr = apiRefusalText('list that folder', response.status);
           continue;
         }
         const data = await response.json();
@@ -1380,7 +1378,8 @@ app.get('/api/workspace/list', rejectUnsafeQueryPath, requireToken, async (req, 
       const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.0/workspace/list?path=${encodeURIComponent(wsPath)}`);
       if (!response.ok) {
         lastStatus = response.status;
-        lastErr = await response.text();
+        logApiBody('List folder', response.status, await response.text());
+        lastErr = apiRefusalText('list that folder', response.status);
         continue;
       }
       const data = await response.json();
@@ -1413,7 +1412,8 @@ app.get('/api/workspace/export', rejectUnsafeQueryPath, requireToken, async (req
         const response = await dbFetch(req.dbHost, req.dbToken, fsApiPath('files', wsPath));
         if (!response.ok) {
           lastStatus = response.status;
-          lastErr = await response.text();
+          logApiBody('Read file', response.status, await response.text());
+          lastErr = apiRefusalText('read that file', response.status);
           continue;
         }
         res.setHeader('Content-Disposition', attachmentHeader(baseName));
@@ -1444,7 +1444,8 @@ app.get('/api/workspace/export', rejectUnsafeQueryPath, requireToken, async (req
         return res.send(Buffer.from(await resp2.arrayBuffer()));
       }
       lastStatus = resp2.status;
-      lastErr = await resp2.text();
+      logApiBody('Read file', resp2.status, await resp2.text());
+      lastErr = apiRefusalText('read that file', resp2.status);
     }
 
     return PM_ERROR.sendFailure(res, lastStatus, lastErr, { tried: candidates });
@@ -1893,8 +1894,9 @@ app.get('/api/warehouses', requireToken, async (req, res) => {
   try {
     const response = await dbFetch(req.dbHost, req.dbToken, '/api/2.0/sql/warehouses');
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = 'list the SQL warehouses';
+      logApiBody(action, response.status, await response.text());
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
     }
     const data = await response.json();
     const warehouses = (data.warehouses || []).map(w => ({
@@ -1948,8 +1950,9 @@ app.post('/api/publish', requireToken, async (req, res) => {
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = 'publish the notebook';
+      logApiBody(action, response.status, await response.text());
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
     }
 
     let notebookPath = destination_path;
@@ -2006,8 +2009,9 @@ app.post('/api/publish/upload', requireToken, upload.single('file'), async (req,
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = 'publish the notebook';
+      logApiBody(action, response.status, await response.text());
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
     }
 
     res.json({ success: true, path: destination_path });
@@ -2225,15 +2229,49 @@ app.post('/api/run', requireToken, async (req, res) => {
   return launchDiscover(req, res, { params, notebook_path, cluster_id });
 });
 
+// The job a recorded run belongs to, from Inspire's own launch record (App database). Null when it is not recorded.
+async function runJobIdOf(req, runId) {
+  const table = L.launchTableName(DEFAULT_INSPIRE_DB);
+  const statement = table && DEFAULT_WAREHOUSE_ID ? L.runJobStatement(table, runId) : null;
+  if (!statement) return null;
+  try {
+    return L.jobIdOf(await launchSql(resolveHost(req), statement, req.dbToken));
+  } catch (err) {
+    console.warn(`run again: the job of run ${runId} could not be read from the launch record: ${err.message}`);
+    return null;
+  }
+}
+
+// Databricks refused the person's read of the run. A permission refusal names the job and the grant to ask for; the raw body never reaches the person.
+async function refuseRunAgain(req, res, response) {
+  const runId = req.params.runId;
+  const action = `read run ${runId} to run it again`;
+  logApiBody(action, response.status, await response.text());
+  if (response.status !== 403) return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
+  const jobId = await runJobIdOf(req, runId);
+  const who = RP.forwardedPerson(req.headers);
+  const job = jobId ? `job ${jobId}` : 'the job of this run';
+  const message = `Inspire could not read run ${runId} to run it again: you need CAN VIEW (or CAN MANAGE RUN) on ${job} in Databricks. `
+    + "Ask an App manager or the job's owner to grant it, then try again.";
+  const steps = jobId
+    ? [`In Databricks, open job ${jobId} > Permissions, and add ${who} with Can view`,
+      `databricks api patch /api/2.0/permissions/jobs/${jobId} --json '{"access_control_list":[{"user_name":"${who}","permission_level":"CAN_VIEW"}]}'`]
+    : [`In Databricks, find the job of run ${runId} and give ${who} Can view on it`];
+  const permission = permissionRequired({ instructions: steps, principal: who,
+    why: `Inspire reads run ${runId} with your own sign-in, and your sign-in cannot view its job.` });
+  return PM_ERROR.sendFailure(res, 403, message, { permissions: [permission] });
+}
+
+// The person reads the old run with their own sign-in, so a run the person may see never fails because the App cannot view its job.
+// The launch below keeps the identity launchDiscover always uses (the App's own token).
 app.post('/api/run/:runId/again', requireToken, async (req, res) => {
   const sessionId = String((req.body || {}).session_id || '').trim();
   if (!isInt64Id(sessionId)) return res.status(400).json({ error: 'session_id must be a numeric Inspire session id' });
+  const person = personTokenOf(req);
+  if (!person) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
   try {
-    const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
-    if (!response.ok) {
-      const said = await response.text();
-      return res.status(response.status).json({ error: `Inspire could not read run ${req.params.runId} to run it again: ${said.slice(0, 600)}` });
-    }
+    const response = await dbFetch(req.dbHost, person, `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
+    if (!response.ok) return await refuseRunAgain(req, res, response);
     const again = LC.runAgainOf(parseExactJson(await response.text()), req.params.runId, sessionId);
     if (again.problem) return res.status(409).json({ error: `${again.problem}.` });
     // The re-run repeats the run's own inputs, so it carries the choice that run recorded: no 409 from Monitor.
@@ -2460,8 +2498,9 @@ app.get('/api/run/:runId', requireToken, async (req, res) => {
   try {
     const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = `read run ${req.params.runId}`;
+      logApiBody(action, response.status, await response.text());
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
     }
     const data = parseExactJson(await response.text());
     const state = data.state || {};
@@ -2499,8 +2538,9 @@ app.get('/api/run/:runId/output', requireToken, async (req, res) => {
   try {
     const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get-output?run_id=${req.params.runId}`);
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = `read the output of run ${req.params.runId}`;
+      logApiBody(action, response.status, await response.text());
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
     }
     const data = await response.json();
     res.json({
@@ -2527,8 +2567,9 @@ app.post('/api/run/:runId/cancel', requireToken, async (req, res) => {
       body: jsonWithInt64Ids({ run_id: req.params.runId }, ['run_id']),
     });
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = `cancel run ${req.params.runId}`;
+      logApiBody(action, response.status, await response.text());
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
     }
     res.json({ success: true });
   } catch (err) {
@@ -3391,8 +3432,9 @@ app.get('/api/workspace/status', rejectUnsafeQueryPath, requireToken, async (req
     const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.0/workspace/get-status?path=${encodeURIComponent(notebookPath)}`);
     if (!response.ok) {
       if (response.status === 404) return res.json({ exists: false });
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = 'check the notebook';
+      logApiBody(action, response.status, await response.text());
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
     }
     const data = await response.json();
     res.json({ exists: true, object_type: data.object_type, path: data.path, language: data.language });

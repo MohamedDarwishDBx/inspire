@@ -48,6 +48,18 @@ function runLauncherStatement(table, runId) {
   };
 }
 
+function runJobStatement(table, runId) {
+  if (!RUN_ID_RE.test(String(runId || ''))) return null;
+  return {
+    sql: `SELECT job_id FROM ${table} WHERE run_id = :run_id ORDER BY launched_at LIMIT 1`,
+    parameters: [{ name: 'run_id', value: String(runId), type: 'BIGINT' }],
+  };
+}
+
+function jobIdOf(rows) {
+  return int64Id(rows && rows[0] ? rows[0].job_id : null);
+}
+
 function sessionLauncherStatement(table, inspireDatabase, sessionId) {
   if (!isInt64Id(sessionId) || !splitInspireDatabase(inspireDatabase)) return null;
   return {
@@ -142,6 +154,8 @@ module.exports = {
   launchCreateSql,
   launchInsertStatement,
   runLauncherStatement,
+  runJobStatement,
+  jobIdOf,
   sessionLauncherStatement,
   sessionKnownStatements,
   checkedOutputStatement,
