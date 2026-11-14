@@ -1289,10 +1289,10 @@ def list_column_filters(page: dict, types=None, actions: bool = False) -> list:
     grouped, seen = [], {f["column"].lower() for f in found}
     for g in entries:
         key = g["column"].lower()
-        if key in seen:
+        if key in seen or key not in listed:
             continue
         seen.add(key)
-        label, column = listed.get(key, (g.get("label") or _column_label(g["column"]), g["column"]))
+        label, column = listed[key]
         grouped.append({"column": column, "type": "multi_select", "label": label, "grouping": True})
     taken = {f["column"] for f in found + grouped}
     offered = actions and records.get(COLUMN_FILTERS) is not False
