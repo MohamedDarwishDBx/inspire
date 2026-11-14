@@ -1,8 +1,8 @@
 """REQ-193 (live, rc7 N06-U02 segmentation built with the wizard defaults): the Grouping the plan recommended became the group_by default
-(REQ-183), so the build fitted one model per group, and the kind's family registers one model per use case. The preview failed with
-"requires one fitted model per inspire_group". A kind whose family registers one model now defaults to the whole data as one group,
-and a per-group Grouping for it is refused when the build starts, with the reason. Offline, on the real notebook functions and the
-kinds.json registry."""
+(REQ-183), so a segmentation build fitted one model per group, and family C registers one model per use case. The preview failed with
+"requires one fitted model per inspire_group". Only segmentation (family C) is proven to fail per group, so only C defaults to the whole
+data and refuses a per-group Grouping when the build starts; the run also refuses a column Grouping at run time. Anomaly (B) runs per
+group live, so its planned Grouping keeps applying (must-exclude). Offline, on the real notebook functions and the kinds.json registry."""
 import json
 import os
 
@@ -12,7 +12,9 @@ from v120_genie_support import build_inspire, make_uc
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KINDS = os.path.join(HERE, "..", "..", "agent", "app_shell", "kinds.json")
-ONE_MODEL_TECHNIQUES = {"Predictive Modeling", "Anomaly Detection", "Clustering", "Segmentation"}
+ONE_MODEL_TECHNIQUES = {"Clustering", "Segmentation"}
+PER_GROUP_TECHNIQUES = ["Anomaly Detection", "Predictive Modeling", "Forecasting", "Peer Benchmarking", "Trend Analysis",
+                        "Threshold Optimization", "Statistical Process Control"]
 CANDIDATES = ["customer_segment", "region"]
 
 
@@ -21,7 +23,7 @@ def _kinds():
         return json.load(handle)
 
 
-def test_the_segmentation_wizard_defaults_to_the_whole_data_even_when_a_grouping_was_recommended(agent_ns):
+def test_the_n06_u02_segmentation_defaults_to_the_whole_data_even_when_a_grouping_was_recommended(agent_ns):
     plan = agent_ns["implement_grouping_plan"]("Segmentation", CANDIDATES, "", "", ["region"], "statistics")
     assert (plan["applies"], plan["default"], plan["columns"], plan["one_model"]) == (True, "all", CANDIDATES, True)
     assert plan["chosen_by"] == "default"
@@ -31,14 +33,13 @@ def test_the_n06_u02_defaults_produce_a_spec_whose_group_by_widget_reads_all(age
     inst = build_inspire(agent_ns)
     plan = agent_ns["implement_grouping_plan"]("Segmentation", CANDIDATES, "", "", ["region"], "statistics")
     uc = make_uc("N06-U02", **{"Analytics Technique": "Segmentation", "_implement_grouping": dict(plan)})
-    spec = inst._genie_notebook_spec(uc)
-    widgets = {w["name"]: w.get("default") for w in inst._genie_core_widgets(spec)}
+    widgets = {w["name"]: w.get("default") for w in inst._genie_core_widgets(inst._genie_notebook_spec(uc))}
     assert widgets.get("group_by") == "all", widgets
     assert "problem" not in plan
 
 
-@pytest.mark.parametrize("technique", ["Forecasting", "Peer Benchmarking", "Trend Analysis", "Threshold Optimization", "Statistical Process Control"])
-def test_a_kind_that_fits_a_model_per_group_keeps_its_planned_grouping(agent_ns, technique):
+@pytest.mark.parametrize("technique", PER_GROUP_TECHNIQUES)
+def test_must_exclude_a_kind_that_runs_per_group_keeps_its_planned_grouping_anomaly_included(agent_ns, technique):
     plan = agent_ns["implement_grouping_plan"](technique, CANDIDATES, "", "", ["region"], "statistics")
     assert (plan["applies"], plan["default"], bool(plan.get("one_model"))) == (True, "region", False), technique
     assert plan["chosen_by"] == "statistics"
@@ -53,31 +54,44 @@ def test_a_per_group_grouping_is_refused_up_front_with_the_reason_for_a_one_mode
 
 
 def test_choosing_all_for_a_one_model_kind_builds_and_a_person_choice_of_all_is_kept(agent_ns):
-    plan = agent_ns["implement_grouping_plan"]("Anomaly Detection", CANDIDATES, "all", "", ["region"], "person")
+    plan = agent_ns["implement_grouping_plan"]("Segmentation", CANDIDATES, "all", "", ["region"], "person")
     assert (plan["applies"], plan["default"], plan["columns"], plan.get("problem")) == (True, "all", CANDIDATES, None)
 
 
-def test_the_one_model_kinds_are_exactly_the_model_families_whose_technique_works_in_groups(agent_ns):
-    table = agent_ns["INSPIRE_TECHNIQUE_RECORDS"] or agent_ns["INSPIRE_TECHNIQUE_RECORDS_LOADER"]()
-    model_families = set(agent_ns["INSPIRE_MODEL_FAMILIES"])
-    got = {t for t in agent_ns["TECHNIQUE_EXECUTION_FAMILY"] if agent_ns["inspire_grouping_fits_one_model"](t)}
-    grouped_model = {t for t, family in agent_ns["TECHNIQUE_EXECUTION_FAMILY"].items()
-                     if table.get(t) == "groups" and family in model_families}
-    assert got == grouped_model == ONE_MODEL_TECHNIQUES
+def test_a_per_group_anomaly_grouping_builds_as_planned_by_the_person(agent_ns):
+    plan = agent_ns["implement_grouping_plan"]("Anomaly Detection", CANDIDATES, "customer_segment", "", [], "person")
+    assert (plan["applies"], plan["default"], plan.get("problem")) == (True, "customer_segment", None)
 
 
-def test_the_sweep_every_kind_with_a_one_model_technique_is_the_defaulted_one(agent_ns):
+def test_the_run_refuses_a_column_grouping_for_a_one_model_kind_before_it_fits_anything(agent_ns, monkeypatch):
+    monkeypatch.setitem(agent_ns, "INSPIRE_RUN", {"grouping": {"one_model": True}})
+    with pytest.raises(agent_ns["InspireRunStop"]) as refused:
+        agent_ns["inspire_group_records"](None, group_by="region")
+    assert "fits one model across all of the data" in str(refused.value)
+
+
+def test_the_run_still_reads_all_for_a_one_model_kind(agent_ns, monkeypatch):
+    monkeypatch.setitem(agent_ns, "INSPIRE_RUN", {"grouping": {"one_model": True}})
+    with pytest.raises(TypeError):  # past the guard: frame None is the only stop
+        agent_ns["inspire_group_records"](None, group_by="all")
+
+
+def test_the_build_instruction_for_a_one_model_kind_fits_one_model_and_never_one_per_group(agent_ns):
+    rule = agent_ns["genie_grouping_rule"]({"one_model": True, "columns": ["customer_segment"]})
+    assert "Fit ONE model on every record" in rule and "never fit one model per group" in rule
+    assert "one baseline or model per group" not in rule
+    assert "one baseline or model per group" in agent_ns["genie_grouping_rule"]({"columns": ["region"]})
+
+
+def test_the_sweep_only_segmentation_family_c_techniques_default_to_the_whole_data(agent_ns):
     kinds = _kinds()["kinds"]
     swept = {k["id"]: sorted(t for t in k["techniques"] if agent_ns["inspire_grouping_fits_one_model"](t)) for k in kinds}
     assert {k: v for k, v in swept.items() if v} == {
-        "risk_propensity": ["Predictive Modeling"],
-        "anomaly": ["Anomaly Detection"],
         "segmentation": ["Clustering", "Segmentation"],
-        "leakage_reconciliation": ["Anomaly Detection"],
         "cost_to_serve": ["Segmentation"],
         "peer_benchmarking": ["Clustering"],
     }
 
 
-def test_the_kinds_json_model_families_are_the_notebook_registry(agent_ns):
-    assert _kinds()["model_families"] == list(agent_ns["INSPIRE_MODEL_FAMILIES"])
+def test_the_kinds_json_one_model_families_are_the_notebook_registry(agent_ns):
+    assert _kinds()["one_model_families"] == list(agent_ns["INSPIRE_ONE_MODEL_FAMILIES"]) == ["C"]

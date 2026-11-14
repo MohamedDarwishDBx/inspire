@@ -1,9 +1,11 @@
-// REQ-193: a kind whose family registers one model (kinds.json model_families) fits one model across all the data, so the wizard profile
-// recommends no Grouping for it and says why in plain words. A kind that fits a model per group keeps its recommendation (must-exclude).
+// REQ-193: family C (segmentation, clustering) fits one registered model per use case, so its per-group fit is refused. The wizard profile
+// recommends no column for it, the Run page offers only the whole data, and the reason says why. Anomaly (B) and the rest keep their
+// planned Grouping (must-exclude).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const R = require('../lib/groupingRule');
 const GP = require('../lib/groupingProfile');
+const { groupingChoices } = require('../../frontend/src/lib/runScope.js');
 
 const base = (technique) => ({
   table: 'main.sales.orders', technique, candidates: ['region', 'payment'], paths: null, time: null, days: 30,
@@ -15,27 +17,30 @@ const base = (technique) => ({
   stats: { records: '4600', d0: '4', n0: '0', d1: '3', n1: '0' },
 });
 
-test('the kinds that register one model are read from kinds.json, and only a technique that works in groups fits one (must-exclude: the rest)', () => {
-  for (const technique of ['Segmentation', 'Clustering', 'Anomaly Detection', 'Predictive Modeling']) assert.equal(R.fitsOneModel(technique), true, technique);
-  for (const technique of ['Forecasting', 'Peer Benchmarking', 'Trend Analysis', 'Optimization', 'Sentiment Analysis', 'Recommendation', '']) {
+test('only family C techniques fit one model, read from kinds.json (must-exclude: every per-group family)', () => {
+  for (const technique of ['Segmentation', 'Clustering']) assert.equal(R.fitsOneModel(technique), true, technique);
+  for (const technique of ['Anomaly Detection', 'Predictive Modeling', 'Forecasting', 'Peer Benchmarking', 'Trend Analysis', 'Optimization', '']) {
     assert.equal(R.fitsOneModel(technique), false, technique);
   }
 });
 
-test('a one-model kind is profiled with no recommended Grouping and a plain reason that the whole data is one group', () => {
+test('a segmentation profile recommends no column, lists only the whole data, and says why in plain words', () => {
   const d = GP.profileView(base('Segmentation'));
-  assert.deepEqual([d.applies, d.qualifies, d.recommended, d.recommended_by], [true, false, [], '']);
+  assert.deepEqual([d.one_model, d.applies, d.qualifies, d.recommended, d.recommended_by, d.columns], [true, true, false, [], '', []]);
   assert.equal(d.reason, 'Inspire fits one model across all of main.sales.orders for Segmentation, so the whole data is one group. Splitting it into groups '
     + 'would need one registered model per group, and Inspire registers one model per use case, so choosing columns is refused when the use case is built.');
+  const choices = groupingChoices(d, ['region', 'all']).map((c) => c.value);
+  assert.deepEqual(choices, ['all'], 'the Run page offers no column for a one-model kind, whatever the widget lists');
 });
 
-test('a one-model kind named with a column in its use case still gets no recommendation (must-exclude: the name does not split it)', () => {
+test('an anomaly use case keeps its planned Grouping: the statistics recommendation and its per-group reason (must-exclude)', () => {
+  const d = GP.profileView(base('Anomaly Detection'));
+  assert.deepEqual([d.one_model, d.qualifies, d.recommended, d.recommended_by], [false, true, ['payment'], 'statistics']);
+  assert.match(d.reason, /^Inspire recommends payment because Anomaly Detection works out what is normal inside each group/);
+  assert.ok(groupingChoices(d, ['all']).some((c) => c.value === 'payment'), 'the planned column stays on the Run page');
+});
+
+test('a person-named or Discovery column still applies to an anomaly use case (must-exclude)', () => {
   const d = GP.profileView({ ...base('Anomaly Detection'), subject: 'Flag odd payments by region', deep: ['payment'] });
-  assert.deepEqual([d.recommended, d.qualifies], [[], false]);
-});
-
-test('a kind that fits a model per group keeps its statistics recommendation and its reason (must-exclude)', () => {
-  const d = GP.profileView(base('Peer Benchmarking'));
-  assert.deepEqual([d.qualifies, d.recommended_by], [true, 'statistics']);
-  assert.match(d.reason, /^Inspire recommends /);
+  assert.deepEqual([d.recommended, d.recommended_by], [['payment'], 'discovery']);
 });
