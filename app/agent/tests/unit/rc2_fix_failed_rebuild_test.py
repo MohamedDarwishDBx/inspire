@@ -153,3 +153,59 @@ def test_every_rewrite_of_a_scope_view_in_the_notebook_saves_the_live_definition
     assert unsaved == [], f"rewrites that do not save the live definition: {unsaved}"
     genie = [args for name, args in calls if name == "scope_genie_space"]
     assert genie and all("live=" in args for args in genie)
+
+
+def test_a_failed_genie_round_puts_the_live_view_back_before_the_next_round_starts(agent_ns, tmp_path):
+    """After a round whose deploy fails, the next round starts from the live definition, granted again (window = one round)."""
+    import types
+    spark = FakeSpark({VIEW: LIVE_V6})
+    obj = _obj(agent_ns, spark)
+    obj._implement_work_dir = lambda uc_id, label: str(tmp_path / label)
+    obj._implement_update = lambda *a, **k: None
+    obj._implement_emit = lambda *a, **k: "step"
+    obj._implement_cut_off = lambda *a, **k: ""
+    obj._implement_denied = lambda *a, **k: ""
+    runner = types.SimpleNamespace(run=lambda prompt, work, schema, label=None: {"exit": 0, "timed_out": False})
+    context = _context(key=("uc", "x", 1), bases={}, use_case={})
+    context["live_views"] = {}
+    round_entry = []
+
+    def deploy(work):
+        round_entry.append((list(spark.statements), spark.live[VIEW]))
+        agent_ns["create_scope_views"](spark, _scopes(), live=context.setdefault("live_views", {}))
+        if len(round_entry) == 1:
+            raise RuntimeError("the chart check failed at its default filters")
+        return {"app_url": "https://example.invalid/app"}
+
+    fields = obj._implement_genie_loop(context, runner, "App", "prompt", deploy)
+
+    assert fields == {"app_url": "https://example.invalid/app"}
+    assert len(round_entry) == 2
+    statements_at_round_two, live_at_round_two = round_entry[1]
+    assert live_at_round_two == LIVE_V6_REPLACE, "the second round starts from the live definition, not the candidate"
+    restore = _index(statements_at_round_two, lambda s: s == LIVE_V6_REPLACE)
+    grants = _index(statements_at_round_two, lambda s: s.startswith("GRANT SELECT ON TABLE") and f"TO `{AMR}`" in s)
+    assert restore and grants and grants[-1] > restore[-1], "the restore and the re-grant happen before round two"
+
+
+def test_a_successful_genie_round_restores_nothing(agent_ns, tmp_path):
+    import types
+    spark = FakeSpark({VIEW: LIVE_V6})
+    obj = _obj(agent_ns, spark)
+    obj._implement_work_dir = lambda uc_id, label: str(tmp_path / label)
+    obj._implement_update = lambda *a, **k: None
+    obj._implement_emit = lambda *a, **k: "step"
+    obj._implement_cut_off = lambda *a, **k: ""
+    runner = types.SimpleNamespace(run=lambda prompt, work, schema, label=None: {"exit": 0, "timed_out": False})
+    context = _context(key=("uc", "x", 1), bases={}, use_case={})
+    context["live_views"] = {}
+
+    def deploy(work):
+        agent_ns["create_scope_views"](spark, _scopes(), live=context.setdefault("live_views", {}))
+        context["app_written"] = True
+        return {"app_url": "https://example.invalid/app"}
+
+    obj._implement_genie_loop(context, runner, "App", "prompt", deploy)
+
+    assert spark.live[VIEW] == CANDIDATE_V7_SQL, "a successful round keeps its new views (must-exclude)"
+    assert not any(s == LIVE_V6_REPLACE for s in spark.statements)
