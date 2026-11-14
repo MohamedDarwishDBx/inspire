@@ -279,11 +279,23 @@ def test_a_preview_whose_ai_output_fails_goes_back_to_genie_once_and_a_clean_ret
 
 
 def test_ai_output_that_still_fails_goes_back_while_a_round_is_left_and_the_last_round_ships_it_as_unfixed(agent_ns):
+    # Round 2 is refused with the same AI problems as round 1, so the repeat-refusal stop (8756f307f) ends the rounds there:
+    # round 2 becomes the last round and ships the AI output as unfixed without a wasted round 3.
     outcome, runner, _inst = _fill_preview(agent_ns, [_preview("r-1"), _preview("r-2"), _preview("r-3")],
                                            {"r-1": BAD, "r-2": BAD, "r-3": BAD})
-    assert len(runner.prompts) == 3, "every round Genie has left gets the AI output to fix"
-    assert outcome["run_id"] == "r-3" and outcome["ai_problems"][0].startswith("3 of the 12 records flagged 'Act now' or 'Review' with facts")
-    assert outcome["ai_fixable"] is True and outcome["gate_rounds"] == 3
+    assert len(runner.prompts) == 2, "round 1 goes back to Genie; the identical refusal of round 2 stops the rounds"
+    assert outcome["run_id"] == "r-2" and outcome["ai_problems"][0].startswith("3 of the 12 records flagged 'Act now' or 'Review' with facts")
+    assert outcome["ai_fixable"] is True and outcome["gate_rounds"] == 2
+def test_ai_output_refused_with_different_problems_in_each_round_still_runs_every_round(agent_ns):
+    # The repeat-refusal stop fires only on an identical refusal; a different refusal in round 2 keeps round 3 running.
+    other = {"summary": "ok", "ai_checks": json.dumps(dict(CHECKED, flagged=2, kinds={"hedged explanation": 2}))}
+    outcome, runner, _inst = _fill_preview(agent_ns, [_preview("r-1"), _preview("r-2"), _preview("r-3")],
+                                           {"r-1": BAD, "r-2": other, "r-3": BAD})
+    assert len(runner.prompts) == 3 and outcome["run_id"] == "r-3"
+    assert outcome["ai_problems"][0].startswith("3 of the 12 records flagged") and outcome["ai_fixable"] is True
+    assert outcome["gate_rounds"] == 3
+
+
     plain, runner, _inst = _fill_preview(agent_ns, [_preview("r-1")], {"r-1": BAD}, refill=False, rounds=0)
     assert runner.prompts == [] and plain["ai_problems"] and plain["gate_rounds"] == 0, \
         "a preview with no Genie build ships its AI problems as warnings that ask for a new build"
