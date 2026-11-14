@@ -151,7 +151,7 @@ test('estimatesFor with an own rule that has no value borrows the usable sibling
   assert.equal(out.use_cases['N01-U01'].app, 'Sales App');
 });
 
-// REQ-078 rc7 walk (session 1794679240380353391): Discover measured 6 of 24 use cases from their KPI query, and the value ledger
+// REQ-078 rc7 walk: Discover measured 6 of 24 use cases from their KPI query, and the value ledger
 // holds none of them, so the route answered "set rule" for every card and a rule estimate would have replaced the measured figure.
 const measuredJson = JSON.stringify({ status: 'measured', currency: 'USD', text: 'USD 77.1K-231.4K a year' });
 const notMeasuredJson = JSON.stringify({ status: 'not measured yet', text: 'Value not measured yet: measure losses caught early.' });
