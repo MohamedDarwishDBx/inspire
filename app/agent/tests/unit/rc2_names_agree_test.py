@@ -37,3 +37,66 @@ def test_a_use_case_without_a_typed_name_keeps_its_generated_name(agent_ns):
     assert uc["Name"] == GENERATED and "original_name" not in uc
     row = obj._tracking_row_source(uc)
     assert row["Name"] == row["name_with_technique"] == GENERATED
+
+
+# REQ-182 class (rc7 live walk, filtered Discover 317339574539724): N04-U03 "Align Staffing with Peak Hours" reached the tracking
+# row as name_with_technique "Align Staffing with Peak Hours" while its use_case column read "Align Staffing". The use_case column
+# came from _normalize_usecase, which cut every name at " with ". Both columns must be the same name, and no pass may shorten it
+# to a vaguer head.
+PEAK = "Align Staffing with Peak Hours"
+
+
+def test_the_tracking_row_carries_the_full_name_in_use_case_and_name_with_technique(agent_ns):
+    obj = make(agent_ns)
+    uc = {"No": "N04-U03", "Name": PEAK, "Analytics Technique": "Queueing"}
+    src = obj._tracking_row_source(uc)
+    row = agent_ns["DatabricksInspire"]._uc_to_row(src, 1, obj._normalize_usecase)
+    assert row[4] == row[5] == src["name_with_technique"] == PEAK, (row[4], row[5], src["name_with_technique"])
+
+
+def test_the_title_normaliser_never_cuts_a_name_at_with(agent_ns):
+    obj = make(agent_ns)
+    assert obj._normalize_usecase(PEAK, PEAK) == PEAK, "a name is the title: it is never cut at with"
+    assert obj._normalize_usecase("", PEAK) == PEAK
+    assert obj._normalize_usecase("forecast daily bakery demand with prophet", "Forecast daily demand per store") == \
+        "Forecast Daily Bakery Demand", "a separate headline still loses its with-technique tail"
+
+
+def test_a_name_with_an_acronym_keeps_its_spelling_in_every_field(agent_ns):
+    obj = make(agent_ns)
+    uc = {"No": "N05-U01", "Name": "Forecast KPI Demand For Each Store"}
+    agent_ns["set_use_case_name"](uc, uc["Name"])
+    src = obj._tracking_row_source(uc)
+    row = agent_ns["DatabricksInspire"]._uc_to_row(src, 1, obj._normalize_usecase)
+    assert uc["usecase"] == uc["Name"] == row[4] == row[5] == src["name_with_technique"] == "Forecast KPI Demand For Each Store"
+
+
+def test_a_backtick_in_the_name_is_removed_from_every_field_at_write(agent_ns):
+    obj = make(agent_ns)
+    uc = {"No": "N06-U01", "Name": "Predict `Churn` Rate"}
+    agent_ns["set_use_case_name"](uc, uc["Name"])
+    assert uc["Name"] == uc["usecase"] == "Predict Churn Rate"
+    assert obj._tracking_row_source(uc)["name_with_technique"] == uc["Name"]
+
+
+def test_the_length_fallback_cuts_at_the_qualifier_so_the_head_stays_specific(agent_ns):
+    uc = {"No": "N07-U01", "Name": "Predict Customer Churn in Each Region Every Single Month", "Primary Table": "main.s.orders"}
+    agent_ns["ensure_name_lengths"]([uc], reask=None)
+    assert uc["Name"] == uc["usecase"] == "Predict Customer Churn"
+
+
+def test_a_name_the_person_typed_is_never_cut_at_a_qualifier(agent_ns):
+    typed = "Predict Customer Churn in Each Region Every Single Month"
+    uc = {"No": "N07-U02", "Name": "Predict Customer Churn", "user_use_case_name": typed}
+    agent_ns["inspire_apply_user_use_case_name"](uc)
+    agent_ns["ensure_name_lengths"]([uc], reask=None)
+    assert uc["Name"] == typed
+
+
+def test_a_replayed_row_with_a_cut_use_case_column_gets_the_one_name_back(agent_ns):
+    """A row written before REQ-182 can hold use_case "Align Staffing" beside description "Align Staffing with Peak Hours".
+    Replaying it must give the use case one name, the description, on every field."""
+    obj = make(agent_ns)
+    row = {"id": "N04-U03", "use_case": "Align Staffing", "description": PEAK, "analytics_technique": "Queueing", "session_id": 1}
+    uc = obj._row_to_uc(row)
+    assert uc["Name"] == uc["usecase"] == PEAK
