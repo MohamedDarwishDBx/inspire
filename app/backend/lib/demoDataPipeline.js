@@ -3,6 +3,7 @@ const path = require('path');
 const { APP_DIR, BACKEND_DIR } = require('./appPaths');
 const { buildDemoSchemaName } = require('./demoDataService');
 const { grantJobViewer, rememberViewer } = require('./jobViewer');
+const { apiRefusalText, logApiBody } = require('./apiRefusal');
 const {
   buildDemoInspireDiscoveryParams,
   inspireJobEnvironments,
@@ -346,8 +347,8 @@ async function triggerDemoDataPipeline(
       body: JSON.stringify(createPayload),
     });
     if (!createResp.ok) {
-      const errText = await createResp.text();
-      throw new Error(`Demo pipeline job create failed: ${errText}`);
+      logApiBody('Demo job create', createResp.status, await createResp.text());
+      throw new Error(apiRefusalText('create the demo job', createResp.status));
     }
     ({ job_id: jobId } = await createResp.json());
     viewer = await grantJobViewer(dbFetch, host, token, jobId, launchedBy);
@@ -368,8 +369,8 @@ async function triggerDemoDataPipeline(
     ),
   });
   if (!runResp.ok) {
-    const errText = await runResp.text();
-    throw new Error(`Demo pipeline run-now failed: ${errText}`);
+    logApiBody('Demo run', runResp.status, await runResp.text());
+    throw new Error(apiRefusalText('start the demo run', runResp.status));
   }
   const { run_id: runId } = await runResp.json();
   rememberViewer(runId, viewer);
