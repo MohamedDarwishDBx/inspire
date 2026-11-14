@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, idle, openUi, until } from './uiSupport.mjs';
+import { closeBrowser, idle, openUi, until, waitForLaunchReady } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -17,9 +17,7 @@ const launchOf = async (page, made) => {
   await idle(page);
   const block = await page.locator('#launch-block').count() ? await page.locator('#launch-block').innerText() : '';
   const btn = page.getByRole('button', { name: 'Get Started' });
-  // Get Started waits for the output-folder check: each change to the folder starts a 500 ms debounce, then one answer. idle() does
-  // not wait for that timer, so wait here for the check to settle; the assertion below still fails if Get Started stays off.
-  await until(async () => !(await btn.isDisabled()), 'the output-folder check settled and Get Started is on', 10000);
+  await waitForLaunchReady(page);
   assert.equal(await btn.isDisabled(), false, `Get Started is disabled (block: '${block}', described by: ${await btn.getAttribute('aria-describedby')})`);
   const before = made.launches.length;
   await btn.click();

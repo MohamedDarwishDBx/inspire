@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, idle, openUi, until } from './uiSupport.mjs';
+import { closeBrowser, idle, openUi, until, waitForLaunchReady } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -248,6 +248,7 @@ test('an unticked column cannot get a row filter, and unticking a column drops i
     await until(async () => (await gridOf(page).locator('[data-scope-condition]').count()) === 0, 'unticking the column drops its filter');
     assert.match(await gridOf(page).locator('[data-scope-note="dropped"]').innerText(),
       /Removed 1 row filter on brand_name: a column Inspire does not read cannot be filtered\./, 'the one-line note says what was dropped and why');
+    await waitForLaunchReady(page);
     assert.equal(await page.getByRole('button', { name: 'Get Started' }).isDisabled(), false, 'no filter is left on an unticked column, so the launch is open');
     assert.equal(await gridOf(page).locator('[role="alert"]').count(), 0, 'no problem is raised for it');
     const params = await launchOf(page, made);

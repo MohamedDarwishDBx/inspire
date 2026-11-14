@@ -472,6 +472,14 @@ export async function until(check, what, timeout = 10000) {
   throw new Error(`timed out waiting for ${what}`);
 }
 
+/** Launch holds Get Started while a debounced check answers (the output folder: a 500 ms debounce on each change, then one answer).
+ *  Its label does not change while it is held, so idle() and a visible-button wait do not cover it. Waits until it is on; the caller's
+ *  assertion still fails with its own message if it stays off. */
+export async function waitForLaunchReady(page, timeout = 10000) {
+  const launch = page.getByRole('button', { name: 'Get Started' });
+  await until(async () => !(await launch.isDisabled()), 'the output-folder check settled and Get Started is on', timeout);
+}
+
 export function watchAsks(page, pick = () => true) {
   const sent = [];
   const open = new Set();
