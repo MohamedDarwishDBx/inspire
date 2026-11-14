@@ -195,3 +195,38 @@ test('a partial grant shows the grants that ran, the ones that failed, and keeps
     await ui.close();
   }
 });
+
+test('an App tile whose new-Apps offer comes back with no grant keeps the named reason, with no grant list and no action', async () => {
+  // The person holds USE CATALOG but neither own nor MANAGE on the catalog, so the offer is empty for good.
+  const appRows = [row('catalog', 'OWNER', 'admins', false), row('catalog', 'USE_CATALOG', 'inspire-manual', true), row('schema', 'OWNER', 'inspire-manual', true)];
+  const personRows = [row('catalog', 'USE_CATALOG', OWNER, true)];
+  const ui = await openUi('wizard', {
+    me: { userName: OWNER, displayName: 'Owner' },
+    warehousePermissions: { access_control_list: [{ user_name: OWNER, all_permissions: [{ permission_level: 'CAN_MANAGE' }] }] },
+    tokenKind: 'app',
+    forwardedToken: PERSON,
+    workspace: ({ token, path }) => (path.includes('/scim/v2/Me')
+      ? [token === APP_TOKEN ? { displayName: 'inspire-manual', applicationId: 'app-sp-id' } : { userName: OWNER, displayName: 'Owner' }]
+      : undefined),
+    statements: {
+      'system.information_schema.catalogs': (_sql, _p, token) => ({ rows: token === APP_TOKEN ? appRows : personRows }),
+      schema_privileges: () => ({ rows: [{ level: 'schema', schema_name: 'information_schema', object_name: 'information_schema', privilege: 'USE SCHEMA' }] }),
+    },
+  });
+  const { page } = ui;
+  try {
+    await goToStep(page, 'Data');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await goToStep(page, 'What to deliver');
+    const tile = page.locator('[data-output="app"]');
+    const block = tile.locator('[data-blocked-reason="app"]');
+    await block.waitFor({ timeout: 15000 });
+    assert.match(await block.innerText(), /^Needs access Inspire does not have on the catalog\./);
+    await page.waitForTimeout(500);
+    assert.equal(await tile.getByRole('list', { name: 'Grant Inspire can run for new Apps' }).count(), 0, 'no offer, so no grant list');
+    assert.equal(await tile.getByRole('button', { name: NEW_APPS_ACCESS_ACTION, exact: true }).count(), 0, 'no offer, so no action');
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});
