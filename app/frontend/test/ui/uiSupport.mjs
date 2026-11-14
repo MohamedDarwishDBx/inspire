@@ -34,6 +34,12 @@ let servers = null;
 let lastUi = 0;
 const backends = new Map();
 export const UI_HEADER = 'x-inspire-ui-test';
+// Chromium's code for a request aborted by a network change. macOS sends it for in-flight loads, even on 127.0.0.1.
+export const NETWORK_CHANGED = 'net::ERR_NETWORK_CHANGED';
+function networkChangedAborts(record, url) {
+  record.networkChanged = (record.networkChanged || 0) + 1;
+  console.warn(`[uiSupport] ${NETWORK_CHANGED} on ${String(url).slice(0, 160)}: the boot guard reloads the page once; not counted as a page error`);
+}
 
 function backendFor(id) {
   if (id !== undefined) return backends.get(String(id)) || null;
@@ -195,7 +201,7 @@ export async function openUi(open, overrides = {}, query = '', { mount, init } =
     opened.push(async () => { backends.delete(id); });
     const { origin } = await sharedServers();
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: { [UI_HEADER]: id } });
-    record = { id, page, origin, opened: Date.now(), pageErrors: [], responses: [], firstPaintMs: undefined };
+    record = { id, page, origin, opened: Date.now(), pageErrors: [], responses: [], firstPaintMs: undefined, networkChanged: 0 };
     // Optional CPU throttle for reproducing load-dependent timing (INSPIRE_UI_CPU_RATE=6). Unset in CI, so the default run is unchanged.
     if (process.env.INSPIRE_UI_CPU_RATE) {
       const cdp = await page.context().newCDPSession(page);
@@ -231,7 +237,13 @@ export async function openUi(open, overrides = {}, query = '', { mount, init } =
     });
     const pageErrors = record.pageErrors;
     page.on('pageerror', (e) => pageErrors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') pageErrors.push(m.text()); });
+    // A request the OS network change aborted (macOS Chromium, even for 127.0.0.1). The app's boot guard reloads the page once, so the
+    // reload recovers it and the abort is not a page error. Each one is logged here, never dropped without a trace.
+    page.on('console', (m) => {
+      if (m.type() !== 'error') return;
+      if (m.text().includes(NETWORK_CHANGED)) { networkChangedAborts(record, m.location().url); return; }
+      pageErrors.push(m.text());
+    });
     page.on('response', (r) => remember(record.responses, { t: new Date().toISOString(), status: r.status(), method: r.request().method(), url: r.url().slice(0, 300) }));
     page.on('requestfailed', (r) => remember(record.responses, { t: new Date().toISOString(), status: 'failed', method: r.method(), url: r.url().slice(0, 300), failure: r.failure()?.errorText }));
     // The default money rule previews three example rows on open; answer every page with a preview so no test sees a failed request. A test's own init stub overrides it.
