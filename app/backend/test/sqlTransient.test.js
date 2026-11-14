@@ -92,3 +92,24 @@ test('a read that fails with a documented error_code through the one SQL runner 
   assert.equal(refused.error_code, 'PERMISSION_DENIED');
   assert.equal(isTransientSqlFailure(refused), false, 'a denial is not retried, whatever the text');
 });
+
+// REQ-180 (quota): the errors page says a RESOURCE_EXHAUSTED answer is not retried automatically, because quota can take hours to clear.
+// It stays a busy state the person can check again (Try again), never a verdict on the table. A bare HTTP 429 keeps the one bounded retry.
+test('a RESOURCE_EXHAUSTED read is busy and is not retried automatically (fail-pre: it was retried)', async () => {
+  let calls = 0;
+  const quota = await lookupWithRetry(async () => {
+    calls += 1;
+    throw Object.assign(new Error('Rate limit exceeded'), { error_code: 'RESOURCE_EXHAUSTED', http_status: 429 });
+  }, { sleep: async () => {} });
+  assert.deepEqual([quota.transient, calls, quota.error.error_code], [true, 1, 'RESOURCE_EXHAUSTED'], 'busy, asked once, Try again offered');
+});
+
+test('a bare HTTP 429 still gets the one bounded automatic retry (pass-post guard)', async () => {
+  let calls = 0;
+  const bare = await lookupWithRetry(async () => {
+    calls += 1;
+    if (calls === 1) throw Object.assign(new Error('SQL failed (429): too many requests'), { http_status: 429 });
+    return ['ok'];
+  }, { sleep: async () => {} });
+  assert.deepEqual([bare, calls], [{ value: ['ok'] }, 2]);
+});

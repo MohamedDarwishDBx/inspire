@@ -36,3 +36,46 @@ test('a Launch table whose type check is busy is listed with Try again, not disa
     await ui.close();
   }
 });
+
+// REQ-180 (deselect race): a Try again answer that arrives after its schema was deselected is dropped. The schemas are listed again on a
+// selection change, so the late answer must not add the table back to the picker.
+test('a Try again that answers after its schema was deselected is dropped, not listed (REQ-180)', async () => {
+  const ui = await openUi('launch', { catalogs: ['adb_fe_uae_01'], schemas: { adb_fe_uae_01: ['demo_telco'] },
+    tables: { 'adb_fe_uae_01.demo_telco': ['customers'] }, forwardedEmail: PERSON, busyTables: { [CUSTOMERS]: BUSY } });
+  const { page, made, pageErrors } = ui;
+  let release = () => {};
+  const held = new Promise((done) => { release = done; });
+  let armed = false;
+  let caught = () => {};
+  const reached = new Promise((done) => { caught = done; });
+  await page.route((url) => url.pathname === '/api/tables/adb_fe_uae_01/demo_telco', async (route) => {
+    if (!armed) return route.continue();
+    armed = false;
+    caught();
+    await held;
+    return route.continue();
+  });
+  try {
+    await page.getByPlaceholder(BUSINESS).fill('Acme');
+    await page.locator('button[title="adb_fe_uae_01"]').click();
+    await page.locator('button[title="demo_telco"]').click();
+    await idle(page);
+    const busy = page.locator(`[data-type-check-busy="${CUSTOMERS}"]`);
+    await busy.waitFor({ timeout: 15000 });
+    made.state.busyTables = {};
+    armed = true;
+    await busy.getByRole('button', { name: 'Try again', exact: true }).click();
+    await reached;
+    // idle() would wait for the held request, so the deselect is followed by a short wait instead.
+    await page.locator('button[title="demo_telco"]').click();
+    await page.waitForTimeout(500);
+    release();
+    await page.waitForTimeout(1500);
+    assert.equal(await page.locator('button[title="customers"]').count(), 0, 'the late answer for a deselected schema is not listed');
+    assert.equal(await page.locator(`[data-type-check-busy="${CUSTOMERS}"]`).count(), 0);
+    assert.deepEqual(pageErrors.filter((e) => !/Failed to load resource/.test(e)), [], 'no page exception');
+  } finally {
+    release();
+    await ui.close();
+  }
+});
