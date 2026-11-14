@@ -86,8 +86,6 @@ test('with no sign-in the Setup page shows the sign-in refusal under the catalog
     const next = page.getByRole('button', { name: 'Continue' });
     for (let i = 0; i < 5; i += 1) {
       await why.or(next).first().waitFor();
-      // The refusal is drawn when the catalog answer lands, a moment after Continue shows. Wait for it before moving past the step.
-      await why.waitFor({ timeout: 4000 }).catch(() => {});
       if (await why.count()) break;
       await next.click();
       await page.waitForLoadState('networkidle');
@@ -116,6 +114,42 @@ test('a launch whose App auto-grant succeeded shows no sign-in or grant notice o
     assert.doesNotMatch(text, /with your sign-in, because Discover runs as the App|Inspire granted the App read/, 'no grant notice is shown');
     assert.deepEqual(pageErrors.filter((line) => !forbidden(line)), []);
   } finally {
+    await ui.close();
+  }
+});
+
+test('Continue on the Database step waits for the catalog read to settle, and says why it waits', async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let answering = false;
+  const mount = (app) => {
+    app.get('/api/defaults', (_req, res) => res.json({ envSkipsSetupWizard: false }));
+    app.get('/api/health', (_req, res) => res.json({ isDatabricksApp: false }));
+    app.get('/api/catalogs', async (_req, res) => {
+      if (!answering) await held;
+      res.json({ catalogs: [{ name: 'main' }] });
+    });
+  };
+  const ui = await openUi('setup', { noPersonToken: true }, '', { mount });
+  const { page, pageErrors } = ui;
+  try {
+    const next = page.getByRole('button', { name: 'Continue' });
+    for (let i = 0; i < 6; i += 1) {
+      await next.waitFor({ timeout: 20000 });
+      if (await page.getByText('Loading catalogs...').count()) break;
+      await next.click();
+      await page.waitForLoadState('networkidle');
+    }
+    await page.getByText('Loading catalogs...').waitFor({ timeout: 20000 });
+    assert.equal(await next.isDisabled(), true, 'Continue is off while the catalog read is still loading');
+    answering = true;
+    release();
+    await page.getByText('Loading catalogs...').waitFor({ state: 'detached', timeout: 20000 });
+    await next.waitFor({ timeout: 20000 });
+    assert.equal(await next.isDisabled(), false, 'Continue comes back once the catalog read has settled');
+    assert.deepEqual(pageErrors.filter((line) => !forbidden(line)), []);
+  } finally {
+    release();
     await ui.close();
   }
 });
