@@ -2,7 +2,7 @@
 // refusal of the pick (metric view, not usable) has no Try again; a type check the workspace could not answer twice has Try again.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HARNESS_USE_CASE, OWNER, built } from './implementFixtures.js';
+import { HARNESS_USE_CASE, OWNER, built, builtSpec } from './implementFixtures.js';
 import { closeBrowser, goToStep, openAsset, openBuild, openUi, idle } from './uiSupport.mjs';
 
 test.after(closeBrowser);
@@ -106,7 +106,8 @@ test('a picker row whose type check is busy shows Try again, and Try again lists
     await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
     // The schema is collapsed in the tree until it is opened; opening it lists its tables.
     await page.locator('[data-schema-group] [role="treeitem"]').first().click();
-    const busy = page.locator(`[data-type-check-busy="${PICKER_TABLE}"]`);
+    // The Launch picker lists the same busy table with its own Try again, so this test reads the Data Filters tree only.
+    const busy = page.locator(`[data-schema-group] [data-type-check-busy="${PICKER_TABLE}"]`);
     await busy.waitFor({ timeout: 15000 });
     assert.match(await busy.innerText(), /could not check this table's type right now/);
     assert.equal(await page.locator(`[data-unusable-table="${PICKER_TABLE}"]`).count(), 0, 'not shown as not usable');
@@ -114,7 +115,27 @@ test('a picker row whose type check is busy shows Try again, and Try again lists
     made.state.busyTables = {};
     await busy.getByRole('button', { name: 'Try again', exact: true }).click();
     await page.locator(`[data-scope-table="${PICKER_TABLE}"]`).waitFor({ timeout: 15000 });
-    assert.equal(await page.locator(`[data-type-check-busy="${PICKER_TABLE}"]`).count(), 0);
+    assert.equal(await page.locator(`[data-schema-group] [data-type-check-busy="${PICKER_TABLE}"]`).count(), 0);
+    assert.deepEqual(ui.pageErrors.filter((e) => !/Failed to load resource/.test(e)), [], 'no page exception');
+  } finally {
+    await ui.close();
+  }
+});
+
+// REQ-180 (plan swap refusal): a metric view swapped in for a picked table is refused by the plan with a 400 that names the table. The
+// wizard shows that one plain line: no Try again (the pick must change) and no raw JSON.
+const SWAPPED_VIEW = 'main.s.orders_v2';
+
+test('a metric view swapped in for a picked table is refused by the plan as one plain named line, with no Try again (REQ-180)', async () => {
+  const swapped = builtSpec();
+  swapped.data = { ...swapped.data, tables: { [PICKED]: SWAPPED_VIEW } };
+  const ui = await openUi('wizard', { me: ME, history: [built({ spec_json: JSON.stringify(swapped) })], useCase, metricViews: [SWAPPED_VIEW] });
+  try {
+    const alert = await planAlert(ui, `${SWAPPED_VIEW} is a metric view`);
+    const text = (await alert.innerText()).trim();
+    assert.equal(text.split('\n').filter((line) => /is a metric view/.test(line)).length, 1, `one named line: ${text}`);
+    assert.doesNotMatch(text, /[{}]|"error"/, 'no raw JSON');
+    assert.equal(await alert.getByRole('button', { name: 'Try again' }).count(), 0, 'a metric view swapped in stays wrong until the pick changes');
     assert.deepEqual(ui.pageErrors.filter((e) => !/Failed to load resource/.test(e)), [], 'no page exception');
   } finally {
     await ui.close();

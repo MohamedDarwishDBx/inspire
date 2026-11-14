@@ -43,3 +43,52 @@ test('lookupWithRetry gives up after one retry on a transient failure, and never
   const denied = await lookupWithRetry(async () => { calls += 1; throw new Error('SQL failed (403): PERMISSION_DENIED'); }, { sleep: async () => {} });
   assert.deepEqual([denied.transient, calls], [false, 1]);
 });
+
+// REQ-180 (structured first): the Statement Execution API reports a failed statement as HTTP 200 with status.state FAILED and
+// status.error.error_code (14 documented codes), and a rejected request as a non-200 with the body { error_code, message }. The
+// classifier reads those fields before any message text (docs: /api/workspace/statementexecution/executestatement, /api/workspace/errors).
+test('a documented transient error_code is transient whatever the text says (fail-pre: the classifier read only the text)', () => {
+  const codes = ['TEMPORARILY_UNAVAILABLE', 'WORKSPACE_TEMPORARILY_UNAVAILABLE', 'SERVICE_UNDER_MAINTENANCE', 'RESOURCE_EXHAUSTED', 'DEADLINE_EXCEEDED'];
+  for (const error_code of codes) {
+    assert.equal(isTransientSqlFailure(Object.assign(new Error('Service is unavailable right now'), { error_code })), true, error_code);
+  }
+});
+
+test('a documented permanent error_code is permanent even when the text names a warehouse that is stopped (fail-pre: text won)', () => {
+  const stopped = 'User does not have CAN USE on warehouse abc123; the warehouse is stopped';
+  for (const error_code of ['PERMISSION_DENIED', 'UNAUTHENTICATED', 'NOT_FOUND', 'INVALID_PARAMETER_VALUE']) {
+    assert.equal(isTransientSqlFailure(Object.assign(new Error(stopped), { error_code, http_status: 403 })), false, error_code);
+  }
+});
+
+test('the HTTP status of a rejected request decides before the text: a 400 is not transient, a 503 is, with no text at all (fail-pre)', () => {
+  assert.equal(isTransientSqlFailure(Object.assign(new Error('The warehouse is starting'), { http_status: 400 })), false);
+  assert.equal(isTransientSqlFailure(Object.assign(new Error('Service Unavailable'), { http_status: 503 })), true);
+  assert.equal(isTransientSqlFailure(Object.assign(new Error('x'), { http_status: 429 })), true);
+});
+
+test('a FAILED statement with no documented code (BAD_REQUEST, INTERNAL_ERROR) falls back to the warehouse text (pass-post guard: the fallback stays)', () => {
+  assert.equal(isTransientSqlFailure(Object.assign(new Error('The SQL warehouse is starting up'), { error_code: 'BAD_REQUEST' })), true);
+  assert.equal(isTransientSqlFailure(Object.assign(new Error('Warehouse abc123 is stopped'), { error_code: 'INTERNAL_ERROR' })), true);
+  assert.equal(isTransientSqlFailure(Object.assign(new Error('[TABLE_OR_VIEW_NOT_FOUND] no table'), { error_code: 'BAD_REQUEST' })), false);
+});
+
+test('a read that fails with a documented error_code through the one SQL runner is classified from the API body (fail-pre)', async () => {
+  const { createExecuteSql } = require('../lib/sqlStatements');
+  const sleep = async () => {};
+  const failedState = async () => ({ ok: true, status: 200, json: async () => ({ statement_id: 's1',
+    status: { state: 'FAILED', error: { error_code: 'TEMPORARILY_UNAVAILABLE', message: 'Service is unavailable right now' }, sql_state: '08001' } }), text: async () => '' });
+  const executeFailed = createExecuteSql(failedState, { sleep });
+  const failed = await executeFailed('h', 't', 'wh', 'SELECT 1').then(() => null, (e) => e);
+  assert.equal(failed.error_code, 'TEMPORARILY_UNAVAILABLE', 'the statement error keeps its documented code');
+  assert.equal(failed.sql_state, '08001', 'and its SQLSTATE');
+  assert.equal(isTransientSqlFailure(failed), true);
+
+  // A denial whose text says the warehouse is stopped: the body's PERMISSION_DENIED decides, so the read is not retried.
+  const denied = async () => ({ ok: false, status: 403, json: async () => ({}),
+    text: async () => JSON.stringify({ error_code: 'PERMISSION_DENIED', message: 'User cannot use warehouse wh; it is stopped' }) });
+  const refused = await createExecuteSql(denied, { sleep })('h', 't', 'wh', 'SELECT 1').then(() => null, (e) => e);
+  assert.equal(refused.http_status, 403);
+  assert.equal(refused.error_code, 'PERMISSION_DENIED');
+  assert.equal(isTransientSqlFailure(refused), false, 'a denial is not retried, whatever the text');
+});
