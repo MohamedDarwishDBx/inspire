@@ -23,7 +23,17 @@ const table = (columns, rows) => [200, { status: { state: 'SUCCEEDED' }, manifes
   result: { data_array: rows } }];
 const denied = (message) => [403, { error_code: 'PERMISSION_DENIED', message }];
 
-function answer(call, { unreadable = [], many = false } = {}) {
+// busy: name -> how many SQL answers in a row are 503 for that name's type lookup (1: busy once; 2 or more: busy after the retry too).
+function busyNow(opts, key) {
+  const limit = (opts.busy || new Map()).get(key);
+  if (limit === undefined) return false;
+  opts.hits = opts.hits || {};
+  opts.hits[key] = (opts.hits[key] || 0) + 1;
+  return opts.hits[key] <= limit;
+}
+
+function answer(call, opts = {}) {
+  const { unreadable = [], many = false } = opts;
   const url = new URL(`http://x${call.path}`);
   if (call.path === '/oidc/v1/token') return [200, { access_token: SP_TOKEN, expires_in: 3600 }];
   if (call.path.startsWith('/api/2.0/preview/scim/v2/Me')) return [200, call.token === SP_TOKEN ? { userName: 'sp', applicationId: 'sp' } : { userName: PERSON_EMAIL }];
@@ -38,6 +48,7 @@ function answer(call, { unreadable = [], many = false } = {}) {
   }
   if (/information_schema\.tables WHERE table_schema = '/.test(stmt)) return denied('User does not have USE CATALOG');
   if (/^SELECT table_type FROM /.test(stmt)) {
+    if (busyNow(opts, String(params.t || '').toLowerCase())) return [503, { message: 'Service Unavailable' }];
     const type = TYPES[String(params.t || '').toLowerCase()];
     return table(['table_type'], type ? [[type]] : []);
   }
@@ -46,6 +57,7 @@ function answer(call, { unreadable = [], many = false } = {}) {
   const described = /^DESCRIBE TABLE EXTENDED `([^`]+)`\.`([^`]+)`\.`([^`]+)` AS JSON$/.exec(stmt);
   if (described) {
     const name = described[3];
+    if (busyNow(opts, name)) return [503, { message: 'Service Unavailable' }];
     if (unreadable.includes(name)) return denied(`User does not have SELECT on Table '${name}'.`);
     return done('json_metadata', [JSON.stringify({ table_name: name, type: TYPES[name] || (many ? 'MANAGED' : undefined) })]);
   }
@@ -201,5 +213,58 @@ test('a readable table is not refused by these routes, so their reads still run 
     const resp = await fetch(`${url}/api/inspire/implement/values?table=${encodeURIComponent(table)}&column=c&warehouse_id=wh`, { headers: signedIn });
     const text = await resp.text();
     assert.doesNotMatch(text, /is not usable\. Inspire could not read/, 'a VIEW with a known type is not refused for its type');
+  });
+});
+
+// REQ-180 (busy, not unusable): a type check the workspace could not answer twice is listed as busy in the picker, is neither a swap
+// nor unusable in swap suggestions, and is a retryable 503 in the free table lookup. A type check busy once is retried and proceeds.
+test('a picker type check busy once is retried and the table is typed as before (pass-post guard)', async () => {
+  const tables = await pickerTables({ busy: new Map([['legacy', 1]]) });
+  const legacy = tables.find((t) => t.name === 'legacy');
+  assert.equal(legacy.table_type, 'MANAGED');
+  assert.equal(legacy.type_check, undefined);
+  assert.notEqual(legacy.usable, false);
+});
+
+test('a picker type check busy twice is listed busy with Try again, never as unusable (fail-pre: it was unusable)', async () => {
+  const tables = await pickerTables({ busy: new Map([['legacy', 2]]) });
+  const legacy = tables.find((t) => t.name === 'legacy');
+  assert.ok(legacy, 'the table is still listed');
+  assert.equal(legacy.type_check, 'busy');
+  assert.equal(legacy.usable, undefined, 'a busy check is not a verdict: the row is not marked unusable');
+  assert.match(legacy.unusable_reason, /Inspire could not check this table's type right now\. Try again\./);
+  assert.ok(!tables.some((t) => t.usable === false && t.name === 'legacy'));
+});
+
+test('swap suggestions put a busy type check in neither list, and name it busy (fail-pre: it was unusable)', async () => {
+  await withWorkspace({ busy: new Map([['mystery_table', 2]]) }, async (url) => {
+    const resp = await fetch(`${url}/api/inspire/implement/swaps?table=${encodeURIComponent('main.s.sales')}&warehouse_id=wh`,
+      { method: 'POST', headers: { ...signedIn, 'Content-Type': 'application/json' }, body: '{}' });
+    const got = await resp.json();
+    assert.deepEqual(got.swaps.map((s) => s.table), ['main.s.orders']);
+    assert.deepEqual(got.unusable || [], [], 'not unusable');
+    assert.deepEqual(got.busy.map((b) => b.table), ['main.s.mystery_table']);
+    assert.match(got.busy[0].reason, /Try again/);
+  });
+});
+
+test('the free table lookup answers a busy type check with a retryable 503 and the plain line, never "not usable" (fail-pre)', async () => {
+  await withWorkspace({ busy: new Map([['mystery_table', 2]]) }, async (url) => {
+    const table = `${CAT}.${SCH}.mystery_table`;
+    const resp = await fetch(`${url}/api/inspire/implement/table-lookup?table=${encodeURIComponent(table)}&source=main.s.sales&warehouse_id=wh`,
+      { headers: signedIn });
+    const text = await resp.text();
+    assert.equal(resp.status, 503, text);
+    assert.match(text, /Inspire could not check the type of adb_fe_uae_01\.default\.mystery_table right now/);
+    assert.doesNotMatch(text, /is not usable/);
+  });
+});
+
+test('the free table lookup reads a type check busy once and answers the table (pass-post guard)', async () => {
+  await withWorkspace({ busy: new Map([['orders', 1]]) }, async (url) => {
+    const table = `${CAT}.${SCH}.orders`;
+    const resp = await fetch(`${url}/api/inspire/implement/table-lookup?table=${encodeURIComponent(table)}&source=main.s.sales&warehouse_id=wh`,
+      { headers: signedIn });
+    assert.equal(resp.status, 200, await resp.clone().text());
   });
 });
