@@ -143,7 +143,7 @@ test('the wizard warns on Summary when Inspire cannot share a picked table with 
       if (warned) {
         await note.waitFor();
         const said = await note.textContent();
-        assert.match(said, /^Inspire cannot share main\.s\.orders \(owner admins and data-eng\)/);
+        assert.match(said, /^Inspire cannot share main\.s\.orders \(owned by admins and data-eng\)/);
         assert.match(said, /the Build page offers Grant access with my permissions/);
       } else {
         await ui.page.waitForTimeout(1500);
