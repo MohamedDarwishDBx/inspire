@@ -777,11 +777,14 @@ export async function onMoneyPart(page, part) {
   await page.locator(current).waitFor({ timeout: 15000 });
 }
 
-export async function goToMeasureImpact(page) {
+// Walks Measure to an impact decision: "holdout" (hold back, the default, the last Measure decision) or "kpi" (target KPI).
+export async function goToMeasureImpact(page, part = 'holdout') {
   await goToStep(page, 'Measure');
-  const onImpact = () => page.locator('[data-money-part="impact"]').evaluate((el) => el.closest('li').hasAttribute('data-money-current'));
-  for (let i = 0; i < 6 && !(await onImpact()); i += 1) await page.locator('[data-money-next]').click();
-  await page.getByRole('group', { name: 'Measure impact' }).waitFor();
+  const onPart = async () => (await page.locator(`[data-money-part="${part}"]`).count()) > 0
+    && page.locator(`[data-money-part="${part}"]`).evaluate((el) => el.closest('li').hasAttribute('data-money-current'));
+  // Later decisions are not rendered until Next reaches them, so the impact row may not exist yet.
+  for (let i = 0; i < 8 && !(await onPart()); i += 1) await page.locator('[data-money-next]').click();
+  await page.getByRole('group', { name: part === 'kpi' ? 'Target KPI' : 'Measure impact' }).waitFor();
 }
 
 // The Build page opens Permission Required when the person cannot grant the App's reads. That full-page dialog covers

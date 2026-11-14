@@ -13,6 +13,7 @@ import {
 } from '../lib/runScope';
 import { bestFirstRun, bestGrouping, isBest } from '../lib/recommended';
 import Recommended from './Recommended';
+import Advanced from './Advanced';
 import { PlainMessage } from './TechnicalDetails';
 import SaveButton from './SaveButton';
 
@@ -62,6 +63,8 @@ function GroupingPart({ values, onChange, profile, read = null, settings, editab
   const nothing = groupingNothingText(profile, choices);
   const [cards, setCards] = useState({ open: false, find: '' });
   const [combine, setCombine] = useState({ open: false, find: '' });
+  // Combining columns is its own decision: it sits behind a Change row after the group choice, and opens by itself only when a combination is set.
+  const [combineOpen, setCombineOpen] = useState(() => ticked.length > 1);
   const keepCard = (c) => !c.columns.length || pickedOf(c) || isBest(best, c.value) || Boolean(c.deep);
   const shownCards = topShown(choices, { keep: keepCard, open: cards.open, query: cards.find, textOf: (c) => c.label });
   const keepColumn = (c) => ticked.includes(String(c.name).toLowerCase());
@@ -110,19 +113,22 @@ function GroupingPart({ values, onChange, profile, read = null, settings, editab
       <ShowAll state={cards} total={choices.filter((c) => c.columns.length === 1).length} hidden={choices.length - topShown(choices, { keep: keepCard }).length}
         onChange={setCards} name="grouping" />
       {columns.length > 1 && (
-        <div role="group" aria-label={GROUPING_COMBINE} data-grouping-combine="" className="space-y-1">
-          <p className="text-[12px] font-medium text-text-primary">{GROUPING_COMBINE}</p>
-          <p data-grouping-combine-note="" className={NOTE}>{groupingCombineNote(columns)}</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1">
-            {shownColumns.map((c) => (
-              <label key={c.name} data-grouping-combine-column={c.name} className="flex items-center gap-1.5 text-[12px] text-text-primary">
-                <input type="checkbox" disabled={!editable} checked={keepColumn(c)} onChange={(e) => tick(String(c.name), e.target.checked)} />
-                <span>{c.name}{c.distinct != null ? ` · ${counted(c.distinct, 'group')}` : ''}</span>
-              </label>
-            ))}
+        <Advanced open={combineOpen} onToggle={() => setCombineOpen((open) => !open)} what={GROUPING_COMBINE_WHAT}
+          summary={ticked.length > 1 ? `Grouped by ${ticked.join(' + ')}` : `Grouped by ${ticked[0] || 'the default column'}`}>
+          <div role="group" aria-label={GROUPING_COMBINE} data-grouping-combine="" className="space-y-1">
+            <p className="text-[12px] font-medium text-text-primary">{GROUPING_COMBINE}</p>
+            <p data-grouping-combine-note="" className={NOTE}>{groupingCombineNote(columns)}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {shownColumns.map((c) => (
+                <label key={c.name} data-grouping-combine-column={c.name} className="flex items-center gap-1.5 text-[12px] text-text-primary">
+                  <input type="checkbox" disabled={!editable} checked={keepColumn(c)} onChange={(e) => tick(String(c.name), e.target.checked)} />
+                  <span>{c.name}{c.distinct != null ? ` · ${counted(c.distinct, 'group')}` : ''}</span>
+                </label>
+              ))}
+            </div>
+            <ShowAll state={combine} total={columns.length} hidden={columns.length - topShown(columns, { keep: keepColumn }).length} onChange={setCombine} name="combine" />
           </div>
-          <ShowAll state={combine} total={columns.length} hidden={columns.length - topShown(columns, { keep: keepColumn }).length} onChange={setCombine} name="combine" />
-        </div>
+        </Advanced>
       )}
     </fieldset>
   );
@@ -274,6 +280,8 @@ function FirstRunPart({ values, onChange, profile, groupsState, settings, editab
     </fieldset>
   );
 }
+
+const GROUPING_COMBINE_WHAT = 'combined columns';
 
 export default function ScopeSettings({
   part = 'both', values, onChange, profile = null, profileState = 'off', profileError = '', groups = null, settings = [], editable = true, children = null,

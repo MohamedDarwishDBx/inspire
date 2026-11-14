@@ -897,6 +897,9 @@ test('Data groups on a 20-column table shows the pick and the top cards with the
     await grouping.getByRole('searchbox', { name: 'Find a column', exact: true }).fill('col_17');
     assert.deepEqual(await cardsOf(grouping), ['all', 'col_05', 'col_17'], 'the search keeps the whole data and the pick (must-exclude: col_01 is gone)');
     await grouping.locator('[data-grouping-choice="col_17"] input').check();
+    // Combine columns is its own decision behind a Change row after the group choice, so open it first.
+    assert.equal(await grouping.locator('[data-grouping-combine]').count(), 0, 'Combine columns waits behind its Change row (must-exclude)');
+    await grouping.getByRole('button', { name: 'Change combined columns', exact: true }).click();
     const combine = grouping.getByRole('group', { name: 'Combine columns, coarse to fine' });
     assert.equal(await combine.locator('[data-grouping-combine-column]').count(), 6, 'Combine columns shows the top columns too');
     await combine.locator('[data-show-all="combine"]').click();
