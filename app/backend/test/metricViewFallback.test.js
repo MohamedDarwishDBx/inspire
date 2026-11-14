@@ -13,7 +13,7 @@ const APP_ENV = { NODE_ENV: 'production', DATABRICKS_CLIENT_ID: 'inspire-client'
 const CAT = 'adb_fe_uae_01';
 const SCH = 'default';
 const TYPES = { orders: 'MANAGED', order_revenue_metrics: 'METRIC_VIEW', legacy: 'MANAGED', order_summary: 'VIEW' };
-const SWAP_CANDIDATES = [['adb_fe_uae_01', 'default', 'order_revenue_metrics'], ['main', 's', 'orders']];
+const SWAP_CANDIDATES = [['adb_fe_uae_01', 'default', 'order_revenue_metrics'], ['main', 's', 'orders'], ['main', 's', 'mystery_table']];
 const signedIn = { 'x-forwarded-access-token': PERSON, 'x-forwarded-email': PERSON_EMAIL };
 
 const done = (column, values) => [200, { status: { state: 'SUCCEEDED' }, manifest: { schema: { columns: [{ name: column }] } },
@@ -82,17 +82,29 @@ test('a table typed by DESCRIBE keeps its real type, so a view is not shown as M
   assert.equal(byName.orders, 'MANAGED');
 });
 
-test('a table whose type cannot be read stays listed, and the metric view beside it is still left out', async () => {
+test('a table whose type cannot be read is shown as not usable, with the plain reason, and is never offered as usable', async () => {
   const tables = await pickerTables({ unreadable: ['legacy'] });
-  assert.deepEqual(tables.map((t) => t.name).sort(), ['legacy', 'order_summary', 'orders']);
+  const legacy = tables.find((t) => t.name === 'legacy');
+  assert.ok(legacy, 'the table is shown, so the person can see why it is not usable');
+  assert.equal(legacy.usable, false);
+  assert.match(legacy.unusable_reason, /Inspire could not read this table's type, so it cannot be used here/);
+  assert.deepEqual(tables.filter((t) => t.usable !== false).map((t) => t.name).sort(), ['order_summary', 'orders']);
 });
 
-test('swap suggestions never offer a metric view as the replacement for a picked table', async () => {
+test('a metric view whose DESCRIBE is denied is never a usable table (must-exclude)', async () => {
+  const tables = await pickerTables({ unreadable: ['order_revenue_metrics'] });
+  assert.ok(tables.every((t) => !(t.name === 'order_revenue_metrics' && t.usable !== false)),
+    'a denied-DESCRIBE metric view never becomes a usable table');
+});
+
+test('swap suggestions never offer a metric view, and never a table whose type cannot be read', async () => {
   await withWorkspace({}, async (url) => {
     const resp = await fetch(`${url}/api/inspire/implement/swaps?table=${encodeURIComponent('main.s.sales')}&warehouse_id=wh`,
       { method: 'POST', headers: { ...signedIn, 'Content-Type': 'application/json' }, body: '{}' });
     const got = await resp.json();
     assert.deepEqual(got.swaps.map((s) => s.table), ['main.s.orders']);
+    assert.deepEqual(got.unusable.map((u) => u.table), ['main.s.mystery_table']);
+    assert.match(got.unusable[0].reason, /Inspire could not read this table's type/);
   });
 });
 
