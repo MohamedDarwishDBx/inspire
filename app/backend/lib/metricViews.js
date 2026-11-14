@@ -80,7 +80,12 @@ function unknownTypeRefusal(name) {
   return `${name} is not usable. ${UNUSABLE_REASON}`;
 }
 
+/** The plain line for a table whose type could not be checked right now (a transient failure, after one retry). Not a refusal of the pick. */
+function typeCheckBusyRefusal(name) {
+  return `Inspire could not check the type of ${name} right now, so the table cannot be read yet. The workspace did not answer; check again.`;
+}
+
 module.exports = {
   METRIC_VIEW_TABLE_TYPES, isMetricViewType, splitMetricViews, metricViewSkipLine, metricViewRefusal,
-  UNUSABLE_REASON, unknownTypeRefusal, tableTypeUnknownLine, probeTableTypes, TABLE_TYPE_PROBE_CAP, tableTypeOfDescribe,
+  UNUSABLE_REASON, unknownTypeRefusal, typeCheckBusyRefusal, tableTypeUnknownLine, probeTableTypes, TABLE_TYPE_PROBE_CAP, tableTypeOfDescribe,
 };

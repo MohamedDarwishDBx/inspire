@@ -23,6 +23,7 @@ const GR = require('./lib/groupingRule');
 const GP = require('./lib/groupingProfile');
 const FX = require('./lib/fxRates');
 const JC = require('./lib/jobCurrency');
+const { busyDelayMs, isTransientStatus } = require('./lib/busyRetry');
 const MD = require('./lib/moneyDescribe');
 const { TAGS_UNREAD_NOTE, personalColumn } = require('../frontend/src/lib/personalColumns.js');
 const {
@@ -181,10 +182,13 @@ function registerImplementRoutes(app, deps) {
     const named = (tables || []).map((t) => String(t || '').trim()).filter(Boolean);
     if (!named.length) return;
     const token = personReadToken(req);
-    const types = await Promise.all(named.map((t) => tableTypeOf(req, () => token, warehouseId, t)));
+    const looked = await Promise.all(named.map((t) => tableTypeOf(req, () => token, warehouseId, t)));
     named.forEach((table, i) => {
-      if (MV.isMetricViewType(types[i])) throw tableRefusal(MV.metricViewRefusal(table));
-      if (unknownType && !types[i]) throw tableRefusal(MV.unknownTypeRefusal(table));
+      const { type, transient } = looked[i];
+      if (MV.isMetricViewType(type)) throw tableRefusal(MV.metricViewRefusal(table));
+      if (!unknownType || type) return;
+      // A transient lookup failure is not a verdict on the table: it is retryable, never shown as not usable.
+      throw transient ? tableRetryable(table) : tableRefusal(MV.unknownTypeRefusal(table));
     });
   }
 
@@ -193,17 +197,36 @@ function registerImplementRoutes(app, deps) {
     return Object.assign(new Error(message), { statusCode: 400, refusal: true });
   }
 
+  function tableRetryable(table) {
+    return Object.assign(new Error(MV.typeCheckBusyRefusal(table)), { statusCode: 503, refusal: true });
+  }
+
   async function refuseMetricView(req, warehouseId, table, { unknownType = false } = {}) {
     await refuseTableTypes(req, warehouseId, [table], { unknownType });
   }
 
-  // The type of one table from information_schema, or null when the lookup fails (the caller then decides, as before).
+  // A failed type lookup is transient when the workspace is busy or down for a moment, the warehouse timed out, or the network
+  // dropped: the classes withBusyRetry and the SQL client already retry. A denial, a missing object or no type is permanent.
+  function transientLookupFailure(err) {
+    const message = String((err && err.message) || err || '');
+    const submitted = /^SQL failed \((\d{3})\)/.exec(message);
+    if (submitted) return isTransientStatus(submitted[1]);
+    if (err && (err.code === 'SQL_DEADLINE' || err.timedOut)) return true;
+    return /^Cannot reach (the )?Databricks/.test(message);
+  }
+
+  // The type of one table from information_schema: { type } when it reads (null when the table names no type), and on a failure
+  // { type: null, transient } where transient says a retry can change it. A transient failure is retried once, after the busy delay.
   async function tableTypeOf(req, tokenOf, warehouseId, table) {
-    try {
-      const rows = await sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table));
-      return rows.length ? String(rows[0].table_type || '') : null;
-    } catch {
-      return null;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        const rows = await sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table));
+        return { type: rows.length ? String(rows[0].table_type || '') || null : null, transient: false };
+      } catch (err) {
+        const transient = transientLookupFailure(err);
+        if (!transient || attempt >= 2) return { type: null, transient };
+        await new Promise((done) => setTimeout(done, busyDelayMs(attempt)));
+      }
     }
   }
 
@@ -784,7 +807,7 @@ function registerImplementRoutes(app, deps) {
         const candidates = await sqlRows(req.dbHost, token, warehouseId, statement);
         // A metric view is never a swap: its type is read per candidate and a view is dropped before the probe. A candidate
         // whose type cannot be read is not offered (fail closed): it is listed as not usable, with the plain reason.
-        const types = await Promise.all(candidates.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))));
+        const types = (await Promise.all(candidates.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))))).map((got) => got.type);
         const rows = candidates.filter((_r, i) => types[i] && !MV.isMetricViewType(types[i]));
         const unusable = copyOnly ? [] : candidates.filter((_r, i) => !types[i])
           .map((r) => ({ table: candidateOf(r), reason: MV.UNUSABLE_REASON }));
@@ -816,7 +839,7 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       const source = q(req, 'source');
       const token = personReadToken(req);
-      const type = await tableTypeOf(req, () => token, warehouseId, table);
+      const { type } = await tableTypeOf(req, () => token, warehouseId, table);
       if (MV.isMetricViewType(type)) {
         return res.json({ table, readable: false, reason: MV.metricViewRefusal(table) });
       }

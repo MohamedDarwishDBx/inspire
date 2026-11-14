@@ -183,3 +183,53 @@ test('the Data groups profile reads a readable managed main table (pass-post gua
     assert.ok(profileReads(made).length >= 1, 'the managed table is profiled as before');
   });
 });
+
+// A failed type lookup is classified once: a denial, a missing object or no type is permanent (one try, the named not-usable
+// refusal); a busy workspace (HTTP 503) is retried once, and a lookup that stays busy is retryable, never shown as not usable.
+const BUSY_LINE = /Inspire could not check the type of main\.s\.orders right now/;
+const busyOnce = (calls) => ({ 'table_type FROM': () => {
+  calls.n += 1;
+  if (calls.n === 1) throw new Error('SQL failed (503): Service Unavailable');
+  return { rows: [{ table_type: 'MANAGED' }] };
+} });
+
+test('a denied type lookup is permanent: one try, then the named not-usable refusal, with no retry', async () => {
+  const calls = { n: 0 };
+  const statements = { 'table_type FROM': () => {
+    calls.n += 1;
+    throw new Error('SQL failed (403): [PERMISSION_DENIED] User does not have USE CATALOG on Catalog main.');
+  } };
+  await withApp({ statements }, async (url, made) => {
+    const got = await plan(url);
+    assert.equal(got.status, 400, JSON.stringify(got.data));
+    assert.match(got.data.error, UNKNOWN_LINE);
+    assert.equal(calls.n, 1, 'a permanent denial is never retried');
+    assert.deepEqual(countsOf(made), []);
+  });
+});
+
+test('a busy type lookup that answers on the retry proceeds (the one retry is real)', async () => {
+  const calls = { n: 0 };
+  await withApp({ statements: busyOnce(calls), readinessRows: [{ row_count: '1200' }] }, async (url, made) => {
+    const got = await plan(url);
+    assert.equal(got.status, 200, JSON.stringify(got.data));
+    assert.equal(calls.n, 2, 'one busy answer, then one retry');
+    assert.equal(countsOf(made).length, 1, 'the table is counted once the lookup answers');
+  });
+});
+
+test('a type lookup still busy after the one retry is retryable with the plain line, never shown as not usable (fail-pre: it was not classified)', async () => {
+  const calls = { n: 0 };
+  const statements = { 'table_type FROM': () => {
+    calls.n += 1;
+    throw new Error('SQL failed (503): Service Unavailable');
+  } };
+  await withApp({ statements }, async (url, made) => {
+    const got = await plan(url);
+    assert.equal(got.status, 503, JSON.stringify(got.data));
+    assert.match(got.data.error, BUSY_LINE);
+    assert.doesNotMatch(got.data.error, /is not usable/, 'a busy workspace is not a verdict on the table');
+    assert.equal(calls.n, 2, 'exactly one retry');
+    assert.deepEqual(countsOf(made), []);
+  });
+});
