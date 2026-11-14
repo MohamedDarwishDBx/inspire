@@ -175,13 +175,21 @@ function registerImplementRoutes(app, deps) {
 
   // A metric view is not a table: a route that reads a picked table's rows refuses it first, with one plain line.
   // A failed type lookup does not block the read; the read then reports its own error.
-  // With unknownType, a table whose type cannot be read is refused too (fail closed), from the same single type lookup.
-  async function refuseMetricView(req, warehouseId, table, { unknownType = false } = {}) {
-    if (!table) return;
+  // A metric view is not a table; with unknownType, neither is a table whose type cannot be read (fail closed). Each is refused by
+  // name before any read, from the one type lookup (tableTypeOf). Several tables are checked in order.
+  async function refuseTableTypes(req, warehouseId, tables, { unknownType = false } = {}) {
+    const named = (tables || []).map((t) => String(t || '').trim()).filter(Boolean);
+    if (!named.length) return;
     const token = personReadToken(req);
-    const type = await tableTypeOf(req, () => token, warehouseId, table);
-    if (MV.isMetricViewType(type)) throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
-    if (unknownType && !type) throw Object.assign(new Error(MV.unknownTypeRefusal(table)), { statusCode: 400 });
+    const types = await Promise.all(named.map((t) => tableTypeOf(req, () => token, warehouseId, t)));
+    named.forEach((table, i) => {
+      if (MV.isMetricViewType(types[i])) throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
+      if (unknownType && !types[i]) throw Object.assign(new Error(MV.unknownTypeRefusal(table)), { statusCode: 400 });
+    });
+  }
+
+  async function refuseMetricView(req, warehouseId, table, { unknownType = false } = {}) {
+    await refuseTableTypes(req, warehouseId, [table], { unknownType });
   }
 
   // The type of one table from information_schema, or null when the lookup fails (the caller then decides, as before).
@@ -860,7 +868,7 @@ function registerImplementRoutes(app, deps) {
     try {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
-      await refuseMetricView(req, warehouseId, table);
+      await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.columnValuesStatement(table, q(req, 'column'), q(req, 'limit') || 200);
       const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
       res.json({ values: rows.map((r) => r.value).filter((v) => v != null && v !== '') });
@@ -873,7 +881,7 @@ function registerImplementRoutes(app, deps) {
     try {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
-      await refuseMetricView(req, warehouseId, table);
+      await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.readinessStatement(table, {
         columns: req.body?.columns || [],
         filters: req.body?.filters || [],
@@ -893,7 +901,7 @@ function registerImplementRoutes(app, deps) {
       if (top && (!Number.isInteger(top) || top > GR.GROUP_MAX_GROUPS)) {
         return res.status(400).json({ error: `top must be a whole number up to ${GR.GROUP_MAX_GROUPS}` });
       }
-      await refuseMetricView(req, warehouseId, q(req, 'table'));
+      await refuseMetricView(req, warehouseId, q(req, 'table'), { unknownType: true });
       const statement = I.groupCountsStatement(q(req, 'table'), req.body?.columns || [], {
         filters: req.body?.filters || [],
         window: req.body?.window || {},
@@ -1316,6 +1324,7 @@ function registerImplementRoutes(app, deps) {
     const tables = I.uniqueTables(changes.flatMap((c) => [c.replaced, c.chosen]));
     const token = P.personTokenOf(req);
     if (tables.length && !token) throw I.badRequest(I.IMPLEMENT_TABLES_NO_SIGN_IN, 401);
+    await refuseTableTypes(req, warehouseId, tables, { unknownType: true });
     const read = await Promise.all(tables.map((t) => I.readPickedTable(t, () => sqlRows(req.dbHost, token, warehouseId, I.columnsStatement(t)))));
     const unseen = tables.filter((_t, i) => !read[i].length);
     if (unseen.length) throw I.badRequest(I.implementTablesUnreadable(unseen), 409);
@@ -1438,6 +1447,7 @@ function registerImplementRoutes(app, deps) {
     const scope = readinessScope(spec, useCase, launchScopes);
     if (!scope.table || !P.personTokenOf(req)) return '';
     const countOf = async (table, narrowing) => {
+      await refuseTableTypes(req, warehouseId, [table], { unknownType: true });
       const statement = I.readinessStatement(table, narrowing);
       const rows = await sqlRows(req.dbHost, P.personTokenOf(req), warehouseId, statement);
       return I.readinessFromRow(rows[0] || {}, statement.columns);
@@ -1498,6 +1508,7 @@ function registerImplementRoutes(app, deps) {
         { rowLimit: 500, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' }));
     };
     const scopes = await launchScopesOf(req, warehouseId);
+    if (spec?.money?.rate_table) await refuseTableTypes(req, warehouseId, [spec.money.rate_table], { unknownType: true });
     Object.assign(params, await JC.implementCurrencyParams(spec?.money, { runSql, scopes }));
     if (!params['02_inspire_database']) params['02_inspire_database'] = inspire_database;
     if (!sessionParams['01_uc_metadata']) {
@@ -2101,6 +2112,7 @@ function registerImplementRoutes(app, deps) {
       if (!main || !/^[^`]+\.[^`]+\.[^`]+$/.test(table)) {
         throw I.badRequest(`${String(useCase.use_case ?? '').trim() || 'This use case'} names no main table as catalog.schema.table, so Inspire cannot read it for Data groups.`);
       }
+      await refuseTableTypes(req, warehouseId, [table], { unknownType: true });
       const launchScopes = parseTableScopeText(session?.table_scope).scopes;
       const options = (rowLimit) => ({ rowLimit, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s', signal: stop.signal });
       const rows = async (sql, parameters, rowLimit) => sqlResultToObjects(await executeSql(req.dbHost, token, warehouseId, sql, parameters, options(rowLimit)));
