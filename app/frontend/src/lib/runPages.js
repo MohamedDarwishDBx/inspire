@@ -134,6 +134,15 @@ export function queryLink({ pathname = '', search = '' } = {}) {
   return `${pathname}${rest ? `?${rest}` : ''}${hash}`;
 }
 
+// What the Results page shows when its results read fails. A policy refusal (the route's own rule) or a retryable 503 says what the
+// server said; only a plain 403 with no policy body is a real access denial, and only that gets the denied review link.
+export function resultsReadFailure(err, { sid, inspireDb } = {}) {
+  if (err?.body?.policy) return { outcome: 'refused', message: err.message };
+  if (err?.status === 503) return { outcome: 'retry', message: err.message || 'Inspire could not read the results just now; try again' };
+  if (sid && err?.status === 403) return { outcome: 'denied', message: reviewLinkText({ sessionId: String(sid), valid: true }, inspireDb, 'denied') };
+  return { outcome: 'error', message: err?.message || String(err) };
+}
+
 export function reviewLinkText(link, inspireDatabase, outcome) {
   const db = String(inspireDatabase || '').trim();
   const where = db ? `the Inspire Database ${db}` : 'this Inspire Database';
