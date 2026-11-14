@@ -12,7 +12,7 @@ from v140_implement_test import (GRANT_SELECT, INSPIRE_OWNS, NO_AUDIENCE, OURS_A
                                  _app_shell, _churn_page, _deploy_inspire, _feedback_refused, _inspire, _not_access_reads, _spec,
                                  _without_feedback, sdk_stub)
 from v141_app_shell_test import PAGE, SETTINGS, call, shell
-from v120_artifacts_support import CapturingLogger
+from v120_artifacts_support import CapturingLogger, absent_scope_views
 import shell_core
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -118,6 +118,7 @@ def test_settings_follow_the_spec_and_pass_the_shell_check(agent_ns, tmp_path):
 def test_the_built_app_writes_the_wizard_choices_into_its_settings(agent_ns, tmp_path):
     inst, context, seen = _app_flow(agent_ns, tmp_path, outputs={"app_access": "user", "app_look": USER_LOOK,
                                                                  "app_options": {"modify": True, "decisions": True, "replace_edits": True}})
+    inst.spark.responder = absent_scope_views
     inst._implement_app(context, None)
     assert seen["errors"] == []
     settings = json.loads(seen["deployed"][0][1]["inspire_app.json"])
