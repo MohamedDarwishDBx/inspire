@@ -8,9 +8,9 @@ import re
 
 import pytest
 
-from v140_implement_test import (GRANT_SELECT, INSPIRE_OWNS, OURS_APP, READS, SHELL_FILES, VALID, _access_spark, _app_flow, _app_shell,
-                                 _churn_page, _deploy_inspire, _feedback_refused, _inspire, _not_access_reads, _spec, _without_feedback,
-                                 sdk_stub)
+from v140_implement_test import (GRANT_SELECT, INSPIRE_OWNS, NO_AUDIENCE, OURS_APP, READS, SHELL_FILES, VALID, _access_spark, _app_flow,
+                                 _app_shell, _churn_page, _deploy_inspire, _feedback_refused, _inspire, _not_access_reads, _spec,
+                                 _without_feedback, sdk_stub)
 from v141_app_shell_test import PAGE, SETTINGS, call, shell
 from v120_artifacts_support import CapturingLogger
 import shell_core
@@ -173,12 +173,13 @@ DEPLOYED = [{"deployment_id": "dep1", "status": {"state": "SUCCEEDED"}}, {"url":
 def test_a_per_user_app_is_created_with_its_scopes_and_its_service_principal_reads_nothing(agent_ns, sdk_stub):
     created = {"compute_status": {"state": "ACTIVE"}, "service_principal_client_id": "sp-1"}
     read = dict(created, user_api_scopes=["sql:restricted-query", "genie"])
-    inst, context, calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, read] + DEPLOYED, access=[])
+    inst, context, calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, read, NO_AUDIENCE] + DEPLOYED, access=[])
     fields = inst._implement_deploy_app(_user_context(agent_ns, context, decisions=False), "churn-desk", SHELL_FILES, READS, "g1", poll_s=0)
     assert fields["app_url"] == "https://churn-desk.example"
     assert len(fields["_warnings"]) == 1 and _feedback_refused(fields["_warnings"]) == fields["_warnings"], \
         "Inspire holds nothing here, so the only gap is the feedback table it cannot grant"
     assert [c[:2] for c in calls] == [("GET", "/api/2.0/apps/churn-desk"), ("POST", "/api/2.0/apps"), ("GET", "/api/2.0/apps/churn-desk"),
+                                      ("GET", "/api/2.0/permissions/apps/churn-desk"),
                                       ("POST", "/api/2.0/apps/churn-desk/deployments"), ("GET", "/api/2.0/apps/churn-desk")]
     assert calls[1][2]["user_api_scopes"] == ["sql:restricted-query", "genie"]
     assert _without_feedback(_not_access_reads(inst.spark.statements)) == [s for s in inst.spark.statements if VALUE_LEDGER in s
@@ -190,7 +191,8 @@ def test_a_per_user_app_is_created_with_its_scopes_and_its_service_principal_rea
 
 def test_a_per_user_app_where_people_edit_data_asks_for_full_sql(agent_ns, sdk_stub):
     created = {"compute_status": {"state": "ACTIVE"}, "service_principal_client_id": "sp-1"}
-    inst, context, calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, dict(created, user_api_scopes=["sql", "genie"])] + DEPLOYED)
+    inst, context, calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, dict(created, user_api_scopes=["sql", "genie"]), NO_AUDIENCE]
+                                                      + DEPLOYED)
     inst._implement_deploy_app(_user_context(agent_ns, context, modify=True), "churn-desk", SHELL_FILES, READS, poll_s=0)
     assert calls[1][2]["user_api_scopes"] == ["sql", "genie"]
 
@@ -208,11 +210,11 @@ def test_an_existing_app_switched_to_per_user_gets_its_scopes_before_it_deploys(
     existing = {"description": OURS_APP, "compute_status": {"state": "ACTIVE"}, "service_principal_client_id": "sp-2",
                 "resources": [{"name": "sql-warehouse", "sql_warehouse": {"id": "wh1", "permission": "CAN_USE"}}]}
     patched = dict(existing, user_api_scopes=["genie", "sql:restricted-query"])
-    inst, context, calls, _imported = _deploy_inspire(agent_ns, [existing, patched] + DEPLOYED)
+    inst, context, calls, _imported = _deploy_inspire(agent_ns, [existing, patched, NO_AUDIENCE] + DEPLOYED)
     fields = inst._implement_deploy_app(_user_context(agent_ns, context), "churn-desk", SHELL_FILES, READS, poll_s=0)
     assert "_warnings" not in fields
-    assert [c[:2] for c in calls][:3] == [("GET", "/api/2.0/apps/churn-desk"), ("PATCH", "/api/2.0/apps/churn-desk"),
-                                          ("POST", "/api/2.0/apps/churn-desk/deployments")]
+    assert [c[:2] for c in calls][:4] == [("GET", "/api/2.0/apps/churn-desk"), ("PATCH", "/api/2.0/apps/churn-desk"),
+                                          ("GET", "/api/2.0/permissions/apps/churn-desk"), ("POST", "/api/2.0/apps/churn-desk/deployments")]
     assert calls[1][2] == {"name": "churn-desk", "description": OURS_APP, "resources": existing["resources"],
                            "user_api_scopes": ["sql:restricted-query", "genie"]}, "the update keeps the App's warehouse"
 
@@ -312,6 +314,8 @@ class _Apps:
             return {}
         if (method, path) == ("POST", "/api/2.0/apps/churn-desk/deployments"):
             return {"deployment_id": "dep1", "status": {"state": "SUCCEEDED"}}
+        if (method, path) == ("GET", "/api/2.0/permissions/apps/churn-desk"):
+            return copy.deepcopy(NO_AUDIENCE)
         raise AssertionError(f"unexpected call {method} {path}")
 
 
@@ -412,8 +416,8 @@ VALUE_LEDGER = "`main`.`inspire`.`__inspire_value_ledger`"
 
 def test_a_per_user_build_grants_the_value_ledger_to_no_service_principal_and_a_shared_build_does(agent_ns, sdk_stub):
     created = {"compute_status": {"state": "ACTIVE"}, "service_principal_client_id": "sp-1"}
-    inst, context, _calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, dict(created, user_api_scopes=["sql:restricted-query", "genie"])] + DEPLOYED,
-                                                       access=[])
+    inst, context, _calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, dict(created, user_api_scopes=["sql:restricted-query", "genie"]),
+                                                                             NO_AUDIENCE] + DEPLOYED, access=[])
     inst._implement_deploy_app(_user_context(agent_ns, context, decisions=False), "churn-desk", SHELL_FILES, READS, "g1", poll_s=0)
     created_ledger = [s for s in inst.spark.statements if VALUE_LEDGER in s and s.startswith("CREATE TABLE")]
     assert len(created_ledger) == 1, "the job identity creates Inspire's own value ledger for a per-user App too"

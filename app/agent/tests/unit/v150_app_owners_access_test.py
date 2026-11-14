@@ -6,7 +6,7 @@ import sys
 import pytest
 
 from v120_artifacts_support import FakeSpark
-from v140_implement_test import (CHURN_TABLES, OURS_APP, READS, SHELL_FILES, _app_flow, _deploy_inspire, _feedback_writes, _not_access_reads, _spec,
+from v140_implement_test import (CHURN_TABLES, NO_AUDIENCE, OURS_APP, READS, SHELL_FILES, _app_flow, _deploy_inspire, _feedback_writes, _not_access_reads, _spec,
                                   _without_feedback,  # noqa: F401
                                  sdk_stub)
 from v142_scd_test import _describe
@@ -116,7 +116,7 @@ def test_a_table_without_money_at_stake_gets_no_assumptions_table(agent_ns, sdk_
 
 
 def test_a_per_user_app_gets_a_service_principal_grant_only_on_the_table_it_records_decisions_in(agent_ns, sdk_stub):
-    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"])] + NEW_APP[2:]
+    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"]), NO_AUDIENCE] + NEW_APP[2:]
     spark = Catalog()
     _inst, fields = _deploy(agent_ns, spark, {"app_access": "user", "app_options": {"decisions": False}}, answers)
     assert fields["app_url"] == "https://churn-desk.example"
@@ -403,7 +403,7 @@ def test_the_app_service_principal_reads_every_output_table_the_run_wrote_and_no
 
 
 def test_a_per_user_app_never_asks_which_output_tables_exist(agent_ns, sdk_stub):
-    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"])] + NEW_APP[2:]
+    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"]), NO_AUDIENCE] + NEW_APP[2:]
     spark = OutputsCatalog({"churn_out_closed"})
     inst, context, _calls, _imported = _deploy_inspire(agent_ns, list(answers))
     inst.spark = spark

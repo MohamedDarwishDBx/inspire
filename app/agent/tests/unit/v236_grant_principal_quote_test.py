@@ -39,7 +39,10 @@ def test_a_principal_is_quoted_with_backticks_and_its_own_backticks_doubled(ns):
 def test_every_grant_statement_quotes_its_principal_through_the_one_helper():
     bare = re.findall(r"TO `\{", agent_source())
     assert bare == []
-    assert agent_source().count("TO {inspire_quote_principal(") >= 5
+    # The four sites that interpolate a principal: implement_grant_sql (the one access grant the scope, App and write grants share), the
+    # table read grant (p), the permission message's grant (who) and the catalog grant the owner is asked to run (builder). Any other
+    # principal interpolated into a grant is a bare interpolation to fix.
+    assert sorted(re.findall(r"TO \{inspire_quote_principal\((\w+)\)\}", agent_source())) == ["builder", "p", "principal", "who"]
 
 
 def test_the_principal_quote_is_defined_once_in_shell_facts_and_the_notebook_only_delegates(ns):

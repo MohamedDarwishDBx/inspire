@@ -10,7 +10,7 @@ if SERVER not in sys.path:
 
 import shell_sql  # noqa: E402
 from v120_artifacts_support import FakeSpark  # noqa: E402
-from v140_implement_test import READS, SHELL_FILES, _deploy_inspire, _inspire, sdk_stub  # noqa: E402,F401
+from v140_implement_test import NO_AUDIENCE, READS, SHELL_FILES, _deploy_inspire, _inspire, sdk_stub  # noqa: E402,F401
 from v150_app_owners_access_test import NEW_APP  # noqa: E402
 
 
@@ -91,7 +91,7 @@ def test_building_a_scenario_app_creates_and_grants_its_scenarios_table_and_a_qu
 
 
 def test_a_per_user_scenario_app_still_gets_its_scenarios_table(agent_ns, sdk_stub):
-    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"])] + NEW_APP[2:]
+    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"]), NO_AUDIENCE] + NEW_APP[2:]
     spark, fields = _deployed(agent_ns, LAB_FILES, {"app_access": "user", "app_options": {"decisions": False}}, answers)
     assert fields["app_url"] == "https://churn-desk.example"
     assert any(s.startswith(SCENARIOS_CREATE) for s in spark.statements)

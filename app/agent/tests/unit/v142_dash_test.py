@@ -11,7 +11,7 @@ import types
 import pytest
 
 from v120_artifacts_support import FakeSpark
-from v140_implement_test import TRUTH, _FileRunner, _app_shell, _churn_page, _contract, _inspire, _output_context
+from v140_implement_test import TRUTH, _FileRunner, _app_shell, _churn_page, _contract, _inspire, _workspace_columns, _output_context
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PALETTES = os.path.join(ROOT, "agent", "app_shell", "web", "src", "palettes.json")
@@ -40,7 +40,7 @@ def _dataset(doc, name):
 
 
 def _flow(ns, tmp_path, outputs=None, assets=None, asset_status=None, fail=None, rows=None, **stubs):
-    inst = _inspire(ns, FakeSpark())
+    inst = _workspace_columns(_inspire(ns, FakeSpark()))
     inst._genie_decision_contract = _contract
     inst.local_log_output_dir = str(tmp_path)
     inst._implement_input_has_dates = lambda context: False

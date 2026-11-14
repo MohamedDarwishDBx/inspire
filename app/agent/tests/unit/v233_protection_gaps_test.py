@@ -6,7 +6,7 @@ import types
 import pytest
 
 from v120_artifacts_support import CapturingLogger
-from v140_implement_test import READS, SHELL_FILES, _deploy_inspire, _not_access_reads, sdk_stub  # noqa: F401
+from v140_implement_test import NO_AUDIENCE, READS, SHELL_FILES, _deploy_inspire, _not_access_reads, sdk_stub  # noqa: F401
 from v142_look_test import DEPLOYED, NEW_APP, _user_context
 from v232_protected_sources_test import MASK, OWN, RESULT, SOURCE, SUMMARY, _gate, _plan, _protection, _source, _table
 
@@ -178,7 +178,7 @@ def test_an_alert_over_protected_tables_is_refused_and_one_over_plain_tables_is_
 def _decided_deploy(agent_ns, protected):
     created = {"compute_status": {"state": "ACTIVE"}, "service_principal_client_id": "sp-1"}
     read = dict(created, user_api_scopes=["sql:restricted-query", "genie"])
-    inst, context, calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, read] + DEPLOYED, access=[])
+    inst, context, calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, read, NO_AUDIENCE] + DEPLOYED, access=[])
     inst.logger = CapturingLogger()
     context = _user_context(agent_ns, context, decisions=True)
     context["protected"] = protected
