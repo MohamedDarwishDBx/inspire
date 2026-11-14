@@ -182,9 +182,10 @@ def test_an_unrelated_free_text_question_is_refused_after_one_cheap_check_and_no
 
 
 def test_a_related_question_passes_the_same_check(tmp_path):
+    # "item" and "top" are the page's own table and column words, so the scoped rule decides RELATED without the model check.
     s, ws, _made = agent_shell(tmp_path)
     turn = ask(s, "Why is Item 1 at the top of the list?")
-    assert turn["refused"] is False and len(ws.llm.bodies) == 2 and "tools" in ws.llm.bodies[1]
+    assert turn["refused"] is False and len(ws.llm.bodies) == 1 and "tools" in ws.llm.bodies[0]
 
 
 def test_a_check_that_answers_anything_but_related_refuses(tmp_path):
