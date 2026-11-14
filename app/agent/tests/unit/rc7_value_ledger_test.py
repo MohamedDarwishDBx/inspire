@@ -136,9 +136,14 @@ def test_a_refused_ledger_write_is_reported_and_the_run_carries_on(agent_ns, mon
     assert "Value ledger: run 9001 is not recorded" in said[0] and "PERMISSION_DENIED" in said[0]
 
 
+def _ledger_host(spark):
+    # The deploy runs the ledger grants through the one retried executor the other grant paths use; retries are tested there.
+    return types.SimpleNamespace(spark=spark, _implement_sql_retried=spark.sql)
+
+
 def test_the_app_deploy_creates_the_ledger_and_grants_its_service_principal_MODIFY_on_that_table_only(agent_ns):
     spark = _Spark()
-    agent_ns["DatabricksInspire"]._implement_ledger_access(types.SimpleNamespace(spark=spark), "main.inspire", "sp-123")
+    agent_ns["DatabricksInspire"]._implement_ledger_access(_ledger_host(spark), "main.inspire", "sp-123")
     assert spark.statements == [F.ledger_create_sql(TABLE), f"GRANT SELECT ON TABLE {TABLE} TO `sp-123`",
                                 f"GRANT MODIFY ON TABLE {TABLE} TO `sp-123`"]
 
@@ -146,4 +151,4 @@ def test_the_app_deploy_creates_the_ledger_and_grants_its_service_principal_MODI
 def test_a_failed_ledger_grant_blocks_the_deploy_instead_of_leaving_a_live_App_that_cannot_count(agent_ns):
     spark = _Spark(fail=("GRANT SELECT", "PERMISSION_DENIED: only the owner can grant"))
     with pytest.raises(agent_ns["ImplementBlocked"], match="could not get MODIFY on the value ledger `main`.`inspire`.`__inspire_value_ledger`"):
-        agent_ns["DatabricksInspire"]._implement_ledger_access(types.SimpleNamespace(spark=spark), "main.inspire", "sp-123")
+        agent_ns["DatabricksInspire"]._implement_ledger_access(_ledger_host(spark), "main.inspire", "sp-123")
