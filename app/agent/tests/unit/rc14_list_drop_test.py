@@ -68,6 +68,13 @@ def test_the_rewrite_keeps_the_text_and_the_swap_marks_what_it_replaced(agent_ns
     inst = _inst(agent_ns)
 
     class _Deep:
+        # The value picker is DeepEvidence.value_counts (REQ-070): the real builder and method run over this stub's _read.
+        def value_counts_sql(self, table, column):
+            return agent_ns["DeepEvidence"].value_counts_sql(table, column)
+
+        def value_counts(self, table, column):
+            return agent_ns["DeepEvidence"].value_counts(self, table, column)
+
         def _read(self, kind, table, sql, args=None, budget="evidence", scopes=None):
             return [{"v": "first time buyers", "n": 7}]
 

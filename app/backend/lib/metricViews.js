@@ -16,7 +16,8 @@ function splitMetricViews(items, typeOf) {
 
 /** The one log line a skip writes, so a run shows what it left out. */
 function metricViewSkipLine(names) {
-  return `[METRIC-VIEW SKIPPED] ${names.length} metric views left out: ${names.join(', ')}`;
+  const noun = names.length === 1 ? 'metric view' : 'metric views';
+  return `[METRIC-VIEW SKIPPED] ${names.length} ${noun} left out: ${names.join(', ')}`;
 }
 
 /** The one plain line a Data Filters read returns for a metric view, instead of a SQL error. */

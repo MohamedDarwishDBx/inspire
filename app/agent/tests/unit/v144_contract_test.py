@@ -1141,6 +1141,7 @@ def test_a_holdout_only_edit_rewrites_the_run_controls_with_the_new_share_and_re
     files = _host_files(agent_ns, tmp_path, source=OWN_SOURCE, pages=[_host_page(agent_ns, "N01-U01", "Churn desk")],
                         title="N01-U01 Predict churn", genie="g1")
     inst = _restyle_inspire(agent_ns, tmp_path, monkeypatch, files)
+    inst._implement_scope_columns = lambda table: ["order_id", "region", "amount"]  # the column read a rows-only Table Scope needs
     inst._implement_app = lambda c, r: pytest.fail("a holdout edit leaves the App alone")
     _built, _ws, uc, spec_nb, _status, (header, instruction, user, stale, _fresh) = _controls_case(agent_ns)
     workspace = _StampedNotebook({"cells": [header, instruction, user, stale], "metadata": {"k": 1}}, 1700000000000)
