@@ -8,9 +8,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, '..', 'src', 'WaitingForAccess.jsx'), 'utf8');
 
 test('the waiting view names the owner the server returns, and falls back to your data owner when none is known (REQ-040)', () => {
-  assert.match(source, /const owner = waiting\?\.owners\?\.length \? waiting\.owners\.join\(' or '\) : WAITING_OWNER;/);
-  assert.match(source, /Ask \{owner\} to grant it\./);
-  assert.doesNotMatch(source, /Ask \{WAITING_OWNER\}/, 'the view no longer hardcodes the generic owner');
+  assert.match(source, /const ask = waitingAskOf\(waiting\?\.owners\);/);
+  assert.match(source, /\{WAITING_REASON\} \{ask\}/);
+  assert.doesNotMatch(source, /Ask \{owner\}/, 'the view no longer builds the ask sentence itself');
+  assert.doesNotMatch(source, /WAITING_OWNER/, 'the generic owner lives in plainText.js with the rest of the owner wording');
 });
 
 test('the App root and the Home hub show the one waiting view for a refused read, and never the generic start-up error (REQ-040)', () => {

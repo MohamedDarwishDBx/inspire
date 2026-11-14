@@ -255,6 +255,12 @@ test('a recorded App read grant is only ever a table-level SELECT or READ METADA
   assert.equal(appReadGrantFor(`GRANT MODIFY ON TABLE \`main\`.\`s\`.\`orders\` TO \`${app}\``, app), false);
 });
 
+test('a service principal id never reaches the build card as an owner: it shows as your data owner, Inspire keeps its name (REQ-185)', () => {
+  const { ownerLabel } = require('../lib/inspireImplement');
+  assert.equal(ownerLabel('b2b3b070-1da5-45c3-b5b6-81a2feaf85bb'), 'your data owner');
+  assert.equal(ownerLabel('Inspire'), 'Inspire');
+});
+
 test('an internal email never reaches the build card: a table owner that is a person shows as your data owner, a group keeps its name (must-exclude)', () => {
   const { appReadsRecord, ownerLabel } = require('../lib/inspireImplement');
   assert.equal(ownerLabel('person.name@example.com'), 'your data owner');
