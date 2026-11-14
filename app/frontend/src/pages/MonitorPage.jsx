@@ -27,7 +27,7 @@ import { counted } from '../lib/plural';
 import { aiSeesAggregates, discoveryTypeOf } from '../lib/discoveryType';
 import {
   mergeSteps, monitorFailureChoices, monitorSendText, pollFailure, quietLine, runElapsedMs, runEndedBadly, runFailureText, runStopped, runTitle, viewerLine,
-  sessionFailed, sessionFinished, sessionQuietSince, sessionSucceeded, stepCategory,
+  sessionFailed, sessionFinished, sessionQuietSince, sessionSucceeded, stepCategory, isUnrecordedRefusal, unrecordedWaitOver,
 } from '../lib/monitorState';
 import ChoiceList from '../components/ChoiceList';
 import { copyText } from '../lib/clipboard';
@@ -68,6 +68,10 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
   // Run-level state
   const [runInfo, setRunInfo] = useState(null);
   const [runReadError, setRunReadError] = useState('');
+  // The run has no launch record yet (or ever): Monitor waits RUN_RECORD_WAIT_MS before it says so, and shows Starting meanwhile.
+  const [recordWaiting, setRecordWaiting] = useState(false);
+  const [runUnrecorded, setRunUnrecorded] = useState(false);
+  const unrecordedSinceRef = useRef(null);
   const [sent, setSent] = useState('');
   const [again, setAgain] = useState({ busy: false, error: '' });
   const [runPhase, setRunPhase] = useState(PHASE_PENDING);
@@ -126,9 +130,14 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
     const pollOnce = async (failed) => {
       let currentRunInfo = runInfo;
       let lastRead = false;
+      let stopWhenNoSession = false;
+      let sessionSeen = false;
       if (runId) {
         try {
           const ri = await apiFetch(`/api/run/${runId}`);
+          unrecordedSinceRef.current = null;
+          setRecordWaiting(false);
+          setRunUnrecorded(false);
           setRunInfo(ri);
           currentRunInfo = ri;
           const lcs = ri.life_cycle_state || '';
@@ -141,7 +150,16 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
           }
           lastRead = runEndedBadly(ri) || runStopped(ri);
         } catch (e) {
-          if (e.status === 403) { setRunReadError(e.message); lastRead = true; }
+          if (isUnrecordedRefusal(e)) {
+            // Not a refusal of access: the run is not in the launch record yet. Starting until the record or the session shows.
+            if (unrecordedSinceRef.current == null) unrecordedSinceRef.current = Date.now();
+            setRecordWaiting(true);
+            if (unrecordedWaitOver(unrecordedSinceRef.current, Date.now())) {
+              setRunUnrecorded(true);
+              setRunReadError(e.message);
+              stopWhenNoSession = true;
+            }
+          } else if (e.status === 403) { setRunReadError(e.message); lastRead = true; }
           else failed.push(e);
         }
       }
@@ -155,6 +173,7 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
           const sessData = await apiFetch(`/api/inspire/session?${sessQ}`);
           if (sessData.session) {
             const sess = sessData.session;
+            sessionSeen = true;
             const sid = sess.session_id;
             if (trackedSessionRef.current && trackedSessionRef.current !== String(sid)) {
               setSteps([]);
@@ -195,6 +214,8 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
       } else if (!runId) {
         setPolling(false);
       }
+      // An unrecorded run keeps polling for its session; once the wait is over and no session exists, polling stops until Check again.
+      if (stopWhenNoSession && !sessionSeen) setPolling(false);
     };
 
     if (showcase) {
@@ -222,12 +243,14 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
     ? sessionSucceeded(session)
     : (!runFailed && !isStaleSession && runPhase === PHASE_TERMINATED && runInfo?.result_state === 'SUCCESS' && sessionSucceeded(session));
   const cannotRead = Boolean(runReadError) && !session;
+  // A session row exists only once the run's notebook has started, so a session shows the run as running even before its launch record does.
+  const phase = recordWaiting && session ? PHASE_RUNNING : runPhase;
   const isFailed = cannotRead || runFailed || (finished && outcome.failed);
   const isComplete = finished && !outcome.failed;
-  const isPending = !cannotRead && (sessionOnly ? (!session) : (runPhase === PHASE_PENDING));
+  const isPending = !cannotRead && (sessionOnly ? (!session) : (phase === PHASE_PENDING));
   const isRunning = sessionOnly
     ? (Boolean(session) && !isComplete && !isQuiet && !isFailed)
-    : (runPhase === PHASE_RUNNING && !isComplete && !isFailed);
+    : (phase === PHASE_RUNNING && !isComplete && !isFailed);
   const stepsLive = isPending || isRunning;
   const isWarning = isComplete && outcome.warning;
   const isCleanComplete = isComplete && !isWarning;
@@ -241,6 +264,7 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
   else if (isQuiet) { statusLabel = 'Quiet'; statusDetail = quietLine(quietSince, now); }
   else if (isWarning) { statusLabel = 'Completed with a warning'; statusDetail = outcome.message || 'The run finished with a warning.'; }
   else if (isComplete) { statusLabel = 'Completed'; statusDetail = 'Inspire finished this run.'; }
+  else if (cannotRead && runUnrecorded) { statusLabel = 'No record of this run'; statusDetail = runReadError; }
   else if (cannotRead) { statusLabel = 'Cannot read this run'; statusDetail = `Inspire cannot read this run with your sign-in: ${runReadError}`; }
   else if (isFailed) {
     statusLabel = outcome.failed ? outcome.failureTitle : (runEndedBadly(runInfo) && runResultText(runInfo.result_state)) || 'Failed';
@@ -272,6 +296,8 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
     }
     if (choice.id === 'read') {
       setRunReadError('');
+      setRunUnrecorded(false);
+      unrecordedSinceRef.current = null;
       setPolling(true);
       return;
     }
@@ -932,7 +958,9 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
             <div className="flex-1">
               <p className="text-sm font-bold text-text-primary">What you can do</p>
               <p className="text-xs text-text-secondary mt-1" data-testid="monitor-failure-next">
-                {cannotRead
+                {cannotRead && runUnrecorded
+                  ? 'Inspire has no record of this run, so it cannot show it here. Open the run in Databricks to see its state.'
+                  : cannotRead
                   ? 'Ask the person who started this run, or a workspace admin, to give you access to it.'
                   : outcome.failed
                     ? `Next step: ${nextStepOf(outcome)}`
@@ -940,7 +968,7 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
               </p>
               {platformDetail && <TechnicalDetails items={[platformDetail]} className="mt-2" />}
               <div className="mt-3 text-xs" data-testid="monitor-failure-choices">
-                <ChoiceList choices={monitorFailureChoices({ cannotRead, runUrl: runInfo?.run_page_url || '', canRunAgain: Boolean(runId && onRunAgain && !showcase && runEndedBadly(runInfo)) })} mark="data-failure-choice" onPick={pickFailure} />
+                <ChoiceList choices={monitorFailureChoices({ cannotRead, unrecorded: runUnrecorded, runUrl: runInfo?.run_page_url || '', canRunAgain: Boolean(runId && onRunAgain && !showcase && runEndedBadly(runInfo)) })} mark="data-failure-choice" onPick={pickFailure} />
                 {again.busy && <p role="status" className="mt-2 text-text-secondary"><Loader2 size={12} className="inline animate-spin me-1" aria-hidden="true" />Starting the run again…</p>}
                 {again.error && <PlainMessage text={`Inspire could not run it again: ${again.error}`} securable="workspace" copy role="alert" data-run-again-error="" className="mt-2 text-error-fg" />}
                 {sent && <p role="status" className="mt-2 text-text-secondary select-all">{sent}</p>}

@@ -108,7 +108,7 @@ import { cardAssetLinks, liveAppRenameStale, renameRestyleSpec } from '../lib/im
 import { ARCHIVE_VIEWS, archiveKeyOf, inArchiveView, loadArchiveMap, toggledArchive } from '../lib/useCaseArchive';
 import QualityGateDrops from '../components/QualityGateDrops';
 import { makeApiFetch, makeApiPostJson, requestHeaders } from '../lib/apiClient';
-import { RESULTS_PENDING_TEXT, noResultsText, reviewLinkText } from '../lib/runPages';
+import { RESULTS_PENDING_TEXT, noResultsText, resultsReadFailure, reviewLinkText } from '../lib/runPages';
 import { sessionFailed, sessionFinished, sessionSucceeded } from '../lib/monitorState';
 import { placeholderWords } from '../lib/placeholderWords';
 import { reducedMotion } from '../lib/motion';
@@ -544,12 +544,9 @@ export default function ResultsPage({
       setError(noResultsText(run, { inMonitor: embedded }));
       return 'pending';
     } catch (err) {
-      if (sid && err.status === 403) {
-        setError(reviewLinkText({ sessionId: String(sid), valid: true }, inspireDb, 'denied'));
-        return 'denied';
-      }
-      setError(err.message);
-      return 'error';
+      const failure = resultsReadFailure(err, { sid, inspireDb });
+      setError(failure.message);
+      return failure.outcome;
     } finally {
       setLoading(false);
     }
