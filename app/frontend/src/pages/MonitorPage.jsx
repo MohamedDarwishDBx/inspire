@@ -1296,7 +1296,7 @@ function RunSetupSummary({ widgetValues }) {
     <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
       {discovery && (
         <span className="px-2 py-0.5 rounded-full border border-border bg-bg-subtle text-text-secondary">
-          {aiSeesAggregates(discovery) ? `${discovery}: the AI sees the summary figures` : `${discovery}: summary figures kept from the AI`}
+          {aiSeesAggregates(discovery) ? 'Discovery: the AI sees the summary figures' : 'Discovery: summary figures kept from the AI'}
         </span>
       )}
       <span className="px-2 py-0.5 rounded-full border border-border bg-bg-subtle text-text-secondary" title={parsed.error || ''}>
