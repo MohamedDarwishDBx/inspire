@@ -69,8 +69,8 @@ def test_a_genie_agent_change_without_an_app_rebuild_points_the_built_app_at_it(
     assert (vibed["refresh"], vibed["repoint"]) == (["genie_space"], ["app"]), \
         "a vibed Genie Agent keeps its id, but its page may still ask another use case's Genie Agent or none, so the App page is checked"
     assert plan(dict(VALID, retry_outputs=["dashboard"]))["repoint"] == []
-    assert validate(dict(VALID, outputs=dict(VALID["outputs"], genie_space=False)))[0]["outputs"]["genie_space"] is True, \
-        "an App always has a Genie Agent, so no version takes it away from a built App"
+    assert validate(dict(VALID, outputs=dict(VALID["outputs"], genie_space=False)))[0]["outputs"]["genie_space"] is False, \
+        "the Genie Agent is optional (REQ-152): a version that turns it off keeps it off, and the App answers Ask itself"
     for spec, held, why in ((dict(VALID, retry_outputs=["genie_space", "app"]), None, "the App is rebuilt with it anyway"),
                             (dict(VALID, retry_outputs=["genie_space"]), dict(assets, app=None), "the App is built with it"),
                             (dict(VALID, outputs=dict(VALID["outputs"], app=False), retry_outputs=["genie_space"]), None, "no App is chosen"),

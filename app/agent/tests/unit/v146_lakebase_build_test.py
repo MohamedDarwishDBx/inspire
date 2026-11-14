@@ -183,6 +183,9 @@ def _as_uploaded(files: dict) -> dict:
 NEW_APP = RuntimeError("RESOURCE_DOES_NOT_EXIST: app churn-desk")
 WAREHOUSE = {"name": "sql-warehouse", "sql_warehouse": {"id": "wh1", "permission": "CAN_USE"}}
 LIVE = [{"deployment_id": "dep1", "status": {"state": "SUCCEEDED"}}, {"url": "https://churn-desk.example/"}]
+# What an App records about the sources it reads directly (READS) when it reads them as its service principal: the one source table
+# its pages read (sources_read), with no App-owned view of its own.
+SP_READS = {"access_mode": "sp", "reasons_view": "", "sources_read": ["main.s.orders"], "views": []}
 
 
 def _created(ns, postgres=True):
@@ -193,7 +196,7 @@ def _created(ns, postgres=True):
 def test_a_lakebase_app_is_created_with_its_database_grants_its_service_principal_and_deploys_the_lakebase_files(agent_ns, sdk_stub):
     inst, context, calls, _imported = _lakebase_deploy(agent_ns, [NEW_APP, _created(agent_ns)] + LIVE)
     fields = inst._implement_deploy_app(context, "churn-desk", LAKEBASE_FILES, READS, poll_s=0, lakebase=_lakebase())
-    assert fields["_asset"] == {"backend": "lakebase"} and "_warnings" not in fields
+    assert fields["_asset"] == {"backend": "lakebase", **SP_READS} and "_warnings" not in fields
     assert calls[1][2]["resources"] == [WAREHOUSE, agent_ns["implement_app_postgres_resource"]()]
     assert inst.lakebase_grants == ["sp-1"]
     assert _uploaded(inst) == _as_uploaded(LAKEBASE_FILES)
@@ -215,7 +218,7 @@ def test_a_delta_app_is_created_without_a_database_and_reports_delta(agent_ns, s
     fields = inst._implement_deploy_app(context, "churn-desk", SHELL_FILES, READS, poll_s=0)
     assert {k: v for k, v in fields.items() if k != "_grants"} == {
         "app_name": "churn-desk", "app_url": "https://churn-desk.example",
-        "app_health": "passed churn-desk dep1 https://churn-desk.example/health", "_asset": {"backend": "delta"}}
+        "app_health": "passed churn-desk dep1 https://churn-desk.example/health", "_asset": {"backend": "delta", **SP_READS}}
     assert calls[1][2]["resources"] == [WAREHOUSE] and inst.lakebase_grants == []
 
 
@@ -224,7 +227,7 @@ def test_an_app_whose_service_principal_cannot_read_lakebase_deploys_on_delta_an
                                                         grant="PERMISSION_DENIED: role is missing")
     fields = inst._implement_deploy_app(context, "churn-desk", LAKEBASE_FILES, READS, poll_s=0, lakebase=_lakebase())
     reason = "the App's service principal could not be given access to its Lakebase tables: PERMISSION_DENIED: role is missing"
-    assert fields["_asset"] == {"backend": "delta"} and fields["_warnings"] == [FALLBACK.format(reason)]
+    assert fields["_asset"] == {"backend": "delta", **SP_READS} and fields["_warnings"] == [FALLBACK.format(reason)]
     assert _uploaded(inst) == DELTA_FILES, "the App never deploys files that read Lakebase it cannot open"
     assert _lines(inst, "WARNING") and "[IMPLEMENT-LAKEBASE] N01-U01: App: it reads Delta tables" in _lines(inst, "WARNING")[0]
 
@@ -234,7 +237,7 @@ def test_an_app_the_workspace_will_not_give_a_database_deploys_on_delta_and_says
         agent_ns, [NEW_APP, _created(agent_ns, postgres=False), RuntimeError("INVALID_PARAMETER_VALUE: postgres is not enabled")] + LIVE)
     fields = inst._implement_deploy_app(context, "churn-desk", LAKEBASE_FILES, READS, poll_s=0, lakebase=_lakebase())
     assert [c[0] for c in calls].count("PATCH") == 1 and calls[2][2]["resources"][-1]["name"] == "postgres"
-    assert fields["_asset"] == {"backend": "delta"} and inst.lakebase_grants == []
+    assert fields["_asset"] == {"backend": "delta", **SP_READS} and inst.lakebase_grants == []
     assert fields["_warnings"] == [FALLBACK.format("Inspire could not give the App its Lakebase database as a resource")]
     assert _uploaded(inst) == DELTA_FILES
 
@@ -246,7 +249,7 @@ def test_an_existing_delta_app_switched_to_lakebase_gets_its_database_before_it_
     fields = inst._implement_deploy_app(context, "churn-desk", LAKEBASE_FILES, READS, poll_s=0, lakebase=_lakebase())
     assert [c[:2] for c in calls][1] == ("PATCH", "/api/2.0/apps/churn-desk")
     assert calls[1][2]["resources"] == [WAREHOUSE, agent_ns["implement_app_postgres_resource"]()]
-    assert fields["_asset"] == {"backend": "lakebase"} and inst.lakebase_grants == ["sp-2"]
+    assert fields["_asset"] == {"backend": "lakebase", **SP_READS} and inst.lakebase_grants == ["sp-2"]
 
 
 def test_an_app_that_does_not_start_with_the_lakebase_packages_is_deployed_again_on_delta(agent_ns, sdk_stub):
@@ -256,7 +259,7 @@ def test_an_app_that_does_not_start_with_the_lakebase_packages_is_deployed_again
                                                                   {"url": "https://churn-desk.example/"}])
     fields = inst._implement_deploy_app(context, "churn-desk", LAKEBASE_FILES, READS, poll_s=0, lakebase=_lakebase())
     assert sum(c[:2] == ("POST", "/api/2.0/apps/churn-desk/deployments") for c in calls) == 2
-    assert fields["_asset"] == {"backend": "delta"} and fields["app_health"].startswith("passed churn-desk dep2")
+    assert fields["_asset"] == {"backend": "delta", **SP_READS} and fields["app_health"].startswith("passed churn-desk dep2")
     assert _uploaded(inst) == dict(_as_uploaded(VENDORED), **DELTA_FILES), \
         "the packages the first attempt copied stay in the folder, and the App on Delta never imports them"
     assert len(fields["_warnings"]) == 1 and fields["_warnings"][0].startswith(FALLBACK.format(
@@ -286,7 +289,7 @@ def test_lakebase_notes_made_before_the_deploy_reach_the_build_warnings(agent_ns
     inst, context, _calls, _imported = _lakebase_deploy(agent_ns, [NEW_APP, _created(agent_ns, postgres=False)] + LIVE)
     fields = inst._implement_deploy_app(context, "churn-desk", DELTA_FILES, READS, poll_s=0,
                                         lakebase=_lakebase(kind="delta", files=DELTA_FILES, notes=[SP_NOTE]))
-    assert fields["_notes"] == [SP_NOTE] and "_warnings" not in fields and fields["_asset"] == {"backend": "delta"}
+    assert fields["_notes"] == [SP_NOTE] and "_warnings" not in fields and fields["_asset"] == {"backend": "delta", **SP_READS}
 
 
 TABLES = "/api/2.1/unity-catalog/tables"

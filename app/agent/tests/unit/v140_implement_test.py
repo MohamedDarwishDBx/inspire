@@ -3191,6 +3191,11 @@ PIP_CONFLICT = (
 OURS_APP = "Inspire use case N01-U01 (session 5150): Predict churn"
 
 
+# The App's permissions list with nobody but its owner on it. A user-authorization deploy reads it (GET permissions) to find who may open
+# the App, before it deploys.
+NO_AUDIENCE = {"access_control_list": []}
+
+
 def _deploy_inspire(ns, answers, access=None):
     inst = _inspire(ns, _access_spark(INSPIRE_OWNS if access is None else access))
     imported, calls = [], []
@@ -5343,8 +5348,19 @@ def _without_requirements(files):
     return {name: text for name, text in files.items() if name != "requirements.txt"}
 
 
+# The columns the workspace reports for the source tables a user-authorization App reads directly. Inspire reads them through its instance
+# reader (_implement_scope_columns), which the offline harness has no Spark session to answer.
+WORKSPACE_COLUMNS = {"main.s.orders": ["order_id", "customer_id", "value"],
+                     "main.s.orders_v2": ["order_id", "customer_id", "value", "region", "order_date"]}
+
+
+def _workspace_columns(inst):
+    inst._implement_scope_columns = lambda table: list(WORKSPACE_COLUMNS.get(table, []))
+    return inst
+
+
 def _app_flow(ns, tmp_path, page=None, write=True, outputs=None, assets=None, asset_status=None, **stubs):
-    inst = _inspire(ns, FakeSpark())
+    inst = _workspace_columns(_inspire(ns, FakeSpark()))
     inst._genie_decision_contract = _contract
     inst.local_log_output_dir = str(tmp_path)
     inst._implement_input_has_dates = lambda context: False

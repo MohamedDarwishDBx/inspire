@@ -10,7 +10,7 @@ import types
 import pytest
 
 from v120_artifacts_support import CapturingLogger, FakeSpark
-from v140_implement_test import TRUTH, VALID, _churn_page, _contract, _FileRunner, _inspire, _left_by, _spec
+from v140_implement_test import TRUTH, VALID, _churn_page, _contract, _FileRunner, _inspire, _left_by, _spec, _workspace_columns
 from v142_dash_test import ROWS, _flow, _runner as _pages
 from v142_merge_test import _serve_files
 from v143_vibes_test import BUILT, LIVE, _locked, _run, _verdicts
@@ -314,6 +314,7 @@ def test_sharing_a_page_inside_inspire_gives_its_viewers_its_warehouse_and_no_ap
 
 def _hosted_locked(ns, tmp_path, monkeypatch):
     inst, previous = _locked(ns, previous_outputs=HOSTED)
+    _workspace_columns(inst)
     del inst._implement_app
     carried = {k: v for k, v in BUILT.items() if k not in ("app_name", "app_url")}
     live = _left_by(2, json.loads(json.dumps(LIVE)))
