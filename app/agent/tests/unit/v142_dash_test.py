@@ -200,8 +200,10 @@ def _no_records(ns):
 ])
 def test_a_page_spec_that_breaks_a_dashboard_rule_goes_back_to_genie_and_nothing_publishes(agent_ns, tmp_path, make, needle):
     inst, context, seen = _flow(agent_ns, tmp_path)
-    with pytest.raises(RuntimeError, match="still failed after 3 Genie rounds"):
-        inst._implement_dashboard(context, _runner(make(agent_ns), make(agent_ns), make(agent_ns)))
+    runner = _runner(make(agent_ns), make(agent_ns), make(agent_ns))
+    with pytest.raises(RuntimeError, match="Genie sent the same problems back in round 2"):
+        inst._implement_dashboard(context, runner)
+    assert len(runner.prompts) == 2, "the second round repeats the first refusal, so no third Genie round runs (REQ-181)"
     assert _published(seen) == [] and "page_spec" not in context
     errors = [e["message"] for e in inst.emitted if e["step_name"] == "Dashboard" and "failed" in e["message"]]
     assert errors and all("page.json does not fit the Dashboard: " in m and needle in m for m in errors), errors
