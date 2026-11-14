@@ -33,7 +33,8 @@ def test_the_fired_line_is_kept_in_the_step_message_on_a_successful_completion(r
                               status="ended_success", message=LINE, keep_detail=True)
     row = run.atomic_writer.calls[-1]
     assert row["status"] == "ended_success"
-    assert LINE in row["message"], "the FIRED line reaches the message the steps route returns"
+    assert LINE.split("] ", 1)[1] in row["message"], "the label sentence reaches the message the steps route returns"
+    assert "FIRED" not in row["message"], "the proof tag stays in the log, not in the App message (REQ-059)"
 
 
 def test_a_successful_completion_without_keep_detail_keeps_the_old_story_message(run):

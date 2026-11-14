@@ -160,7 +160,7 @@ def test_a_first_build_whose_run_is_not_reliable_publishes_the_app_with_the_bann
     said = agent_ns["implement_untrusted_app_text"](REASON, True)
     assert said in final["status_message"] and "Results not trusted yet" in said and "every row in Monitor" in said
     messages = [str(e.get("message") or e.get("result_json") or e) for e in emitted if e.get("step_name") == "App"]
-    assert any("[UNTRUSTED-PUBLISH FIRED]" in m for m in messages) and not any("[UNRELIABLE-HOLD FIRED]" in m for m in messages)
+    assert not any("FIRED" in m for m in messages), "the customer messages carry no log tag"
 
 
 @pytest.mark.parametrize("counts", [{"act_now_records": 3, "review_records": 0, "records": 940}, {"records": None}, {}],
@@ -182,7 +182,7 @@ def test_a_first_build_whose_run_is_reliable_publishes_without_the_banner(agent_
 def test_an_app_live_and_trusted_is_still_held_back(agent_ns):
     _status, final, emitted, built = _build(agent_ns, "", {"not_reliable": REASON, "nothing_to_act": ""})
     assert "app" not in built and "app" not in final["asset_status"][agent_ns["IMPLEMENT_NOT_RELIABLE"]]
-    assert any("[UNRELIABLE-HOLD FIRED]" in str(e.get("message") or e.get("result_json") or e) for e in emitted)
+    assert not any("FIRED" in str(e.get("message") or "") for e in emitted), "the customer message carries no log tag"
 
 
 def test_only_a_live_app_without_the_banner_counts_as_trusted(agent_ns):

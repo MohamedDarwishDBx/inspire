@@ -273,14 +273,14 @@ def test_the_disclaimer_names_each_mode_and_what_the_ai_saw(agent_ns):
     for mode, read in (("Standard Discovery", 4), ("AI Enhanced Discovery", 4), ("Standard", 0), ("", 0)):
         _title, items = inst._doc_disclaimer({"discovery_type": mode, "tables_read": read, "language": "English", "tiers": {}}, t)
         texts[(mode, read)] = items[0]
-    assert texts[("Standard Discovery", 4)].startswith("Standard Discovery: Inspire read aggregates from the tables in scope, 4 in")
+    assert texts[("Standard Discovery", 4)].startswith("Discovery: Inspire read aggregates from the tables in scope, 4 in")
     assert texts[("Standard Discovery", 4)].endswith("none of them was sent to the AI, which saw metadata only.")
-    assert texts[("AI Enhanced Discovery", 4)].startswith("AI Enhanced Discovery: Inspire read aggregates")
+    assert texts[("AI Enhanced Discovery", 4)].startswith("Discovery: Inspire read aggregates")
     assert texts[("AI Enhanced Discovery", 4)].endswith("The AI also saw these aggregates, to sharpen each use case.")
     assert texts[("Standard", 0)] == t["doc_data_access_none"] and "read no customer data" in texts[("Standard", 0)]
     assert texts[("", 0)] == t["doc_method_1"]
     for language, fallback in ts.TRANSLATION_FALLBACKS.items():
-        for key in ("doc_discovery_standard", "doc_discovery_ai_enhanced", "doc_data_access_mode", "doc_data_access_none",
+        for key in ("doc_discovery_label", "doc_data_access_mode", "doc_data_access_none",
                     "doc_data_access_read", "doc_data_access_kept", "doc_data_access_shared", "doc_kind_informational"):
             assert fallback.get(key), (language, key)
         assert "{mode}" in fallback["doc_data_access_mode"] and "{tables}" in fallback["doc_data_access_read"], language
