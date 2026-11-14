@@ -3866,11 +3866,13 @@ class Shell:
         return problems
 
     def rule_finds_nothing(self, page: dict, chart: dict, ws, who=None, every_measure: bool = False) -> bool:
-        """True when the chart's money measures are zero for every group with no filter applied: the rule has no money exception in
-        its scope. A chart with a count of the records the rule tested still reads True, because a tested record is not an
-        exception. every_measure=True counts every measure (the zero-state panel says 'none found', so no tested record may show)."""
+        """True when the chart's stake measures are zero for every group with no filter applied: the rule has no exception in its
+        scope. A stake measure is a currency measure or one the App labels with its stake words (shell_sql.stake_measure), so a
+        plain-number 'Amount at stake' still counts. A chart with a count of the records the rule tested still reads True, because
+        a tested record is not an exception. every_measure=True counts every measure (the zero-state panel says 'none found', so no
+        tested record may show)."""
         measures = list(enumerate(chart.get("y") or []))
-        money = [i for i, y in measures if y.get("format") == "currency"]
+        money = [i for i, y in measures if shell_sql.stake_measure(y)]
         checked = [i for i, _y in measures] if every_measure or not money else money
         sql, params = shell_sql.chart_query(page, chart["id"], {})
         rows = self.run(ws, who, sql, params, shell_sql.CAPS["chart_rows"]).get("rows") or []
@@ -4067,7 +4069,7 @@ class Shell:
                                                   f"whole scope (zero matches, not a filter problem)"))
                     else:
                         failed([f"{where}: KPI {kpi['id']} has no value at the default filters"])
-            counts = {}
+            counts, zero_scopes = {}, {}
             for kind in ("chart", "table"):
                 for item in page.get(f"{kind}s") or []:
                     rows = (data[f"{kind}s"].get(item["id"]) or {}).get("rows") or []
@@ -4075,10 +4077,14 @@ class Shell:
                         continue
                     counts[(kind, item["id"])] = len(rows)
                     if not rows and self.scope_empty(page, kind, item, probe.ws):
+                        zero_scopes[(kind, item["id"])] = 0
                         found.append((CHECK_NOTE, f"{where}: {kind} {item['id']} holds no rows in its whole scope, so it is empty because "
                                                   f"nothing matched (zero matches, not a filter problem)"))
                     elif not rows:
                         failed([f"{where}: {kind} {item['id']} returned no rows at the default filters"])
+                    elif kind == "chart" and len(rows) < 2 and self.rule_finds_nothing(page, item, probe.ws):
+                        found.append((CHECK_NOTE, f"{where}: chart {item['id']} draws one group at the default filters and its rule finds "
+                                                  f"no exception in the scope, so the zero result is accepted"))
                     elif kind == "chart" and len(rows) < 2:
                         design([f"{where}: chart {item['id']} draws one group at the default filters, so it compares "
                                 f"nothing; chart a column with 2 or more values"])
@@ -4100,7 +4106,8 @@ class Shell:
                 found.extend(self.check_records(headers, page, defaults, probe, where, counts))
                 failed(self.check_overview(page, probe, where))
                 failed(self.check_impact(page, probe, where) if self.screen("impact") else [])
-            short, held = shell_sql.row_shortfalls(page, counts, self.check_held_rows(headers, page, defaults, counts, probe))
+            held_rows = {**self.check_held_rows(headers, page, defaults, counts, probe), **zero_scopes}
+            short, held = shell_sql.row_shortfalls(page, counts, held_rows)
             design([f"{where}: {p}" for p in short])
             found.extend((CHECK_NOTE, f"{where}: {n}") for n in held)
             failed(self.check_lakebase_reads(headers, page, defaults, where))
