@@ -294,6 +294,7 @@ REVIEWED = {
         ('_writable_root', 'candidates'),
         ('assert_no_blocking', "', '.join((a['rule_id'] for a in blocking[:10]))"),
         ('deep_signal_measures', 'check'),
+        ('deploy', "implement_app_raw_block(raw, [t for t in raw if not self._implement_scope_columns(t)])"),
         ('deploy', "chart['id']"),
         ('deploy', "host['name']"),
         ('deploy', 'name'),

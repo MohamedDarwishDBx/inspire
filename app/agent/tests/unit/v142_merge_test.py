@@ -365,8 +365,8 @@ def test_a_user_app_reads_a_directly_read_source_through_its_own_view_and_grants
 def test_a_sensitive_use_case_is_never_merged_into_a_service_principal_app(agent_ns, tmp_path, monkeypatch):
     # The App's pages read these sources directly: their columns come from the workspace metadata (stubbed here), so each gets an App-owned view.
     columns = {"main.s.stores": ["item_id"], "main.inspire.sales_out": ["record_key"], "main.s.orders": ["order_id"]}
-    monkeypatch.setitem(agent_ns, "implement_scope_columns_of", lambda table: columns.get(table, []))
     inst, context, seen, _calls = _merge_flow(agent_ns, tmp_path, monkeypatch, outputs={"app_access": "user"})
+    inst._implement_scope_columns = lambda table: list(columns.get(table, []))
     with pytest.raises(_blocked(agent_ns)) as raised:
         inst._implement_app(context, None)
     assert str(raised.value) == ("this use case shows each viewer only their own data, but the App sales-desk shows everyone the same data "
@@ -375,10 +375,12 @@ def test_a_sensitive_use_case_is_never_merged_into_a_service_principal_app(agent
     assert "label" not in seen and seen["deployed"] == []
     per_user = _host_files(agent_ns, tmp_path, auth="user")
     inst, context, seen, _calls = _merge_flow(agent_ns, tmp_path, monkeypatch, files=per_user, outputs={"app_access": "user"})
+    inst._implement_scope_columns = lambda table: list(columns.get(table, []))
     fields = inst._implement_app(context, None)
     assert json.loads(seen["deployed"][0][1]["inspire_app.json"])["auth"] == "user"
     assert "sign-in" not in fields["_notes"][0] and not any("of the App sales-desk" in w for w in fields.get("_warnings") or [])
     inst, context, seen, _calls = _merge_flow(agent_ns, tmp_path, monkeypatch, files=per_user)
+    inst._implement_scope_columns = lambda table: list(columns.get(table, []))
     fields = inst._implement_app(context, None)
     assert json.loads(seen["deployed"][0][1]["inspire_app.json"])["auth"] == "user", "a per-user App stays per-user"
     assert fields["_notes"][0] == "App: this page uses the sign-in, style, layout, palette and mode of the App sales-desk"

@@ -658,8 +658,19 @@ def test_guard_extracts_the_agents_sql_surface(notebook_audit):
         assert expected in joined, f"extractor did not resolve the statement containing {expected!r}"
 
 
+# The App's default filter window (REQ-067): `sql, _params = shell_sql.bounds_query(page, id)` returns the page's own dataset
+# SQL, which exists only at run time, so no static trace can reach its target. The App-shell boundary guard (v166) reviews this
+# exact entry point; the two lists must agree, and this exemption covers only this function's one call.
+RUNTIME_DATASET_SQL_REVIEWED = {("implement_genie_default_values", "spark.sql(sql)")}
+
+
+def queue_worker_sites(unresolved):
+    return [u for u in unresolved if u[1] in QUEUED_SQL_WORKERS and u[2] == "self.spark.sql(sql)"]
+
+
 def queued_worker_leftovers(unresolved):
-    return [u for u in unresolved if not (u[1] in QUEUED_SQL_WORKERS and u[2] == "self.spark.sql(sql)")]
+    queued = queue_worker_sites(unresolved)
+    return [u for u in unresolved if u not in queued and (u[1], u[2]) not in RUNTIME_DATASET_SQL_REVIEWED]
 
 
 def test_every_executed_sql_call_site_is_resolved(notebook_audit):
@@ -667,7 +678,13 @@ def test_every_executed_sql_call_site_is_resolved(notebook_audit):
     leftovers = queued_worker_leftovers(unresolved)
     assert not leftovers, "SQL call sites whose statement cannot be traced to a literal:\n" + "\n".join(
         f"line {line} in {func}: {call} -> {reasons}" for line, func, call, reasons in leftovers)
-    assert len(unresolved) - len(leftovers) <= 1, "only the single-writer queue worker may execute queued SQL"
+    assert len(queue_worker_sites(unresolved)) <= 1, "only the single-writer queue worker may execute queued SQL"
+
+
+def test_the_runtime_dataset_exemption_is_the_reviewed_app_shell_entry_point():
+    from v166_app_shell_boundary_test import SHELL_ENTRY_POINTS
+    assert ("implement_genie_default_values", "shell_sql.bounds_query") in SHELL_ENTRY_POINTS
+    assert RUNTIME_DATASET_SQL_REVIEWED == {("implement_genie_default_values", "spark.sql(sql)")}
 
 
 def test_agent_never_reads_user_table_rows(notebook_audit):
