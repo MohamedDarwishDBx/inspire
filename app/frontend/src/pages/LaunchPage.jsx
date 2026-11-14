@@ -42,7 +42,8 @@ import { parseStrategicContext, splitPriorities, validateStrategicContextText, w
 import UcPermissionErrorHelp from '../components/UcPermissionErrorHelp';
 import DataFilters from '../components/DataFilters';
 import { groupLabelOf } from '../lib/implementWizard';
-import { leftOutLine, unusableReasonOf } from '../lib/tableUsability';
+import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
+import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
 import { scopesFromObject, serializeTableScopes, filterValuesOf, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
@@ -571,18 +572,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     const failed = [];
     const leftOutNotes = [];
     Promise.all(
-      selectedSchemas.map((schemaFullName) => {
-        const [catalog, schema] = schemaFullName.split('.');
-        return apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
-          .then(d => {
-            if (d.left_out) leftOutNotes.push(leftOutLine(d.left_out));
-            return (d.tables || []).map(t => ({
-              ...t,
-              full_name: t.full_name || `${catalog}.${schema}.${t.name}`,
-            }));
-          })
-          .catch((err) => { failed.push(pickerReadFailure('tables', schemaFullName, err)); return []; });
-      })
+      selectedSchemas.map((schemaFullName) => listSchemaTables(schemaFullName, apiFetch, warehouseId)
+        .then(({ rows, leftOut }) => { if (leftOut) leftOutNotes.push(leftOut); return rows; })
+        .catch((err) => { failed.push(pickerReadFailure('tables', schemaFullName, err)); return []; }))
     ).then((r) => {
       if (!cancelled) {
         const allTables = r.flat();
@@ -594,6 +586,17 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     }).finally(() => { if (!cancelled) setLoadingTables(false); });
     return () => { cancelled = true; };
   }, [selectedSchemas, canUseUcApi, apiFetch, warehouseId]);
+
+  // Try again on a table whose type check was busy: list its schema again and replace that schema's rows.
+  const tryAgainTables = (item) => {
+    const schemaFullName = item.full_name.split('.').slice(0, 2).join('.');
+    listSchemaTables(schemaFullName, apiFetch, warehouseId)
+      .then(({ rows }) => {
+        const prefix = `${schemaFullName}.`;
+        setTables((prev) => [...prev.filter((t) => !String(t.full_name).startsWith(prefix)), ...rows]);
+      })
+      .catch((err) => setTablesReadError((prev) => [prev, pickerReadFailure('tables', schemaFullName, err)].filter(Boolean).join('\n')));
+  };
 
   // Auto-populate inspire database when first catalog is selected
   useEffect(() => {
@@ -1407,6 +1410,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                         }}
                         getKey={(t) => t.full_name}
                         disabledReasonOf={unusableReasonOf}
+                        onTryAgain={tryAgainTables}
                         getLabel={(t) => selectedSchemas.length > 1 ? `${t.schema_name}.${t.name}` : t.name}
                         searchValue={tableSearch}
                         onSearch={setTableSearch}
@@ -2038,7 +2042,18 @@ function GlowSelect({ value, onChange, options }) {
   );
 }
 
-function PickerList({ items, selected, onToggle, getKey, getLabel, disabledReasonOf = () => '', searchValue, onSearch, searchPlaceholder, emptyText }) {
+// One schema's tables for the picker, named catalog.schema.table, with the note for any the listing left out. The effect and Try again
+// both list through this, so a schema is read the same way on the first load and on a retry.
+function listSchemaTables(schemaFullName, apiFetch, warehouseId) {
+  const [catalog, schema] = schemaFullName.split('.');
+  return apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
+    .then((d) => ({
+      rows: (d.tables || []).map((t) => ({ ...t, full_name: t.full_name || `${catalog}.${schema}.${t.name}` })),
+      leftOut: d.left_out ? leftOutLine(d.left_out) : '',
+    }));
+}
+
+function PickerList({ items, selected, onToggle, getKey, getLabel, disabledReasonOf = () => '', onTryAgain, searchValue, onSearch, searchPlaceholder, emptyText }) {
   return (
     <div className="rounded-lg border border-border bg-bg overflow-hidden flex flex-col min-h-0">
       <div className="relative shrink-0">
@@ -2064,6 +2079,14 @@ function PickerList({ items, selected, onToggle, getKey, getLabel, disabledReaso
             const key = getKey(item);
             const label = getLabel(item);
             const active = selected.includes(key);
+            // A busy type check is not a verdict on the item: it is listed with Try again, which checks it again.
+            if (onTryAgain && typeCheckBusyOf(item)) {
+              return (
+                <div key={key} role="none" data-type-check-busy={key} className="w-full flex flex-wrap items-start gap-2 px-2.5 py-2 text-[11px] text-warning-fg">
+                  <TypeCheckBusyTryAgain name={label} onTryAgain={() => onTryAgain(item)} />
+                </div>
+              );
+            }
             // Fail closed: an item that cannot be used is shown with its plain reason and cannot be picked.
             const reason = disabledReasonOf(item);
             return (

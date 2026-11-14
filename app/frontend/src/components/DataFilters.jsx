@@ -5,6 +5,7 @@ import { groupLabelOf } from '../lib/implementWizard';
 import { raisePermissions } from '../lib/permissionBus';
 import { METRIC_VIEW_REFUSAL } from '../lib/pickProblem';
 import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
+import TypeCheckBusyTryAgain from './TypeCheckBusyTryAgain';
 import {
   SCOPE_OPS, columnKindOf, filterValuesOf, filteredTablesOf, isGroupRow, normalizeTableScope, pickedTableNames, scopeKeyOf,
   scopeOpOf, scopeProblems, tableBrowseQuery, tableScopeOf,
@@ -176,8 +177,7 @@ function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouse
         if (listed?.busy?.[t]) {
           return (
             <li role="none" key={t} data-type-check-busy={t} className="px-2 text-[11px] text-warning-fg flex flex-wrap items-center gap-2">
-              <span>{shortName(t)}: Inspire could not check this table's type right now.</span>
-              <button type="button" onClick={() => setListed(null)} className="underline">Try again</button>
+              <TypeCheckBusyTryAgain name={shortName(t)} onTryAgain={() => setListed(null)} />
             </li>
           );
         }
