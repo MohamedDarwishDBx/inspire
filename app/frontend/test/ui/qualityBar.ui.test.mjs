@@ -57,7 +57,8 @@ test('a run where nothing meets the bar still lists every use case found, each m
     assert.equal(await done.getAttribute('data-status'), 'warning');
     assert.match(await done.innerText(), /Run finished, with a warning/);
     assert.equal(await page.locator('[data-testid="quality-bar-counts"]').innerText(), '0 of 6 use cases meet the High quality bar');
-    assert.match(await page.locator('[data-testid="execution-outcome"]').innerText(), /^0 of 6 use cases meet the High quality bar/);
+    assert.match(await page.locator('[data-testid="execution-outcome"]').innerText(), /^Here is what we found, each marked with its reason/,
+      'the count is shown once, on quality-bar-counts (REQ-165); the outcome line keeps the rest of the message');
     assert.equal(await page.locator('[data-testid="quality-bar-next-step"]').innerText(),
       'Next step: add rows to the 2 tables that have no rows yet (the Generate data page can add sample rows), then run again.');
     const tiles = await page.locator('[data-stat]').evaluateAll((els) => els.map((el) => el.dataset.stat));
@@ -148,9 +149,8 @@ test('the Monitor shows an amber Completed with a warning when no use case meets
     assert.equal(await card.getAttribute('data-status'), 'warning');
     assert.match(await card.getAttribute('class'), /bg-warning-bg/);
     assert.doesNotMatch(await card.getAttribute('class'), /bg-success-bg/);
-    assert.match(await card.innerText(), /Completed: 0 of 6 use cases meet the High quality bar/);
     assert.equal(await card.locator('[data-testid="monitor-bar-counts"]').innerText(), '0 of 6 use cases meet the High quality bar');
-    assert.match(await card.innerText(), /Completed: 0 of 6 use cases meet the High quality bar;/, 'the count line and the headline name the same bar');
+    assert.equal((await card.innerText()).split('0 of 6 use cases meet the High quality bar').length - 1, 1, 'the count appears once on the card (REQ-165)');
     assert.match(await card.locator('[data-testid="monitor-empty-tables"]').innerText(),
       /^These tables have no rows yet: airline\.passenger\.bookings, airline\.passenger\.flights\. Add sample rows on the Generate data page, then run again\.$/);
     assert.equal(await card.getByText('Inspire finished this run.', { exact: true }).count(), 0);
