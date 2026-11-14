@@ -448,8 +448,12 @@ function overLimitText(over) {
   return ` These columns make more groups than ${limit}: ${over.map((c) => `${c.name}, ${size(c)}`).join('; ')}.`;
 }
 
-function reasonOf({ technique, qualifies, standalone, recommended, table, groups, records, over, bySubject = false }) {
+function reasonOf({ technique, qualifies, standalone, recommended, table, groups, records, over, bySubject = false, oneModel = false }) {
   const named = str(technique).trim() || 'this use case';
+  if (oneModel) {
+    return `Inspire fits one model across all of ${table} for ${named}, so the whole data is one group. Splitting it into groups would need `
+      + 'one registered model per group, and Inspire registers one model per use case, so choosing columns is refused when the use case is built.';
+  }
   if (qualifies && bySubject) {
     return `Inspire recommends ${recommended.join(', then ')} because the use case names ${recommended[recommended.length - 1]}, and that column splits `
       + `${table} into ${groups} groups.${overLimitText(over)}`;
@@ -503,7 +507,8 @@ function profileView({ table, technique, columns, candidates, stats, sample, val
   const named = keptNames.filter((n) => !heavy.has(n) && namedIn(subject, n));
   const discovered = keptColumns(deep, keptNames, heavy);
   const bySubject = !discovered && named.length > 0;
-  const recommended = discovered || (bySubject ? [named[0]] : R.recommendation(profiles.filter((p) => keptNames.includes(p.column) && !heavy.has(p.column)), nests));
+  const oneModel = R.fitsOneModel(technique);
+  const recommended = oneModel ? [] : discovered || (bySubject ? [named[0]] : R.recommendation(profiles.filter((p) => keptNames.includes(p.column) && !heavy.has(p.column)), nests));
   const grouped = keptColumns(groupBy, keptNames) || recommended;
   const shown = kept.map((p) => {
     const sizes = [...groups.get(p.name).values()].map((g) => g.records);
@@ -542,7 +547,7 @@ function profileView({ table, technique, columns, candidates, stats, sample, val
     records,
     applies,
     qualifies,
-    reason: reasonOf({ technique, qualifies, standalone, recommended, table, groups: recommendedGroups, records, over: overLimitOf(candidates, stats, groups), bySubject: bySubject && qualifies }),
+    reason: reasonOf({ technique, qualifies, standalone, recommended, table, groups: recommendedGroups, records, over: overLimitOf(candidates, stats, groups), bySubject: bySubject && qualifies, oneModel }),
     recommended_by: qualifies ? (discovered ? 'discovery' : bySubject ? 'use_case' : 'statistics') : '',
     standalone,
     columns: shown,
