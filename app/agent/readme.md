@@ -1422,7 +1422,7 @@ After a successful run, your `Generation Path` contains:
 | **`selection_basis`** | **STRING** | **NEW in v1.4.0**: why the use case was kept: `earned`, `kind_floor` or `user_request` |
 | **`selection_replaced`** | **STRING** | **NEW in v1.4.0**: the use case whose place it took, blank when it replaced none |
 | **`selection_score_gap`** | **STRING** | **NEW in v1.4.0**: Best-of-Best score of the replaced use case minus its own, blank when it replaced none |
-| **`name_with_technique`** | **STRING** | **NEW in v1.4.0**: the name the catalog shows, `<Name> using <technique in lower case>`, or the Name alone when the use case has no technique |
+| **`name_with_technique`** | **STRING** | **NEW in v1.4.0**, REQ-175: the use case name alone, the same as `Name`. The technique is never in the name: it is in the subtitle (`Technique: <label>`). Older rows may still hold `<Name> using <technique>`; the App shows the plain `Name` as the title for them too |
 | **`suggested_group_by`** | **STRING** | **NEW in v1.4.0**: Deep discovery only, grouping techniques only: the columns to compare like with like, coarse to fine and comma separated, chosen from the aggregates Deep already read (2 to 500 groups, at least 30 records per group on average, never a personal column); a column one join away is written `<table>.<column>`. Blank in Standard mode or when no column qualifies |
 | **`record_level`** | **STRING** | **NEW in v1.4.0**: Deep discovery only: what one record of the main table is, the near-unique column Deep measured, or the table name when none is near-unique |
 | `tables_involved` | STRING | Comma-separated list |

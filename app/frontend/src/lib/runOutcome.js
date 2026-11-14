@@ -2,6 +2,14 @@ import { joinWords } from './implementWizard.js';
 
 const MESSAGE_KEYS = ['message', 'text', 'reason', 'summary', 'label'];
 
+// REQ-165: the quality-bar count is rendered from the data by qualityBarCountText, once. A stored message can carry its own copy
+// of the count in an older wording ("11 of 20 use cases found meet your Good bar"), so that clause is removed before the text
+// is shown. The rest of the message (what was found, empty tables, the next step) is kept.
+const STORED_COUNT_CLAUSE = /\b\d+ of \d+ use cases? (?:found )?meets? [^.;:]*?\bbar\b[.;:]?\s*/gi;
+export function withoutStoredCount(text) {
+  return String(text ?? '').replace(STORED_COUNT_CLAUSE, '').trim();
+}
+
 export function outcomeMessage(value) {
   if (value == null) return '';
   if (typeof value === 'string') return value.trim();
@@ -80,7 +88,7 @@ export function runOutcomeOf(results, counts = null) {
   const found = known ?? 0;
   const meets = count(bar?.meets, count(counts?.meets, found));
   const emptyTables = Array.isArray(bar?.empty_tables) ? bar.empty_tables.map(String).filter(Boolean) : [];
-  const runMessage = outcomeMessage(r.run_message);
+  const runMessage = withoutStoredCount(outcomeMessage(r.run_message));
   const empty = known === 0 && Object.keys(r).length > 0;
   const failed = r.run_status === 'failed' || empty;
   const failureKind = failed ? String(r.run_failure_kind || (empty ? 'no_use_cases' : 'error')) : '';
@@ -99,8 +107,8 @@ export function runOutcomeOf(results, counts = null) {
     mode: String(bar?.mode || ''),
     emptyTables,
     allTablesEmpty: emptyTables.length > 0 && bar?.all_tables_empty === true,
-    message: runMessage || outcomeMessage(bar) || (empty ? NO_USE_CASES_MESSAGE : failed ? RUN_FAILED_MESSAGE : ''),
-    barMessage: outcomeMessage(bar),
+    message: runMessage || withoutStoredCount(outcomeMessage(bar)) || (empty ? NO_USE_CASES_MESSAGE : failed ? RUN_FAILED_MESSAGE : ''),
+    barMessage: withoutStoredCount(outcomeMessage(bar)),
     notes,
     missingDocuments,
   };

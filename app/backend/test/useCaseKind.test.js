@@ -120,7 +120,7 @@ test('the use case route normalizes the kind columns: blank is null, the selecti
   assert.equal(old.use_case_kind, null, 'an old row has no stored kind; the page derives it from the technique');
 });
 
-test('the list and detail title is the stored name with its technique, and the Name alone when a row has none', async () => {
+test('REQ-175: the list and detail title is the plain stored name, never the generated label with its technique', async () => {
   const { nameOfUseCase, cardTitlesOfUseCase } = await lib('useCaseFields.js');
   const { copyV130TrackingFields } = await lib('v130UseCase.js');
   const route = normalizeV130UseCaseFields({ Name: 'Forecast demand', name_with_technique: ' Forecast demand using forecasting ' });
@@ -128,8 +128,8 @@ test('the list and detail title is the stored name with its technique, and the N
   assert.equal(normalizeV130UseCaseFields({ name_with_technique: '  ' }).name_with_technique, null);
   const uc = { Name: 'Forecast demand' };
   copyV130TrackingFields(uc, route);
-  assert.equal(nameOfUseCase(uc), 'Forecast demand using forecasting');
-  assert.equal(cardTitlesOfUseCase(uc).title, 'Forecast demand using forecasting');
+  assert.equal(nameOfUseCase(uc), 'Forecast demand', 'the technique is in the subtitle, not the title (decision 10B)');
+  assert.equal(cardTitlesOfUseCase(uc).title, 'Forecast demand');
   assert.equal(nameOfUseCase({ Name: 'Forecast demand', name_with_technique: null }), 'Forecast demand', 'an old row keeps its Name');
 });
 

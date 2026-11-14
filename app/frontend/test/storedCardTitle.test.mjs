@@ -36,12 +36,23 @@ test('the Build list row for a renamed use case shows the stored name, not a sta
   assert.equal(items[0].name, 'Card fraud guard');
 });
 
-test('a consistent technique label (the stored name plus the technique) is still shown on the card', () => {
+test('REQ-175: the title is the plain stored name even when the label carries the technique (must-exclude: no "using <technique>" title)', () => {
   const uc = { id: 'N01-U02', user_use_case_name: 'Card fraud guard', name_with_technique: 'Card fraud guard using classification' };
-  assert.equal(nameOfUseCase(uc), 'Card fraud guard using classification');
+  assert.equal(nameOfUseCase(uc), 'Card fraud guard');
+  assert.equal(cardTitlesOfUseCase({ id: 'N01-U03', Name: 'Forecast demand', name_with_technique: 'Forecast demand using forecasting' }).title,
+    'Forecast demand');
 });
 
 test('a label left over from an older name is not shown after a rename: the stored name stands (must-exclude)', () => {
   const uc = { id: 'N01-U02', user_use_case_name: 'Card fraud guard', Name: CLEAN, name_with_technique: `${CLEAN} using classification` };
   assert.equal(nameOfUseCase(uc), 'Card fraud guard');
+});
+
+// Walk defect (REQ-182 / REQ-175): one field per name. The typed name is the title; the reader never falls back to the generated
+// name_with_technique, even where the two disagree.
+test('a record whose typed name and generated name disagree shows the typed name, and never the name_with_technique (must-exclude)', () => {
+  const typed = { id: 'N01-U01', user_use_case_name: 'Stop Duplicate and Mispriced Charges', Name: CLEAN, name_with_technique: 'Stop Duplicate and Mispriced Charges' };
+  assert.equal(nameOfUseCase(typed), 'Stop Duplicate and Mispriced Charges');
+  const legacy = { id: 'N01-U02', Name: 'Correct Charging Errors to Protect Revenue', name_with_technique: 'Stop Duplicate and Mispriced Charges' };
+  assert.equal(nameOfUseCase(legacy), 'Correct Charging Errors to Protect Revenue');
 });
