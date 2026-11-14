@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resultsReadFailure, reviewLinkText } from '../src/lib/runPages.js';
 
-const SID = '1794671730414953484';
+const SID = '1234567890123456789';
 const DB = 'main._inspire';
 const policy403 = Object.assign(new Error('Inspire has no record of this run, so it does not read it.'), { status: 403, body: { error: 'x', policy: { rule: 'recorded' } } });
 

@@ -5,7 +5,7 @@ const express = require('express');
 const P = require('../lib/routePolicy');
 
 const realFetch = globalThis.fetch;
-const RUN = '687254958012504';
+const RUN = '424242424242';
 
 // A tiny App with the real policy gate on the run routes. Each deps override answers one read the gate makes.
 async function startApp(overrides = {}) {
@@ -71,7 +71,7 @@ test('a record read that fails answers 503 "try again", never the permanent "no 
   try {
     const got = await t.get(`/api/run/${RUN}`);
     assert.equal(got.status, 503, JSON.stringify(got.data));
-    assert.match(got.data.error, /could not check its record of run 687254958012504 just now/);
+    assert.match(got.data.error, /could not check its record of run 424242424242 just now/);
     assert.doesNotMatch(got.data.error, /no record/);
     assert.equal(t.ran(), 0);
   } finally {
@@ -95,7 +95,7 @@ test('a launch-record read that fails on cancel or run again answers 503 "try ag
   try {
     const got = await t.post(`/api/run/${RUN}/again`);
     assert.equal(got.status, 503, JSON.stringify(got.data));
-    assert.match(got.data.error, /could not read the launch record of run 687254958012504 just now/);
+    assert.match(got.data.error, /could not read the launch record of run 424242424242 just now/);
     assert.doesNotMatch(got.data.error, /no record of who launched/);
   } finally {
     await t.stop();
