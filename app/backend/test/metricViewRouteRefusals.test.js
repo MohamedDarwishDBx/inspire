@@ -146,3 +146,40 @@ test('submit builds with a readable managed rate table, so the rate table check 
     assert.equal(made.jobs.length, 1, 'the build started');
   });
 });
+
+// settings/run only proxies to the built App (no table read in this backend). The profiled main table is read by the Data groups
+// profile route, which takes the same refusal before its first read, so the profile route carries the route-level check.
+const PROFILE_Q = 'inspire_database=main.inspire&warehouse_id=wh1&session_id=42&use_case_id=N01-U01';
+async function profile(url, table) {
+  const resp = await fetch(`${url}/api/grouping/profile?${PROFILE_Q}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ table, scope_days: 30 }) });
+  return { status: resp.status, data: await resp.json() };
+}
+const profileReads = (made) => made.sqlCalls.filter((c) => /approx_count_distinct|FROM `main`\.`s`\.`orders`/.test(String(c.sql))
+  && !/ LIMIT 0$/.test(String(c.sql)));
+
+test('the Data groups profile refuses a metric view as the profiled main table, by name, before any read (fail-pre)', async () => {
+  await withApp({ metricViews: ['main.s.orders'] }, async (url, made) => {
+    const got = await profile(url, 'main.s.orders');
+    assert.equal(got.status, 400, JSON.stringify(got.data));
+    assert.equal(got.data.error, MV.metricViewRefusal('main.s.orders'));
+    assert.deepEqual(profileReads(made), [], 'no row of the metric view is read for groups');
+  });
+});
+
+test('the Data groups profile refuses a main table whose type cannot be read, by name, before any read (fail-pre)', async () => {
+  await withApp({ statements: UNREADABLE_TYPE }, async (url, made) => {
+    const got = await profile(url, 'main.s.orders');
+    assert.equal(got.status, 400, JSON.stringify(got.data));
+    assert.match(got.data.error, UNKNOWN_LINE);
+    assert.deepEqual(profileReads(made), []);
+  });
+});
+
+test('the Data groups profile reads a readable managed main table (pass-post guard)', async () => {
+  await withApp({}, async (url, made) => {
+    const got = await profile(url, 'main.s.orders');
+    assert.notEqual(got.status, 400, JSON.stringify(got.data));
+    assert.ok(profileReads(made).length >= 1, 'the managed table is profiled as before');
+  });
+});
