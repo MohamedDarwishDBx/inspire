@@ -2,6 +2,7 @@ import builtins
 import json
 import pathlib
 import symtable
+import types
 
 import pytest
 
@@ -198,3 +199,20 @@ def test_a_scope_whose_view_is_not_ready_reads_the_base_table_with_its_rows_and_
 def test_the_lakebase_view_ref_quotes_each_part_for_postgres_in_the_agent(agent_ns):
     assert agent_ns["inspire_lakebase_view_ref"]('main.pricing_lb.n01_u05"x') == '"main"."pricing_lb"."n01_u05""x"', (
         "the Lakebase DROP VIEW name quotes every part the way the shell quotes it, without an undefined pg helper")
+
+
+def test_a_failed_widget_read_in_a_generated_notebook_logs_its_reason_and_keeps_the_default(agent_ns, capsys):
+    # inspire_widget is inlined into generated notebooks, which define only the inlined sources (REDACT_SOURCE and the result
+    # history block). A failed read of group_by logs [WIDGET-READ FAILED] with a redacted reason and returns the default.
+    notebook = {"__name__": "generated"}
+    exec(compile(_inlined(agent_ns), "<generated>", "exec"), notebook)
+
+    class Widgets:
+        def get(self, name):
+            raise RuntimeError("widget group_by is gone for token dapi0123456789abcdef0123 on host https://ws.example")
+
+    notebook["dbutils"] = types.SimpleNamespace(widgets=Widgets())
+    assert notebook["inspire_widget"]("group_by", "month") == "month"
+    printed = capsys.readouterr().out
+    assert printed.startswith("[WIDGET-READ FAILED] group_by: widget group_by is gone"), printed
+    assert "dapi0123456789abcdef0123" not in printed and "ws.example" not in printed, printed

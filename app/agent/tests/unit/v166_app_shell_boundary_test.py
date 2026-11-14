@@ -164,7 +164,14 @@ SHELL_ENTRY_POINTS = {
     ("implement_digest_body", "shell_sql.impact_of"),
     ("implement_digest_body", "shell_sql.stake_noun"),
     ("implement_digest_body", "shell_sql.stake_words"),
-    ("implement_driver_problems", "shell_sql.driver_charts"),
+    # Drivers on the App's non-default layouts (REQ-181). Reviewed: each name is a public module-level function of shell_sql, the
+    # App shell's own page-shape API, and has reviewed callers already (layouts: implement_layout_brief; driver_charts:
+    # implement_dashboard_from_page; page_layout: implement_drop_misfits). Shell and agent ship in one notebook, so the names
+    # cannot drift apart between a build and the App it deploys. implement_driver_problems now reaches driver_charts through
+    # implement_off_table_drivers, so its own entry moved to that function.
+    ("implement_drivers_brief", "shell_sql.layouts"),
+    ("implement_off_table_drivers", "shell_sql.driver_charts"),
+    ("implement_settle_drivers", "shell_sql.page_layout"),
     ("implement_layout_brief", "shell_sql.layout_decides"),
     *LAKEBASE_ENFORCEMENT_REVIEWED,
 

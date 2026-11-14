@@ -303,6 +303,8 @@ def _gated(ns, previews, checks_seq, refill=True, rounds=3, fills=None, reasons=
 NO_SUMMARY = {"summary": None, "ai_checks": json.dumps(dict(CHECKED, flagged=0, kinds={}))}
 GOOD = {"summary": "Six records need action.", "ai_checks": json.dumps(dict(CHECKED, flagged=0, kinds={}))}
 ENDPOINT_DOWN = {"summary": None, "ai_checks": json.dumps({"error": "the ai_endpoint widget is empty"})}
+# A refusal with different AI problems from NO_SUMMARY, so a round after it is not an identical repeat (the stop does not fire).
+FLAGGED = {"summary": "Six records need action.", "ai_checks": json.dumps(CHECKED)}
 
 
 def test_a_missing_ai_summary_on_round_2_goes_back_to_genie_for_round_3_instead_of_shipping_a_warning(agent_ns):
@@ -314,11 +316,30 @@ def test_a_missing_ai_summary_on_round_2_goes_back_to_genie_for_round_3_instead_
     assert any("the preview run's AI output failed Inspire's checks, sent back to Genie" in str(e.get("message")) for e in inst.emitted)
 
 
+def test_a_repeat_refusal_stop_ends_on_the_same_path_as_a_refused_last_round(agent_ns):
+    # The stop makes round 2 the last round. A refused last round never asks the vibes check (the loop only asks when no gate is
+    # fixable), so the stop must not ask it either; before the stop took the last-round path it did, on the refused round 2.
+    inst = _flow_inspire(agent_ns, [_preview("r-1"), _preview("r-2"), _preview("r-3")])
+    asked = []
+    inst._implement_notebook_round_vibes = lambda *args, **kwargs: asked.append(args) or None
+    served = [NO_SUMMARY, NO_SUMMARY, NO_SUMMARY]
+    inst.spark = FakeSpark(responder=lambda statement: [served.pop(0)] if statement == CHECKS_SQL and served else [])
+    runner = _FakeRunner([{"exit": 0, "final": _fill()} for _ in range(3)])
+    spec = agent_ns["validate_implement_spec"](VALID)[0]
+    use_case = {"result_table": "main.inspire.churn_out", "_implement_vibe_state": {"asset_status": {}}}
+    outcome, _job, _fill_out = inst._implement_fill_and_preview("N01-U01", (5150, "N01-U01", 1), use_case, spec, None, "/W/nb",
+                                                                ["result_table", "run_profile"], runner, True)
+    assert len(runner.prompts) == 2 and outcome["run_id"] == "r-2" and outcome["ai_fixable"] is True
+    assert asked == [], "the refused round 2 is the last round, so it is not asked the vibes check"
+
+
 def test_ai_output_genie_cannot_fix_in_every_round_ships_saying_genie_could_not_fix_it(agent_ns):
+    # Round 2 is refused with the same AI problem as round 1, so the repeat-refusal stop (8756f307f) makes round 2 the last
+    # round: it ships as unfixed with no wasted round 3. (Was 3 rounds before the stop.)
     outcome, runner, _inst = _gated(agent_ns, [_preview("r-1"), _preview("r-2"), _preview("r-3")],
                                     [NO_SUMMARY, NO_SUMMARY, NO_SUMMARY])
-    assert len(runner.prompts) == 3 and outcome["run_id"] == "r-3"
-    assert outcome["ai_fixable"] is True and outcome["gate_rounds"] == 3 and outcome["ai_problems"][0].startswith("the run wrote no AI")
+    assert len(runner.prompts) == 2 and outcome["run_id"] == "r-2"
+    assert outcome["ai_fixable"] is True and outcome["gate_rounds"] == 2 and outcome["ai_problems"][0].startswith("the run wrote no AI")
     assert agent_ns["implement_unfixed_text"]("x", 3) == "Genie could not fix this in 3 build rounds: x"
     assert agent_ns["implement_unfixed_text"]("x", 1) == "Genie could not fix this in 1 build round: x"
     assert agent_ns["implement_unfixed_text"]("x", 0) == "x; build the notebook again with Vibe/Add/Remove Features on the Build page"
@@ -373,8 +394,9 @@ class _Checkpointed:
 def test_a_last_round_that_breaks_the_run_puts_back_the_notebook_that_wrote_rows_and_runs_it_again(agent_ns, sdk_stub):
     workspace = _Checkpointed('{"cells": ["round 2 notebook"]}')
     failed = ({"status": "failed", "error": "NameError: history_pdf"}, 11, 103)
+    # Round 2 is refused with different AI problems from round 1, so round 3 runs (the stop does not fire) and is the one that breaks.
     outcome, runner, inst = _gated(agent_ns, [_preview("r-1"), _preview("r-2"), failed, _preview("r-4")],
-                                   [NO_SUMMARY, NO_SUMMARY, NO_SUMMARY], workspace=workspace)
+                                   [NO_SUMMARY, FLAGGED, NO_SUMMARY], workspace=workspace)
     assert len(runner.prompts) == 3 and outcome["run_id"] == "r-4"
     assert workspace.imported == [("/W/nb", '{"cells": ["round 2 notebook"]}')]
     assert outcome["checkpoint_note"] == ("Genie's last round left the notebook unable to write rows (NameError: history_pdf), so "
@@ -387,7 +409,7 @@ def test_a_put_back_notebook_whose_run_fails_again_ends_the_build_with_the_last_
     failed = ({"status": "failed", "error": "NameError: history_pdf"}, 11, 103)
     again = ({"status": "failed", "error": "the cluster went away"}, 11, 104)
     outcome, runner, inst = _gated(agent_ns, [_preview("r-1"), _preview("r-2"), failed, again],
-                                   [NO_SUMMARY, NO_SUMMARY], workspace=workspace)
+                                   [NO_SUMMARY, FLAGGED], workspace=workspace)
     assert outcome == {"status": "failed", "error": "NameError: history_pdf"} and len(workspace.imported) == 1
     assert inst.logger.matching("[IMPLEMENT-CHECKPOINT] N01-U01")
 
