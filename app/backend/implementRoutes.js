@@ -177,13 +177,19 @@ function registerImplementRoutes(app, deps) {
   // A failed type lookup does not block the read; the read then reports its own error.
   async function refuseMetricView(req, warehouseId, table) {
     if (!table) return;
-    let rows = [];
-    try {
-      rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, I.tableTypeStatement(table));
-    } catch {
-      return;
+    if (MV.isMetricViewType(await tableTypeOf(req, () => personReadToken(req), warehouseId, table))) {
+      throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
     }
-    if (rows.some((r) => MV.isMetricViewType(r.table_type))) throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
+  }
+
+  // The type of one table from information_schema, or null when the lookup fails (the caller then decides, as before).
+  async function tableTypeOf(req, tokenOf, warehouseId, table) {
+    try {
+      const rows = await sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table));
+      return rows.length ? String(rows[0].table_type || '') : null;
+    } catch {
+      return null;
+    }
   }
 
 
@@ -760,7 +766,10 @@ function registerImplementRoutes(app, deps) {
       const token = P.personTokenOf(req);
       if (!token) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_NO_SIGN_IN });
       const search = (async () => {
-        const rows = await sqlRows(req.dbHost, token, warehouseId, statement);
+        const found = await sqlRows(req.dbHost, token, warehouseId, statement);
+        // A metric view is never a swap: its type is read per candidate and a view is dropped before the probe.
+        const types = await Promise.all(found.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))));
+        const rows = found.filter((_r, i) => !MV.isMetricViewType(types[i]));
         const readable = await Promise.all(rows.map((r) => sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(candidateOf(r)))
           .then(() => true, () => false)));
         const copies = I.builtInSampleTable(table);
@@ -788,6 +797,9 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       const source = q(req, 'source');
       const token = personReadToken(req);
+      if (MV.isMetricViewType(await tableTypeOf(req, () => token, warehouseId, table))) {
+        return res.json({ table, readable: false, reason: MV.metricViewRefusal(table) });
+      }
       try {
         await sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(table));
       } catch (err) {

@@ -52,7 +52,7 @@ const {
   discoverReads, discoverWrites, listCatalogs, listSchemas, listTables, outputPlan, runReadPlan, scopeTables, skippedTablesDetail, ucMetadataParts,
   writeRefusalBody,
 } = require('./lib/ucReads');
-const { metricViewSkipLine } = require('./lib/metricViews');
+const { isMetricViewType, metricViewSkipLine } = require('./lib/metricViews');
 const { createSourceAccess } = require('./lib/sourceAccess');
 const { withBusyRetry } = require('./lib/busyRetry');
 const { registerShowcaseRoutes, showcaseWriteGuard } = require('./lib/showcase');
@@ -384,14 +384,31 @@ async function listSchemasSql(host, token, warehouseId, catalog) {
   }
 }
 
-async function listTablesSql(host, token, warehouseId, catalog, schema) {
+// One table's type from DESCRIBE TABLE EXTENDED ... AS JSON, its documented "type" field (METRIC_VIEW for a metric view).
+// Null when it cannot be read; the caller keeps such a table listed.
+async function tableTypeByDescribe(host, token, warehouseId, catalog, schema, name) {
+  try {
+    const result = await executeSql(host, token, warehouseId,
+      `DESCRIBE TABLE EXTENDED ${quotedIdent(catalog)}.${quotedIdent(schema)}.${quotedIdent(name)} AS JSON`);
+    const raw = result.result?.data_array?.[0]?.[0];
+    const meta = typeof raw === 'string' && raw.trim().startsWith('{') ? JSON.parse(raw) : {};
+    return meta.type ? String(meta.type).trim().toUpperCase() : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// `known` holds the full names the REST listing already typed (and the metric views it hid); only the other names are probed.
+async function listTablesSql(host, token, warehouseId, catalog, schema, known = new Set()) {
   if (!warehouseId || !catalog || !schema) return [];
   try {
     const stmt = `SHOW TABLES IN ${quotedIdent(catalog)}.${quotedIdent(schema)}`;
     const result = await executeSql(host, token, warehouseId, stmt);
     const rows = sqlResultToObjects(result);
-    // SHOW TABLES does not say which names are metric views, so the catalog's own table types decide.
+    // SHOW TABLES does not say which names are metric views, so the catalog's own table types decide. When information_schema
+    // cannot be read, each name the REST listing did not type is read with DESCRIBE TABLE EXTENDED ... AS JSON instead.
     const metricViewNames = new Set();
+    const probedTypes = new Map();
     try {
       const typed = await executeSql(host, token, warehouseId,
         `SELECT table_name FROM ${quotedIdent(catalog)}.information_schema.tables WHERE table_schema = '${escapeSqlStringLiteral(schema)}' `
@@ -399,6 +416,16 @@ async function listTablesSql(host, token, warehouseId, catalog, schema) {
       for (const row of sqlResultToObjects(typed)) if (row.table_name) metricViewNames.add(row.table_name);
     } catch (err) {
       console.warn(`   ⚠️ metric view check failed for ${catalog}.${schema}: ${err.message}`);
+      const names = rows.map((r) => r.tableName ?? r.table_name ?? r.name)
+        .filter((n) => typeof n === 'string' && n && !known.has(`${catalog}.${schema}.${n}`));
+      let unreadable = 0;
+      for (const name of names) {
+        const type = await tableTypeByDescribe(host, token, warehouseId, catalog, schema, name);
+        if (!type) { unreadable += 1; continue; }
+        probedTypes.set(name, type);
+        if (isMetricViewType(type)) metricViewNames.add(name);
+      }
+      if (unreadable) console.log(`[METRIC-VIEW PROBE] type unreadable for ${unreadable} of ${names.length} tables in ${catalog}.${schema}: kept listed`);
     }
     if (metricViewNames.size) console.log(metricViewSkipLine([...metricViewNames]));
     const out = [];
@@ -410,7 +437,7 @@ async function listTablesSql(host, token, warehouseId, catalog, schema) {
         full_name: `${catalog}.${schema}.${tname}`,
         catalog_name: catalog,
         schema_name: schema,
-        table_type: 'MANAGED',
+        table_type: probedTypes.get(tname) || 'MANAGED',
         data_source_format: '',
         updated_at: null,
         created_at: null,
@@ -1827,7 +1854,8 @@ app.get('/api/tables/:catalog/:schema', requireToken, async (req, res) => {
     }
     const countAfterRest = byKey.size;
     if (warehouseId) {
-      const sqlRows = await listTablesSql(req.dbHost, token, warehouseId, catalog, schema);
+      const sqlRows = await listTablesSql(req.dbHost, token, warehouseId, catalog, schema,
+        new Set([...byKey.keys(), ...hiddenMetricViews]));
       const hidden = new Set(hiddenMetricViews);
       for (const row of sqlRows) {
         if (!byKey.has(row.full_name) && !hidden.has(row.full_name)) byKey.set(row.full_name, row);
