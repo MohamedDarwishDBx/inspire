@@ -39,3 +39,56 @@ test('a boot read of /api/defaults that never answers shows the load error with 
     await ui.close();
   }
 });
+
+test('a warehouse detect that never answers leaves the warehouse blank, as a failed detect does, and boot still reaches the app', async () => {
+  let answering = false;
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const logs = [];
+  const mount = (app) => {
+    app.get('/api/defaults', (_req, res) => res.json({ ...DEFAULTS, warehouseId: '', envSkipsSetupWizard: true }));
+    app.get('/api/warehouses', async (_req, res) => {
+      if (!answering) await held;
+      res.json({ warehouses: [{ id: 'wh9', state: 'RUNNING', enable_serverless_compute: true }] });
+    });
+    app.get('/api/showcase', (_req, res) => res.json({}));
+  };
+  const ui = await openUi('app', {}, '', { mount, init: async (page) => { page.on('console', (m) => logs.push(m.text())); } });
+  try {
+    await ui.page.getByRole('button', { name: 'Get Started' }).first().waitFor({ timeout: 30000 });
+    const ready = logs.find((l) => l.startsWith('[bootstrap] ready:'));
+    assert.ok(ready, 'boot finished its read');
+    assert.match(ready, /warehouse: MISSING/, 'the warehouse stays blank, the same as a failed detect');
+    assert.deepEqual(ui.pageErrors.filter((e) => !e.includes('[bootstrap] error: Error: Inspire did not answer')), []);
+  } finally {
+    answering = true;
+    release();
+    await ui.close();
+  }
+});
+
+test('the setup page says when its own boot read never answers, and Try again asks again', async () => {
+  let answering = false;
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const mount = (app) => {
+    // The App never reads /api/health, so the first read of it is the setup page's own. The hold is released by Try again.
+    app.get('/api/defaults', (_req, res) => res.json({ ...DEFAULTS, envSkipsSetupWizard: false, warehouseId: '', inspireDatabase: '', databricksHost: '' }));
+    app.get('/api/health', async (_req, res) => {
+      if (!answering) await held;
+      res.json({ isDatabricksApp: false });
+    });
+    app.get('/api/showcase', (_req, res) => res.json({}));
+  };
+  const ui = await openUi('app', {}, '', { mount });
+  try {
+    await ui.page.locator('[data-detect-error]').getByText('did not answer within 20 seconds').waitFor({ timeout: 30000 });
+    answering = true;
+    await ui.page.locator('[data-detect-error]').getByRole('button', { name: 'Try again', exact: true }).click();
+    await ui.page.locator('[data-detect-error]').waitFor({ state: 'detached', timeout: 20000 });
+    assert.deepEqual(ui.pageErrors.filter((e) => !e.includes('did not answer within 20 seconds')), []);
+  } finally {
+    release();
+    await ui.close();
+  }
+});
