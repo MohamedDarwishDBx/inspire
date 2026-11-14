@@ -50,7 +50,13 @@ def test_every_demo_kind_carries_the_family_and_layout_the_agent_gives_that_kind
         assert row["kind_family"] == uc["kind_family"], uc["id"]
 
 
-def test_a_changed_technique_changes_the_title_so_the_check_can_fail(demo, agent):
+def test_a_changed_name_changes_the_title_so_the_check_can_fail(demo, agent):
+    row = _bare(demo[0])
+    row["Name"] = row["Name"] + " Weekly"
+    assert agent._inspire_name_with_technique(row) != demo[0]["name_with_technique"]
+
+
+def test_a_changed_technique_leaves_the_simple_name_as_the_title(demo, agent):
     row = _bare(demo[0])
     row["Analytics Technique"] = "Regression"
-    assert agent._inspire_name_with_technique(row) != demo[0]["name_with_technique"]
+    assert agent._inspire_name_with_technique(row) == demo[0]["name_with_technique"], "REQ-175: the title is the simple name"
