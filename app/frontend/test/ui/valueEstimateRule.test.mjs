@@ -11,7 +11,7 @@ const dir = mkdtempSync(path.join(os.tmpdir(), 'value-estimate-'));
 const outfile = path.join(dir, 'estimate.cjs');
 await build({
   stdin: {
-    contents: "export { createElement } from 'react'; export { renderToStaticMarkup } from 'react-dom/server'; export { default as ValueEstimateLine, EstimateTotals } from './src/components/ValueEstimateLine.jsx';",
+    contents: "export { createElement } from 'react'; export { renderToStaticMarkup } from 'react-dom/server'; export { default as ValueEstimateLine, EstimateTotals } from './src/components/ValueEstimateLine.jsx';\nexport { UseCaseStrategyDetail } from './src/components/UseCaseStrategyDetail.jsx';\nexport { v130View } from './src/lib/v130UseCase.js';",
     resolveDir: root, loader: 'jsx', sourcefile: 'entry.jsx',
   },
   bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent', jsx: 'automatic', loader: { '.css': 'empty' },
@@ -114,4 +114,21 @@ test('an unmeasured card with no money rule says so in one line, with no number'
   assert.match(html, /data-value-estimate="set-rule"/);
   assert.doesNotMatch(html, /Value not measured yet/);
   assert.doesNotMatch(html, /\d,?\d* AED/);
+});
+
+// The drawer's "Value estimate" section reads the same route answer as the card, so the two cannot disagree (REQ-078).
+const drawer = (props) => bundle.renderToStaticMarkup(bundle.createElement(bundle.UseCaseStrategyDetail, props));
+const info = (uc) => bundle.v130View(uc);
+
+test('the drawer value section shows the route line for an unmeasured use case, the same as its card', () => {
+  const html = drawer({ info: info(notMeasuredUc), uc: notMeasuredUc, valueEstimate: { status: 'set_rule' } });
+  assert.match(html, /data-value-estimate="set-rule"/);
+  assert.match(html, /Set a money rule to see its value\./);
+  assert.doesNotMatch(html, /Value not measured yet/);
+});
+
+test('the drawer value section keeps a measured figure over a route answer', () => {
+  const html = drawer({ info: info(measuredUc), uc: measuredUc, valueEstimate: { status: 'set_rule' } });
+  assert.match(html, /data-value-estimate="measured"/);
+  assert.doesNotMatch(html, /Set a money rule/);
 });
