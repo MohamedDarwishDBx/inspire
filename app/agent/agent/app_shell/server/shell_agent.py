@@ -55,7 +55,6 @@ REWRITE_WORDS = 120
 REWRITE_PROBLEMS = 3
 FOLLOW_UP_WORDS = 8
 SAME_SHARE = 0.005
-SCOPE_FILTERS = 3
 NAMED_DIGITS = 3
 TURN_TOKENS = 60000
 VIEW_ACTIONS = 6
@@ -537,34 +536,23 @@ LATEST_RUN = re.compile(rf"\bmax\s*\(\s*[`\"]?(?:{RUN_NAMES})[`\"]?\s*\)|[`\"]?{
                         rf"{shell_sql.RUN_LATEST}'", re.I)
 PICKED_RUN = re.compile(rf"(?<![\w.])[`\"]?(?:\w+\.)?[`\"]?(?:{RUN_NAMES})[`\"]?\s*(?:=|<|>|\bin\b|\bbetween\b)", re.I)
 WHERE = re.compile(r"\bwhere\b(.+?)(?=\bgroup\s+by\b|\border\s+by\b|\bhaving\b|\blimit\b|\bunion\b|\bqualify\b|$)", re.I | re.S)
-PREDICATE = re.compile(r"[`\"]?([A-Za-z_]\w*)[`\"]?\s*(<>|!=|>=|<=|=|>|<|\bnot\s+in\b|\bin\b|\bnot\s+like\b|\blike\b)\s*"
-                       r"('(?:[^']|'')*'|\([^()]*\)|-?\d[\w.]*)", re.I)
 CURRENT_FLAG = shell_sql.CURRENT_ROWS.split()[0]
 CURRENT_ROW = re.compile(rf"(?<![\w.])[`\"]?(?:\w+\.)?[`\"]?{CURRENT_FLAG}\b[`\"]?(?!\s*(?:=\s*false|is\s+(?:not\s+true|false)))", re.I)
-SCOPE_SET = frozenset(c.lower() for c in (*shell_sql.RUN_COLUMNS, shell_sql.RUN_COLUMN, *shell_sql.HISTORY_COLUMNS))
 
 
 def run_scope(sql) -> str:
+    """The plain-words scope of a count: which runs and which rows. Never the SQL itself: no predicates, columns or aliases."""
     wheres = WHERE.findall(str(sql or ""))
-    run = ("the latest run" if any(LATEST_RUN.search(w) for w in wheres) else "the runs it picked" if any(PICKED_RUN.search(w) for w in wheres)
-           else "")
-    current = "the current rows" if any(CURRENT_ROW.search(where) for where in wheres) else ""
-    return " of ".join(p for p in (current, run) if p) or "every row of every run"
-
-
-def sql_filters(sql) -> list:
-    out = []
-    for where in WHERE.findall(str(sql or "")):
-        for column, op, value in PREDICATE.findall(where):
-            shown = f"{column} {' '.join(op.lower().split())} {cut(value, 40)}"
-            if column.lower() not in SCOPE_SET and shown not in out:
-                out.append(shown)
-    return out[:SCOPE_FILTERS]
+    run = ("from the latest run" if any(LATEST_RUN.search(w) for w in wheres) else "from the runs the page picked" if any(
+        PICKED_RUN.search(w) for w in wheres) else "")
+    current = "current rows only" if any(CURRENT_ROW.search(where) for where in wheres) else ""
+    if current and run:
+        return f"{current}, {run}"
+    return current or run or "every row of every run"
 
 
 def sql_scope(sql) -> str:
-    filters = sql_filters(sql)
-    return run_scope(sql) + (f", where {', '.join(filters)}" if filters else ", with no filter")
+    return run_scope(sql)
 
 
 def number_of(value):
@@ -727,6 +715,16 @@ def topic_words(text) -> set:
 def identifier_words(names) -> set:
     """Words of table and column names: TotalPrice gives total and price, sales_transactions gives sales and transactions."""
     return topic_words(" ".join(re.sub(r"(?<=[a-z])(?=[A-Z])", " ", str(name or "")) for name in names or []))
+
+
+def app_scope_sources(settings) -> list:
+    """The App's source tables and columns as the build wrote them into the App settings, page-independent."""
+    out = []
+    for item in (settings or {}).get("scope_sources") or []:
+        if isinstance(item, dict) and str(item.get("table") or "").strip():
+            out.append({"dataset": cut(item["table"], TOPIC_NAME_CHARS), "tables": [cut(item["table"], TOPIC_NAME_CHARS)],
+                        "columns": [cut(c, TOPIC_NAME_CHARS) for c in (item.get("columns") or [])[:TOPIC_SOURCE_COLUMNS]]})
+    return out[:TOPIC_SOURCES]
 
 
 def source_scope(sources) -> tuple:
@@ -1439,7 +1437,7 @@ class Agent:
         earlier = [{"question": cut(item["question"], TOPIC_CHARS), "answer": cut(item["answer"], TOPIC_CHARS)}
                    for item in job["history"][-TOPIC_TURNS:]]
         about = {"app": self.shell.app_title(), "use_case": page.get("title"), "question_it_answers": page.get("question"),
-                 "domain": page.get("domain"), "outline": page_outline(page), "source_data": page_sources(page), "on_screen": on_screen,
+                 "domain": page.get("domain"), "outline": page_outline(page), "source_data": page_sources(page) + app_scope_sources(self.shell.settings), "on_screen": on_screen,
                  "earlier_turns": earlier,
                  "person_asks": job["question"]}
         self.source_columns(ws, who, page, about["source_data"])
