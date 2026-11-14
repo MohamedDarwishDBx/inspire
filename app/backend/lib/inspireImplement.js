@@ -2176,6 +2176,14 @@ function pickedTableError(err, table) {
     { statusCode: (err && err.statusCode) || 400 });
 }
 
+// information_schema.columns lists only the objects the caller can see, so a picked table that reads no columns was dropped,
+// renamed, or cannot be read by the person. Both causes are named, and the next action is the swap the preview also names.
+function unreadableTableError(table) {
+  const t = tableParts(table);
+  return Object.assign(new Error(`${t.catalog}.${t.schema}.${t.table} has no columns Inspire can read. It was dropped or renamed, `
+    + 'or your access does not include it. Swap it in Edit > Data step for the table you mean.'), { statusCode: 404 });
+}
+
 /** Runs one read of a picked table and names the picked table in its error (see pickedTableError). */
 async function readPickedTable(table, read) {
   try {
@@ -4052,6 +4060,7 @@ module.exports = {
   implementWidgets,
   tableParts,
   pickedTableError,
+  unreadableTableError,
   readPickedTable,
   columnsStatement,
   primaryKeysStatement,

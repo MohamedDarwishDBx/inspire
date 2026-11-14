@@ -738,6 +738,7 @@ function registerImplementRoutes(app, deps) {
       const token = personReadToken(req);
       const [rows, read, keyRows] = await I.readPickedTable(table, () => Promise.all([sqlRows(req.dbHost, token, warehouseId, statement),
         readColumnTags(req, token, warehouseId, [table]), sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table))]));
+      if (!rows.length) throw I.unreadableTableError(table);
       const prefix = String(table).replace(/`/g, '').toLowerCase();
       const columns = rows.map((c) => {
         const tags = read.tags[`${prefix}.${String(c.column_name).toLowerCase()}`] || {};

@@ -60,3 +60,29 @@ test('the columns route answers with the picked table named when its catalog is 
     srv.close?.();
   }
 });
+
+const EMPTY_READ = 'the columns route answers with a named error when the picked table reads no columns (REQ-180)';
+test(EMPTY_READ, async () => {
+  const made = makeApp({ useCase: USE_CASE, history: [BUILT], columnsByTable: {} });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/inspire/implement/columns?${Q}&table=${PICKED}`, {
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-email': 'owner@example.com' } });
+    const data = await resp.json();
+    assert.equal(resp.status, 404, JSON.stringify(data));
+    assert.match(data.error, /^amr_ali\.sales\.orders has no columns Inspire can read\. It was dropped or renamed, or your access does not include it\./);
+    assert.match(data.error, /Swap it in Edit > Data step/);
+    assert.doesNotMatch(data.error, /Try again|information_schema/);
+  } finally {
+    srv.close?.();
+  }
+});
+
+test('the empty-read error names the picked table, both causes and the swap, and the Data step classifies it as permanent', async () => {
+  const { permanentPickProblem } = await lib('pickProblem.js');
+  const named = I.unreadableTableError(PICKED);
+  assert.equal(named.statusCode, 404);
+  assert.equal(named.message, 'amr_ali.sales.orders has no columns Inspire can read. It was dropped or renamed, or your access does not include it. '
+    + 'Swap it in Edit > Data step for the table you mean.');
+  assert.equal(permanentPickProblem(named.message), 'missing', 'the backend text and the frontend classifier agree');
+});

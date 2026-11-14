@@ -23,3 +23,12 @@ test('busy, denied and empty reads are not permanent: they stay retryable or fix
   assert.equal(permanentPickProblem(''), '');
   assert.equal(permanentPickProblem(undefined), '');
 });
+
+// REQ-180 (Data step): a picked table that reads no columns is dropped, renamed, or unreadable. The message names the table,
+// and no Try again can change it. The backend text (unreadableTableError) must classify the same way.
+const UNREADABLE = 'amr_ali.sales.orders has no columns Inspire can read. It was dropped or renamed, or your access does not include it. '
+  + 'Swap it in Edit > Data step for the table you mean.';
+
+test('a picked table that reads no columns is a permanent pick problem, named and without Try again', () => {
+  assert.equal(permanentPickProblem(UNREADABLE), 'missing');
+});

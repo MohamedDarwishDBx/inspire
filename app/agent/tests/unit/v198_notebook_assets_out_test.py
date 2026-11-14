@@ -20,8 +20,11 @@ COUNT_NOTICE_KEYS = ("doc_fallback_notice", "doc_fallback_notice_one", "doc_bar_
 # later by any lane never changes the digest. The count notices are in the pre-move set but were regenerated on purpose after the move
 # (REQ-165), so they are left out of the frozen text.
 FROZEN_KEYS_FIXTURE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fixtures", "translation_frozen_keys.json")
-FROZEN_KEYS = tuple(k for k in json.load(open(FROZEN_KEYS_FIXTURE, encoding="utf-8"))["keys"] if k not in COUNT_NOTICE_KEYS)
-FROZEN_TRANSLATIONS_SHA256 = "83bdd3fe939fe6f86799e2120ce13ed212a1fd17aff3146a9f7b6e10d9b33787"
+# REQ-175 removed doc_name_using_technique on purpose after the move (the technique moved to the subtitle), so it is left out of the
+# frozen text too. A revert that re-adds it is caught by v180_kinds_serve_test.
+REMOVED_KEYS = ("doc_name_using_technique",)
+FROZEN_KEYS = tuple(k for k in json.load(open(FROZEN_KEYS_FIXTURE, encoding="utf-8"))["keys"] if k not in COUNT_NOTICE_KEYS + REMOVED_KEYS)
+FROZEN_TRANSLATIONS_SHA256 = "4c86c8c31667ef5460e6ad0cf6c6320fbaf6dd53beee6644f19e6dfc0ac76e71"
 IMPORT_BYTES_CAP = 8_000_000
 
 
