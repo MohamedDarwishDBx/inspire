@@ -84,7 +84,11 @@ const tracked = (action, why = TRACKED) => ({ ...anyone(action, why), appDatabas
 const yours = (action, scopes, extra = {}) => ({ rule: 'any', action, identity: 'person', scopes, ...extra });
 const owners = (action, extra = {}) => ({ rule: 'owners', action, target: useCaseTarget, identity: 'app', why: GATED, ...extra });
 const builders = (action, extra = {}) => owners(action, { firstBuildOpen: true, ...extra });
-const runTarget = (req) => ({ kind: 'run', runId: str(req.params.runId), label: `run ${str(req.params.runId)}` });
+// A run target names the run by its id. An empty id is refused with a 400 before any rule runs (decide), so the label never reads "run ".
+const runTarget = (req) => {
+  const runId = str(req.params && req.params.runId);
+  return { kind: 'run', runId, label: runId ? `run ${runId}` : 'this run' };
+};
 const sessionTarget = (req) => ({ kind: 'session', inspireDatabase: field(req, 'inspire_database'), sessionId: field(req, 'session_id'), label: `session ${field(req, 'session_id') || '(none named)'}` });
 const recorded = (action, why) => ({ rule: 'recorded', action, target: runTarget, identity: 'app', why });
 
@@ -346,8 +350,8 @@ function refusalBody(key, rule, message, permissions = null) {
     ...(permissions && permissions.length ? { permissions } : {}) };
 }
 
-function refusal(res, key, rule, message, permissions = null) {
-  return res.status(403).json(refusalBody(key, rule, message, permissions));
+function refusal(res, key, rule, message, permissions = null, status = 403) {
+  return res.status(status).json(refusalBody(key, rule, message, permissions));
 }
 
 // A refused mutation says what the person must have, as a Permission Required entry with no SQL: nothing is shown to someone who
@@ -388,14 +392,10 @@ function createRoutePolicy(deps) {
     return `Only an App manager can ${action}. You need CAN MANAGE on the ${appName} App, so ask one of its managers.`;
   }
 
+  // A failed read throws (the owners rule answers 503 and tries again); only a read that finds no record returns ''.
   async function sessionLauncher(req, target) {
-    try {
-      return norm(await deps.readLauncher(req, { kind: 'session', inspireDatabase: target.inspireDatabase, sessionId: target.sessionId,
-        label: `session ${target.sessionId}` }));
-    } catch (err) {
-      console.warn(`route policy: the launch record for session ${target.sessionId} could not be read: ${err.message}`);
-      return '';
-    }
+    return norm(await deps.readLauncher(req, { kind: 'session', inspireDatabase: target.inspireDatabase, sessionId: target.sessionId,
+      label: `session ${target.sessionId}` }));
   }
 
   async function ownersVerdict(req, person, target, entry = {}) {
@@ -427,6 +427,10 @@ function createRoutePolicy(deps) {
   async function decide(key, entry, req) {
     const appName = str(deps.appName());
     const person = norm(deps.personOf(req));
+    const named = entry.target && entry.target(req);
+    if (named && named.kind === 'run' && !named.runId) {
+      return { allowed: false, rule: entry.rule, status: 400, message: 'Inspire needs the id of the run in the address to check it, so it refuses the request' };
+    }
     const managersWhen = entry.managersWhen && entry.managersWhen(req);
     const rule = managersWhen ? 'managers' : entry.rule;
     const action = managersWhen ? entry.managersAction : entry.action;
@@ -443,7 +447,9 @@ function createRoutePolicy(deps) {
       try {
         launcher = norm(await deps.readLauncher(req, target));
       } catch (err) {
+        // A failed read is not a missing record: it answers 503 so the caller tries again, never "no record" as a permanent refusal.
         console.warn(`route policy: the launch record for ${target.label} could not be read: ${err.message}`);
+        return { allowed: false, rule, status: 503, message: `Inspire could not read the launch record of ${target.label} just now (${oneLine(err.message)}), so it cannot tell who launched it; try again` };
       }
       if (launcher && launcher === person) return { allowed: true };
       const verdict = await managerVerdict(req, person);
@@ -459,6 +465,7 @@ function createRoutePolicy(deps) {
         known = Boolean(await deps.runRecorded(req, target.runId));
       } catch (err) {
         console.warn(`route policy: the launch record for ${target.label} could not be read: ${err.message}`);
+        return { allowed: false, rule, status: 503, message: `Inspire could not check its record of ${target.label} just now (${oneLine(err.message)}); try again` };
       }
       if (known) return { allowed: true };
       return { allowed: false, rule, message: `Inspire shows only runs it launched and recorded in its own database, and it has no record of ${target.label}, so it does not read it.` };
@@ -469,13 +476,14 @@ function createRoutePolicy(deps) {
       try {
         owned = await ownersVerdict(req, person, target, entry);
       } catch (err) {
-        owned = { owner: false, unbuilt: false, why: `Inspire could not read the owners of the use case (${oneLine(err.message)})` };
+        owned = { owner: false, unbuilt: false, why: `Inspire could not read the owners of the use case (${oneLine(err.message)})`, unreadable: true };
       }
       if (owned.owner || (entry.firstBuildOpen && owned.unbuilt)) return { allowed: true };
       const verdict = await managerVerdict(req, person);
       if (verdict.manager) return { allowed: true };
       const named = target.useCaseIds.length === 1 ? owned.name || 'this use case' : 'these use cases';
       const extra = verdict.unreadable ? `; Inspire also could not read who manages the App (${verdict.unreadable})` : '';
+      if (owned.unreadable) return { allowed: false, rule, status: 503, message: `Only an owner of ${named}, or an App manager, can ${action}: ${owned.why}${extra}. Try again` };
       return { allowed: false, rule, message: `Only an owner of ${named}, or an App manager, can ${action}: ${owned.why}${extra}.` };
     }
     return { allowed: false, rule, message: `Inspire has no access rule named ${rule} for ${key}, so it refuses it.` };
@@ -498,7 +506,8 @@ function createRoutePolicy(deps) {
     return async function routePolicyGate(req, res, next) {
       const verdict = await verdictFor(key, req);
       if (verdict.allowed) return next();
-      return refusal(res, key, verdict.rule, verdict.message, verdict.permissionRequired ? permissionRefusal(verdict.message) : null);
+      if (verdict.status === 400) return res.status(400).json({ error: verdict.message });
+      return refusal(res, key, verdict.rule, verdict.message, verdict.permissionRequired ? permissionRefusal(verdict.message) : null, verdict.status || 403);
     };
   }
 
