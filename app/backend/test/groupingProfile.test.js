@@ -60,7 +60,7 @@ function runner(over = {}) {
 
 function profiled(over = {}, answers = {}) {
   return makeApp({ forwardedToken: PERSON, forwardedEmail: 'amr@x', useCase: { id: 'N01-U01', primary_table: 'main.sales.orders',
-    tables_involved: 'main.sales.orders, main.sales.stores', analytics_technique: 'Peer Benchmarking' }, statements: runner(answers), ...over });
+    tables_involved: 'main.sales.orders, main.sales.stores', analytics_technique: 'Anomaly Detection' }, statements: runner(answers), ...over });
 }
 
 async function post(srv, body, signal) {
@@ -90,7 +90,7 @@ test('the profile reads the main table with the person token only, bounded, and 
       'suggested_groups', 'group_column', 'group_sizes', 'groups_for', 'group_list', 'group_count', 'group_max', 'column_groups', 'first_run', 'default_scope', 'read_at', 'money_columns', 'money_sample', 'deep_suggestion', 'refusals']);
     assert.equal('prefill' in d, false, 'the profile carries no starting SQL, since Inspire runs no typed SQL');
     assert.deepEqual([d.table, d.records, d.applies, d.qualifies, d.standalone, d.deep_suggestion], ['main.sales.orders', 10000, true, true, false, null]);
-    assert.equal(d.reason, 'Inspire recommends region, then country because Peer Benchmarking works out what is normal inside each group, and country splits '
+    assert.equal(d.reason, 'Inspire recommends region, then country because Anomaly Detection works out what is normal inside each group, and country splits '
       + `main.sales.orders into 10 groups. These columns make more groups than the 500 Inspire models one by one: city, about 900 groups; sku, 501 groups; ${INJECTED}, `
       + 'about 600 groups.');
     assert.deepEqual(d.columns, [
@@ -161,7 +161,7 @@ test('First run lists the groups of the Data groups the person chose, and never 
 });
 
 test('a Deep discovery grouping on the use case comes back with the profile, and never for a technique that does not group (must-exclude)', async () => {
-  const deep = { id: 'N01-U01', primary_table: 'main.sales.orders', analytics_technique: 'Peer Benchmarking', suggested_group_by: ' stores.region , store_id, store_id',
+  const deep = { id: 'N01-U01', primary_table: 'main.sales.orders', analytics_technique: 'Anomaly Detection', suggested_group_by: ' stores.region , store_id, store_id',
     record_level: ' order_id ' };
   await withApp(profiled({ useCase: deep }), async (srv) => {
     const got = await post(srv, ASK);
@@ -219,7 +219,7 @@ test('a column of 501 groups and one of about 900 are left out, and the second i
 });
 
 test('a column with more than half its records empty is listed but never recommended (must-exclude)', () => {
-  const base = { table: 'main.sales.orders', technique: 'Peer Benchmarking', columns: [{ column_name: 'ragged', data_type: 'STRING' }], candidates: ['ragged'],
+  const base = { table: 'main.sales.orders', technique: 'Predictive Modeling', columns: [{ column_name: 'ragged', data_type: 'STRING' }], candidates: ['ragged'],
     sample: [{ kind: 'size', coarse: '0', fine: '-1', groups: '3', records: '10000' }], paths: null, time: null, days: 30, keys: { primary: [], joins: [] },
     joins: [], readAt: 'now', values: [{ col: '0', value: 'A', records: '2000' }, { col: '0', value: 'B', records: '2000' }, { col: '0', value: null, records: '6000' }] };
   const heavy = GP.profileView({ ...base, stats: { records: '10000', d0: '2', n0: '6000' } });
@@ -507,7 +507,7 @@ test('a standalone technique on a star fact table hides the Grouping step', asyn
 test('a Deep discovery grouping the profile can size becomes the one recommendation, so the example, the groups and the first run all describe it (must-exclude: an unsized one changes nothing)', () => {
   const values = [...['east', 'west', 'north', 'south'].map((v, i) => ({ col: '0', value: v, records: String(1000 + i * 100) })),
     ...['visa', 'amex', 'mastercard'].map((v, i) => ({ col: '1', value: v, records: String(1400 + i * 50) }))];
-  const base = { table: 'main.sales.orders', technique: 'Peer Benchmarking', candidates: ['region', 'payment'], paths: null, time: null, days: 30,
+  const base = { table: 'main.sales.orders', technique: 'Anomaly Detection', candidates: ['region', 'payment'], paths: null, time: null, days: 30,
     columns: [{ column_name: 'region', data_type: 'STRING' }, { column_name: 'payment', data_type: 'STRING' }], keys: { primary: [], joins: [] }, joins: [], readAt: 'now',
     sample: [{ kind: 'size', coarse: '0', fine: '-1', groups: '4', records: '4600' }, { kind: 'size', coarse: '1', fine: '-1', groups: '3', records: '4600' }],
     values, stats: { records: '4600', d0: '4', n0: '0', d1: '3', n1: '0' } };
@@ -568,7 +568,7 @@ test('a nested grouping with more groups than the list holds still counts every 
 test('the default grouping is the column the use case names when the statistics would pick another, and the reason says so (must-exclude: a column it does not name)', () => {
   const values = [{ col: '0', value: 'true', records: '4500' }, { col: '0', value: 'false', records: '4500' },
     { col: '1', value: 'east', records: '3000' }, { col: '1', value: 'west', records: '3000' }, { col: '1', value: 'north', records: '3000' }];
-  const base = { table: 'main.sales.invoices', technique: 'Peer Benchmarking', candidates: ['autopay_enrolled', 'district'], paths: null, time: null, days: 30,
+  const base = { table: 'main.sales.invoices', technique: 'Predictive Modeling', candidates: ['autopay_enrolled', 'district'], paths: null, time: null, days: 30,
     columns: [{ column_name: 'autopay_enrolled', data_type: 'BOOLEAN' }, { column_name: 'district', data_type: 'STRING' }], keys: { primary: [], joins: [] }, joins: [],
     readAt: 'now', sample: [{ kind: 'size', coarse: '0', fine: '-1', groups: '2', records: '9000' }], values, stats: { records: '9000', d0: '2', n0: '0', d1: '3', n1: '0' } };
   const unnamed = GP.profileView({ ...base, subject: 'Forecast billed revenue' });

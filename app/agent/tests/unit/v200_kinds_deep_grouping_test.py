@@ -236,17 +236,17 @@ def test_the_build_instruction_says_how_to_bring_a_joined_grouping_column_in(age
 
 
 def test_a_build_with_no_grouping_chosen_starts_from_the_deep_suggestion(agent_ns):
-    plan = agent_ns["implement_grouping_plan"]("Peer Benchmarking", [], "", "", ["item.category"], "deep")
+    plan = agent_ns["implement_grouping_plan"]("Anomaly Detection", [], "", "", ["item.category"], "deep")
     assert plan["applies"] and plan["default"] == "item.category" and plan["columns"] == ["item.category"]
     assert plan["chosen_by"] == "deep"
-    assert agent_ns["implement_grouping_plan"]("Peer Benchmarking", [], "", "", ["region"])["chosen_by"] == "Inspire"
-    person = agent_ns["implement_grouping_plan"]("Peer Benchmarking", ["region"], "region", "", [])
+    assert agent_ns["implement_grouping_plan"]("Anomaly Detection", [], "", "", ["region"])["chosen_by"] == "Inspire"
+    person = agent_ns["implement_grouping_plan"]("Anomaly Detection", ["region"], "region", "", [])
     assert person["default"] == "region" and person["chosen_by"] == "person"
     obj = make_inspire(agent_ns)
     obj._implement_columns_of = lambda tables, cache: {tables[0]: [{"column_name": "region", "data_type": "string"}]}
     asked = []
     obj._implement_grouping_recommendation = lambda uc_id, table, candidates: asked.append(table) or ["region"]
-    uc = make_uc("N01-U01", **{"Analytics Technique": "Peer Benchmarking", "suggested_group_by": "item.category"})
+    uc = make_uc("N01-U01", **{"Analytics Technique": "Anomaly Detection", "suggested_group_by": "item.category"})
     spec = {"config": {"widgets": {}}, "data": {}, "outputs": {}}
     deep = obj._implement_grouping(uc, spec, ("42", "N01-U01"), {})
     assert deep["default"] == "item.category" and asked == []
@@ -301,7 +301,7 @@ def test_the_build_plan_carries_the_join_of_each_joined_grouping_column(agent_ns
     assert joins_of(["item.category"], [dict(ITEM_JOIN, table="`main`.`s`.`sales`")], ["main.s.sales_v2", SALES]) == {"item.category": item}
     obj = make_inspire(agent_ns)
     obj._implement_columns_of = lambda tables, cache: {tables[0]: [{"column_name": "region", "data_type": "string"}]}
-    uc = make_uc("N01-U01", **{"Analytics Technique": "Peer Benchmarking", "suggested_group_by": "item.category",
+    uc = make_uc("N01-U01", **{"Analytics Technique": "Anomaly Detection", "suggested_group_by": "item.category",
                                "table_joins": json.dumps([ITEM_JOIN])})
     plan = obj._implement_grouping(uc, {"config": {"widgets": {}}, "data": {}, "outputs": {}}, ("42", "N01-U01"), {})
     assert plan["joins"] == {"item.category": item}

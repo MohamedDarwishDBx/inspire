@@ -1,6 +1,6 @@
 const { RUN_SCOPES } = require('../../frontend/src/lib/runScope.js');
 const { PERSONAL_NAME_RE, PERSONAL_TAG_RE, personalColumn } = require('../../frontend/src/lib/personalColumns.js');
-const { technique_records: TECHNIQUE_RECORDS, execution_family: EXECUTION_FAMILY, model_families: MODEL_FAMILIES } = require('../../agent/agent/app_shell/kinds.json');
+const { technique_records: TECHNIQUE_RECORDS, execution_family: EXECUTION_FAMILY, one_model_families: ONE_MODEL_FAMILIES } = require('../../agent/agent/app_shell/kinds.json');
 const GROUP_BY = 'group_by';
 const GROUP_LABEL = 'Data groups';
 const GROUP_ALL = 'all';
@@ -48,14 +48,14 @@ function techniqueRecords(technique) {
 const groupingApplies = (technique) => techniqueRecords(technique) === 'groups';
 const standaloneRecords = (technique) => techniqueRecords(technique) === 'alone';
 
-// A kind whose family registers one model (kinds.json model_families) fits one model across all the data. A Grouping that splits the
-// records into groups would need one registered model per group, so for these kinds the only Grouping that builds is the whole data.
+// A kind whose per-group fit needs one registered model per group (kinds.json one_model_families, the notebook's INSPIRE_ONE_MODEL_FAMILIES)
+// is built on the whole data only: a Grouping of columns is refused when the build starts.
 function familyOf(technique) {
   const label = lower(technique).split(/\s+/).filter(Boolean).join(' ');
   const key = Object.keys(EXECUTION_FAMILY).find((name) => name.toLowerCase() === label);
   return key === undefined ? '' : EXECUTION_FAMILY[key];
 }
-const fitsOneModel = (technique) => groupingApplies(technique) && MODEL_FAMILIES.includes(familyOf(technique));
+const fitsOneModel = (technique) => groupingApplies(technique) && ONE_MODEL_FAMILIES.includes(familyOf(technique));
 
 function groupByParts(text) {
   const picked = [];

@@ -323,7 +323,7 @@ export function groupingChoices(profile, settingChoices = []) {
   const columns = (Array.isArray(profile?.columns) ? profile.columns : []).filter(isMap);
   const shown = columns.map((c) => text(c.name)).filter(Boolean);
   const joinOf = new Map(columns.filter((c) => isMap(c.join)).map((c) => [text(c.name), c.join]));
-  const extra = recommended.length || shown.length ? [] : (settingChoices || []).map(text).filter((c) => c && ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
+  const extra = recommended.length || shown.length || profile?.one_model ? [] : (settingChoices || []).map(text).filter((c) => c && ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
   const known = [...new Set([...recommended, ...shown, ...extra])];
   const withJoin = (choice) => {
     const via = choice.columns.filter((c) => joinOf.has(c)).map((c) => `${c} joins on ${text(joinOf.get(c).key)} = ${text(joinOf.get(c).ref_column)}`);

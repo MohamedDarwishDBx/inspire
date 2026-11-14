@@ -5,7 +5,7 @@ const GP = require('../lib/groupingProfile');
 
 const TABLE = 'main.retail.sales';
 
-function storeView(groups, perGroup, { type = 'STRING', name = 'store', technique = 'Peer Benchmarking', approx = groups, extra = [] } = {}) {
+function storeView(groups, perGroup, { type = 'STRING', name = 'store', technique = 'Anomaly Detection', approx = groups, extra = [] } = {}) {
   const columns = [{ column_name: name, data_type: type }, ...extra.map((c) => ({ column_name: c.name, data_type: 'STRING' }))];
   const candidates = R.groupingCandidates(columns, {}, TABLE);
   const values = [];
@@ -27,7 +27,7 @@ test('Data groups scale: 2, 31 and 500 groups are offered and counted, 1 group i
   for (const groups of [2, 31, R.GROUP_MAX_GROUPS]) {
     const view = storeView(groups, 40);
     assert.deepEqual([view.qualifies, view.recommended, view.group_count, view.group_list.length], [true, ['store'], groups, groups], `${groups} groups`);
-    assert.equal(view.reason, `Inspire recommends store because Peer Benchmarking works out what is normal inside each group, and store splits ${TABLE} `
+    assert.equal(view.reason, `Inspire recommends store because Anomaly Detection works out what is normal inside each group, and store splits ${TABLE} `
       + `into ${groups} groups.`);
   }
   const one = storeView(1, 40);
@@ -43,7 +43,7 @@ test('a column with more groups than Inspire models is named in the reason with 
   assert.match(huge.reason, / store makes about 4,100 groups, more than the 500 Inspire models one by one\.$/);
   const beside = storeView(540, 40, { approx: 540, extra: [{ name: 'region', groups: 5, per: 4320 }] });
   assert.deepEqual(beside.recommended, ['region']);
-  assert.equal(beside.reason, `Inspire recommends region because Peer Benchmarking works out what is normal inside each group, and region splits ${TABLE} `
+  assert.equal(beside.reason, `Inspire recommends region because Anomaly Detection works out what is normal inside each group, and region splits ${TABLE} `
     + 'into 5 groups. store makes 540 groups, more than the 500 Inspire models one by one.');
   assert.doesNotMatch(storeView(31, 40).reason, /more than the/, 'no column over the limit, no extra sentence');
   assert.doesNotMatch(storeView(1, 40).reason, /more than the/, 'one group is too few, not too many');
@@ -72,7 +72,7 @@ test('group values in other scripts, with commas, slashes or quotes reach the li
   const columns = [{ column_name: 'city', data_type: 'STRING' }];
   const odd = ['دبي', 'Abu Dhabi, Al Ain', 'A / B', "O'Hare", '東京', 'ﺍﻟﺸﺎﺭﻗﺔ'];
   const values = odd.map((value) => ({ col: '0', value, records: '40' }));
-  const view = GP.profileView({ table: TABLE, technique: 'Peer Benchmarking', columns, candidates: R.groupingCandidates(columns, {}, TABLE),
+  const view = GP.profileView({ table: TABLE, technique: 'Anomaly Detection', columns, candidates: R.groupingCandidates(columns, {}, TABLE),
     stats: { records: String(odd.length * 40), d0: String(odd.length), n0: '0' }, sample: [{ kind: 'size', coarse: '0', fine: '-1', groups: String(odd.length), records: '240' }],
     values, paths: null, time: null, days: 30, readAt: 'now' });
   assert.deepEqual(view.group_list.map((g) => g.value).sort(), [...odd].sort());
