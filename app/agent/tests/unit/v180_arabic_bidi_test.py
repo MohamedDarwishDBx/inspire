@@ -83,7 +83,7 @@ def test_arabic_pdf_isolates_table_names_numbers_and_ids(agent_ns, captured):
     ts = agent_ns["TranslationService"]
     t = dict(ts.ENGLISH_TRANSLATIONS)
     t.update(ts.TRANSLATION_FALLBACKS["Arabic"])
-    uc = make_uc("N01-U01", "المبيعات", Name="Forecast units_sold by store (المبيعات)", usecase="توقع الطلب (units_sold) يوميا",
+    uc = make_uc("N01-U01", "المبيعات", Name="توقع الطلب (units_sold) يوميا", usecase="توقع الطلب (units_sold) يوميا",
                  Statement="يتنبأ النموذج بالطلب من الجدول main.s.sales (عمود units_sold) بنسبة 12.5% كل يوم")
     obj = make_inspire(agent_ns, output_languages=["English", "Arabic"])
     obj.generate_catalog_pdf("Arabic", "ar", t, {"Executive": "<p>ملخص يذكر الجدول main.s.sales</p>"}, {"المبيعات": [uc]}, "Acme")
@@ -92,7 +92,9 @@ def test_arabic_pdf_isolates_table_names_numbers_and_ids(agent_ns, captured):
     card = card[:card.index("</article>")]
     assert "الجدول " + LRI + "main.s.sales" + PDI + " (عمود " + LRI + "units_sold" + PDI + ")" in card
     assert LRI + "12.5%" + PDI in card
-    assert "توقع الطلب (" + LRI + "units_sold" + PDI + ") يوميا" in card
-    assert '<div class="sub">' + LRI + "Forecast units_sold by store" + PDI + " (المبيعات) باستخدام " in card
+    assert "توقع الطلب (" + LRI + "units_sold" + PDI + ") يوميا" in card, "the title is the Arabic Name, its table token isolated"
+    sub = re.search(r'<div class="sub"[^>]*>(.*?)</div>', card).group(1)
+    assert "الجدول " + LRI + "main.s.sales" + PDI + " (عمود " + LRI + "units_sold" + PDI + ")" in sub, "the subtitle outcome keeps its tokens isolated"
+    assert sub.endswith("تقنية التحليل: التنبؤ.") and "باستخدام" not in sub, "REQ-175: the technique is a subtitle clause, never joined to the name"
     assert "ملخص يذكر الجدول " + LRI + "main.s.sales" + PDI in page
     assert all(balanced(run) for run in isolates(page))

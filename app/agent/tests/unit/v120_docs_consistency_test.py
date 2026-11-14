@@ -98,7 +98,7 @@ def test_one_view_drives_the_pdf_card_the_deck_card_and_the_markdown_entry(docs,
                      "Tables Involved", "Statement", "Solution", "Business Value", "Quality Score", "Inspire Score",
                      "Best-of-Best Score", "Priority", "Value", "Feasibility"):
         assert business in view_labels(views[0]), business
-    assert set(views[0]) == {"uc", "id", "rank", "title", "name", "domain", "subdomain", "kind", "quality", "metrics", "narrative",
+    assert set(views[0]) == {"uc", "id", "rank", "title", "subtitle", "domain", "subdomain", "kind", "quality", "metrics", "narrative",
                              "facts", "value_facts", "coverage", "notice", "untranslated", "star", "meets_bar"}
     assert all(view["star"] is None for view in views), "a use case without the Best of Best mark has no star"
     assert all(view["value_facts"] == [] for view in views), "a catalog without v1.3.0 fields has no value facts"
@@ -145,7 +145,7 @@ def test_one_index_design_with_identical_columns_and_final_rank_order(docs, capt
     index = next(s for s in slide_texts(prs) if s.startswith("APPENDIX | Use case index"))
     assert " | ".join(expected_header) in index
     assert re.findall(r"\| (N0\d-U0\d) \|", index) == expected_ids
-    assert "| N02-U01 | Coverage pick · Forecast Demand N02-u01 |" in index
+    assert "| N02-U01 | Coverage pick · Ops Pick |" in index, "REQ-175: the index titles a use case with its Title Case name"
     assert '<span class="ixflag">Coverage pick</span> <a href="#uc-N02-U01">' in full
 
 

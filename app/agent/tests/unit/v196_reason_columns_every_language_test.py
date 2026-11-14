@@ -24,7 +24,7 @@ ARABIC_REASONS = {"Justification": "التوافق الاستراتيجي مرت
                   "Quality Summary": "مبني على جداول المبيعات والمتاجر بمفاتيح ربط نظيفة",
                   "best_of_best_reason": "اجتاز كل اختبارات النخبة وخارج أفضل خمس حالات"}
 ARABIC_TITLE = "توقع الطلب اليومي لتقليل نفاد المخزون"
-BUILT_IN_ENGLISH_HEADERS = ("ID", "Business Domain", "Subdomain", "Use Case", "Description", "Primary Table",
+BUILT_IN_ENGLISH_HEADERS = ("ID", "Business Domain", "Subdomain", "Use Case", "Subtitle", "Primary Table",
                             "Priority Reasons", "Quality Reasons", "Result Database", "Has Genie Code",
                             "Best of Best Reason", "Elite Status", "Coverage Pick Reason", "Below Bar Reason")
 
