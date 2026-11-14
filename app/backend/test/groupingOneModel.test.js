@@ -44,3 +44,30 @@ test('a person-named or Discovery column still applies to an anomaly use case (m
   const d = GP.profileView({ ...base('Anomaly Detection'), subject: 'Flag odd payments by region', deep: ['payment'] });
   assert.deepEqual([d.recommended, d.recommended_by], [['payment'], 'discovery']);
 });
+
+const RS = require('../../frontend/src/lib/runScope.js');
+
+test('REQ-193: the save, the wizard and the Run page refuse a column for a one-model kind with one reason; all and the other kinds pass (must-exclude)', () => {
+  const refused = RS.oneModelProblem('region', true);
+  assert.equal(refused, `Data groups is 'region': ${RS.ONE_MODEL_REFUSED}`);
+  assert.equal(RS.oneModelProblem('all', true), '');
+  assert.equal(RS.oneModelProblem('region', false), '', 'anomaly and the other kinds keep their planned column (must-exclude)');
+  assert.deepEqual(RS.scopeProblems({ group_by: 'region' }, 'grouping', true), [refused]);
+  assert.deepEqual(RS.scopeProblems({ group_by: 'all' }, 'grouping', true), []);
+  assert.deepEqual(RS.scopeProblems({ group_by: 'region' }, 'grouping', false), [], 'the wizard flag is per use case');
+});
+
+test('REQ-193: the Run page offers only the whole data for a one-model kind, even when the widget lists a column', () => {
+  const d = GP.profileView(base('Segmentation'));
+  assert.deepEqual(RS.groupingChoices(d, ['region', 'all']).map((c) => c.value), ['all']);
+});
+
+test('REQ-193: the wizard Data groups step refuses a column when its profile says one model, and only then (must-exclude)', async () => {
+  const { pathToFileURL } = require('node:url');
+  const path = require('node:path');
+  const W = await import(pathToFileURL(path.resolve(__dirname, '..', '..', 'frontend', 'src', 'lib', 'implementWizard.js')).href);
+  const spec = { config: { widgets: { group_by: 'region' } }, outputs: {}, data: {} };
+  const refused = W.sectionErrors('grouping', spec, { scopeProfile: { one_model: true } });
+  assert.deepEqual(refused, [RS.oneModelProblem('region', true)]);
+  assert.deepEqual(W.sectionErrors('grouping', spec, { scopeProfile: { one_model: false } }), [], 'an anomaly profile keeps the column');
+});
