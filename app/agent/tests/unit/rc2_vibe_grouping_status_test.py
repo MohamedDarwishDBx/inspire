@@ -97,3 +97,69 @@ def test_an_app_that_failed_to_publish_is_unpublished_and_a_live_one_is_not(agen
     assert agent_ns["implement_unpublished"](["app"], {"app": {"state": "ready"}}, {}, 2) is False, "a published App is published"
     assert agent_ns["implement_unpublished"](["genie_space"], failed, {}, 2) is False, "only outputs that publish count"
     assert agent_ns["implement_unpublished"]([], failed, {}, 2) is False
+
+
+OWNER = "owner@example.com"
+
+
+def _owned(previous_spec):
+    return {"spec_version": 2, "created_by": OWNER, "spec_json": previous_spec}
+
+
+def test_the_owner_of_the_use_case_can_change_the_grouping_with_a_vibe(agent_ns):
+    inst, previous = _locked(agent_ns)
+    previous_spec = agent_ns["validate_implement_spec"](previous)[0]
+    previous_spec = dict(previous_spec, config={"widgets": {"group_by": PLANNED}})
+    spec = dict(_grouped(previous_spec, GLOBAL))
+    grouped = inst._implement_vibe_grouping_owner((5150, "N06-U02", 3), {"created_by": OWNER}, _owned(previous_spec), previous_spec, spec,
+                                                  {}, {})
+    assert grouped["config"]["widgets"]["group_by"] == "all"
+
+
+def test_a_non_owner_cannot_change_the_grouping_with_a_vibe_and_gets_the_plain_refusal(agent_ns):
+    inst, previous = _locked(agent_ns)
+    previous_spec = agent_ns["validate_implement_spec"](previous)[0]
+    previous_spec = dict(previous_spec, config={"widgets": {"group_by": PLANNED}})
+    spec = dict(_grouped(previous_spec, GLOBAL))
+    with pytest.raises(agent_ns["ImplementStopped"], match="is not one of them, so Inspire applied nothing of v3"):
+        inst._implement_vibe_grouping_owner((5150, "N06-U02", 3), {"created_by": "stranger@example.com"}, _owned(previous_spec),
+                                            previous_spec, spec, {}, {})
+
+
+def test_a_vibe_that_keeps_the_same_grouping_needs_no_owner_check_must_exclude(agent_ns):
+    inst, previous = _locked(agent_ns)
+    previous_spec = dict(agent_ns["validate_implement_spec"](previous)[0], config={"widgets": {"group_by": PLANNED}})
+    spec = dict(_grouped(previous_spec, "Grouping: paymentMethod."))
+    got = inst._implement_vibe_grouping_owner((5150, "N06-U02", 3), {"created_by": "stranger@example.com"}, _owned(previous_spec),
+                                              previous_spec, spec, {}, {})
+    assert got is spec
+
+
+def test_the_built_default_that_is_not_the_vibe_grouping_is_the_reason_it_is_unmet(agent_ns):
+    widgets = [{"name": "group_by", "default": PLANNED}]
+    assert agent_ns["implement_grouping_default_problem"]("all", widgets) == "the Grouping is paymentMethod, not all"
+    assert agent_ns["implement_grouping_default_problem"]("all", [{"name": "group_by", "default": "all"}]) == ""
+    assert agent_ns["implement_grouping_default_problem"]("all", []) == "the Grouping is not set, not all"
+
+
+def test_a_built_notebook_that_misses_the_vibe_grouping_records_a_missed_ask(agent_ns):
+    spec = {"vibes": f"{GLOBAL}\nPut the riskiest customers first."}
+    status = {}
+    assert agent_ns["implement_grouping_check"](status, spec, [{"name": "group_by", "default": PLANNED}]) == "the Grouping is paymentMethod, not all"
+    assert status["notebook"]["vibes_checks"] == [{"ask": GLOBAL, "status": "missing", "evidence": "the Grouping is paymentMethod, not all"}]
+
+
+def test_a_built_notebook_that_holds_the_vibe_grouping_or_a_vibe_without_one_records_nothing_must_exclude(agent_ns):
+    status = {}
+    assert agent_ns["implement_grouping_check"](status, {"vibes": GLOBAL}, [{"name": "group_by", "default": "all"}]) == ""
+    assert status == {}
+    assert agent_ns["implement_grouping_check"]({}, {"vibes": "Put the riskiest customers first."}, [{"name": "group_by", "default": PLANNED}]) == ""
+
+
+def test_the_vibe_step_says_the_grouping_it_set(agent_ns):
+    inst, previous = _locked(agent_ns)
+    _llm(inst, {"notebook": GLOBAL})
+    spec = agent_ns["validate_implement_spec"](_grouped(previous, GLOBAL))[0]
+    inst._implement_route_vibe((5150, "N06-U02", 3), spec, {"checklist": []}, False)
+    step = [event for event in inst.emitted if event["step_name"] == "Vibe"][-1]
+    assert step["message"].startswith("Grouping set to all from your vibe"), step["message"]

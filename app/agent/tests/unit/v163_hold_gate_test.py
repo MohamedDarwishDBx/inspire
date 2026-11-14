@@ -347,7 +347,8 @@ def test_only_the_checklist_writes_a_not_met_ask_and_only_the_hold_writes_a_held
                               "not_decided": {"implement_not_decided_entries"}, "refused": {"implement_settings_refused_entries"}}
     refusers = {owner for owner, call in _calls(tree) if call in ("implement_settings_refusal", "implement_settings_refused_entries")}
     assert refusers == {"_implement_settings_owner_check"}, "only the settings owner check refuses a setting"
-    assert {owner for owner, call in _calls(tree) if call == "_implement_settings_owner_check"} == {"_implement_one_locked"}
+    assert {owner for owner, call in _calls(tree) if call == "_implement_settings_owner_check"} == {"_implement_one_locked", "_implement_vibe_grouping_owner"}, \
+        "a settings change from a vibe is owner-checked before the vibe is routed, and so is the settings change of a plan"
     assert {owner for owner, call in _calls(tree) if call == "implement_not_decided_entries"} == {"_implement_route_vibe"}, \
         "an ask is not_decided only where the router could not place it, before any plan or Genie round"
     guards = {owner for owner, call in _calls(tree) if call == "_implement_keep_untargeted"}
