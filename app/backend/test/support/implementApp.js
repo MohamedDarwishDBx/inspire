@@ -320,7 +320,17 @@ function makeApp(overrides = {}, { mount } = {}) {
     const scope = `${req.params.catalog}.${req.params.schema}`;
     if (state.tablesRefusal) return require('../../lib/permissionError').sendFailure(res, 403, state.tablesRefusal);
     const names = (state.tables || {})[scope] || [];
-    return res.json({ tables: names.map((name) => ({ name, full_name: `${scope}.${name}`, schema_name: req.params.schema })), count: names.length });
+    // state.unusableTables: full name -> reason (the picker shows the row as not usable); state.leftOut: scope -> {count, schema}.
+    const unusable = state.unusableTables || {};
+    // state.busyTables: full name -> reason (the picker shows the row as busy: not a verdict, and it can be checked again).
+    const busy = state.busyTables || {};
+    const tables = names.map((name) => {
+      const full = `${scope}.${name}`;
+      const flag = unusable[full] ? { usable: false, unusable_reason: unusable[full] }
+        : busy[full] ? { type_check: 'busy', unusable_reason: busy[full] } : {};
+      return { name, full_name: full, schema_name: req.params.schema, ...flag };
+    });
+    return res.json({ tables, count: names.length, ...((state.leftOut || {})[scope] ? { left_out: state.leftOut[scope] } : {}) });
   });
   app.post('/api/output-folder/check', (req, res) => {
     if (state.outputRefusal) return res.status(403).json({ error: state.outputRefusal.message, permissions: state.outputRefusal.permissions });

@@ -9,6 +9,12 @@ function busyDelayMs(attempt, retryAfter = '', random = Math.random) {
   return Math.min(wait + random() * wait * 0.25, BUSY_MAX_MS);
 }
 
+// A status that says the workspace is busy or down for a moment (429, or any 5xx): the same call can succeed on a retry.
+function isTransientStatus(status) {
+  const code = Number(status);
+  return code === 429 || (code >= 500 && code <= 599);
+}
+
 function isBusy(method, status) {
   return status === 429 || (status === 503 && String(method || 'GET').toUpperCase() === 'GET');
 }
@@ -32,4 +38,4 @@ async function withBusyRetry(fetchOnce, { method = 'GET', signal = null, sleep =
   }
 }
 
-module.exports = { BUSY_ATTEMPTS, BUSY_BASE_MS, BUSY_MAX_MS, busyDelayMs, isBusy, withBusyRetry };
+module.exports = { BUSY_ATTEMPTS, BUSY_BASE_MS, BUSY_MAX_MS, busyDelayMs, isBusy, isTransientStatus, withBusyRetry };

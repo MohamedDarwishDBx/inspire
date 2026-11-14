@@ -1395,7 +1395,7 @@ export default function ImplementWizard({
   const footerErrors = [...new Set([
     ...(attempted[stepId] ? ownErrors : []),
     ...errors,
-    ...(stepId === 'data' ? Object.values(columnsErrors).filter((e) => e && permanentPickProblem(e) !== 'metric_view') : []),
+    ...(stepId === 'data' ? Object.values(columnsErrors).filter((e) => e && !['metric_view', 'unknown_type'].includes(permanentPickProblem(e))) : []),
     ...(buildStep ? [lastStep ? planError : '', lastStep ? '' : preflightError, ...deliveryChecks, ...earlierGaps] : []),
   ].filter(Boolean))];
   const checkAgain = async () => {
@@ -1408,10 +1408,11 @@ export default function ImplementWizard({
     }
     setGrantRound((n) => n + 1);
   };
-  // A picked table that is gone or a metric view stays wrong until the person changes the pick: no Try again for it.
+  // A picked table that is gone, a metric view, or a table whose type cannot be read stays wrong until the person changes the pick: no Try again.
   const footerRetry = new Map([
     ...Object.entries(columnsErrors).filter(([, e]) => e && !permanentPickProblem(e)).map(([table, e]) => [e, () => loadColumns(table)]),
-    [planError, checkAgain],
+    // A refusal of the pick (metric view, unknown type, gone table) stays wrong until the pick changes: no Try again. A busy check does.
+    ...(planError && !permanentPickProblem(planError) ? [[planError, checkAgain]] : []),
     [preflightError, checkAgain],
   ].filter(([e]) => e));
   const accessVerdict = accessVerdictOf({ preflight, error: preflightError, busy: checksBusy, unread: appUnreadable });
@@ -2302,6 +2303,9 @@ export default function ImplementWizard({
         )}
         {stepId === 'data' && Object.values(columnsErrors).filter((e) => permanentPickProblem(e) === 'metric_view').map((note) => (
           <p key={note} role="note" data-metric-view-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs font-medium text-warning-fg">{note}</p>
+        ))}
+        {stepId === 'data' && Object.values(columnsErrors).filter((e) => permanentPickProblem(e) === 'unknown_type').map((note) => (
+          <p key={note} role="note" data-unusable-table-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs font-medium text-warning-fg">{note}</p>
         ))}
         {Object.values(checkNotes).filter(Boolean).map((note) => (
           <p key={note} role="note" data-check-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs text-warning-fg">{note}</p>

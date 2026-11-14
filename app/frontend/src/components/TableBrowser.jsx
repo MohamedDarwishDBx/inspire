@@ -10,6 +10,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { PlainMessage } from './TechnicalDetails';
+import { unusableReasonOf } from '../lib/tableUsability';
 
 export default function TableBrowser({
   token,
@@ -207,10 +208,16 @@ export default function TableBrowser({
                           ) : (
                             filterTables(tables[schKey]).map((tbl) => {
                               const selected = isSelected(tbl.full_name);
+                              // Fail closed: a table whose type cannot be read is shown with its plain reason and cannot be picked.
+                              const reason = unusableReasonOf(tbl);
                               return (
                                 <button
                                   key={tbl.name}
-                                  onClick={() => onSelectTable?.(tbl)}
+                                  type="button"
+                                  disabled={Boolean(reason)}
+                                  aria-disabled={reason ? 'true' : undefined}
+                                  title={reason || undefined}
+                                  onClick={() => { if (!reason) onSelectTable?.(tbl); }}
                                   className={`
                                     w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-smooth mb-px
                                     ${selected
@@ -224,6 +231,7 @@ export default function TableBrowser({
                                     className={selected ? 'text-db-red-fg' : 'text-text-tertiary'}
                                   />
                                   <span className="truncate flex-1 text-start">{tbl.name}</span>
+                                  {reason && <span data-unusable-reason="" className="text-[10px] text-error-fg text-start">{reason}</span>}
                                   <span className="text-[10px] text-text-tertiary font-mono">
                                     {tbl.table_type === 'VIEW' ? 'VIEW' : tbl.data_source_format || ''}
                                   </span>

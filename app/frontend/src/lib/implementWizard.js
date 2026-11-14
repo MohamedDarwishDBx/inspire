@@ -1,3 +1,4 @@
+import { busySwapRows, unusableSwapRows } from './tableUsability.js';
 import { compareMeetsQualityBarFirst, nameOfUseCase, subtitleOfUseCase } from './useCaseFields.js';
 import { placeholderWords } from './placeholderWords.js';
 import { briefList, plural } from './plural.js';
@@ -3202,7 +3203,9 @@ export function runProfileText(profile) {
 export function swapParts(post, table, onPart) {
   const body = { table, required_columns: [] };
   const copy = post('copy', body).then((data) => { if (data.swaps?.length) onPart(data.swaps, null); });
-  const similar = post('', body).then((data) => onPart(data.swaps || [], data.why || ''));
+  // The candidates whose type cannot be read come back as rows that cannot be chosen (fail closed), with the plain reason; a type
+  // check the workspace could not answer is a row that cannot be chosen right now, and is checked again.
+  const similar = post('', body).then((data) => onPart([...(data.swaps || []), ...unusableSwapRows(data.unusable), ...busySwapRows(data.busy)], data.why || ''));
   return Promise.all([copy, similar]);
 }
 

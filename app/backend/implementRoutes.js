@@ -2,7 +2,7 @@ const { isMissingTableError } = require('./lib/inspireFeedback');
 const { INSPIRE_DB_SHAPE, USE_CASE_ID_SHAPE, noSessionText, stepsStatement } = require('./lib/sqlInputs');
 const I = require('./lib/inspireImplement');
 const { createGenieJobGuard } = require('./lib/genieJobGuard');
-const { runWithQueryTags } = require('./lib/sqlStatements');
+const { runWithQueryTags, lookupWithRetry } = require('./lib/sqlStatements');
 const { genieNotebookJobName, latestGenieNotebookRun } = require('./lib/genieNotebookJob');
 const C = require('./lib/implementControl');
 const LE = require('./lib/lakebaseEnforce');
@@ -175,21 +175,42 @@ function registerImplementRoutes(app, deps) {
 
   // A metric view is not a table: a route that reads a picked table's rows refuses it first, with one plain line.
   // A failed type lookup does not block the read; the read then reports its own error.
-  async function refuseMetricView(req, warehouseId, table) {
-    if (!table) return;
-    if (MV.isMetricViewType(await tableTypeOf(req, () => personReadToken(req), warehouseId, table))) {
-      throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
-    }
+  // A metric view is not a table; with unknownType, neither is a table whose type cannot be read (fail closed). Each is refused by
+  // name before any read, from the one type lookup (tableTypeOf). Several tables are checked in order.
+  async function refuseTableTypes(req, warehouseId, tables, { unknownType = false } = {}) {
+    const named = (tables || []).map((t) => String(t || '').trim()).filter(Boolean);
+    if (!named.length) return;
+    const token = personReadToken(req);
+    const looked = await Promise.all(named.map((t) => tableTypeOf(req, () => token, warehouseId, t)));
+    named.forEach((table, i) => {
+      const { type, transient } = looked[i];
+      if (MV.isMetricViewType(type)) throw tableRefusal(MV.metricViewRefusal(table));
+      if (!unknownType || type) return;
+      // A transient lookup failure is not a verdict on the table: it is retryable, never shown as not usable.
+      throw transient ? tableRetryable(table) : tableRefusal(MV.unknownTypeRefusal(table));
+    });
   }
 
-  // The type of one table from information_schema, or null when the lookup fails (the caller then decides, as before).
+  // A refusal is a 400 the caller must surface as-is: a route that catches read errors to keep going never swallows it.
+  function tableRefusal(message) {
+    return Object.assign(new Error(message), { statusCode: 400, refusal: true });
+  }
+
+  function tableRetryable(table) {
+    return Object.assign(new Error(MV.typeCheckBusyRefusal(table)), { statusCode: 503, refusal: true });
+  }
+
+  async function refuseMetricView(req, warehouseId, table, { unknownType = false } = {}) {
+    await refuseTableTypes(req, warehouseId, [table], { unknownType });
+  }
+
+  // The type of one table from information_schema: { type } when it reads (null when the table names no type), and on a failure
+  // { type: null, transient } where transient says a retry can change it. A transient failure is retried once (lookupWithRetry).
   async function tableTypeOf(req, tokenOf, warehouseId, table) {
-    try {
-      const rows = await sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table));
-      return rows.length ? String(rows[0].table_type || '') : null;
-    } catch {
-      return null;
-    }
+    const got = await lookupWithRetry(() => sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table)));
+    if (got.error) return { type: null, transient: got.transient };
+    const rows = got.value;
+    return { type: rows.length ? String(rows[0].table_type || '') || null : null, transient: false };
   }
 
 
@@ -739,7 +760,7 @@ function registerImplementRoutes(app, deps) {
     try {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
-      await refuseMetricView(req, warehouseId, table);
+      await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.columnsStatement(table);
       const token = personReadToken(req);
       const [rows, read, keyRows] = await I.readPickedTable(table, () => Promise.all([sqlRows(req.dbHost, token, warehouseId, statement),
@@ -769,10 +790,13 @@ function registerImplementRoutes(app, deps) {
         const candidates = await sqlRows(req.dbHost, token, warehouseId, statement);
         // A metric view is never a swap: its type is read per candidate and a view is dropped before the probe. A candidate
         // whose type cannot be read is not offered (fail closed): it is listed as not usable, with the plain reason.
-        const types = await Promise.all(candidates.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))));
-        const rows = candidates.filter((_r, i) => types[i] && !MV.isMetricViewType(types[i]));
-        const unusable = copyOnly ? [] : candidates.filter((_r, i) => !types[i])
+        const looked = await Promise.all(candidates.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))));
+        const rows = candidates.filter((_r, i) => looked[i].type && !MV.isMetricViewType(looked[i].type));
+        const unusable = copyOnly ? [] : candidates.filter((_r, i) => !looked[i].type && !looked[i].transient)
           .map((r) => ({ table: candidateOf(r), reason: MV.UNUSABLE_REASON }));
+        // A type check the workspace could not answer twice is neither a swap nor unusable: it is listed busy, to check again.
+        const busy = copyOnly ? [] : candidates.filter((_r, i) => !looked[i].type && looked[i].transient)
+          .map((r) => ({ table: candidateOf(r), reason: MV.TYPE_CHECK_BUSY_REASON }));
         const readable = await Promise.all(rows.map((r) => sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(candidateOf(r)))
           .then(() => true, () => false)));
         const copies = I.builtInSampleTable(table);
@@ -782,13 +806,14 @@ function registerImplementRoutes(app, deps) {
           const copy = copies && Boolean(Number(r.owned)) && total > 0 && matched === total;
           return { table: candidateOf(r), matched, total, copy };
         });
-        return { swaps: copyOnly ? swaps.filter((s) => s.copy) : swaps, unusable };
+        return { swaps: copyOnly ? swaps.filter((s) => s.copy) : swaps, unusable, busy };
       })();
       const timer = new Promise((resolve) => { setTimeout(() => resolve(null), SWAP_SEARCH_LIMIT_MS).unref(); });
       const found = await Promise.race([search, timer]);
-      if (found === null) return res.json({ table, swaps: [], unusable: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
+      if (found === null) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
       const swaps = found.swaps;
-      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)], unusable: found.unusable, why: '' });
+      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)],
+        ...(found.unusable.length ? { unusable: found.unusable } : {}), ...(found.busy.length ? { busy: found.busy } : {}), why: '' });
     } catch (err) {
       sendError(res, err);
     }
@@ -800,9 +825,13 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       const source = q(req, 'source');
       const token = personReadToken(req);
-      if (MV.isMetricViewType(await tableTypeOf(req, () => token, warehouseId, table))) {
+      const { type, transient } = await tableTypeOf(req, () => token, warehouseId, table);
+      if (MV.isMetricViewType(type)) {
         return res.json({ table, readable: false, reason: MV.metricViewRefusal(table) });
       }
+      // A busy type check is a retryable 503 with the plain line, never "not usable".
+      if (!type && transient) return res.status(503).json({ error: MV.typeCheckBusyRefusal(table) });
+      if (!type) return res.json({ table, readable: false, reason: MV.unknownTypeRefusal(table) });
       try {
         await sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(table));
       } catch (err) {
@@ -855,7 +884,7 @@ function registerImplementRoutes(app, deps) {
     try {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
-      await refuseMetricView(req, warehouseId, table);
+      await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.columnValuesStatement(table, q(req, 'column'), q(req, 'limit') || 200);
       const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
       res.json({ values: rows.map((r) => r.value).filter((v) => v != null && v !== '') });
@@ -868,7 +897,7 @@ function registerImplementRoutes(app, deps) {
     try {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
-      await refuseMetricView(req, warehouseId, table);
+      await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.readinessStatement(table, {
         columns: req.body?.columns || [],
         filters: req.body?.filters || [],
@@ -888,7 +917,7 @@ function registerImplementRoutes(app, deps) {
       if (top && (!Number.isInteger(top) || top > GR.GROUP_MAX_GROUPS)) {
         return res.status(400).json({ error: `top must be a whole number up to ${GR.GROUP_MAX_GROUPS}` });
       }
-      await refuseMetricView(req, warehouseId, q(req, 'table'));
+      await refuseMetricView(req, warehouseId, q(req, 'table'), { unknownType: true });
       const statement = I.groupCountsStatement(q(req, 'table'), req.body?.columns || [], {
         filters: req.body?.filters || [],
         window: req.body?.window || {},
@@ -1311,6 +1340,7 @@ function registerImplementRoutes(app, deps) {
     const tables = I.uniqueTables(changes.flatMap((c) => [c.replaced, c.chosen]));
     const token = P.personTokenOf(req);
     if (tables.length && !token) throw I.badRequest(I.IMPLEMENT_TABLES_NO_SIGN_IN, 401);
+    await refuseTableTypes(req, warehouseId, tables, { unknownType: true });
     const read = await Promise.all(tables.map((t) => I.readPickedTable(t, () => sqlRows(req.dbHost, token, warehouseId, I.columnsStatement(t)))));
     const unseen = tables.filter((_t, i) => !read[i].length);
     if (unseen.length) throw I.badRequest(I.implementTablesUnreadable(unseen), 409);
@@ -1327,6 +1357,7 @@ function registerImplementRoutes(app, deps) {
       const got = await tableChangeOf(req, warehouseId, history, spec, useCase);
       return { change: got && got.change.class ? got.change : null, error: '' };
     } catch (err) {
+      if (err && err.refusal) throw err;
       return { change: null, error: err.message || String(err) };
     }
   }
@@ -1370,6 +1401,7 @@ function registerImplementRoutes(app, deps) {
       const mergeIssues = I.mergeProblems(spec, targets, I.carriedAssets(history));
       if (mergeIssues.length) throw I.badRequest(mergeIssues.join('; '));
     }
+    if (spec?.money?.rate_table) await refuseTableTypes(req, warehouseId, [spec.money.rate_table.table], { unknownType: true });
     const [stalled, tables, empty, unshared] = await Promise.all([stalledOf(req, history[0]), ownerTableChange(req, warehouseId, history, spec, useCase, person),
       emptyDataWarning(req, warehouseId, spec, useCase, parseTableScopeText(session.table_scope).scopes), newAppReads(req, warehouseId, spec, useCase)]);
     const plan = I.planSubmission(history, spec, stalled, { requester: person.username, tableChange: tables.change });
@@ -1433,6 +1465,7 @@ function registerImplementRoutes(app, deps) {
     const scope = readinessScope(spec, useCase, launchScopes);
     if (!scope.table || !P.personTokenOf(req)) return '';
     const countOf = async (table, narrowing) => {
+      await refuseTableTypes(req, warehouseId, [table], { unknownType: true });
       const statement = I.readinessStatement(table, narrowing);
       const rows = await sqlRows(req.dbHost, P.personTokenOf(req), warehouseId, statement);
       return I.readinessFromRow(rows[0] || {}, statement.columns);
@@ -1442,6 +1475,7 @@ function registerImplementRoutes(app, deps) {
       if (counted.row_count !== 0) return '';
       return await emptyScopeWarningOf(scope, I.sourceTables(spec, I.useCaseTables(useCase)), (table) => countOf(table, { columns: [], filters: [], window: {} }));
     } catch (err) {
+      if (err && err.refusal) throw err;
       console.warn(`implement row count failed for ${scope.table}: ${err.message || err}`);
       return `Inspire could not count the rows in ${scope.table}. The build checks the data itself.`;
     }
@@ -2096,6 +2130,7 @@ function registerImplementRoutes(app, deps) {
       if (!main || !/^[^`]+\.[^`]+\.[^`]+$/.test(table)) {
         throw I.badRequest(`${String(useCase.use_case ?? '').trim() || 'This use case'} names no main table as catalog.schema.table, so Inspire cannot read it for Data groups.`);
       }
+      await refuseTableTypes(req, warehouseId, [table], { unknownType: true });
       const launchScopes = parseTableScopeText(session?.table_scope).scopes;
       const options = (rowLimit) => ({ rowLimit, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s', signal: stop.signal });
       const rows = async (sql, parameters, rowLimit) => sqlResultToObjects(await executeSql(req.dbHost, token, warehouseId, sql, parameters, options(rowLimit)));

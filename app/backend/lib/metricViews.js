@@ -1,8 +1,25 @@
 /** Metric views are not tables: they are not listed, counted or read as a table. */
 
+const { parseExactJson } = require('./exactJson');
+
 const METRIC_VIEW_TABLE_TYPES = ['METRIC_VIEW', 'METRIC VIEW'];
 
 const isMetricViewType = (type) => METRIC_VIEW_TABLE_TYPES.includes(String(type || '').trim().toUpperCase());
+
+/**
+ * The table type from one DESCRIBE TABLE EXTENDED ... AS JSON payload (its documented "type" field), upper case. The one parser of
+ * that payload. A payload that is not JSON, or names no type, reads as null: an unknown type, which the caller fails closed on.
+ */
+function tableTypeOfDescribe(raw) {
+  let meta;
+  try {
+    meta = typeof raw === 'string' && raw.trim().startsWith('{') ? parseExactJson(raw) : null;
+  } catch {
+    return null;
+  }
+  const kind = meta && typeof meta === 'object' && meta.type ? String(meta.type).trim().toUpperCase() : '';
+  return kind || null;
+}
 
 /** Split listed tables into the ones kept and the metric views left out. */
 function splitMetricViews(items, typeOf) {
@@ -25,6 +42,9 @@ function metricViewRefusal(name) {
   return `${name} is a metric view, so Inspire leaves it out of Data Filters; pick its source table instead`;
 }
 
+/** The plain reason a picker row gives while its type check is busy: not a verdict on the table, and it can be checked again. */
+const TYPE_CHECK_BUSY_REASON = "Inspire could not check this table's type right now. Try again.";
+
 /** The one plain reason an unknown-type table gives in the picker and in swap suggestions. */
 const UNUSABLE_REASON = "Inspire could not read this table's type, so it cannot be used here. Pick another table you can read.";
 
@@ -40,7 +60,8 @@ const TABLE_TYPE_PROBE_CAP = 1000;
 const TABLE_TYPE_PROBE_WORKERS = 8;
 
 /**
- * Type every name with `typeOf` (null when its type cannot be read), TABLE_TYPE_PROBE_WORKERS at a time. Names beyond
+ * Type every name with `typeOf`, which resolves { type, transient } (type null when it cannot be read; transient when a later
+ * check can change that), TABLE_TYPE_PROBE_WORKERS at a time. Names beyond
  * TABLE_TYPE_PROBE_CAP are not typed and come back in `beyond`; the cap is logged when it is hit.
  */
 async function probeTableTypes(names, typeOf) {
@@ -58,7 +79,17 @@ async function probeTableTypes(names, typeOf) {
   return { types, beyond };
 }
 
+/** The named refusal a Data Filters or Data step read gives for a table whose type cannot be read (fail closed). */
+function unknownTypeRefusal(name) {
+  return `${name} is not usable. ${UNUSABLE_REASON}`;
+}
+
+/** The plain line for a table whose type could not be checked right now (a transient failure, after one retry). Not a refusal of the pick. */
+function typeCheckBusyRefusal(name) {
+  return `Inspire could not check the type of ${name} right now, so the table cannot be read yet. The workspace did not answer; check again.`;
+}
+
 module.exports = {
   METRIC_VIEW_TABLE_TYPES, isMetricViewType, splitMetricViews, metricViewSkipLine, metricViewRefusal,
-  UNUSABLE_REASON, tableTypeUnknownLine, probeTableTypes, TABLE_TYPE_PROBE_CAP,
+  UNUSABLE_REASON, TYPE_CHECK_BUSY_REASON, unknownTypeRefusal, typeCheckBusyRefusal, tableTypeUnknownLine, probeTableTypes, TABLE_TYPE_PROBE_CAP, tableTypeOfDescribe,
 };

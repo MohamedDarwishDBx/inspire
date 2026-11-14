@@ -42,6 +42,8 @@ import { parseStrategicContext, splitPriorities, validateStrategicContextText, w
 import UcPermissionErrorHelp from '../components/UcPermissionErrorHelp';
 import DataFilters from '../components/DataFilters';
 import { groupLabelOf } from '../lib/implementWizard';
+import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
+import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
 import { scopesFromObject, serializeTableScopes, filterValuesOf, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
@@ -245,6 +247,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
 
   // ── Table state ──
   const [tables, setTables] = useState([]);
+  // The load of the picked schemas' tables in flight. Its cancel flag is the page's request pattern for schema loads: a selection change
+  // ends it, and Try again checks the flag before it lists a schema, so a late answer for a schema no longer picked is dropped.
+  const tablesLoad = useRef(null);
   const [selectedTables, setSelectedTables] = useState(start.selectedTables);
   const [tableScopes, setTableScopes] = useState(start.tableScopes);
   const [dataFilterLabel, setDataFilterLabel] = useState(start.dataFilterLabel);
@@ -264,6 +269,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [catalogBrowseError, setCatalogBrowseError] = useState('');
   const [schemasReadError, setSchemasReadError] = useState('');
   const [tablesReadError, setTablesReadError] = useState('');
+  const [tablesLeftOut, setTablesLeftOut] = useState([]);
   const [catalogsWhy, setCatalogsWhy] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showStrategy, setShowStrategy] = useState(false);
@@ -561,31 +567,46 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   // Load tables when schemas selected
   useEffect(() => {
     setTablesReadError('');
+    setTablesLeftOut([]);
     if (selectedSchemas.length === 0) { setTables([]); return; }
     if (!canUseUcApi) { setTables([]); return; }
-    let cancelled = false;
+    const load = { cancelled: false };
+    tablesLoad.current = load;
     setLoadingTables(true);
     const failed = [];
+    const leftOutNotes = [];
     Promise.all(
-      selectedSchemas.map((schemaFullName) => {
-        const [catalog, schema] = schemaFullName.split('.');
-        return apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
-          .then(d => (d.tables || []).map(t => ({
-            ...t,
-            full_name: t.full_name || `${catalog}.${schema}.${t.name}`,
-          })))
-          .catch((err) => { failed.push(pickerReadFailure('tables', schemaFullName, err)); return []; });
-      })
+      selectedSchemas.map((schemaFullName) => listSchemaTables(schemaFullName, apiFetch, warehouseId)
+        .then(({ rows, leftOut }) => { if (leftOut) leftOutNotes.push(leftOut); return rows; })
+        .catch((err) => { failed.push(pickerReadFailure('tables', schemaFullName, err)); return []; }))
     ).then((r) => {
-      if (!cancelled) {
+      if (!load.cancelled) {
         const allTables = r.flat();
         console.log(`[tables] loaded ${allTables.length} for ${selectedSchemas.join(',')}`);
         setTables(allTables);
         setTablesReadError(failed.join('\n'));
+        setTablesLeftOut(leftOutNotes.filter(Boolean));
       }
-    }).finally(() => { if (!cancelled) setLoadingTables(false); });
-    return () => { cancelled = true; };
+    }).finally(() => { if (!load.cancelled) setLoadingTables(false); });
+    return () => { load.cancelled = true; };
   }, [selectedSchemas, canUseUcApi, apiFetch, warehouseId]);
+
+  // Try again on a table whose type check was busy: list its schema again and replace that schema's rows.
+  const tryAgainTables = (item) => {
+    const schemaFullName = item.full_name.split('.').slice(0, 2).join('.');
+    const load = tablesLoad.current;
+    // A selection change after this click ends the load it belongs to, so its answer is dropped (the schemas are listed again).
+    const live = () => Boolean(load) && !load.cancelled;
+    listSchemaTables(schemaFullName, apiFetch, warehouseId)
+      .then(({ rows }) => {
+        if (!live()) return;
+        const prefix = `${schemaFullName}.`;
+        setTables((prev) => [...prev.filter((t) => !String(t.full_name).startsWith(prefix)), ...rows]);
+      })
+      .catch((err) => {
+        if (live()) setTablesReadError((prev) => [prev, pickerReadFailure('tables', schemaFullName, err)].filter(Boolean).join('\n'));
+      });
+  };
 
   // Auto-populate inspire database when first catalog is selected
   useEffect(() => {
@@ -1398,12 +1419,17 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                           else setSelectedTables((p) => [...p, name]);
                         }}
                         getKey={(t) => t.full_name}
+                        disabledReasonOf={unusableReasonOf}
+                        onTryAgain={tryAgainTables}
                         getLabel={(t) => selectedSchemas.length > 1 ? `${t.schema_name}.${t.name}` : t.name}
                         searchValue={tableSearch}
                         onSearch={setTableSearch}
                         searchPlaceholder="Search tables..."
                         emptyText={selectedSchemas.length === 0 ? 'Select schemas first' : loadingTables ? 'Loading...' : tablesReadError ? 'Inspire could not list the tables. The message above says why.' : `No tables you can see in ${selectedSchemas.join(', ')}`}
                       />
+                      {tablesLeftOut.map((line) => (
+                        <p key={line} data-tables-left-out="" className="text-[11px] text-text-secondary px-1 pt-1">{line}</p>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -2026,7 +2052,18 @@ function GlowSelect({ value, onChange, options }) {
   );
 }
 
-function PickerList({ items, selected, onToggle, getKey, getLabel, searchValue, onSearch, searchPlaceholder, emptyText }) {
+// One schema's tables for the picker, named catalog.schema.table, with the note for any the listing left out. The effect and Try again
+// both list through this, so a schema is read the same way on the first load and on a retry.
+function listSchemaTables(schemaFullName, apiFetch, warehouseId) {
+  const [catalog, schema] = schemaFullName.split('.');
+  return apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
+    .then((d) => ({
+      rows: (d.tables || []).map((t) => ({ ...t, full_name: t.full_name || `${catalog}.${schema}.${t.name}` })),
+      leftOut: d.left_out ? leftOutLine(d.left_out) : '',
+    }));
+}
+
+function PickerList({ items, selected, onToggle, getKey, getLabel, disabledReasonOf = () => '', onTryAgain, searchValue, onSearch, searchPlaceholder, emptyText }) {
   return (
     <div className="rounded-lg border border-border bg-bg overflow-hidden flex flex-col min-h-0">
       <div className="relative shrink-0">
@@ -2052,12 +2089,24 @@ function PickerList({ items, selected, onToggle, getKey, getLabel, searchValue, 
             const key = getKey(item);
             const label = getLabel(item);
             const active = selected.includes(key);
+            // A busy type check is not a verdict on the item: it is listed with Try again, which checks it again.
+            if (onTryAgain && typeCheckBusyOf(item)) {
+              return (
+                <div key={key} role="none" data-type-check-busy={key} className="w-full flex flex-wrap items-start gap-2 px-2.5 py-2 text-[11px] text-warning-fg">
+                  <TypeCheckBusyTryAgain name={label} onTryAgain={() => onTryAgain(item)} />
+                </div>
+              );
+            }
+            // Fail closed: an item that cannot be used is shown with its plain reason and cannot be picked.
+            const reason = disabledReasonOf(item);
             return (
               <button
                 key={key}
                 type="button"
                 title={label}
-                onClick={() => onToggle(key)}
+                disabled={Boolean(reason)}
+                aria-disabled={reason ? 'true' : undefined}
+                onClick={() => { if (!reason) onToggle(key); }}
                 className={`w-full flex items-start gap-2 px-2.5 py-2 rounded-md text-xs text-start transition-smooth ${
                   active
                     ? 'bg-db-red-50 text-db-red-fg border border-db-red/20'
@@ -2070,6 +2119,7 @@ function PickerList({ items, selected, onToggle, getKey, getLabel, searchValue, 
                   {active && <CheckCircle2 size={10} className="text-white" />}
                 </div>
                 <span className="font-mono break-all leading-snug">{label}</span>
+                {reason && <span data-unusable-reason="" className="text-[10px] text-error-fg leading-snug">{reason}</span>}
               </button>
             );
           })
