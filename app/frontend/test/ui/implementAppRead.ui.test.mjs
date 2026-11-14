@@ -63,7 +63,9 @@ test('Let Inspire read these tables runs the exact grants with the person sign-i
     await goToStep(page, 'Data');
     const panel = panelOf(page);
     await panel.waitFor({ timeout: 15000 });
-    const reason = await panel.locator('p').first().textContent();
+    const reasonLine = panel.locator('p').filter({ hasText: /^the build cannot read a source table/ }).first();
+    await reasonLine.waitFor({ timeout: 15000 });
+    const reason = await reasonLine.textContent();
     assert.match(reason, /^the build cannot read a source table: builds run as the App service principal inspire-manual \(application id app-sp-id\)/);
     assert.doesNotMatch(reason.split('Ask your data owner')[0], /main\.s\.orders/, 'the sentence names no id; the grant lines sit under Details');
     assert.doesNotMatch(reason, /swap/i);
@@ -91,9 +93,11 @@ test('a person who cannot grant sees the named reason and the statements with no
   try {
     const panel = panelOf(page);
     await panel.waitFor({ timeout: 15000 });
-    const reason = await panel.locator('p').first().textContent();
+    const reasonLine = panel.locator('p').filter({ hasText: /Ask your data owner to give the App the access listed under Details$/ }).first();
+    await reasonLine.waitFor({ timeout: 15000 });
+    const reason = await reasonLine.textContent();
     assert.match(reason, /Ask your data owner to give the App the access listed under Details$/, 'the sentence names no grant; the grants are under Details');
-    assert.deepEqual(await grantsNeeded(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT]);
+    await until(async () => (await grantsNeeded(panel)).length === 3, 'the three grant lines are under Details');
     assert.deepEqual(await grantsNeeded(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT]);
     assert.equal(await panel.getByRole('button', { name: APP_READ_ACTION }).count(), 0);
     assert.deepEqual(live.grants, []);
