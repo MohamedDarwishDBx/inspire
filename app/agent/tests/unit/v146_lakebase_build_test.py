@@ -961,8 +961,8 @@ def test_copies_inspire_does_not_own_or_split_pipelines_stop_lakebase_with_the_r
 
 
 @pytest.mark.parametrize("builder,ask", [
-    ("sp-app-id", "ask its owner to run GRANT ALL PRIVILEGES ON CATALOG `inspire_lakebase` TO `sp-app-id`"),
-    ("", "ask its owner to give the identity Inspire runs as ALL PRIVILEGES on that catalog"),
+    ("sp-app-id", "ask your data owner to run GRANT ALL PRIVILEGES ON CATALOG `inspire_lakebase` TO `sp-app-id`"),
+    ("", "ask your data owner to give the identity Inspire runs as ALL PRIVILEGES on that catalog"),
 ], ids=["named", "unnamed"])
 def test_a_lakebase_schema_inspire_may_not_add_tables_to_names_the_grant_that_lets_it(agent_ns, builder, ask):
     import time
