@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import DatabricksLogo from '../components/DatabricksLogo';
 import { normalizeDatabricksHost } from '../lib/normalizeDatabricksHost';
-import { responseError } from '../lib/apiClient';
+import { BOOT_TIMEOUT_TEXT, bootRead, responseError } from '../lib/apiClient';
 import CatalogPicker from '../components/CatalogPicker';
 import { CopySendChoice, PlainMessage, RetryChoice } from '../components/TechnicalDetails';
 
@@ -42,6 +42,8 @@ export default function SetupWizard({ settings, update, onComplete }) {
   const [publishResult, setPublishResult] = useState(null);
   const [creatingDb, setCreatingDb] = useState(false);
   const [isDatabricksApp, setIsDatabricksApp] = useState(false);
+  const [detectError, setDetectError] = useState('');
+  const [detectRound, setDetectRound] = useState(0);
 
   const { databricksHost, token, warehouseId, inspireDatabase, authMode } = settings;
 
@@ -57,21 +59,18 @@ export default function SetupWizard({ settings, update, onComplete }) {
   useEffect(() => {
     (async () => {
       try {
-        const defResp0 = await fetch('/api/defaults');
-        const defaults0 = await defResp0.json();
+        const defaults0 = (await bootRead('/api/defaults')) || {};
         if (defaults0.envSkipsSetupWizard) {
           onComplete();
           return;
         }
 
-        const healthResp = await fetch('/api/health');
-        const health = await healthResp.json();
+        const health = (await bootRead('/api/health')) || {};
 
         if (health.isDatabricksApp) {
           setIsDatabricksApp(true);
 
-          const defResp = await fetch('/api/defaults');
-          const defaults = await defResp.json();
+          const defaults = (await bootRead('/api/defaults')) || {};
 
           if (defaults.databricksHost) update('databricksHost', (chosen) => chosen || defaults.databricksHost);
           if (defaults.warehouseId) update('warehouseId', (chosen) => chosen || defaults.warehouseId);
@@ -109,9 +108,12 @@ export default function SetupWizard({ settings, update, onComplete }) {
             return;
           }
         }
-      } catch {}
+      } catch (err) {
+        // A boot read that never answered: the page says so and Try again asks again. Other failures keep the form as it is.
+        if (err?.deadline) setDetectError(BOOT_TIMEOUT_TEXT);
+      }
     })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detectRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load warehouses when auth is ready (or in Databricks App mode where token is auto-injected)
   useEffect(() => {
@@ -248,6 +250,10 @@ export default function SetupWizard({ settings, update, onComplete }) {
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center px-6 py-12">
       <div className="max-w-2xl w-full">
+        {detectError && (
+          <PlainMessage text={detectError} role="alert" data-detect-error="" className="mb-4 px-4 py-3 rounded-xl border border-error/20 bg-error-bg text-xs text-error-fg"
+            onRetry={() => { setDetectError(''); setDetectRound((n) => n + 1); }} />
+        )}
         {/* Header */}
         <div className="text-center mb-10">
           <div className="flex items-center justify-center gap-3 mb-4">

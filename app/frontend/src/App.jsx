@@ -11,22 +11,12 @@ import ScrollProgressRing from './components/ScrollProgressRing';
 import ParticleField from './components/ParticleField';
 import ShowcaseBar from './components/ShowcaseBar';
 import { RESULTS_FRAME } from './lib/layout';
-import { withDeadline } from './lib/startDeadline';
+import { BOOT_TIMEOUT_TEXT, bootRead } from './lib/apiClient';
 import { PlainMessage } from './components/TechnicalDetails';
 import { showcaseSettings, showcasesFrom, staysInShowcase } from './lib/showcase';
 import PermissionHost from './components/PermissionHost';
 
 const noop = () => {};
-
-// The boot reads answer within this bound. A read that never answers shows the load error with Try again, not a spinner forever.
-const BOOT_ANSWER_MS = 20000;
-const BOOT_TIMEOUT_TEXT = 'Inspire did not answer within 20 seconds while it connected to the workspace.';
-const bootTimedOut = () => Object.assign(new Error(BOOT_TIMEOUT_TEXT), { deadline: true });
-// A boot read: the response body is read inside the deadline, so a stalled reply cannot hold the page either.
-const bootRead = (url) => withDeadline(async (signal) => {
-  const resp = await fetch(url, { signal });
-  return resp.ok ? resp.json() : null;
-}, { ms: BOOT_ANSWER_MS, error: bootTimedOut() });
 
 const LATER_PAGES = {
   launch: () => import('./pages/LaunchPage'),
