@@ -62,13 +62,31 @@ def test_the_title_normaliser_never_cuts_a_name_at_with(agent_ns):
         "Forecast Daily Bakery Demand", "a separate headline still loses its with-technique tail"
 
 
-def test_a_name_with_an_acronym_keeps_its_spelling_in_every_field(agent_ns):
+def test_a_name_with_an_acronym_is_one_value_in_every_field_and_takes_the_title_rule(agent_ns):
     obj = make(agent_ns)
     uc = {"No": "N05-U01", "Name": "Forecast KPI Demand For Each Store"}
     agent_ns["set_use_case_name"](uc, uc["Name"])
     src = obj._tracking_row_source(uc)
     row = agent_ns["DatabricksInspire"]._uc_to_row(src, 1, obj._normalize_usecase)
-    assert uc["usecase"] == uc["Name"] == row[4] == row[5] == src["name_with_technique"] == "Forecast KPI Demand For Each Store"
+    assert uc["usecase"] == uc["Name"] == row[4] == row[5] == src["name_with_technique"]
+    assert uc["Name"] == agent_ns["inspire_title_case"]("Forecast KPI Demand For Each Store"), "one title-case rule, no second one"
+    assert " for " in " " + uc["Name"] + " ", "a small word stays lower case after the first word"
+
+
+def test_a_lower_case_llm_name_is_title_cased_once_and_agrees_in_every_field(agent_ns):
+    obj = make(agent_ns)
+    uc = {"No": "N05-U02", "Name": "predict customer churn in each region", "Analytics Technique": "Predictive Modeling"}
+    agent_ns["set_use_case_name"](uc, uc["Name"])
+    assert uc["Name"] == "Predict Customer Churn in Each Region"
+    src = obj._tracking_row_source(uc)
+    row = agent_ns["DatabricksInspire"]._uc_to_row(src, 1, obj._normalize_usecase)
+    assert uc["usecase"] == row[4] == row[5] == src["name_with_technique"] == "Predict Customer Churn in Each Region"
+
+
+def test_a_typed_name_is_kept_word_for_word_by_the_writer(agent_ns):
+    uc = {"No": "N05-U03", "Name": "Predict Churn", "user_use_case_name": "my own words for churn"}
+    agent_ns["inspire_apply_user_use_case_name"](uc)
+    assert uc["Name"] == uc["usecase"] == uc["user_named"] == "my own words for churn"
 
 
 def test_a_backtick_in_the_name_is_removed_from_every_field_at_write(agent_ns):
