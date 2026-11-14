@@ -42,8 +42,16 @@ const WHERE_STEP = { id: 'where', label: WHERE_LABEL, sections: ['app_place', 'a
 const DATA_STEP = { id: 'data', label: DATA_RESULTS_LABEL, sections: ['use_case', 'data', 'configure', 'results'], advanced: ['data', 'configure', 'results'], panels: ['data', 'results'] };
 export const GROUPING_STEP = { id: 'grouping', label: 'Data groups', sections: ['grouping'], advanced: [], panels: ['grouping'] };
 export const MEASURE_STEP = { id: 'stake', label: MEASURE_LABEL, sections: ['kpi', 'holdout'], advanced: [], panels: ['stake'] };
+// Measure impact is two decisions, one per screen: the target KPI, then the hold-back (on or off, and its share).
+export const MEASURE_IMPACT_PARTS = ['kpi', 'holdout'];
+// The link key for the whole impact screen (old links and the Measure impact rows open its first decision).
 export const MEASURE_IMPACT_PART = 'impact';
 const IMPACT_FOCUS = ['kpi', 'holdout', MEASURE_IMPACT_PART];
+// The decision a focus opens on the impact screen, or null when it does not open the impact screen.
+// The one-line summary of an impact decision, shown on its fold line and on the Review & build rows.
+export const impactPartSummary = (spec, part) => (part === 'kpi' ? (kpiTargetOf(spec) || 'Inspire picks')
+  : holdoutOf(spec).enabled ? `On, ${holdoutPercentText(spec) || '?'}% kept aside` : 'Off');
+export const impactPartOf = (focus) => (IMPACT_FOCUS.includes(focus?.step) ? (focus.step === 'holdout' ? 'holdout' : 'kpi') : null);
 
 export function withMoneyRule(spec, money) {
   const { money: _previous, ...rest } = spec || {};
@@ -2552,13 +2560,12 @@ export function pickedSummary(spec, sourceTables = [], more = {}) {
   const built = IMPLEMENT_OUTPUTS.filter((o) => outputs[o.id]).map((o) => o.label);
   const freshness = freshnessOf(spec?.schedule);
   const filters = (spec?.data?.filters || []).length;
-  const holdout = holdoutOf(spec);
   const principals = (spec?.sharing?.principals || []).map((p) => p.name).filter(Boolean);
   const app = Boolean(outputs.app);
   const joined = joinsApp(spec);
   const placement = APP_PLACEMENTS.find((p) => p.id === outputs.app_placement);
   const row = (id, step, label, value) => ({ id, step, label, value: String(value ?? '') });
-  const impactRow = (id, label, value) => ({ ...row(id, MEASURE_STEP.id, label, value), part: MEASURE_IMPACT_PART });
+  const impactRow = (id, part, label, value) => ({ ...row(id, MEASURE_STEP.id, label, value), part });
   return [
     row('outputs', 'delivery', 'What it builds', buildsText(built)),
     ...((more.dropped || []).length ? [row('dropped', 'delivery', 'Not built', more.dropped.map((d) => `${d.label}: ${d.why}`).join('; '))] : []),
@@ -2569,8 +2576,8 @@ export function pickedSummary(spec, sourceTables = [], more = {}) {
     ...(more.grouping ? [row('grouping', 'grouping', 'Data groups', more.grouping)] : []),
     ...(more.firstRun ? [row('first_run', 'first_run', FIRST_RUN_LABEL, more.firstRun)] : []),
     row('result', 'data', 'Result table', String(spec?.config?.result_table || '') || 'not named yet'),
-    impactRow('kpi', 'Target KPI', kpiTargetOf(spec) || 'Inspire picks'),
-    impactRow('holdout', HOLDOUT_LABEL, holdout.enabled ? `On, ${holdoutPercentText(spec) || '?'}% kept aside` : 'Off'),
+    impactRow('kpi', 'kpi', 'Target KPI', impactPartSummary(spec, 'kpi')),
+    impactRow('holdout', 'holdout', HOLDOUT_LABEL, impactPartSummary(spec, 'holdout')),
     row('schedule', FIRST_RUN_STEP.id, FRESH_LABEL, freshness === 'off' ? 'Run once now'
       : `${freshness === 'custom' ? 'Custom' : FRESHNESS_OPTIONS.find((o) => o.id === freshness).label}, runs ${cronInWords(spec.schedule.cron, spec.schedule.timezone)}`),
     ...(principals.length ? [row('sharing', 'delivery', 'Shared with', principals.join(', '))] : []),

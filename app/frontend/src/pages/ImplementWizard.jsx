@@ -83,8 +83,7 @@ import {
   widgetValueProblem,
   profileFieldProblem,
   initialStepId,
-  MEASURE_IMPACT_PART,
-  opensOnImpact,
+  MEASURE_IMPACT_PARTS, impactPartOf, impactPartSummary,
   stepIndexOf,
   lostTablesText,
   SOURCE_REFUSED_REASON,
@@ -280,6 +279,7 @@ import {
   SETTINGS_ON_THEIR_STEP, isSettingWidget, settingsModelOf, withSetting,
 } from '../lib/useCaseSettings';
 import ScopeSettings, { GroupingChosen } from '../components/ScopeSettings';
+import Advanced from '../components/Advanced';
 import CatalogPicker from '../components/CatalogPicker';
 import { PROFILE_WAITING, noMainTableText, useScopeProfiles } from '../lib/groupingProfile';
 import { fieldOf } from '../lib/useCaseFields.js';
@@ -405,21 +405,6 @@ function FoldLine({ label, what, summary, onOpen }) {
   );
 }
 
-function Advanced({ open, onToggle, children, summary = '', what = 'settings' }) {
-  return (
-    <div className="border-t border-border pt-3 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-[12px] text-text-secondary min-w-0">{summary}</p>
-        <button type="button" aria-expanded={open} aria-label={`${open ? 'Close' : CHANGE_LABEL} ${what}`} onClick={onToggle}
-          className="shrink-0 text-xs font-medium text-db-red-fg hover:underline glow-focus">
-          {open ? 'Close' : CHANGE_LABEL}
-        </button>
-      </div>
-      {open && <div className="space-y-4">{children}</div>}
-    </div>
-  );
-}
-
 function SettingRow({ label, value, children, changeLabel = label, help = '', defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -445,7 +430,7 @@ function CheckLine({ check, label }) {
   );
 }
 
-const MONEY_PART_LABEL = { method: 'How the value is measured', direction: 'Which movement counts', currency: 'Currency', window: 'Periods and statuses', off: 'Turn it off', [MEASURE_IMPACT_PART]: 'Measure impact' };
+const MONEY_PART_LABEL = { method: 'How the value is measured', direction: 'Which movement counts', currency: 'Currency', window: 'Periods and statuses', off: 'Turn it off', kpi: 'Target KPI', holdout: 'Hold back' };
 
 export default function ImplementWizard({
   uc,
@@ -475,7 +460,7 @@ export default function ImplementWizard({
   const [advanced, setAdvanced] = useState({ data: false, results: false, fresh: false, delivery: false, app_place: false, app_access: false, app_options: false, app_pages: false, summary: false });
   const [details, setDetails] = useState(false);
   const [moneyPart, setMoneyPart] = useState(0);
-  const openOnImpact = useRef(opensOnImpact(focus));
+  const openOnImpact = useRef(impactPartOf(focus));
   const [lookView, setLookView] = useState({ tab: 'style', page: 'fix' });
   const toggleAdvanced = (id) => setAdvanced((prev) => ({ ...prev, [id]: !prev[id] }));
   const [columnsByTable, setColumnsByTable] = useState({});
@@ -581,7 +566,7 @@ export default function ImplementWizard({
   const stepIndex = stepIndexOf(steps, step);
   const stepId = steps[stepIndex].id;
   const shows = (panel) => steps[stepIndex].panels.includes(panel);
-  const moneyParts = [...(spec.money?.off ? ['off'] : [...MONEY_PARTS.filter((p) => p !== 'off'), 'off']), MEASURE_IMPACT_PART];
+  const moneyParts = [...(spec.money?.off ? ['off'] : [...MONEY_PARTS.filter((p) => p !== 'off'), 'off']), ...MEASURE_IMPACT_PARTS];
   const moneyActive = Math.min(moneyPart, moneyParts.length - 1);
   // The money reads are cached per request, so a section that remounts reads its rates and preview once, not again.
   const postRef = useRef(apiPostJson);
@@ -621,8 +606,8 @@ export default function ImplementWizard({
   }, [mode, spec.money, scopeProfile.state, scopeProfile.profile, uc]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (steps[stepIndex].id !== 'stake') return;
-    setMoneyPart(openOnImpact.current ? moneyParts.length - 1 : 0);
-    openOnImpact.current = false;
+    setMoneyPart(Math.max(0, moneyParts.indexOf(openOnImpact.current)));
+    openOnImpact.current = null;
   }, [stepIndex]); // eslint-disable-line react-hooks/exhaustive-deps
   const resultsOn = shows('results');
   useEffect(() => {
@@ -1446,7 +1431,7 @@ export default function ImplementWizard({
     settings: settingsList.length ? counted(settingsList.length, 'setting') : '',
     dropped: dropped.filter((d) => !spec.outputs[d.id]),
   }).filter((row) => steps.some((s) => s.id === row.step));
-  const changeStep = (id, part) => { setErrors([]); setBackToSummary(true); openOnImpact.current = part === MEASURE_IMPACT_PART; setStep(id); };
+  const changeStep = (id, part) => { setErrors([]); setBackToSummary(true); openOnImpact.current = MEASURE_IMPACT_PARTS.includes(part) ? part : null; setStep(id); };
   const nextIsSummary = backToSummary && nextStepAfter(steps, stepId, { backToSummary, visited }) === SUMMARY_STEP.id;
 
   const copySamples = async () => {
@@ -2026,23 +2011,23 @@ export default function ImplementWizard({
                 return (
                   <li key={p} data-money-current={open ? '' : undefined} className="block">
                     <div data-money-part={p}>
-                      {!open && <FoldLine label={label} what={MONEY_PART_LABEL[p]} summary={moneySummaryOf(spec.money, p)} onOpen={() => setMoneyPart(i)} />}
+                      {!open && <FoldLine label={label} what={MONEY_PART_LABEL[p]} summary={MEASURE_IMPACT_PARTS.includes(p) ? impactPartSummary(spec, p) : moneySummaryOf(spec.money, p)} onOpen={() => setMoneyPart(i)} />}
                       {open && <p className="border-t border-border pt-3 text-[13px] font-semibold text-text-primary">{label}</p>}
                     </div>
                     {open && (
                       <div className="space-y-3 pt-2 pb-1">
-                        {p === MEASURE_IMPACT_PART ? (
+                        {p === 'kpi' ? (
+                          <KpiTargetSetting
+                            spec={spec}
+                            best={best.kpi}
+                            options={kpiOptions}
+                            tracked={trackedKpi}
+                            before={context?.latest ? kpiTargetOf(context.latest.spec_json) : null}
+                            onPick={(name) => setSpec((prev) => withKpiTarget(prev, name))}
+                          />
+                        ) : p === 'holdout' ? (
                           <div className="space-y-3">
-                            <HoldoutSetting spec={spec} best={best.holdout} onEnabled={(on) => setSpec((prev) => withHoldout(prev, on))}>
-                              <KpiTargetSetting
-                                spec={spec}
-                                best={best.kpi}
-                                options={kpiOptions}
-                                tracked={trackedKpi}
-                                before={context?.latest ? kpiTargetOf(context.latest.spec_json) : null}
-                                onPick={(name) => setSpec((prev) => withKpiTarget(prev, name))}
-                              />
-                            </HoldoutSetting>
+                            <HoldoutSetting spec={spec} best={best.holdout} onEnabled={(on) => setSpec((prev) => withHoldout(prev, on))} />
                             <SettingRow label="Hold back" value={holdoutOf(spec).enabled ? `${holdoutPercentText(spec) || '10'}% of records` : 'off'} changeLabel="hold back share">
                               <HoldoutPercent spec={spec} onPercent={(text) => setSpec((prev) => withHoldoutPercent(prev, text))} />
                             </SettingRow>
