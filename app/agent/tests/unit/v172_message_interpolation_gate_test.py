@@ -294,6 +294,7 @@ REVIEWED = {
         ('_writable_root', 'candidates'),
         ('assert_no_blocking', "', '.join((a['rule_id'] for a in blocking[:10]))"),
         ('deep_signal_measures', 'check'),
+        ('deploy', "', '.join(raw)"),
         ('deploy', "chart['id']"),
         ('deploy', "host['name']"),
         ('deploy', 'name'),
