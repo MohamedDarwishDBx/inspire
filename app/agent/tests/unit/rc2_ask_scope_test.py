@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 import os
 import sys
 
@@ -207,3 +208,57 @@ def test_a_failed_read_still_refuses_weather_with_no_exception(tmp_path, monkeyp
     s = live_shell(tmp_path, llm, select_star=True)
     turn = ask(s, "What is the weather in Paris?", page=sales_page()["id"])
     assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+
+
+FORECAST_RESULT = "inspire_kinds_rc7._inspire.supply_forecast_out"
+SCOPE_SOURCES = [{"table": SALES, "columns": ["franchise", "TotalPrice", "transaction_id"]}]
+
+
+def forecast_page():
+    """The forecast family shape: every dataset reads only the use case's result table, never a source table."""
+    datasets = [{"name": d["name"], "sql": re.sub(r"FROM\s+[\w.`]+", f"FROM {FORECAST_RESULT}", d["sql"])} for d in PAGE["datasets"]]
+    return edit_page(title="Plan Weekly Product Supply", question="Which supply should we plan next week?", result_table=FORECAST_RESULT,
+                     datasets=datasets)
+
+
+def forecast_shell(tmp_path, llm, scope_sources):
+    ws = AgentWorkspace(llm=llm, listed=SALES_COLUMNS)
+    settings = dict(DECIDE, scope_sources=scope_sources)
+    s = shell_core.Shell(app_dir(tmp_path, settings, [forecast_page()]),
+                         env={"DATABRICKS_WAREHOUSE_ID": "wh1", "DATABRICKS_HOST": "dbc-1.example.com"},
+                         sp_factory=lambda: ws, user_factory=lambda host, token: ws)
+    s.agent.executor, s.agent.sleep = Now(), lambda seconds: None
+    return s
+
+
+SALES_QUESTION = "How many sales transactions are there in total?"
+
+
+def test_a_forecast_page_question_about_the_build_source_table_is_related_with_no_model_call(tmp_path):
+    llm = FakeLLM([said("There are 42 sales transactions in total.")], related=lambda body: False)
+    s = forecast_shell(tmp_path, llm, SCOPE_SOURCES)
+    turn = ask(s, SALES_QUESTION, page=forecast_page()["id"])
+    assert turn["refused"] is False and turn["answer"] != shell_agent.OFF_TOPIC
+    assert llm.bodies == llm.main_calls(), "the App's own scope sources name sales_transactions, so the rule decides with no model call"
+
+
+def test_a_forecast_page_question_about_a_source_table_it_does_not_have_is_still_model_checked(tmp_path):
+    llm = FakeLLM([said("ok")], related=lambda body: False)
+    s = forecast_shell(tmp_path, llm, [])
+    turn = ask(s, SALES_QUESTION, page=forecast_page()["id"])
+    assert turn["refused"] is True and turn["answer"] == shell_agent.OFF_TOPIC
+
+
+@pytest.mark.parametrize("question", ["What is the weather in Paris?", "What is the weather in Paris last month?"])
+def test_the_weather_must_exclude_stays_refused_on_the_forecast_page_with_scope_sources(tmp_path, question):
+    llm = FakeLLM([said("A has 4.")], related=lambda body: False)
+    s = forecast_shell(tmp_path, llm, SCOPE_SOURCES)
+    turn = ask(s, question, page=forecast_page()["id"])
+    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert llm.main_calls() == [] and len(llm.bodies) == 1
+
+
+def test_the_build_writes_the_scope_views_tables_and_columns_page_independent(fresh_ns):
+    scopes = {"k": {"table": SALES, "view": "v", "columns": ["franchise", "TotalPrice"]}, "bad": "not a scope"}
+    assert fresh_ns["implement_app_scope_sources"](scopes) == [{"table": SALES, "columns": ["franchise", "TotalPrice"]}]
+    assert fresh_ns["implement_app_scope_sources"](None) == []
