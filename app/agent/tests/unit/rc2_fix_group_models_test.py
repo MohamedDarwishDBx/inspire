@@ -95,3 +95,16 @@ def test_the_sweep_only_segmentation_family_c_techniques_default_to_the_whole_da
 
 def test_the_kinds_json_one_model_families_are_the_notebook_registry(agent_ns):
     assert _kinds()["one_model_families"] == list(agent_ns["INSPIRE_ONE_MODEL_FAMILIES"]) == ["C"]
+
+
+def test_a_generated_notebook_run_start_guard_refuses_a_column_for_a_one_model_kind_with_only_its_inlined_sources(agent_ns):
+    from v207_app_reads_after_build_test import _inlined
+    notebook = {"__name__": "generated"}
+    exec(compile(_inlined(agent_ns), "<generated>", "exec"), notebook)
+    notebook["INSPIRE_RUN"] = {"grouping": {"one_model": True}}
+    with pytest.raises(notebook["InspireRunStop"]) as refused:
+        notebook["inspire_group_records"](None, group_by="region")
+    assert "fits one model across all of the data" in str(refused.value)
+    notebook["INSPIRE_RUN"] = {"grouping": {"one_model": False}}
+    with pytest.raises(TypeError):
+        notebook["inspire_group_records"](None, group_by="region")
