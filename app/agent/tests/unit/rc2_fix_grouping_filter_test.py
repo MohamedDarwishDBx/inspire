@@ -134,3 +134,18 @@ def test_req191_must_exclude_a_shown_grouping_column_with_no_column_filter_entry
     assert grouping_columns(no_entries) == ["channel"]
     only_other_off = with_column_filters(page, [{"column": "category", "off": True}])
     assert grouping_columns(only_other_off) == ["channel"]
+
+
+# --- REQ-191 follow-up (D-AUTO): column_filters false turns every column filter off, Grouping filters included ----------------
+
+def test_req191_column_filters_false_turns_a_shown_grouping_filter_off():
+    page = with_column_filters(with_grouping(returns_page(), ["channel"]), False)
+    assert grouping_columns(page) == []
+    assert filter_columns(page) == []
+
+
+def test_req191_must_exclude_column_filters_absent_keeps_a_shown_grouping_filter():
+    page = with_grouping(returns_page(), ["channel"])
+    no_entries = copy.deepcopy(page)
+    del no_entries["records"]["column_filters"]
+    assert grouping_columns(no_entries) == ["channel"]
