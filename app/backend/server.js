@@ -799,6 +799,17 @@ async function launchSql(host, statement, token) {
   return sqlResultToObjects(await executeSql(host, token, DEFAULT_WAREHOUSE_ID, statement.sql, statement.parameters));
 }
 
+// The route-policy gate runs BEFORE requireToken, so req.dbToken and req.dbHost are not set yet when a policy reader runs (the live
+// read sent no credential: "Credential was not sent" 401, then 403 "no record"). These readers take the App's own credential from the
+// same source requireToken uses for an app-identity route (getToken), which is the credential recordLaunch INSERTed with. A missing
+// credential throws, so the route answers 503 and tries again, never a permanent "no record".
+async function policyReadToken(req) {
+  await refreshSpTokenIfStale();
+  const token = getToken(req);
+  if (!token) throw new Error('Inspire has no credential of its own to read its launch record with');
+  return token;
+}
+
 async function readLaunchRecord(req, target) {
   const table = L.launchTableName(DEFAULT_INSPIRE_DB);
   if (!table || !DEFAULT_WAREHOUSE_ID) return null;
@@ -806,8 +817,9 @@ async function readLaunchRecord(req, target) {
     ? L.runLauncherStatement(table, target.runId)
     : L.sessionLauncherStatement(table, target.inspireDatabase, target.sessionId);
   if (!statement) return null;
+  const token = await policyReadToken(req);
   try {
-    return L.launcherOf(await launchSql(resolveHost(req), statement, req.dbToken));
+    return L.launcherOf(await launchSql(resolveHost(req), statement, token));
   } catch (err) {
     if (isMissingTableError(err)) return null;
     throw err;
@@ -818,8 +830,9 @@ async function runIsRecorded(req, runId) {
   const table = L.launchTableName(DEFAULT_INSPIRE_DB);
   const statement = table && DEFAULT_WAREHOUSE_ID ? L.runLauncherStatement(table, runId) : null;
   if (!statement) return false;
+  const token = await policyReadToken(req);
   try {
-    return (await launchSql(resolveHost(req), statement, req.dbToken)).length > 0;
+    return (await launchSql(resolveHost(req), statement, token)).length > 0;
   } catch (err) {
     if (isMissingTableError(err)) return false;
     throw err;
@@ -829,9 +842,10 @@ async function runIsRecorded(req, runId) {
 async function sessionOutputFolders(req) {
   const statement = DEFAULT_WAREHOUSE_ID ? L.checkedOutputStatement(DEFAULT_INSPIRE_DB) : null;
   if (!statement) return [];
+  const token = await policyReadToken(req);
   let rows;
   try {
-    rows = await launchSql(resolveHost(req), statement, req.dbToken);
+    rows = await launchSql(resolveHost(req), statement, token);
   } catch (err) {
     if (isMissingTableError(err)) return [];
     throw err;
@@ -845,7 +859,8 @@ async function sessionOutputFolders(req) {
 async function readAppDatabaseHistory(req, sessionId) {
   const parsed = splitInspireDatabase(DEFAULT_INSPIRE_DB);
   if (!parsed || !DEFAULT_WAREHOUSE_ID) return [];
-  return implementApi.loadHistory(resolveHost(req), req.dbToken, DEFAULT_WAREHOUSE_ID, parsed.catalog, parsed.schema, sessionId, null);
+  const token = await policyReadToken(req);
+  return implementApi.loadHistory(resolveHost(req), token, DEFAULT_WAREHOUSE_ID, parsed.catalog, parsed.schema, sessionId, null);
 }
 
 async function sessionIsNew(host, token, inspireDatabase, sessionId) {
