@@ -2018,14 +2018,15 @@ export default function ImplementWizard({
             </div>
             <ol aria-label="Money decisions" className="space-y-2">
               {moneyParts.map((p, i) => {
+                // One decision on screen: the later decisions are not rendered until Next reaches them.
+                if (i > moneyActive) return null;
                 const open = i === moneyActive;
                 const label = `${i + 1}. ${MONEY_PART_LABEL[p]}`;
                 const nextPart = moneyParts[i + 1];
                 return (
                   <li key={p} data-money-current={open ? '' : undefined} className="block">
                     <div data-money-part={p}>
-                      {!open && i < moneyActive && <FoldLine label={label} what={MONEY_PART_LABEL[p]} summary={moneySummaryOf(spec.money, p)} onOpen={() => setMoneyPart(i)} />}
-                      {!open && i > moneyActive && <p className="border-t border-border pt-3 text-[12px] font-semibold text-text-tertiary">{label}</p>}
+                      {!open && <FoldLine label={label} what={MONEY_PART_LABEL[p]} summary={moneySummaryOf(spec.money, p)} onOpen={() => setMoneyPart(i)} />}
                       {open && <p className="border-t border-border pt-3 text-[13px] font-semibold text-text-primary">{label}</p>}
                     </div>
                     {open && (
