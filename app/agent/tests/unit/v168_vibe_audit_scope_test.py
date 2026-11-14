@@ -257,11 +257,13 @@ def test_the_dashboard_round_gate_runs_on_the_dashboard_it_will_publish(agent_ns
     prompts = _judge(inst, {ask: [{"ask": ask, "check": None, "keep": False, "where": ""}]},
                      [{"status": "done", "evidence": "Rainfall card 3.0 2.0 1.0 mm", "where": "rainfall"}])
     runner = _runner(*pages)
-    with pytest.raises(agent_ns["ImplementGenieExhausted"], match="block rainfall is html, which a dashboard text widget cannot draw"):
+    # The three pages are identical, so round 2 is refused with the same problems as round 1 and the repeat-refusal stop (REQ-181,
+    # 56522ad35) ends the build there with no third Genie round. Same as v142's dashboard-rule cases (1b951ec01).
+    with pytest.raises(agent_ns["ImplementRepeatRefusal"], match="block rainfall is html, which a dashboard text widget cannot draw"):
         inst._implement_dashboard(context, runner)
     assert not [p for kind, p in prompts if kind == "judge" and "Rainfall card" in p], "the judge never sees what the dashboard cannot draw"
-    assert len(runner.prompts) == 3 and all("block rainfall is html" in p for p in runner.prompts[1:]), \
-        "each later round tells Genie why the html block cannot be published"
+    assert len(runner.prompts) == 2 and all("block rainfall is html" in p for p in runner.prompts[1:]), \
+        "the second round is told why the html block cannot be published, and the repeat stops the build"
 
 
 def test_round10_a_filter_on_all_columns_lists_every_column_it_checked(agent_ns):
