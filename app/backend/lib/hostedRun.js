@@ -177,8 +177,9 @@ function workspaceFiles(dbFetch) {
     async list(folder) {
       const resp = await dbFetch(host, token, `/api/2.0/workspace/list?path=${encodeURIComponent(folder)}`);
       if (!resp.ok) {
-        logApiBody(`List the page folder ${folder}`, resp.status, await resp.text());
-        throw new Error(apiRefusalText(`list the page folder ${folder}`, resp.status));
+        const refusalBody = await resp.text();
+        logApiBody(`List the page folder ${folder}`, resp.status, refusalBody);
+        throw new Error(apiRefusalText(`list the page folder ${folder}`, resp.status, refusalBody));
       }
       const data = await resp.json();
       return Array.isArray(data.objects) ? data.objects : [];
@@ -186,8 +187,9 @@ function workspaceFiles(dbFetch) {
     async read(file) {
       const resp = await dbFetch(host, token, `/api/2.0/workspace/export?path=${encodeURIComponent(file)}&direct_download=true`);
       if (!resp.ok) {
-        logApiBody(`Read ${file}`, resp.status, await resp.text());
-        throw new Error(apiRefusalText(`read ${file}`, resp.status));
+        const refusalBody = await resp.text();
+        logApiBody(`Read ${file}`, resp.status, refusalBody);
+        throw new Error(apiRefusalText(`read ${file}`, resp.status, refusalBody));
       }
       return Buffer.from(await resp.arrayBuffer());
     },
