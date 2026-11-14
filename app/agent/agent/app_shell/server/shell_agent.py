@@ -717,6 +717,16 @@ def identifier_words(names) -> set:
     return topic_words(" ".join(re.sub(r"(?<=[a-z])(?=[A-Z])", " ", str(name or "")) for name in names or []))
 
 
+def app_scope_sources(settings) -> list:
+    """The App's source tables and columns as the build wrote them into the App settings, page-independent."""
+    out = []
+    for item in (settings or {}).get("scope_sources") or []:
+        if isinstance(item, dict) and str(item.get("table") or "").strip():
+            out.append({"dataset": cut(item["table"], TOPIC_NAME_CHARS), "tables": [cut(item["table"], TOPIC_NAME_CHARS)],
+                        "columns": [cut(c, TOPIC_NAME_CHARS) for c in (item.get("columns") or [])[:TOPIC_SOURCE_COLUMNS]]})
+    return out[:TOPIC_SOURCES]
+
+
 def source_scope(sources) -> tuple:
     """The scoped tables (lowercase, qualified) and the words of their names and columns, from page_sources."""
     tables, names = set(), []
@@ -1427,7 +1437,7 @@ class Agent:
         earlier = [{"question": cut(item["question"], TOPIC_CHARS), "answer": cut(item["answer"], TOPIC_CHARS)}
                    for item in job["history"][-TOPIC_TURNS:]]
         about = {"app": self.shell.app_title(), "use_case": page.get("title"), "question_it_answers": page.get("question"),
-                 "domain": page.get("domain"), "outline": page_outline(page), "source_data": page_sources(page), "on_screen": on_screen,
+                 "domain": page.get("domain"), "outline": page_outline(page), "source_data": page_sources(page) + app_scope_sources(self.shell.settings), "on_screen": on_screen,
                  "earlier_turns": earlier,
                  "person_asks": job["question"]}
         self.source_columns(ws, who, page, about["source_data"])
