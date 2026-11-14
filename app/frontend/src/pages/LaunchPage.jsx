@@ -247,6 +247,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
 
   // ── Table state ──
   const [tables, setTables] = useState([]);
+  // The load of the picked schemas' tables in flight. Its cancel flag is the page's request pattern for schema loads: a selection change
+  // ends it, and Try again checks the flag before it lists a schema, so a late answer for a schema no longer picked is dropped.
+  const tablesLoad = useRef(null);
   const [selectedTables, setSelectedTables] = useState(start.selectedTables);
   const [tableScopes, setTableScopes] = useState(start.tableScopes);
   const [dataFilterLabel, setDataFilterLabel] = useState(start.dataFilterLabel);
@@ -567,7 +570,8 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     setTablesLeftOut([]);
     if (selectedSchemas.length === 0) { setTables([]); return; }
     if (!canUseUcApi) { setTables([]); return; }
-    let cancelled = false;
+    const load = { cancelled: false };
+    tablesLoad.current = load;
     setLoadingTables(true);
     const failed = [];
     const leftOutNotes = [];
@@ -576,26 +580,32 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
         .then(({ rows, leftOut }) => { if (leftOut) leftOutNotes.push(leftOut); return rows; })
         .catch((err) => { failed.push(pickerReadFailure('tables', schemaFullName, err)); return []; }))
     ).then((r) => {
-      if (!cancelled) {
+      if (!load.cancelled) {
         const allTables = r.flat();
         console.log(`[tables] loaded ${allTables.length} for ${selectedSchemas.join(',')}`);
         setTables(allTables);
         setTablesReadError(failed.join('\n'));
         setTablesLeftOut(leftOutNotes.filter(Boolean));
       }
-    }).finally(() => { if (!cancelled) setLoadingTables(false); });
-    return () => { cancelled = true; };
+    }).finally(() => { if (!load.cancelled) setLoadingTables(false); });
+    return () => { load.cancelled = true; };
   }, [selectedSchemas, canUseUcApi, apiFetch, warehouseId]);
 
   // Try again on a table whose type check was busy: list its schema again and replace that schema's rows.
   const tryAgainTables = (item) => {
     const schemaFullName = item.full_name.split('.').slice(0, 2).join('.');
+    const load = tablesLoad.current;
+    // A selection change after this click ends the load it belongs to, so its answer is dropped (the schemas are listed again).
+    const live = () => Boolean(load) && !load.cancelled;
     listSchemaTables(schemaFullName, apiFetch, warehouseId)
       .then(({ rows }) => {
+        if (!live()) return;
         const prefix = `${schemaFullName}.`;
         setTables((prev) => [...prev.filter((t) => !String(t.full_name).startsWith(prefix)), ...rows]);
       })
-      .catch((err) => setTablesReadError((prev) => [prev, pickerReadFailure('tables', schemaFullName, err)].filter(Boolean).join('\n')));
+      .catch((err) => {
+        if (live()) setTablesReadError((prev) => [prev, pickerReadFailure('tables', schemaFullName, err)].filter(Boolean).join('\n'));
+      });
   };
 
   // Auto-populate inspire database when first catalog is selected

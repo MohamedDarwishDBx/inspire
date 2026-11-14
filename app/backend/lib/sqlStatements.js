@@ -208,15 +208,21 @@ function isTransientSqlFailure(err) {
   return /^Cannot reach (the )?Databricks/.test(message);
 }
 
-/** Runs one read that feeds a verdict. A transient failure is retried once after the busy delay. Returns { value } on success,
- *  or { error, transient } where transient says whether a later try can change the answer. */
+// The errors page says a RESOURCE_EXHAUSTED (quota) answer is not retried automatically: it can take hours to clear. It is still busy.
+function retriesAutomatically(err) {
+  return !(err && err.error_code === 'RESOURCE_EXHAUSTED');
+}
+
+/** Runs one read that feeds a verdict. A transient failure is retried once after the busy delay, except a quota answer (see
+ *  retriesAutomatically). Returns { value } on success, or { error, transient } where transient says whether a later try can change
+ *  the answer (the person can then check again). */
 async function lookupWithRetry(run, { sleep = (ms) => new Promise((done) => setTimeout(done, ms)) } = {}) {
   for (let attempt = 1; ; attempt += 1) {
     try {
       return { value: await run() };
     } catch (error) {
       const transient = isTransientSqlFailure(error);
-      if (!transient || attempt >= 2) return { error, transient };
+      if (!transient || attempt >= 2 || !retriesAutomatically(error)) return { error, transient };
       await sleep(busyDelayMs(attempt));
     }
   }
