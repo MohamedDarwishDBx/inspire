@@ -3332,9 +3332,12 @@ function appReadGrantFor(sql, appId) {
   return Boolean(m) && APP_READ_LEVELS[m[1]] === m[2] && m[4] === str(appId) && m[3].split('.').length === ['CATALOG', 'SCHEMA', 'TABLE'].indexOf(m[2]) + 1;
 }
 
+// A person or group is named. A service principal id (a UUID) is no one to ask, so the page says "your data owner" instead (REQ-185).
+const SERVICE_PRINCIPAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function ownerLabel(owner) {
   const name = str(owner).trim();
-  return !name || name.includes('@') ? 'your data owner' : name;
+  return !name || name.includes('@') || SERVICE_PRINCIPAL_ID.test(name) ? 'your data owner' : name;
 }
 
 // What the App still needs on each source table: the live plan for the App's service principal `app` (one derivation, shared by
