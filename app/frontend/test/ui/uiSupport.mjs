@@ -767,7 +767,9 @@ export async function onMoneyPart(page, part) {
 
 export async function goToMeasureImpact(page) {
   await goToStep(page, 'Measure');
-  const onImpact = () => page.locator('[data-money-part="impact"]').evaluate((el) => el.closest('li').hasAttribute('data-money-current'));
+  // Later decisions are not rendered until Next reaches them, so the impact row may not exist yet.
+  const onImpact = async () => (await page.locator('[data-money-part="impact"]').count()) > 0
+    && page.locator('[data-money-part="impact"]').evaluate((el) => el.closest('li').hasAttribute('data-money-current'));
   for (let i = 0; i < 6 && !(await onImpact()); i += 1) await page.locator('[data-money-next]').click();
   await page.getByRole('group', { name: 'Measure impact' }).waitFor();
 }

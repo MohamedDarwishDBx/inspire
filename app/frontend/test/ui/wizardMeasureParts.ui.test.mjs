@@ -32,11 +32,11 @@ test('Measure shows one decision per screen, Measure impact last, Following deci
   const { page } = ui;
   try {
     await goToStep(page, 'Measure');
-    const list = await parts(page);
-    assert.deepEqual(list, ['method', 'direction', 'currency', 'window', 'off', 'impact'], 'the Measure decisions read in this order');
+    const list = ['method', 'direction', 'currency', 'window', 'off', 'impact'];
     for (const [width, height] of [[1280, 800], [1440, 900]]) {
       await page.setViewportSize({ width, height });
       for (const [i, part] of list.entries()) {
+        assert.deepEqual(await parts(page), list.slice(0, i + 1), `only the decisions Next has reached are on screen at ${part}, later ones are not rendered (must-exclude)`);
         assert.equal(await current(page, part), true, `${part} is the current decision`);
         await assertOneDecision(page, part);
         await wizardInScreen(page, `Measure ${part} ${width}x${height}`, height);
