@@ -258,7 +258,35 @@ def test_the_weather_must_exclude_stays_refused_on_the_forecast_page_with_scope_
     assert llm.main_calls() == [] and len(llm.bodies) == 1
 
 
-def test_the_build_writes_the_scope_views_tables_and_columns_page_independent(fresh_ns):
-    scopes = {"k": {"table": SALES, "view": "v", "columns": ["franchise", "TotalPrice"]}, "bad": "not a scope"}
-    assert fresh_ns["implement_app_scope_sources"](scopes) == [{"table": SALES, "columns": ["franchise", "TotalPrice"]}]
-    assert fresh_ns["implement_app_scope_sources"](None) == []
+def test_the_build_lists_every_source_table_with_its_full_columns_not_only_the_scope_bound_ones(fresh_ns):
+    columns = {SALES: ["franchise", "TotalPrice", "transaction_id", "store_code"], "main.x.store_locations": ["store_id", "city"]}
+    listed = fresh_ns["implement_app_scope_sources"]([SALES, "main.x.store_locations", SALES], lambda t: columns.get(t, []))
+    assert listed == [{"table": SALES, "columns": columns[SALES]}, {"table": "main.x.store_locations", "columns": ["store_id", "city"]}]
+    assert fresh_ns["implement_app_scope_sources"](None, lambda t: []) == []
+
+
+FULL_SOURCES = [{"table": SALES, "columns": ["franchise", "TotalPrice", "transaction_id", "store_code"]},
+                {"table": "main.x.store_locations", "columns": ["store_id", "city"]}]
+
+
+def test_a_source_table_with_no_scope_record_is_in_scope_for_a_question_about_it(tmp_path):
+    llm = FakeLLM([said("There are 7 store locations.")], related=lambda body: False)
+    s = forecast_shell(tmp_path, llm, FULL_SOURCES)
+    turn = ask(s, "How many store locations are there in total?", page=forecast_page()["id"])
+    assert turn["refused"] is False and llm.bodies == llm.main_calls()
+
+
+def test_a_question_naming_an_unbound_column_of_a_listed_table_is_related(tmp_path):
+    llm = FakeLLM([said("Each store code has its own count.")], related=lambda body: False)
+    s = forecast_shell(tmp_path, llm, FULL_SOURCES)
+    turn = ask(s, "How many sales transactions are there at each store code?", page=forecast_page()["id"])
+    assert turn["refused"] is False and llm.bodies == llm.main_calls()
+
+
+@pytest.mark.parametrize("question", ["What is the weather in Paris?", "What is the weather in Paris last month?"])
+def test_the_weather_must_exclude_stays_refused_with_the_full_source_list(tmp_path, question):
+    llm = FakeLLM([said("A has 4.")], related=lambda body: False)
+    s = forecast_shell(tmp_path, llm, FULL_SOURCES)
+    turn = ask(s, question, page=forecast_page()["id"])
+    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert llm.main_calls() == [] and len(llm.bodies) == 1
