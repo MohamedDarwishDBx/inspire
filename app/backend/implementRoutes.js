@@ -177,13 +177,19 @@ function registerImplementRoutes(app, deps) {
   // A failed type lookup does not block the read; the read then reports its own error.
   async function refuseMetricView(req, warehouseId, table) {
     if (!table) return;
-    let rows = [];
-    try {
-      rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, I.tableTypeStatement(table));
-    } catch {
-      return;
+    if (MV.isMetricViewType(await tableTypeOf(req, () => personReadToken(req), warehouseId, table))) {
+      throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
     }
-    if (rows.some((r) => MV.isMetricViewType(r.table_type))) throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
+  }
+
+  // The type of one table from information_schema, or null when the lookup fails (the caller then decides, as before).
+  async function tableTypeOf(req, tokenOf, warehouseId, table) {
+    try {
+      const rows = await sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table));
+      return rows.length ? String(rows[0].table_type || '') : null;
+    } catch {
+      return null;
+    }
   }
 
 
@@ -760,7 +766,13 @@ function registerImplementRoutes(app, deps) {
       const token = P.personTokenOf(req);
       if (!token) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_NO_SIGN_IN });
       const search = (async () => {
-        const rows = await sqlRows(req.dbHost, token, warehouseId, statement);
+        const candidates = await sqlRows(req.dbHost, token, warehouseId, statement);
+        // A metric view is never a swap: its type is read per candidate and a view is dropped before the probe. A candidate
+        // whose type cannot be read is not offered (fail closed): it is listed as not usable, with the plain reason.
+        const types = await Promise.all(candidates.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))));
+        const rows = candidates.filter((_r, i) => types[i] && !MV.isMetricViewType(types[i]));
+        const unusable = copyOnly ? [] : candidates.filter((_r, i) => !types[i])
+          .map((r) => ({ table: candidateOf(r), reason: MV.UNUSABLE_REASON }));
         const readable = await Promise.all(rows.map((r) => sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(candidateOf(r)))
           .then(() => true, () => false)));
         const copies = I.builtInSampleTable(table);
@@ -770,13 +782,13 @@ function registerImplementRoutes(app, deps) {
           const copy = copies && Boolean(Number(r.owned)) && total > 0 && matched === total;
           return { table: candidateOf(r), matched, total, copy };
         });
-        return copyOnly ? swaps.filter((s) => s.copy) : swaps;
+        return { swaps: copyOnly ? swaps.filter((s) => s.copy) : swaps, unusable };
       })();
       const timer = new Promise((resolve) => { setTimeout(() => resolve(null), SWAP_SEARCH_LIMIT_MS).unref(); });
       const found = await Promise.race([search, timer]);
-      if (found === null) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
-      const swaps = found;
-      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)], why: '' });
+      if (found === null) return res.json({ table, swaps: [], unusable: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
+      const swaps = found.swaps;
+      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)], unusable: found.unusable, why: '' });
     } catch (err) {
       sendError(res, err);
     }
@@ -788,6 +800,9 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       const source = q(req, 'source');
       const token = personReadToken(req);
+      if (MV.isMetricViewType(await tableTypeOf(req, () => token, warehouseId, table))) {
+        return res.json({ table, readable: false, reason: MV.metricViewRefusal(table) });
+      }
       try {
         await sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(table));
       } catch (err) {

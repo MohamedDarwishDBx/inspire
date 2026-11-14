@@ -25,4 +25,40 @@ function metricViewRefusal(name) {
   return `${name} is a metric view, so Inspire leaves it out of Data Filters; pick its source table instead`;
 }
 
-module.exports = { METRIC_VIEW_TABLE_TYPES, isMetricViewType, splitMetricViews, metricViewSkipLine, metricViewRefusal };
+/** The one plain reason an unknown-type table gives in the picker and in swap suggestions. */
+const UNUSABLE_REASON = "Inspire could not read this table's type, so it cannot be used here. Pick another table you can read.";
+
+/** The one log line the picker writes for the tables whose type it could not read (fail closed: shown as not usable). */
+function tableTypeUnknownLine(count, where) {
+  const noun = count === 1 ? 'table' : 'tables';
+  return `[TABLE-TYPE UNKNOWN] ${count} ${noun} shown as not usable in ${where}: Inspire could not read their type`;
+}
+
+// The probe bounds mirror the agent notebook's values (streaming_batch_size and METADATA_PARALLELISM); the App and the
+// notebook do not share a config, so the two are kept equal by hand.
+const TABLE_TYPE_PROBE_CAP = 1000;
+const TABLE_TYPE_PROBE_WORKERS = 8;
+
+/**
+ * Type every name with `typeOf` (null when its type cannot be read), TABLE_TYPE_PROBE_WORKERS at a time. Names beyond
+ * TABLE_TYPE_PROBE_CAP are not typed and come back in `beyond`; the cap is logged when it is hit.
+ */
+async function probeTableTypes(names, typeOf) {
+  const probed = names.slice(0, TABLE_TYPE_PROBE_CAP);
+  const beyond = names.slice(TABLE_TYPE_PROBE_CAP);
+  if (beyond.length) {
+    console.log(`[TABLE-TYPE PROBE CAP] ${beyond.length} tables beyond the probe cap of ${TABLE_TYPE_PROBE_CAP} were not typed`);
+  }
+  const types = new Map();
+  for (let i = 0; i < probed.length; i += TABLE_TYPE_PROBE_WORKERS) {
+    const chunk = probed.slice(i, i + TABLE_TYPE_PROBE_WORKERS);
+    const got = await Promise.all(chunk.map((name) => typeOf(name)));
+    chunk.forEach((name, j) => types.set(name, got[j]));
+  }
+  return { types, beyond };
+}
+
+module.exports = {
+  METRIC_VIEW_TABLE_TYPES, isMetricViewType, splitMetricViews, metricViewSkipLine, metricViewRefusal,
+  UNUSABLE_REASON, tableTypeUnknownLine, probeTableTypes, TABLE_TYPE_PROBE_CAP,
+};
