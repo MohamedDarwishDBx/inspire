@@ -69,9 +69,9 @@ def test_a_source_table_whose_columns_cannot_be_read_is_named_with_that_cause_an
     assert "Data Filters" not in text, "a Table Scope cannot give a table readable columns, so the reason never sends people to one"
 
 
-def test_a_source_table_the_build_can_read_is_sent_to_data_filters_on_start_and_is_not_called_unreadable(agent_ns):
+def test_a_source_table_the_build_can_read_is_sent_to_table_filters_in_data_and_results_and_is_not_called_unreadable(agent_ns):
     text = agent_ns["implement_app_raw_block"](["main.inspire.src"], [])
-    assert "Add each one to Data Filters (optional), in Advanced Settings on Start" in text
+    assert "Add each one under Table filters or Column roles in Data & results, which Open all settings on the Build page opens" in text
     assert "could not read" not in text
 
 
