@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import bootGuard from '../../../../shared/bootGuardPlugin.mjs';
 
 const FONT_LICENSES = { inter: '@fontsource-variable/inter/LICENSE', newsreader: '@fontsource-variable/newsreader/LICENSE' };
 
@@ -16,7 +17,7 @@ const fontLicenses = () => ({
 const assetName = (asset) => ((asset.names || [asset.name]).some((name) => String(name).endsWith('.woff2')) ? 'assets/fonts/[name][extname]' : 'assets/[name][extname]');
 
 export default defineConfig({
-  plugins: [react(), fontLicenses()],
+  plugins: [react(), fontLicenses(), bootGuard()],
   base: './',
   build: {
     outDir: 'dist',

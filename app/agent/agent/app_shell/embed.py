@@ -24,6 +24,10 @@ VERSION = 1
 SERVER_FILES = ("app.py", "app.yaml", "shell_agent.py", "shell_alerts.py", "shell_core.py", "shell_db.py", "shell_facts.py", "shell_pg.py",
                 "shell_redact.py", "shell_sql.py")
 WEB_INPUTS = ("index.html", "package.json", "package-lock.json", "vite.config.js", "src")
+# Files outside web/ that the build inlines (the boot guard and its Vite plugin, shared with the frontend). Listed here and in
+# web/test/freshDist.mjs; web/test/sharedInputs.test.mjs fails when a file in app/shared is missing from either list.
+SHARED = os.path.normpath(os.path.join(ROOT, "..", "shared"))
+SHARED_INPUTS = ("bootGuard.js", "bootGuardPlugin.mjs")
 BINARY_SUFFIXES = (".woff2",)
 CONSTANT = "INSPIRE_NOTEBOOK_ASSETS = "
 LEGACY_CONSTANTS = ("_INSPIRE_APP_SHELL = ", "_INSPIRE_KINDS = ")
@@ -50,6 +54,11 @@ def web_source_sha(web: str = WEB) -> str:
         with open(os.path.join(web, relative), "rb") as handle:
             data = handle.read()
         digest.update(f"{relative}\0{len(data)}\0".encode())
+        digest.update(data)
+    for name in SHARED_INPUTS:
+        with open(os.path.join(SHARED, name), "rb") as handle:
+            data = handle.read()
+        digest.update(f"shared/{name}\0{len(data)}\0".encode())
         digest.update(data)
     return digest.hexdigest()
 
