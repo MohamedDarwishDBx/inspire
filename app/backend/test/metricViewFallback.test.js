@@ -15,6 +15,7 @@ const SCH = 'default';
 const TYPES = { orders: 'MANAGED', order_revenue_metrics: 'METRIC_VIEW', legacy: 'MANAGED', order_summary: 'VIEW' };
 const SWAP_CANDIDATES = [['adb_fe_uae_01', 'default', 'order_revenue_metrics'], ['main', 's', 'orders'], ['main', 's', 'mystery_table']];
 const signedIn = { 'x-forwarded-access-token': PERSON, 'x-forwarded-email': PERSON_EMAIL };
+const generatedNames = () => Array.from({ length: 1005 }, (_, i) => `gen_${String(i).padStart(4, '0')}`);
 
 const done = (column, values) => [200, { status: { state: 'SUCCEEDED' }, manifest: { schema: { columns: [{ name: column }] } },
   result: { data_array: values.map((v) => [v]) } }];
@@ -22,7 +23,7 @@ const table = (columns, rows) => [200, { status: { state: 'SUCCEEDED' }, manifes
   result: { data_array: rows } }];
 const denied = (message) => [403, { error_code: 'PERMISSION_DENIED', message }];
 
-function answer(call, { unreadable = [] } = {}) {
+function answer(call, { unreadable = [], many = false } = {}) {
   const url = new URL(`http://x${call.path}`);
   if (call.path === '/oidc/v1/token') return [200, { access_token: SP_TOKEN, expires_in: 3600 }];
   if (call.path.startsWith('/api/2.0/preview/scim/v2/Me')) return [200, call.token === SP_TOKEN ? { userName: 'sp', applicationId: 'sp' } : { userName: PERSON_EMAIL }];
@@ -40,13 +41,13 @@ function answer(call, { unreadable = [] } = {}) {
     const type = TYPES[String(params.t || '').toLowerCase()];
     return table(['table_type'], type ? [[type]] : []);
   }
-  if (/^SHOW TABLES IN /.test(stmt)) return done('tableName', Object.keys(TYPES));
+  if (/^SHOW TABLES IN /.test(stmt)) return done('tableName', many ? [...Object.keys(TYPES), ...generatedNames()] : Object.keys(TYPES));
   if (/^SELECT \* FROM /.test(stmt)) return table([], []);
   const described = /^DESCRIBE TABLE EXTENDED `([^`]+)`\.`([^`]+)`\.`([^`]+)` AS JSON$/.exec(stmt);
   if (described) {
     const name = described[3];
     if (unreadable.includes(name)) return denied(`User does not have SELECT on Table '${name}'.`);
-    return done('json_metadata', [JSON.stringify({ table_name: name, type: TYPES[name] })]);
+    return done('json_metadata', [JSON.stringify({ table_name: name, type: TYPES[name] || (many ? 'MANAGED' : undefined) })]);
   }
   return null;
 }
@@ -117,4 +118,44 @@ test('the free table lookup refuses a metric view with the Data Filters line, no
     assert.equal(got.readable, false);
     assert.match(got.reason, /is a metric view, so Inspire leaves it out of Data Filters/);
   });
+});
+
+test('the table lookup refuses a table whose type cannot be read, by name, with the plain reason (fail closed)', async () => {
+  await withWorkspace({}, async (url) => {
+    const table = `${CAT}.${SCH}.mystery_table`;
+    const resp = await fetch(`${url}/api/inspire/implement/table-lookup?table=${encodeURIComponent(table)}&source=main.s.sales&warehouse_id=wh`,
+      { headers: signedIn });
+    const got = await resp.json();
+    assert.equal(got.readable, false);
+    assert.match(got.reason, /mystery_table is not usable\. Inspire could not read this table's type, so it cannot be used here/);
+  });
+});
+
+test('the columns read refuses a table whose type cannot be read before it reads anything (fail closed)', async () => {
+  await withWorkspace({}, async (url) => {
+    const table = `${CAT}.${SCH}.mystery_table`;
+    const resp = await fetch(`${url}/api/inspire/implement/columns?table=${encodeURIComponent(table)}&warehouse_id=wh`, { headers: signedIn });
+    const text = await resp.text();
+    assert.equal(resp.status, 400, text);
+    assert.match(text, /is not usable\. Inspire could not read this table's type/);
+  });
+});
+
+test('the picker counts the tables past the probe cap and names how many were left out, for the schema', async () => {
+  await withWorkspace({ many: true }, async (url) => {
+    const resp = await fetch(`${url}/api/tables/${CAT}/${SCH}?warehouse_id=wh`, { headers: signedIn });
+    const got = await resp.json();
+    const total = Object.keys(TYPES).length + 1005;
+    assert.deepEqual(got.left_out, { count: total - 1000, schema: `${CAT}.${SCH}` });
+    assert.ok(got.tables.length <= 1000, 'no more than the cap is listed');
+  });
+});
+
+test('the DESCRIBE ... AS JSON payload is read by one parser: a metric view is named, and a payload that is not JSON or names no type is unknown (fail closed)', () => {
+  const M = require('../lib/metricViews');
+  assert.equal(M.tableTypeOfDescribe(JSON.stringify({ type: 'METRIC_VIEW' })), 'METRIC_VIEW');
+  assert.equal(M.tableTypeOfDescribe(JSON.stringify({ type: 'managed' })), 'MANAGED');
+  assert.equal(M.tableTypeOfDescribe('{"type": "METRIC_VIEW"'), null, 'malformed JSON is an unknown type, never a throw');
+  assert.equal(M.tableTypeOfDescribe(JSON.stringify({ table_name: 'x' })), null, 'a payload with no type is an unknown type');
+  assert.equal(M.tableTypeOfDescribe(undefined), null, 'no payload is an unknown type');
 });
