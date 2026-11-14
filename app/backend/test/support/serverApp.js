@@ -38,7 +38,7 @@ function reset(overrides = {}) {
   Object.assign(state, {
     managers: [], managerGroups: [], personGroups: [], aclStatus: 200, personAppsScope: true, launchers: {}, sessionLaunchers: {}, history: [], calls: [],
     launches: [], knownSessions: [], ledgerSessions: [], nextRunId: 501, holdFetch: null, createFailure: '', sessionRows: {}, groupParents: {}, indirectGroups: [], conflictOn: null, ucSchemas: null, ucTables: null,
-    createdJob: null, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, files: {}, sessionBusiness: {},
+    createdJob: null, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, tableColumns: {}, files: {}, sessionBusiness: {},
     ...folderModel({ folders: { '/Shared/demos': { id: 7, writers: '*' } } }),
   }, overrides);
 }
@@ -124,6 +124,14 @@ function answerSql(body) {
     const cols = (state.tableColumns || {})[name];
     if (!cols) return { statement_id: 's1', status: { state: 'FAILED', error: { message: `[TABLE_OR_VIEW_NOT_FOUND] The table ${name} cannot be found` } } };
     return sqlResult(['col_name', 'data_type'], cols.map((c) => [c, 'string']));
+  }
+  // The column read of a picked table answers from the same tableColumns as DESCRIBE, the way information_schema lists what the
+  // caller can see: a table the state does not name reads as no rows.
+  const infoColumns = /^\s*SELECT column_name, data_type, ordinal_position FROM `([^`]+)`\.information_schema\.columns\b/i.exec(sql);
+  if (infoColumns) {
+    const name = `${infoColumns[1]}.${paramOf(body, 's')}.${paramOf(body, 't')}`.toLowerCase();
+    const cols = (state.tableColumns || {})[name] || [];
+    return sqlResult(['column_name', 'data_type', 'ordinal_position'], cols.map((c, i) => [c, 'string', String(i + 1)]));
   }
   if (/^\s*SELECT session_id,/.test(sql) && sql.includes('__inspire_usecases')) {
     const lacking = (state.usecaseColumns ? USECASE_RULE_COLUMNS.filter((c) => !state.usecaseColumns.includes(c) && new RegExp(`\\b${c}\\b`).test(sql)) : []);
