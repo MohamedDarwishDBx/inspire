@@ -48,6 +48,7 @@ def test_k_positive_measures_the_share_of_the_first_top_k_that_the_second_fit_al
 def test_k_zero_run_publishes_with_the_plain_line_and_its_stability_is_not_applicable(fresh_ns):
     widgets = {"max_alerts_per_run": "200", "min_topk_stability": "0.6"}
     fresh_ns["INSPIRE_SETTINGS_APPLIED"] = widgets
+    assert fresh_ns["inspire_topk_stability"]([], [], 0) is None
     accepted, missed = fresh_ns["inspire_accepted"]({"max_alerts_per_run": 0, "min_topk_stability": None})
     assert (accepted, missed) == (True, None)
     given = _write(fresh_ns, widgets, accepted=True, not_applicable=["min_topk_stability"])
@@ -87,6 +88,7 @@ def test_every_swept_metric_is_not_applicable_at_zero_and_still_fails_when_appli
     bar, failing = SWEPT[name]
     assert name in fresh_ns["INSPIRE_NOT_APPLICABLE_NOTES"], "the swept metric is in the shared not-applicable registry"
     fresh_ns["INSPIRE_SETTINGS_APPLIED"] = {name: bar}
+    fresh_ns["inspire_record_denominator"](fresh_ns["INSPIRE_DENOMINATOR_RULES"][name][0], 0)
     assert fresh_ns["inspire_accepted"]({name: None}) == (True, None)
     given = _write(fresh_ns, {name: bar}, accepted=True, not_applicable=[name])
     assert given["nothing_to_act"] == fresh_ns["INSPIRE_NOT_APPLICABLE_NOTES"][name] and given["nothing_to_act"].endswith(".")
@@ -114,3 +116,66 @@ def test_the_genie_rules_tell_genie_to_pass_none_and_use_the_shared_helpers(agen
     assert "inspire_accepted" in rule and "not_applicable=" in rule and "None" in rule
     assert "inspire_topk_stability" in agent_ns["DatabricksInspire"]._GENIE_ACCEPTANCE_TEXT["B"]
     assert "not applicable" in agent_ns["DatabricksInspire"]._GENIE_ACCEPTANCE_TEXT["B"]
+
+
+def _zero_k_run(fresh_ns, **kw):
+    """Genie's k = 0 run: the helper computes k from empty fit lists and records it, then the write gets what Genie wrote."""
+    fresh_ns["INSPIRE_SETTINGS_APPLIED"] = {"max_alerts_per_run": "200", "min_topk_stability": "0.6"}
+    assert fresh_ns["inspire_topk_stability"]([], [], 0) is None
+    return _write(fresh_ns, fresh_ns["INSPIRE_SETTINGS_APPLIED"], **kw)
+
+
+@pytest.mark.parametrize("measured", [0, 0.0, float("nan")])
+def test_genie_writes_stability_0_or_nan_with_k_zero_and_the_run_still_publishes_with_the_plain_line(fresh_ns, measured):
+    # the guard reads the recorded k, never the number Genie wrote: k is 0, so the criterion does not apply
+    given = _zero_k_run(fresh_ns, accepted=False, missed={"min_topk_stability": measured})
+    assert given["accepted"] is True
+    assert given["nothing_to_act"] == K_ZERO_LINE
+    assert fresh_ns["inspire_not_reliable"]({"records": 0, "flagged_records": 0}, given["accepted"], given["nothing_to_act"]) is None
+
+
+def test_k_positive_stability_of_0_2_still_fails_acceptance_after_the_guard(fresh_ns):
+    # must-exclude guard: five candidate alerts, one shared by the second fit, so the stability is 0.2 and the 0.6 bar fails
+    fresh_ns["INSPIRE_SETTINGS_APPLIED"] = {"max_alerts_per_run": "200", "min_topk_stability": "0.6"}
+    assert fresh_ns["inspire_topk_stability"](["a", "b", "c", "d", "e"], ["a", "x", "y", "z", "w"], 5) == pytest.approx(0.2)
+    given = _write(fresh_ns, fresh_ns["INSPIRE_SETTINGS_APPLIED"], accepted=False, missed={"min_topk_stability": 0.2})
+    assert given["accepted"] is False and "measured 0.2" in given["nothing_to_act"]
+    assert fresh_ns["inspire_not_reliable"]({"records": 5, "flagged_records": 0}, given["accepted"], given["nothing_to_act"])
+
+
+def test_a_zero_stability_with_no_recorded_k_stays_a_failed_criterion_fail_closed(fresh_ns):
+    # no helper recorded k, so the run cannot show the denominator is zero: the failure stands and the App is held
+    fresh_ns["INSPIRE_SETTINGS_APPLIED"] = {"min_topk_stability": "0.6"}
+    given = _write(fresh_ns, fresh_ns["INSPIRE_SETTINGS_APPLIED"], accepted=False, missed={"min_topk_stability": 0.0})
+    assert given["accepted"] is False and "measured 0" in given["nothing_to_act"]
+
+
+def test_a_not_applicable_claim_with_a_nonzero_recorded_k_is_refused(fresh_ns):
+    fresh_ns["INSPIRE_SETTINGS_APPLIED"] = {"min_topk_stability": "0.6"}
+    fresh_ns["inspire_topk_stability"](["a", "b", "c"], ["a", "b", "c"], 3)
+    with pytest.raises(ValueError, match="the denominator recorded for it is 3"):
+        _write(fresh_ns, fresh_ns["INSPIRE_SETTINGS_APPLIED"], accepted=True, not_applicable=["min_topk_stability"])
+
+
+def test_a_not_applicable_claim_with_no_recorded_denominator_is_refused(fresh_ns):
+    fresh_ns["INSPIRE_SETTINGS_APPLIED"] = {"min_topk_stability": "0.6"}
+    with pytest.raises(ValueError, match="its denominator is not recorded this run"):
+        _write(fresh_ns, fresh_ns["INSPIRE_SETTINGS_APPLIED"], accepted=True, not_applicable=["min_topk_stability"])
+
+
+@pytest.mark.parametrize("name", sorted(SWEPT))
+def test_every_swept_metric_with_a_zero_recorded_denominator_is_not_applicable_even_when_written_as_zero_or_nan(fresh_ns, name):
+    bar, _failing = SWEPT[name]
+    key = fresh_ns["INSPIRE_DENOMINATOR_RULES"][name][0]
+    fresh_ns["INSPIRE_SETTINGS_APPLIED"] = {name: bar}
+    fresh_ns["inspire_record_denominator"](key, 0)
+    for written in (0.0, float("nan")):
+        given = _write(fresh_ns, {name: bar}, accepted=False, missed={name: written})
+        assert given["accepted"] is True and given["nothing_to_act"] == fresh_ns["INSPIRE_NOT_APPLICABLE_NOTES"][name], (name, written)
+
+
+def test_the_app_publishes_a_k_zero_summary_row_with_the_plain_line(agent_ns):
+    # App publish check: the summary row the write leaves (not_reliable empty, nothing_to_act the plain line) publishes the App
+    from v207_unreliable_app_test import _build
+    status, final, _emitted, built = _build(agent_ns, "", {"not_reliable": None, "nothing_to_act": K_ZERO_LINE})
+    assert "app" in built and agent_ns["IMPLEMENT_NOT_RELIABLE"] not in final["asset_status"]
