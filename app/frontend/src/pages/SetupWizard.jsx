@@ -35,6 +35,8 @@ export default function SetupWizard({ settings, update, onComplete }) {
   const [catalogsCut, setCatalogsCut] = useState(false);
   const [catalogsWhy, setCatalogsWhy] = useState('');
   const [catalogsRound, setCatalogsRound] = useState(0);
+  // True while the catalog read is in flight: the Database step cannot move on until it settles, so a refusal drawn by that read is seen.
+  const [catalogsBusy, setCatalogsBusy] = useState(false);
   const [schemas, setSchemas] = useState([]);
   const [verification, setVerification] = useState(null);
   const [verifying, setVerifying] = useState(false);
@@ -138,22 +140,29 @@ export default function SetupWizard({ settings, update, onComplete }) {
 
   // Load catalogs when warehouse is ready (warehouse_id enables SQL fallback for SP / UC REST gaps)
   useEffect(() => {
-    if ((!token && !isDatabricksApp) || step < 3) return;
+    if ((!token && !isDatabricksApp) || step < 3) { setCatalogsBusy(false); return undefined; }
+    let current = true;
     const q = warehouseId ? `?warehouse_id=${encodeURIComponent(warehouseId)}` : '';
+    setCatalogsBusy(true);
     fetch(`/api/catalogs${q}`, { headers: headers() })
       .then(async (r) => {
         if (!r.ok) throw await responseError(r);
         return r.json();
       })
       .then(data => {
+        if (!current) return;
         setCatalogs(data.catalogs || []);
         setCatalogsCut(Boolean(data.truncated));
         setCatalogsWhy('');
       })
       .catch((e) => {
+        if (!current) return;
         setCatalogs([]);
         setCatalogsWhy(e.message);
-      });
+      })
+      .finally(() => { if (current) setCatalogsBusy(false); });
+    // A read the step has left answers into nothing: a newer read owns the busy flag.
+    return () => { current = false; };
   }, [token, databricksHost, step, warehouseId, isDatabricksApp, headers, catalogsRound]);
 
   // Load schemas when catalog selected
@@ -227,7 +236,7 @@ export default function SetupWizard({ settings, update, onComplete }) {
       case 0: return !!databricksHost || isDatabricksApp;
       case 1: return !!token || isDatabricksApp;
       case 2: return !!warehouseId;
-      case 3: return !!inspireDatabase && inspireDatabase.includes('.');
+      case 3: return !catalogsBusy && !!inspireDatabase && inspireDatabase.includes('.');
       case 4: return verification?.ok;
       default: return false;
     }
@@ -448,6 +457,9 @@ export default function SetupWizard({ settings, update, onComplete }) {
                   </datalist>
                 </div>
               </div>
+              {catalogsBusy && (
+                <p role="status" className="text-xs text-text-secondary flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Loading catalogs...</p>
+              )}
               {catalogsWhy && <PlainMessage as="p" text={catalogsWhy} onRetry={() => setCatalogsRound((n) => n + 1)} copy role="note" data-uc-why="" className="text-xs text-text-secondary" />}
               {inspireDatabase && inspireDatabase.includes('.') && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-info-bg text-info-fg text-xs">
