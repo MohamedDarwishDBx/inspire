@@ -1,5 +1,6 @@
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { plural } = require('./plural');
+const { busyDelayMs, isTransientStatus } = require('./busyRetry');
 
 const PAGE_SQL_DEADLINE_MS = 240000;
 const READ_ONLY_SQL_RE = /^\s*(SELECT|WITH|SHOW|DESCRIBE|DESC|EXPLAIN)\b/i;
@@ -172,8 +173,38 @@ function createExecuteSql(dbFetch, { now = Date.now, sleep = (ms) => new Promise
   };
 }
 
+// A warehouse that is starting, stopped or not yet running fails the statement; once it is up, the same statement can succeed.
+const WAREHOUSE_NOT_READY_RE = /warehouse[^.;]*\b(starting|stopped|not (yet )?running)\b|\b(starting|stopped)\b[^.;]*warehouse/i;
+
+/** True when a failed read can succeed on a retry: a busy or down workspace (429, 5xx), a warehouse that is starting or stopped,
+ *  a statement that timed out, or a dropped network. A denial, a missing object or a bad statement is not transient. */
+function isTransientSqlFailure(err) {
+  const message = String((err && err.message) || err || '');
+  if (WAREHOUSE_NOT_READY_RE.test(message)) return true;
+  const submitted = /^SQL failed \((\d{3})\)/.exec(message);
+  if (submitted) return isTransientStatus(submitted[1]);
+  if (err && (err.code === 'SQL_DEADLINE' || err.timedOut)) return true;
+  return /^Cannot reach (the )?Databricks/.test(message);
+}
+
+/** Runs one read that feeds a verdict. A transient failure is retried once after the busy delay. Returns { value } on success,
+ *  or { error, transient } where transient says whether a later try can change the answer. */
+async function lookupWithRetry(run, { sleep = (ms) => new Promise((done) => setTimeout(done, ms)) } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return { value: await run() };
+    } catch (error) {
+      const transient = isTransientSqlFailure(error);
+      if (!transient || attempt >= 2) return { error, transient };
+      await sleep(busyDelayMs(attempt));
+    }
+  }
+}
+
 module.exports = {
   createExecuteSql,
+  isTransientSqlFailure,
+  lookupWithRetry,
   isIdempotentSql,
   sqlQueryTags,
   runWithQueryTags,

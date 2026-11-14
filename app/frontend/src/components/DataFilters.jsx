@@ -4,7 +4,7 @@ import { PlainMessage } from './TechnicalDetails';
 import { groupLabelOf } from '../lib/implementWizard';
 import { raisePermissions } from '../lib/permissionBus';
 import { METRIC_VIEW_REFUSAL } from '../lib/pickProblem';
-import { leftOutLine, unusableReasonOf } from '../lib/tableUsability';
+import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
 import {
   SCOPE_OPS, columnKindOf, filterValuesOf, filteredTablesOf, isGroupRow, normalizeTableScope, pickedTableNames, scopeKeyOf,
   scopeOpOf, scopeProblems, tableBrowseQuery, tableScopeOf,
@@ -142,7 +142,9 @@ function listedOf(d, name) {
   const fqn = (t) => t.full_name || `${name}.${t.name}`;
   return {
     tables: rows.map(fqn),
-    unusable: Object.fromEntries(rows.filter((t) => unusableReasonOf(t)).map((t) => [fqn(t), unusableReasonOf(t)])),
+    // A busy type check is not a verdict on the table: it is listed apart, with Try again, and is never shown as not usable.
+    unusable: Object.fromEntries(rows.filter((t) => !typeCheckBusyOf(t) && unusableReasonOf(t)).map((t) => [fqn(t), unusableReasonOf(t)])),
+    busy: Object.fromEntries(rows.filter(typeCheckBusyOf).map((t) => [fqn(t), unusableReasonOf(t)])),
     leftOut: d.left_out ? { count: d.left_out.count, schema: d.left_out.schema || name } : null,
   };
 }
@@ -170,9 +172,20 @@ function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouse
       error={open ? listed?.error : ''}>
       {open && listable && !listed && <li role="none" className="px-2 text-text-tertiary">Listing the tables of {name}</li>}
       {open && listed?.tables && listed.tables.length === 0 && <li role="none" className="px-2 text-text-secondary">{name} has no tables.</li>}
-      {names.map((t) => (listed?.unusable?.[t]
-        ? <li role="none" key={t} data-unusable-table={t} className="px-2 text-[11px] text-text-secondary">{shortName(t)}: {listed.unusable[t]}</li>
-        : renderTable(t)))}
+      {names.map((t) => {
+        if (listed?.busy?.[t]) {
+          return (
+            <li role="none" key={t} data-type-check-busy={t} className="px-2 text-[11px] text-warning-fg flex flex-wrap items-center gap-2">
+              <span>{shortName(t)}: Inspire could not check this table's type right now.</span>
+              <button type="button" onClick={() => setListed(null)} className="underline">Try again</button>
+            </li>
+          );
+        }
+        if (listed?.unusable?.[t]) {
+          return <li role="none" key={t} data-unusable-table={t} className="px-2 text-[11px] text-text-secondary">{shortName(t)}: {listed.unusable[t]}</li>;
+        }
+        return renderTable(t);
+      })}
       {open && listed?.leftOut && <li role="none" data-left-out="" className="px-2 text-[11px] text-text-secondary">{leftOutLine(listed.leftOut)}</li>}
     </Branch>
   );

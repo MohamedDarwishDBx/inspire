@@ -42,6 +42,9 @@ function metricViewRefusal(name) {
   return `${name} is a metric view, so Inspire leaves it out of Data Filters; pick its source table instead`;
 }
 
+/** The plain reason a picker row gives while its type check is busy: not a verdict on the table, and it can be checked again. */
+const TYPE_CHECK_BUSY_REASON = "Inspire could not check this table's type right now. Try again.";
+
 /** The one plain reason an unknown-type table gives in the picker and in swap suggestions. */
 const UNUSABLE_REASON = "Inspire could not read this table's type, so it cannot be used here. Pick another table you can read.";
 
@@ -57,7 +60,8 @@ const TABLE_TYPE_PROBE_CAP = 1000;
 const TABLE_TYPE_PROBE_WORKERS = 8;
 
 /**
- * Type every name with `typeOf` (null when its type cannot be read), TABLE_TYPE_PROBE_WORKERS at a time. Names beyond
+ * Type every name with `typeOf`, which resolves { type, transient } (type null when it cannot be read; transient when a later
+ * check can change that), TABLE_TYPE_PROBE_WORKERS at a time. Names beyond
  * TABLE_TYPE_PROBE_CAP are not typed and come back in `beyond`; the cap is logged when it is hit.
  */
 async function probeTableTypes(names, typeOf) {
@@ -87,5 +91,5 @@ function typeCheckBusyRefusal(name) {
 
 module.exports = {
   METRIC_VIEW_TABLE_TYPES, isMetricViewType, splitMetricViews, metricViewSkipLine, metricViewRefusal,
-  UNUSABLE_REASON, unknownTypeRefusal, typeCheckBusyRefusal, tableTypeUnknownLine, probeTableTypes, TABLE_TYPE_PROBE_CAP, tableTypeOfDescribe,
+  UNUSABLE_REASON, TYPE_CHECK_BUSY_REASON, unknownTypeRefusal, typeCheckBusyRefusal, tableTypeUnknownLine, probeTableTypes, TABLE_TYPE_PROBE_CAP, tableTypeOfDescribe,
 };

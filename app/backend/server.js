@@ -40,7 +40,7 @@ const { INSPIRE_DB_SHAPE, USE_CASE_ID_SHAPE, splitInspireDatabase, isTimestampTe
 const { valueLedgerTable, inspireSessionTable, valueSessionSql, valueRunsSql, valueOverallSql, sessionCountsSql, valueOfSession, valueOfRuns, overallValue, qualified: qualifiedInspireTable } = require('./lib/inspireValue');
 const VE = require('./lib/valueEstimate');
 const { normalizeUseCaseName, renameStatement } = require('./lib/useCaseName');
-const { createExecuteSql, runWithRequestDeadline } = require('./lib/sqlStatements');
+const { createExecuteSql, lookupWithRetry, runWithRequestDeadline } = require('./lib/sqlStatements');
 const { raceLaunchCheck } = require('./lib/launchDeadline');
 const { answerMs, fetchWithin } = require('./lib/answerWithin');
 const { plural } = require('./lib/plural');
@@ -52,7 +52,7 @@ const {
   discoverReads, discoverWrites, listCatalogs, listSchemas, listTables, outputPlan, runReadPlan, scopeTables, skippedTablesDetail, ucMetadataParts,
   writeRefusalBody,
 } = require('./lib/ucReads');
-const { isMetricViewType, metricViewSkipLine, probeTableTypes, tableTypeOfDescribe, tableTypeUnknownLine, UNUSABLE_REASON } = require('./lib/metricViews');
+const { isMetricViewType, metricViewSkipLine, probeTableTypes, tableTypeOfDescribe, tableTypeUnknownLine, TYPE_CHECK_BUSY_REASON, UNUSABLE_REASON } = require('./lib/metricViews');
 const { createSourceAccess } = require('./lib/sourceAccess');
 const { withBusyRetry } = require('./lib/busyRetry');
 const { registerShowcaseRoutes, showcaseWriteGuard } = require('./lib/showcase');
@@ -386,14 +386,12 @@ async function listSchemasSql(host, token, warehouseId, catalog) {
 
 // One table's type from DESCRIBE TABLE EXTENDED ... AS JSON, its documented "type" field (METRIC_VIEW for a metric view).
 // Null when it cannot be read; the caller keeps such a table listed.
+// { type } from DESCRIBE ... AS JSON, or { type: null, transient } when the lookup failed; a transient failure is retried once.
 async function tableTypeByDescribe(host, token, warehouseId, catalog, schema, name) {
-  try {
-    const result = await executeSql(host, token, warehouseId,
-      `DESCRIBE TABLE EXTENDED ${quotedIdent(catalog)}.${quotedIdent(schema)}.${quotedIdent(name)} AS JSON`);
-    return tableTypeOfDescribe(result.result?.data_array?.[0]?.[0]);
-  } catch (err) {
-    return null;
-  }
+  const got = await lookupWithRetry(() => executeSql(host, token, warehouseId,
+    `DESCRIBE TABLE EXTENDED ${quotedIdent(catalog)}.${quotedIdent(schema)}.${quotedIdent(name)} AS JSON`));
+  if (got.error) return { type: null, transient: got.transient };
+  return { type: tableTypeOfDescribe(got.value.result?.data_array?.[0]?.[0]), transient: false };
 }
 
 // `known` holds the full names the REST listing already typed (and the metric views it hid); only the other names are probed.
@@ -407,6 +405,8 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
     // cannot be read, each name the REST listing did not type is read with DESCRIBE TABLE EXTENDED ... AS JSON instead.
     const metricViewNames = new Set();
     const unknownNames = new Set();
+    // A name whose type check the workspace could not answer twice: listed as busy, neither usable nor not usable.
+    const busyNames = new Set();
     const leftOutNames = new Set();
     let leftOut = 0;
     const probedTypes = new Map();
@@ -421,10 +421,12 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
         .filter((n) => typeof n === 'string' && n && !known.has(`${catalog}.${schema}.${n}`));
       const { types, beyond } = await probeTableTypes(names,
         (name) => tableTypeByDescribe(host, token, warehouseId, catalog, schema, name));
-      for (const [name, type] of types) {
-        if (!type) unknownNames.add(name);
-        else if (isMetricViewType(type)) metricViewNames.add(name);
-        else probedTypes.set(name, type);
+      for (const [name, { type, transient }] of types) {
+        if (type) {
+          if (isMetricViewType(type)) metricViewNames.add(name);
+          else probedTypes.set(name, type);
+        } else if (transient) busyNames.add(name);
+        else unknownNames.add(name);
       }
       // Names beyond the probe cap are not typed and not shown: they are counted, and the picker says so.
       for (const name of beyond) leftOutNames.add(name);
@@ -441,7 +443,7 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
         full_name: `${catalog}.${schema}.${tname}`,
         catalog_name: catalog,
         schema_name: schema,
-        table_type: probedTypes.get(tname) || 'MANAGED',
+        table_type: busyNames.has(tname) ? '' : (probedTypes.get(tname) || 'MANAGED'),
         data_source_format: '',
         updated_at: null,
         created_at: null,
@@ -450,6 +452,7 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
         columns: 0,
         // Fail closed: a table whose type cannot be read is shown as not usable, with the plain reason.
         ...(unknownNames.has(tname) ? { usable: false, unusable_reason: UNUSABLE_REASON } : {}),
+        ...(busyNames.has(tname) ? { type_check: 'busy', unusable_reason: TYPE_CHECK_BUSY_REASON } : {}),
       });
     }
     return { rows: out, leftOut };

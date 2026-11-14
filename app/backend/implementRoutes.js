@@ -2,7 +2,7 @@ const { isMissingTableError } = require('./lib/inspireFeedback');
 const { INSPIRE_DB_SHAPE, USE_CASE_ID_SHAPE, noSessionText, stepsStatement } = require('./lib/sqlInputs');
 const I = require('./lib/inspireImplement');
 const { createGenieJobGuard } = require('./lib/genieJobGuard');
-const { runWithQueryTags } = require('./lib/sqlStatements');
+const { runWithQueryTags, lookupWithRetry } = require('./lib/sqlStatements');
 const { genieNotebookJobName, latestGenieNotebookRun } = require('./lib/genieNotebookJob');
 const C = require('./lib/implementControl');
 const LE = require('./lib/lakebaseEnforce');
@@ -23,7 +23,6 @@ const GR = require('./lib/groupingRule');
 const GP = require('./lib/groupingProfile');
 const FX = require('./lib/fxRates');
 const JC = require('./lib/jobCurrency');
-const { busyDelayMs, isTransientStatus } = require('./lib/busyRetry');
 const MD = require('./lib/moneyDescribe');
 const { TAGS_UNREAD_NOTE, personalColumn } = require('../frontend/src/lib/personalColumns.js');
 const {
@@ -205,29 +204,13 @@ function registerImplementRoutes(app, deps) {
     await refuseTableTypes(req, warehouseId, [table], { unknownType });
   }
 
-  // A failed type lookup is transient when the workspace is busy or down for a moment, the warehouse timed out, or the network
-  // dropped: the classes withBusyRetry and the SQL client already retry. A denial, a missing object or no type is permanent.
-  function transientLookupFailure(err) {
-    const message = String((err && err.message) || err || '');
-    const submitted = /^SQL failed \((\d{3})\)/.exec(message);
-    if (submitted) return isTransientStatus(submitted[1]);
-    if (err && (err.code === 'SQL_DEADLINE' || err.timedOut)) return true;
-    return /^Cannot reach (the )?Databricks/.test(message);
-  }
-
   // The type of one table from information_schema: { type } when it reads (null when the table names no type), and on a failure
-  // { type: null, transient } where transient says a retry can change it. A transient failure is retried once, after the busy delay.
+  // { type: null, transient } where transient says a retry can change it. A transient failure is retried once (lookupWithRetry).
   async function tableTypeOf(req, tokenOf, warehouseId, table) {
-    for (let attempt = 1; ; attempt += 1) {
-      try {
-        const rows = await sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table));
-        return { type: rows.length ? String(rows[0].table_type || '') || null : null, transient: false };
-      } catch (err) {
-        const transient = transientLookupFailure(err);
-        if (!transient || attempt >= 2) return { type: null, transient };
-        await new Promise((done) => setTimeout(done, busyDelayMs(attempt)));
-      }
-    }
+    const got = await lookupWithRetry(() => sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table)));
+    if (got.error) return { type: null, transient: got.transient };
+    const rows = got.value;
+    return { type: rows.length ? String(rows[0].table_type || '') || null : null, transient: false };
   }
 
 
@@ -807,10 +790,13 @@ function registerImplementRoutes(app, deps) {
         const candidates = await sqlRows(req.dbHost, token, warehouseId, statement);
         // A metric view is never a swap: its type is read per candidate and a view is dropped before the probe. A candidate
         // whose type cannot be read is not offered (fail closed): it is listed as not usable, with the plain reason.
-        const types = (await Promise.all(candidates.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))))).map((got) => got.type);
-        const rows = candidates.filter((_r, i) => types[i] && !MV.isMetricViewType(types[i]));
-        const unusable = copyOnly ? [] : candidates.filter((_r, i) => !types[i])
+        const looked = await Promise.all(candidates.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))));
+        const rows = candidates.filter((_r, i) => looked[i].type && !MV.isMetricViewType(looked[i].type));
+        const unusable = copyOnly ? [] : candidates.filter((_r, i) => !looked[i].type && !looked[i].transient)
           .map((r) => ({ table: candidateOf(r), reason: MV.UNUSABLE_REASON }));
+        // A type check the workspace could not answer twice is neither a swap nor unusable: it is listed busy, to check again.
+        const busy = copyOnly ? [] : candidates.filter((_r, i) => !looked[i].type && looked[i].transient)
+          .map((r) => ({ table: candidateOf(r), reason: MV.TYPE_CHECK_BUSY_REASON }));
         const readable = await Promise.all(rows.map((r) => sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(candidateOf(r)))
           .then(() => true, () => false)));
         const copies = I.builtInSampleTable(table);
@@ -820,14 +806,14 @@ function registerImplementRoutes(app, deps) {
           const copy = copies && Boolean(Number(r.owned)) && total > 0 && matched === total;
           return { table: candidateOf(r), matched, total, copy };
         });
-        return { swaps: copyOnly ? swaps.filter((s) => s.copy) : swaps, unusable };
+        return { swaps: copyOnly ? swaps.filter((s) => s.copy) : swaps, unusable, busy };
       })();
       const timer = new Promise((resolve) => { setTimeout(() => resolve(null), SWAP_SEARCH_LIMIT_MS).unref(); });
       const found = await Promise.race([search, timer]);
       if (found === null) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
       const swaps = found.swaps;
       return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)],
-        ...(found.unusable.length ? { unusable: found.unusable } : {}), why: '' });
+        ...(found.unusable.length ? { unusable: found.unusable } : {}), ...(found.busy.length ? { busy: found.busy } : {}), why: '' });
     } catch (err) {
       sendError(res, err);
     }
@@ -839,10 +825,12 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       const source = q(req, 'source');
       const token = personReadToken(req);
-      const { type } = await tableTypeOf(req, () => token, warehouseId, table);
+      const { type, transient } = await tableTypeOf(req, () => token, warehouseId, table);
       if (MV.isMetricViewType(type)) {
         return res.json({ table, readable: false, reason: MV.metricViewRefusal(table) });
       }
+      // A busy type check is a retryable 503 with the plain line, never "not usable".
+      if (!type && transient) return res.status(503).json({ error: MV.typeCheckBusyRefusal(table) });
       if (!type) return res.json({ table, readable: false, reason: MV.unknownTypeRefusal(table) });
       try {
         await sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(table));
