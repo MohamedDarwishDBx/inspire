@@ -159,3 +159,47 @@ test('the DESCRIBE ... AS JSON payload is read by one parser: a metric view is n
   assert.equal(M.tableTypeOfDescribe(JSON.stringify({ table_name: 'x' })), null, 'a payload with no type is an unknown type');
   assert.equal(M.tableTypeOfDescribe(undefined), null, 'no payload is an unknown type');
 });
+
+// The sweep: every route that reads a named user table refuses an unknown-type table by name, before its read (fail closed).
+const REFUSED = /mystery_table is not usable\. Inspire could not read this table's type/;
+
+test('the values route refuses a table whose type cannot be read, by name, before it reads anything (fail closed)', async () => {
+  await withWorkspace({}, async (url) => {
+    const table = `${CAT}.${SCH}.mystery_table`;
+    const resp = await fetch(`${url}/api/inspire/implement/values?table=${encodeURIComponent(table)}&column=c&warehouse_id=wh`, { headers: signedIn });
+    const text = await resp.text();
+    assert.equal(resp.status, 400, text);
+    assert.match(text, REFUSED);
+  });
+});
+
+test('the readiness route refuses a table whose type cannot be read, by name, before it reads anything (fail closed)', async () => {
+  await withWorkspace({}, async (url) => {
+    const table = `${CAT}.${SCH}.mystery_table`;
+    const resp = await fetch(`${url}/api/inspire/implement/readiness?table=${encodeURIComponent(table)}&warehouse_id=wh`,
+      { method: 'POST', headers: { ...signedIn, 'Content-Type': 'application/json' }, body: JSON.stringify({ columns: [], filters: [], window: {} }) });
+    const text = await resp.text();
+    assert.equal(resp.status, 400, text);
+    assert.match(text, REFUSED);
+  });
+});
+
+test('the group-counts route refuses a table whose type cannot be read, by name, before it reads anything (fail closed)', async () => {
+  await withWorkspace({}, async (url) => {
+    const table = `${CAT}.${SCH}.mystery_table`;
+    const resp = await fetch(`${url}/api/inspire/implement/group-counts?table=${encodeURIComponent(table)}&warehouse_id=wh`,
+      { method: 'POST', headers: { ...signedIn, 'Content-Type': 'application/json' }, body: JSON.stringify({ columns: ['c'], filters: [], window: {} }) });
+    const text = await resp.text();
+    assert.equal(resp.status, 400, text);
+    assert.match(text, REFUSED);
+  });
+});
+
+test('a readable table is not refused by these routes, so their reads still run (pass-post guard)', async () => {
+  await withWorkspace({}, async (url) => {
+    const table = `${CAT}.${SCH}.order_summary`;
+    const resp = await fetch(`${url}/api/inspire/implement/values?table=${encodeURIComponent(table)}&column=c&warehouse_id=wh`, { headers: signedIn });
+    const text = await resp.text();
+    assert.doesNotMatch(text, /is not usable\. Inspire could not read/, 'a VIEW with a known type is not refused for its type');
+  });
+});
