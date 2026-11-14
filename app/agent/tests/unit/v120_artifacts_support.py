@@ -123,6 +123,14 @@ class FakeDataFrame:
         return list(self.rows)
 
 
+def absent_scope_views(statement):
+    """A responder for a Spark double before any App-owned scope view exists. SHOW CREATE TABLE fails with NOT_FOUND, as Spark does for a
+    view that is not there yet (scope_view_definition reads it before every rewrite); every other statement returns no rows."""
+    if statement.startswith("SHOW CREATE TABLE "):
+        raise RuntimeError("[TABLE_OR_VIEW_NOT_FOUND] The table or view cannot be found. SQLSTATE: 42P01")
+    return []
+
+
 class FakeSpark:
     """Records every statement and DataFrame write. `responder(statement)` may return rows (a list)
     for a statement or raise to simulate a failure."""

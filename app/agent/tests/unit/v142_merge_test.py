@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from v120_artifacts_support import FakeSpark
+from v120_artifacts_support import FakeSpark, absent_scope_views
 from v142_genie_test import COLUMNS as GENIE_COLUMNS, _definition, _rich_space
 from v140_implement_test import (FIXTURE, OURS_APP, READS, SHELL_FILES, TRUTH, VALID, _app_flow, _app_shell, _churn_page, _contract, _dashboard,
                                  _deploy_inspire, _FileRunner, _inspire, _left_by, _NB_SPEC, _not_access_reads, _output_context,
@@ -87,6 +87,7 @@ def _merge_flow(ns, tmp_path, monkeypatch, app=HOST_APP, files=None, outputs=Non
     inst, context, seen = _app_flow(ns, work, outputs={"merge": {"app": "sales-desk"}, **(outputs or {})},
                                     assets={"genie_space": "gA"} if assets is None else assets, **stubs)
     del inst._implement_app_host
+    inst.spark.responder = absent_scope_views
     _serve_files(ns, monkeypatch, _host_files(ns, tmp_path) if files is None else files)
     apps = {("GET", "/api/2.0/apps/sales-desk"): RuntimeError("RESOURCE_DOES_NOT_EXIST: app sales-desk") if app is None else app}
     inst._implement_api, calls = _router({**apps, **(routes or {})})
