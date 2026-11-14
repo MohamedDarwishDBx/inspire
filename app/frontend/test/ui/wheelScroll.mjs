@@ -84,20 +84,17 @@ export async function wheelToTop(page, region, name) {
   assert.equal(start, 0, `${name}: the wheel up does not bring the region back to its top (scrollTop ${start})`);
 }
 
-export async function wheelToEnd(page, region, last, name, over = null) {
-  await frames(page);
-  await reach(page, over || region);
-  const at = await where(region, over);
-  assert.ok(at.scroll > at.client + 1, `${name}: the content does not overflow the region, so the wheel cannot be tested ${JSON.stringify(at)}`);
-  assert.ok(at.seen >= 40, `${name}: the region shows ${at.seen} px on screen, too little to scroll ${JSON.stringify(at)}`);
-  assert.ok(at.hit, `${name}: something covers the region where the pointer sits (${at.cover}) ${JSON.stringify(at)}`);
-  await aimCentre(page, over || region);
-  await wheelToTop(page, region, name);
+// Wheel down until the region is at its end. The content can still grow while the wheel runs (late rows, charts drawing
+// under CPU load), so after the loop stops at what was the end, the end is read again once layout settles and the wheel
+// resumes if the region grew. The bound counts steps that did not move the region and a few passes, not elapsed time.
+export async function wheelToBottom(page, region) {
+  const settle = async (pg) => (pg.evaluate ? frames(pg) : new Promise((done) => setTimeout(done, 16)));
+  for (let pass = 0; pass < 4; pass += 1) {
   let before = -1;
   let absorbed = 0;
   for (let i = 0; i < 400; i += 1) {
     await page.mouse.wheel(0, 300);
-    await frames(page);
+    await settle(page);
     const now = await region.evaluate((el) => el.scrollTop);
     const end = await region.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop <= 2);
     if (end) break;
@@ -115,6 +112,22 @@ export async function wheelToEnd(page, region, last, name, over = null) {
     } else absorbed = 0;
     before = now;
   }
+  await settle(page);
+  await new Promise((done) => setTimeout(done, 250));
+  if (await region.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop <= 2)) break;
+  }
+}
+
+export async function wheelToEnd(page, region, last, name, over = null) {
+  await frames(page);
+  await reach(page, over || region);
+  const at = await where(region, over);
+  assert.ok(at.scroll > at.client + 1, `${name}: the content does not overflow the region, so the wheel cannot be tested ${JSON.stringify(at)}`);
+  assert.ok(at.seen >= 40, `${name}: the region shows ${at.seen} px on screen, too little to scroll ${JSON.stringify(at)}`);
+  assert.ok(at.hit, `${name}: something covers the region where the pointer sits (${at.cover}) ${JSON.stringify(at)}`);
+  await aimCentre(page, over || region);
+  await wheelToTop(page, region, name);
+  await wheelToBottom(page, region);
   const after = await where(region, over);
   assert.ok(after.top > 0, `${name}: the mouse wheel over the region did not scroll it ${JSON.stringify(after)}`);
   assert.ok(after.scroll - after.client - after.top <= 2, `${name}: the mouse wheel stopped before the end of the region ${JSON.stringify(after)}`);
