@@ -863,7 +863,8 @@ async function readAppDatabaseHistory(req, sessionId) {
   return implementApi.loadHistory(resolveHost(req), token, DEFAULT_WAREHOUSE_ID, parsed.catalog, parsed.schema, sessionId, null);
 }
 
-async function sessionIsNew(host, token, inspireDatabase, sessionId) {
+// A read that fails is not a new session: a strict caller (the launch check) gets the error and answers 503; the others treat it as not new.
+async function sessionIsNew(host, token, inspireDatabase, sessionId, { strict = false } = {}) {
   const table = L.launchTableName(DEFAULT_INSPIRE_DB);
   const statements = DEFAULT_WAREHOUSE_ID ? L.sessionKnownStatements(table || '', inspireDatabase, sessionId) : null;
   if (!statements) return false;
@@ -871,10 +872,17 @@ async function sessionIsNew(host, token, inspireDatabase, sessionId) {
     try {
       if ((await launchSql(host, statement, token)).length) return false;
     } catch (err) {
-      if (!isMissingTableError(err)) return false;
+      if (!isMissingTableError(err)) {
+        if (strict) throw err;
+        return false;
+      }
     }
   }
   return true;
+}
+
+function launchRecordUnreadable(label, err) {
+  return Object.assign(new Error(`Inspire could not read the launch record of ${label} just now (${String(err.message).replace(/\s+/g, ' ')}), so it cannot tell whether this may be launched; try again`), { statusCode: 503 });
 }
 
 async function isManager(req) {
@@ -898,9 +906,15 @@ async function launchSessionProblem(req, params) {
   if (!policyEnforced() || !sessionId || !splitInspireDatabase(inspireDatabase)) return '';
   if (!isInt64Id(sessionId)) return 'The session id must be a numeric Inspire session id';
   const host = resolveHost(req);
-  const fresh = await sessionIsNew(host, req.dbToken, inspireDatabase, sessionId);
-  if (fresh) return '';
-  const launcher = String(await readLaunchRecord(req, { kind: 'session', inspireDatabase, sessionId }).catch(() => '') || '').trim().toLowerCase();
+  let fresh;
+  let launcher;
+  try {
+    fresh = await sessionIsNew(host, req.dbToken, inspireDatabase, sessionId, { strict: true });
+    if (fresh) return '';
+    launcher = String(await readLaunchRecord(req, { kind: 'session', inspireDatabase, sessionId }) || '').trim().toLowerCase();
+  } catch (err) {
+    throw launchRecordUnreadable(`session ${sessionId}`, err);
+  }
   const person = RP.forwardedPerson(req.headers);
   const owns = Boolean(launcher) && launcher === person;
   return LC.sessionLaunchProblem(sessionId, { fresh, launcher, person, manager: owns ? false : await isManager(req) });
@@ -947,8 +961,26 @@ async function recordLaunch(host, token, record) {
     return { recorded: true };
   } catch (err) {
     console.warn(`launch record write failed for run ${record.runId}: ${err.message}`);
-    return { recorded: false, note: `Inspire could not record who launched this run (${err.message}), so only App managers can cancel it` };
+    return { recorded: false, failed: true, note: `Inspire could not record who launched this run (${err.message}), so only App managers can cancel it` };
   }
+}
+
+// The run is already submitted when its record is written, so a write that fails twice must not leave a run nobody can cancel.
+// The write is retried once. If it still fails, the run is stopped (the same credential that submitted it asks Databricks to cancel it)
+// and the launch answers 503. Only when that stop also fails does the run stay, and then the launch carries a warning naming it.
+async function recordLaunchOrStop(host, token, record) {
+  let launch = await recordLaunch(host, token, record);
+  if (launch.recorded || !launch.failed) return launch;
+  launch = await recordLaunch(host, token, record);
+  if (launch.recorded || !launch.failed) return launch;
+  const stopped = await dbFetch(host, token, '/api/2.1/jobs/runs/cancel', {
+    method: 'POST',
+    body: jsonWithInt64Ids({ run_id: record.runId }, ['run_id']),
+  }).then((r) => r.ok, () => false);
+  if (stopped) {
+    throw Object.assign(new Error(`Inspire could not record run ${record.runId}, so it asked Databricks to stop the run. Start it again.`), { statusCode: 503 });
+  }
+  return { ...launch, warning: `Inspire started run ${record.runId} but could not record it, so Cancel and Run again may refuse it` };
 }
 
 async function triggerInspireNotebookJob(host, token, { params, notebook_path, cluster_id: askedClusterId, jobType = 'discovery', jobName: requestedJobName = '', useCaseIds = [], launchedBy = '', writeCheck = null, asker = null, scopePicks = undefined }) {
@@ -1093,9 +1125,10 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   const jobRunUrl = databricksJobRunUrl(host, job_id, runId);
   console.log(`✅ Run submitted: ${runId}, job_id=${job_id}, notebook: ${resolvedPath}`);
   const launch = launchedBy
-    ? await recordLaunch(host, token, { runId, jobId: job_id, runType: inspireRunType, inspireDatabase: launchDatabase, sessionId: launchSession, openedSession, launchedBy,
+    ? await recordLaunchOrStop(host, token, { runId, jobId: job_id, runType: inspireRunType, inspireDatabase: launchDatabase, sessionId: launchSession, openedSession, launchedBy,
       outputFolder, outputChecked })
     : { recorded: false, note: 'no signed-in person launched this run, so only App managers can cancel it' };
+  if (launch.warning) warnings.push(launch.warning);
   return {
     run_id: runId,
     job_id,
