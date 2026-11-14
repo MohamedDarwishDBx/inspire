@@ -1287,9 +1287,12 @@ def list_column_filters(page: dict, types=None, actions: bool = False) -> list:
              for f in column_filters(records.get(COLUMN_FILTERS), shown, types)]
     listed = {c.lower(): (label, c) for c, (label, _kind) in shown.items()}
     grouped, seen = [], {f["column"].lower() for f in found}
+    # REQ-191: a column the list's column_filters names, on or off, is decided there; a grouping never re-adds an off filter.
+    stated = records.get(COLUMN_FILTERS)
+    decided = {e["column"].lower() for e in stated if isinstance(e, dict) and isinstance(e.get("column"), str)} if isinstance(stated, list) else set()
     for g in entries:
         key = g["column"].lower()
-        if key in seen or key not in listed:
+        if key in seen or key in decided or key not in listed:
             continue
         seen.add(key)
         label, column = listed[key]
