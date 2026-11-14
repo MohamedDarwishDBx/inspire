@@ -68,6 +68,7 @@ import { liveImpact, rowImpact, targetKpiView, trackedKpiOf } from '../lib/targe
 import { SHOWCASE_ALERT_NOTE, SHOWCASE_DASHBOARD_NOTE, SHOWCASE_GENIE_NOTE, SHOWCASE_NO_MVP, SHOWCASE_OPEN_APP, readOnlyReason } from '../lib/showcase';
 import { buildFilterText } from '../lib/reviewFigures';
 import ValueEstimateLine from '../components/ValueEstimateLine';
+import { useValueRead } from '../lib/useValueLedger';
 import { BuildNextStep } from '../components/BuildNext';
 import PermissionRequired from '../components/PermissionRequired';
 import { grantListKey, raisePermissions } from '../lib/permissionBus';
@@ -260,7 +261,7 @@ function RailProgress({ item, progress }) {
   );
 }
 
-function Rail({ groups, listLoading, query, assets = [], mvp = '', assetLabels = [], shownId, progress = {}, onSelect }) {
+function Rail({ groups, listLoading, query, assets = [], mvp = '', assetLabels = [], shownId, progress = {}, estimates = null, onSelect }) {
   const mvpWords = mvp === 'live' ? 'a live MVP' : 'an MVP';
   const assetWords = assetLabels.map((label) => `${/^[AEIOU]/.test(label) ? 'an' : 'a'} ${label}`).join(' or ');
   return (
@@ -309,7 +310,7 @@ function Rail({ groups, listLoading, query, assets = [], mvp = '', assetLabels =
                       </span>
                       <OutputIcons latest={item.latest} />
                     </div>
-                    {item.uc && <ValueEstimateLine uc={item.uc} className="mt-1 line-clamp-2 text-[11px]" />}
+                    {item.uc && <ValueEstimateLine uc={item.uc} estimate={estimates?.use_cases?.[item.id] ?? null} className="mt-1 line-clamp-2 text-[11px]" />}
                     {building && <RailProgress item={item} progress={progress[item.id]} />}
                   </button>
                 );
@@ -384,6 +385,8 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     warehouse_id: settings.warehouseId,
     session_id: String(sessionId),
   }).toString(), [settings.inspireDatabase, settings.warehouseId, sessionId]);
+  // REQ-078: each card reads its rule estimate here, the same route Review and Build next read. A measured figure is never replaced.
+  const estimates = useValueRead(apiFetch, `/api/inspire/value/estimates?${qBase}`, refreshKey);
 
   const fetchUseCases = useCallback(async () => {
     const [res, rows] = await Promise.allSettled([
@@ -483,6 +486,13 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     onFocus?.(id);
   };
 
+  // Opens the wizard on its Measure step for one use case: the money rule that a value estimate needs (REQ-078).
+  const openMeasure = (id) => {
+    select(id);
+    const item = allItems.find((i) => i.id === id);
+    if (item?.uc) setWizard({ uc: item.uc, focus: { step: 'measure' }, live: false });
+  };
+
   const onImplemented = (data) => {
     setBuildNotes(Array.isArray(data?.warnings) ? data.warnings : []);
     setBuildDetails(Array.isArray(data?.warning_details) ? data.warning_details : []);
@@ -516,7 +526,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
           {!listLoading && <AssetFilters counts={assetCounts} assets={assetFilters} onToggle={toggleAsset} />}
           <Rail groups={groups} listLoading={listLoading} query={query} assets={assetFilters} mvp={mvpFilter}
             assetLabels={assetCounts.filter((entry) => assetFilters.includes(entry.id)).map((entry) => entry.label)}
-            shownId={shownId} progress={progress} onSelect={select} />
+            shownId={shownId} progress={progress} estimates={estimates} onSelect={select} />
         </div>
         <PaneResizer width={railPx} onWidth={(width) => setRailPx(paneWidth(RAIL_WIDTH, width))} limits={RAIL_WIDTH} label="Resize the use case list" data-rail-resizer="" className="self-stretch" />
         <section ref={paneRef} aria-label="Use case" className="relative flex-1 min-w-0 space-y-4 md:self-stretch md:min-h-0 md:overflow-y-auto">
@@ -525,11 +535,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
               notebookPath={settings.notebookPath} focusId={selected.id} live={IMPLEMENT_DONE_STATUSES.includes(String(selected.latest?.status || ''))}
               caseOf={(id) => allItems.find((item) => item.id === id)?.uc}
               onBuilt={readOnly ? undefined : onImplemented} onBuildCustom={readOnly ? undefined : (uc) => setWizard({ uc, focus: null, live: false })}
-              onMeasure={readOnly ? undefined : (id) => {
-                select(id);
-                const item = allItems.find((i) => i.id === id);
-                if (item?.uc) setWizard({ uc: item.uc, focus: { step: 'measure' }, live: false });
-              }} />
+              onMeasure={readOnly ? undefined : openMeasure} />
           )}
           {selected ? (
             <UseCaseDetail
@@ -543,6 +549,8 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
               databricksHost={databricksHost}
               notebookRunError={rail.notebook_run_error}
               refreshKey={refreshKey}
+              valueEstimate={estimates?.use_cases?.[selected.id] ?? null}
+              onSetRule={readOnly ? undefined : () => openMeasure(selected.id)}
               collectedKey={scopeOf(selected.id)}
               onProgress={reportProgress}
               onEdit={readOnly ? undefined : (focus, live) => setWizard({ uc: selected.uc, focus, live })}
@@ -804,7 +812,7 @@ function PartTabs({ assets, picked, onPick }) {
   return <TabStrip label="Pick a part" idBase={PART_TABS} tabs={tabs} current={picked} onPick={onPick} />;
 }
 
-function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson, databricksHost, notebookRunError, refreshKey, collectedKey,
+function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson, databricksHost, notebookRunError, refreshKey, collectedKey, valueEstimate = null, onSetRule = null,
   onEdit, onOpenRun = null, onOpenDemoMvp = null, onProgress = null, readOnly = false }) {
   const useCaseId = item.id;
   const hasMvp = Boolean(item.latest);
@@ -1833,7 +1841,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
           </div>
           {row && <InspireScoreBadge score={row.inspire} />}
         </div>
-        {item.uc && <ValueEstimateLine uc={item.uc} />}
+        {item.uc && <ValueEstimateLine uc={item.uc} estimate={valueEstimate} onSetRule={onSetRule} />}
         {built && progress.active && <ProgressLine chip={chip} summary={progress} />}
         <div className={HEADER_ACTIONS}>
           {item.uc && (
@@ -1874,7 +1882,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
       </header>
       {detailsOpen && row && (
         <UseCaseDrawer row={row} onClose={() => setDetailsOpen(false)}>
-          <UseCaseDetailBody uc={item.uc} v130={item.uc._v130 || null} databricksHost={databricksHost} />
+          <UseCaseDetailBody uc={item.uc} v130={item.uc._v130 || null} valueEstimate={valueEstimate} databricksHost={databricksHost} />
         </UseCaseDrawer>
       )}
       {!built && notebook && <NotebookPanel notebook={notebook} />}

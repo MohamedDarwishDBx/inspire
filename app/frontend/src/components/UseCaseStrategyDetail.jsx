@@ -132,7 +132,7 @@ export function BestOfBestDetail({ info }) {
   );
 }
 
-export function UseCaseStrategyDetail({ info, knownPriorities, foundationsById, strategy = null }) {
+export function UseCaseStrategyDetail({ info, knownPriorities, foundationsById, strategy = null, uc = null, valueEstimate = null }) {
   if (!info) return null;
   const priorities = priorityMatches(info.priorityText, knownPriorities);
   const showsStrategy = info.hasStrategyData && (info.paths.length > 0 || showsNotTied(info, strategy) || priorities.length > 0);
@@ -176,7 +176,7 @@ export function UseCaseStrategyDetail({ info, knownPriorities, foundationsById, 
       )}
       {info.valueEstimate && (
         <Section title="Value estimate" tone={info.valueEstimate.measured ? 'text-success-fg' : 'text-text-secondary'}>
-          <ValueEstimateLine estimate={info.valueEstimate} className="text-sm" />
+          <ValueEstimateLine uc={uc} estimate={valueEstimate} className="text-sm" />
         </Section>
       )}
       {info.keyResults.length > 0 && (

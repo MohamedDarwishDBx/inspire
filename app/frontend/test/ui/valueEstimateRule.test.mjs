@@ -11,7 +11,7 @@ const dir = mkdtempSync(path.join(os.tmpdir(), 'value-estimate-'));
 const outfile = path.join(dir, 'estimate.cjs');
 await build({
   stdin: {
-    contents: "export { createElement } from 'react'; export { renderToStaticMarkup } from 'react-dom/server'; export { default as ValueEstimateLine, EstimateTotals } from './src/components/ValueEstimateLine.jsx';",
+    contents: "export { createElement } from 'react'; export { renderToStaticMarkup } from 'react-dom/server'; export { default as ValueEstimateLine, EstimateTotals } from './src/components/ValueEstimateLine.jsx';\nexport { UseCaseStrategyDetail } from './src/components/UseCaseStrategyDetail.jsx';\nexport { v130View } from './src/lib/v130UseCase.js';",
     resolveDir: root, loader: 'jsx', sourcefile: 'entry.jsx',
   },
   bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent', jsx: 'automatic', loader: { '.css': 'empty' },
@@ -77,4 +77,58 @@ test('the totals keep estimated money apart and say so; no estimate, no totals l
   assert.match(html, /data-value-estimated-total/);
   assert.match(html, /Plus estimated, not measured: 6,100 AED, 1 USD|Plus estimated, not measured: 6,100 AED, 0\.5 USD|Plus estimated, not measured: 6,100 AED, 1 USD/);
   assert.equal(bundle.renderToStaticMarkup(bundle.createElement(bundle.EstimateTotals, { totals: { estimated: {} } })), '');
+});
+
+// REQ-078 rc7 walk: the Build page passed no route estimate, so 18 cards read "Value not measured yet" and 6 measured cards
+// could be overwritten by a rule line. A card's own measured figure must win; an unmeasured card shows the route's line.
+const lineUc = (uc, estimate) => bundle.renderToStaticMarkup(bundle.createElement(bundle.ValueEstimateLine, { uc, estimate }));
+const measuredUc = {
+  value_estimate_text: 'USD 77.1K-231.4K a year (reporting currency USD (default)), if weekly recorded sales revenue rises 5-15%',
+  value_estimate: JSON.stringify({ status: 'measured', currency: 'USD', text: 'USD 77.1K-231.4K a year' }),
+};
+const notMeasuredUc = {
+  value_estimate_text: 'Value not measured yet: measure losses caught early: flagged anomalies confirmed × average value, from the source columns.',
+  value_estimate: JSON.stringify({ status: 'not measured yet', text: 'Value not measured yet: measure losses caught early.' }),
+};
+
+test('a measured card keeps its measured figure even when the route says set a rule for it', () => {
+  const html = lineUc(measuredUc, { status: 'set_rule' });
+  assert.match(html, /data-value-estimate="measured"/);
+  assert.match(html, /USD 77\.1K-231\.4K a year/);
+  assert.doesNotMatch(html, /Set a money rule/);
+});
+
+test('an unmeasured card shows the route estimate, not the Discover "Value not measured yet" line, once the route answers', () => {
+  const html = lineUc(notMeasuredUc, { status: 'estimated', app: 'Sales App', currency: 'AED', per_record: 50, baseline: 120, amount: 6000 });
+  assert.match(html, /Estimated 6,000 AED/);
+  assert.doesNotMatch(html, /Value not measured yet/);
+});
+
+test('an unmeasured card with no route answer yet keeps the Discover line', () => {
+  const html = lineUc(notMeasuredUc, null);
+  assert.match(html, /Value not measured yet/);
+});
+
+test('an unmeasured card with no money rule says so in one line, with no number', () => {
+  const html = lineUc(notMeasuredUc, { status: 'set_rule' });
+  assert.match(html, /data-value-estimate="set-rule"/);
+  assert.doesNotMatch(html, /Value not measured yet/);
+  assert.doesNotMatch(html, /\d,?\d* AED/);
+});
+
+// The drawer's "Value estimate" section reads the same route answer as the card, so the two cannot disagree (REQ-078).
+const drawer = (props) => bundle.renderToStaticMarkup(bundle.createElement(bundle.UseCaseStrategyDetail, props));
+const info = (uc) => bundle.v130View(uc);
+
+test('the drawer value section shows the route line for an unmeasured use case, the same as its card', () => {
+  const html = drawer({ info: info(notMeasuredUc), uc: notMeasuredUc, valueEstimate: { status: 'set_rule' } });
+  assert.match(html, /data-value-estimate="set-rule"/);
+  assert.match(html, /Set a money rule to see its value\./);
+  assert.doesNotMatch(html, /Value not measured yet/);
+});
+
+test('the drawer value section keeps a measured figure over a route answer', () => {
+  const html = drawer({ info: info(measuredUc), uc: measuredUc, valueEstimate: { status: 'set_rule' } });
+  assert.match(html, /data-value-estimate="measured"/);
+  assert.doesNotMatch(html, /Set a money rule/);
 });

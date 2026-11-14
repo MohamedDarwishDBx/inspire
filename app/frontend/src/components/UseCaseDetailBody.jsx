@@ -49,6 +49,7 @@ export default function UseCaseDetailBody({
   databricksHost,
   allNotebookFiles = [],
   v130 = null,
+  valueEstimate = null,
   knownPriorities: priorityList = [],
   strategy = null,
   foundationsById,
@@ -135,7 +136,7 @@ export default function UseCaseDetailBody({
       )}
 
       <BestOfBestDetail info={v130} />
-      <UseCaseStrategyDetail info={v130} knownPriorities={priorityList} foundationsById={foundationsById} strategy={strategy} />
+      <UseCaseStrategyDetail info={v130} uc={uc} valueEstimate={valueEstimate} knownPriorities={priorityList} foundationsById={foundationsById} strategy={strategy} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
         {[

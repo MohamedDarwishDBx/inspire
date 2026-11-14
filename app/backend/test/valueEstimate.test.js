@@ -56,7 +56,7 @@ test('the SQL reads the latest spec per use case, with its money rule and result
   assert.match(sql, /ROW_NUMBER\(\) OVER \(PARTITION BY use_case_id ORDER BY spec_version DESC\)/);
   assert.match(sql, /WHERE session_id = 42/);
   assert.match(V.baselineSql('`main`.`inspire`.`orders_summary`'), /WHERE use_case_id = :uc ORDER BY updated_at DESC NULLS LAST LIMIT 1$/);
-  assert.match(V.useCasesSql('`main`.`inspire`.`__inspire_usecases`', '42'), /SELECT id, business_domain FROM .* WHERE session_id = 42$/);
+  assert.match(V.useCasesSql('`main`.`inspire`.`__inspire_usecases`', '42'), /SELECT id, business_domain, CAST\(value_estimate AS STRING\) AS value_estimate FROM .* WHERE session_id = 42$/);
 });
 
 test('a malformed spec is no spec, never a guessed one', () => {
@@ -149,4 +149,41 @@ test('estimatesFor with an own rule that has no value borrows the usable sibling
   const specs = new Map([['N01-U01', { use_case_name: 'Own App', money: { currency: 'per_currency' } }], ['N01-U02', ruleSpec('Sales App', 50)]]);
   const out = await V.estimatesFor({ useCases, specs, measured: {}, baselineOf: async () => 120 });
   assert.equal(out.use_cases['N01-U01'].app, 'Sales App');
+});
+
+// REQ-078 rc7 walk: Discover measured 6 of 24 use cases from their KPI query, and the value ledger
+// holds none of them, so the route answered "set rule" for every card and a rule estimate would have replaced the measured figure.
+const measuredJson = JSON.stringify({ status: 'measured', currency: 'USD', text: 'USD 77.1K-231.4K a year' });
+const notMeasuredJson = JSON.stringify({ status: 'not measured yet', text: 'Value not measured yet: measure losses caught early.' });
+
+test('a use case Discover measured keeps its measured figure: no rule estimate replaces it, even with no ledger row and no money rule', async () => {
+  const useCases = [{ id: 'N02-U01', business_domain: 'Sales', value_estimate: measuredJson }];
+  const out = await V.estimatesFor({ useCases, specs: new Map(), measured: {}, baselineOf: async () => 120 });
+  assert.equal(out.use_cases['N02-U01'], null);
+  assert.deepEqual(out.totals, { estimated: {} });
+});
+
+test('live-shaped rc7 session: 6 measured use cases get no estimate, the 18 unmeasured with no money rule say set a rule', async () => {
+  const MEASURED_IDS = ['N02-U01', 'N03-U01', 'N03-U02', 'N03-U03', 'N03-U04', 'N06-U04'];
+  const ALL_IDS = ['N01-U01', 'N01-U02', 'N01-U03', 'N02-U01', 'N02-U02', 'N02-U03', 'N02-U04', 'N03-U01', 'N03-U02', 'N03-U03', 'N03-U04',
+    'N04-U01', 'N04-U02', 'N04-U03', 'N04-U04', 'N04-U05', 'N04-U06', 'N05-U01', 'N05-U02', 'N05-U03', 'N06-U01', 'N06-U02', 'N06-U03', 'N06-U04'];
+  const useCases = ALL_IDS.map((id) => ({
+    id,
+    business_domain: id.slice(0, 3),
+    value_estimate: MEASURED_IDS.includes(id) ? measuredJson : notMeasuredJson,
+  }));
+  const out = await V.estimatesFor({ useCases, specs: new Map(), measured: {}, baselineOf: async () => null });
+  for (const id of MEASURED_IDS) assert.equal(out.use_cases[id], null, `${id} is measured`);
+  const unmeasured = ALL_IDS.filter((id) => !MEASURED_IDS.includes(id));
+  assert.equal(unmeasured.length, 18);
+  for (const id of unmeasured) assert.deepEqual(out.use_cases[id], { status: 'set_rule' }, `${id} has no money rule`);
+});
+
+test('discoveredMeasured reads Discover status from a JSON string, an object, or nothing, never a guess', () => {
+  assert.equal(V.discoveredMeasured({ value_estimate: measuredJson }), true);
+  assert.equal(V.discoveredMeasured({ value_estimate: { status: 'measured' } }), true);
+  assert.equal(V.discoveredMeasured({ value_estimate: notMeasuredJson }), false);
+  assert.equal(V.discoveredMeasured({ value_estimate: '{not json' }), false);
+  assert.equal(V.discoveredMeasured({ value_estimate: null }), false);
+  assert.equal(V.discoveredMeasured({}), false);
 });
