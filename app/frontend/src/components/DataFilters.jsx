@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Table2, X } from 'lucide-react';
 import { PlainMessage } from './TechnicalDetails';
 import { groupLabelOf } from '../lib/implementWizard';
 import { raisePermissions } from '../lib/permissionBus';
+import { METRIC_VIEW_REFUSAL } from '../lib/pickProblem';
 import {
   SCOPE_OPS, columnKindOf, filterValuesOf, filteredTablesOf, isGroupRow, normalizeTableScope, pickedTableNames, scopeKeyOf,
   scopeOpOf, scopeProblems, tableBrowseQuery, tableScopeOf,
@@ -476,8 +477,6 @@ function UseCaseLabel({ scopes, tables, label, onLabel }) {
     </div>
   );
 }
-
-const METRIC_VIEW_REFUSAL = /is a metric view, so Inspire leaves it out of Data Filters/;
 
 export default function DataFilters({ picks, scopes, onScopes, label, onLabel, apiFetch, warehouseId, onProblems }) {
   const [split, setSplit] = useState(readSplit);

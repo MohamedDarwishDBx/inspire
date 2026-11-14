@@ -1,4 +1,5 @@
 import { splitTechnical } from '../lib/plainText';
+import { permanentPickProblem } from '../lib/pickProblem';
 import { withStartDeadline } from '../lib/startDeadline';
 import { nameOfUseCase } from '../lib/useCaseFields';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1394,7 +1395,7 @@ export default function ImplementWizard({
   const footerErrors = [...new Set([
     ...(attempted[stepId] ? ownErrors : []),
     ...errors,
-    ...(stepId === 'data' ? Object.values(columnsErrors) : []),
+    ...(stepId === 'data' ? Object.values(columnsErrors).filter((e) => e && permanentPickProblem(e) !== 'metric_view') : []),
     ...(buildStep ? [lastStep ? planError : '', lastStep ? '' : preflightError, ...deliveryChecks, ...earlierGaps] : []),
   ].filter(Boolean))];
   const checkAgain = async () => {
@@ -1407,8 +1408,9 @@ export default function ImplementWizard({
     }
     setGrantRound((n) => n + 1);
   };
+  // A picked table that is gone or a metric view stays wrong until the person changes the pick: no Try again for it.
   const footerRetry = new Map([
-    ...Object.entries(columnsErrors).map(([table, e]) => [e, () => loadColumns(table)]),
+    ...Object.entries(columnsErrors).filter(([, e]) => e && !permanentPickProblem(e)).map(([table, e]) => [e, () => loadColumns(table)]),
     [planError, checkAgain],
     [preflightError, checkAgain],
   ].filter(([e]) => e));
@@ -2298,6 +2300,9 @@ export default function ImplementWizard({
         {schemaJob?.text && stepIndex > steps.findIndex((x) => x.id === 'data') && (
           <p role="status" data-schema-job={schemaJob.state} className="bg-bg-subtle border border-border rounded-md px-3 py-2 text-xs text-text-secondary">{schemaJob.text}</p>
         )}
+        {stepId === 'data' && Object.values(columnsErrors).filter((e) => permanentPickProblem(e) === 'metric_view').map((note) => (
+          <p key={note} role="note" data-metric-view-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs font-medium text-warning-fg">{note}</p>
+        ))}
         {Object.values(checkNotes).filter(Boolean).map((note) => (
           <p key={note} role="note" data-check-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs text-warning-fg">{note}</p>
         ))}

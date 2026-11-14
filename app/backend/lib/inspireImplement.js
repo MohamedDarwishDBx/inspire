@@ -2163,6 +2163,36 @@ function tableParts(name) {
   return { catalog: parts[0], schema: parts[1], table: parts[2] };
 }
 
+// A picked table in a catalog that is gone fails its per-catalog information_schema read, and the error names the view
+// (information_schema.columns) instead of the table, so Try again cannot help. The error names the picked table instead;
+// any other error passes through as it is. system.information_schema is not the fix: for a missing catalog it returns no
+// rows and no error, so the picked table would read as having no columns.
+const MISSING_OBJECT_CODE = /\b(?:TABLE_OR_VIEW_NOT_FOUND|SCHEMA_NOT_FOUND|CATALOG_NOT_FOUND|NO_SUCH_CATALOG_EXCEPTION)\b/;
+function pickedTableError(err, table) {
+  const message = String((err && err.message) || err || '');
+  if (!MISSING_OBJECT_CODE.test(message) || !/information_schema/i.test(message)) return err;
+  const t = tableParts(table);
+  return Object.assign(new Error(`[TABLE_OR_VIEW_NOT_FOUND] The table or view \`${t.catalog}\`.\`${t.schema}\`.\`${t.table}\` cannot be found.`),
+    { statusCode: (err && err.statusCode) || 400 });
+}
+
+// information_schema.columns lists only the objects the caller can see, so a picked table that reads no columns was dropped,
+// renamed, or cannot be read by the person. Both causes are named, and the next action is the swap the preview also names.
+function unreadableTableError(table) {
+  const t = tableParts(table);
+  return Object.assign(new Error(`${t.catalog}.${t.schema}.${t.table} has no columns Inspire can read. It was dropped or renamed, `
+    + 'or your access does not include it. Swap it in Edit > Data step for the table you mean.'), { statusCode: 404 });
+}
+
+/** Runs one read of a picked table and names the picked table in its error (see pickedTableError). */
+async function readPickedTable(table, read) {
+  try {
+    return await read();
+  } catch (err) {
+    throw pickedTableError(err, table);
+  }
+}
+
 function columnsStatement(name) {
   const t = tableParts(name);
   return {
@@ -4029,6 +4059,9 @@ module.exports = {
   widgetsFromInstruction,
   implementWidgets,
   tableParts,
+  pickedTableError,
+  unreadableTableError,
+  readPickedTable,
   columnsStatement,
   primaryKeysStatement,
   tableSwapStatement,

@@ -105,11 +105,14 @@ def test_a_missing_metric_view_is_probed_with_describe_and_a_table_with_limit_0(
     assert [s for s in spark.statements if "orders" in s] == ["SELECT * FROM `main`.`s`.`orders` LIMIT 0"]
 
 
-def test_discover_prefers_the_base_table_and_keeps_the_metric_view_as_a_related_source(agent_ns):
+def test_discover_leaves_a_metric_view_out_of_a_use_case_and_never_names_its_source(agent_ns):
+    # D-180A (replaces the v219 "related source" contract): a metric view is never a use case's table, and its source is
+    # never named in its place.
     inst = make_inspire(agent_ns, discovery_evidence={"metric_views": [{"fqn": "main.s.kpis", "source": "main.s.orders"}]})
-    assert inst._base_table_first(["main.s.kpis", "main.s.lines"]) == ["main.s.lines", "main.s.kpis"]
-    assert inst._base_table_first(["main.s.kpis"], available={"main.s.orders"}) == ["main.s.orders", "main.s.kpis"]
-    assert inst._base_table_first(["main.s.lines", "main.s.kpis"]) == ["main.s.lines", "main.s.kpis"]
+    assert inst._drop_metric_views(["main.s.kpis", "main.s.lines"]) == ["main.s.lines"]
+    assert inst._drop_metric_views(["main.s.kpis"]) == [], "a view alone leaves no table, and its source is not named"
+    assert inst._drop_metric_views(["main.s.lines", "main.s.kpis"]) == ["main.s.lines"]
+    assert inst._drop_metric_views(["main.s.lines"]) == ["main.s.lines"]
 
 
 def test_empty_scanned_tables_skip_metric_views_and_the_message_is_short(agent_ns):
