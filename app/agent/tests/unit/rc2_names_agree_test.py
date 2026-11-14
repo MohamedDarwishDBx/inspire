@@ -69,8 +69,7 @@ def test_a_name_with_an_acronym_is_one_value_in_every_field_and_takes_the_title_
     src = obj._tracking_row_source(uc)
     row = agent_ns["DatabricksInspire"]._uc_to_row(src, 1, obj._normalize_usecase)
     assert uc["usecase"] == uc["Name"] == row[4] == row[5] == src["name_with_technique"]
-    assert uc["Name"] == agent_ns["inspire_title_case"]("Forecast KPI Demand For Each Store"), "one title-case rule, no second one"
-    assert " for " in " " + uc["Name"] + " ", "a small word stays lower case after the first word"
+    assert uc["Name"] == "Forecast KPI Demand for Each Store", "the acronym keeps its capitals and the small word goes lower case"
 
 
 def test_a_lower_case_llm_name_is_title_cased_once_and_agrees_in_every_field(agent_ns):
@@ -118,3 +117,22 @@ def test_a_replayed_row_with_a_cut_use_case_column_gets_the_one_name_back(agent_
     row = {"id": "N04-U03", "use_case": "Align Staffing", "description": PEAK, "analytics_technique": "Queueing", "session_id": 1}
     uc = obj._row_to_uc(row)
     assert uc["Name"] == uc["usecase"] == PEAK
+
+
+def test_the_title_rule_keeps_acronyms_and_inner_capitals_and_is_the_same_on_every_surface(agent_ns):
+    title = agent_ns["inspire_title_case"]
+    assert title("Reduce KPI Drift in UAE Stores") == "Reduce KPI Drift in UAE Stores"
+    assert title("reduce kpi drift") == "Reduce Kpi Drift", "an all-lower-case acronym is not known to be one, so the rule gives Kpi"
+    assert title("grow eBay and iPhone sales") == "Grow eBay and iPhone Sales"
+    assert title("predict McDonald's churn") == "Predict McDonald's Churn", "a mixed-case word stays exact"
+    assert make(agent_ns)._normalize_usecase("Reduce KPI Drift in UAE Stores", "") == "Reduce KPI Drift in UAE Stores", \
+        "the docs title uses the same rule"
+
+
+def test_the_writer_keeps_an_acronym_name_exact_in_every_field(agent_ns):
+    obj = make(agent_ns)
+    uc = {"No": "N08-U01", "Name": "reduce KPI drift in UAE stores"}
+    agent_ns["set_use_case_name"](uc, uc["Name"])
+    src = obj._tracking_row_source(uc)
+    row = agent_ns["DatabricksInspire"]._uc_to_row(src, 1, obj._normalize_usecase)
+    assert uc["Name"] == uc["usecase"] == row[4] == row[5] == src["name_with_technique"] == "Reduce KPI Drift in UAE Stores"
