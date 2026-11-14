@@ -97,7 +97,7 @@ test('Grant access with my permissions runs exactly the grants still missing on 
     assert.deepEqual(assets.app.unread.tables, [{ table: 'main.s.orders', owner: 'admins', grants: [CATALOG] }], 'what the person could not grant stays recorded');
     assert.equal(assets.notebook.state, 'ready', 'the rest of the record is kept');
     assert.equal(got.data.state, 'unreadable');
-    assert.match(got.data.text, /^The App riverside-assets cannot read this table, so its pages show no data from it\. The table owner can grant it\. Your grant was refused; the statements and the error are under Details$/);
+    assert.match(got.data.text, /^The App riverside-assets cannot read this table, so its pages show no data from it\. Admins can grant it\. Your grant was refused; the statements and the error are under Details$/);
     assert.doesNotMatch(got.data.text, /GRANT|PERMISSION_DENIED/, 'the card sentence carries no GRANT and no raw error');
     assert.ok(got.data.failed.length > 0, 'the statements and errors travel in failed, for Details');
   });
@@ -202,7 +202,7 @@ test('before the build, the plan warns when Inspire cannot share a picked table 
   assert.equal(got.status, 200, JSON.stringify(got.data));
   const [warning] = got.data.warnings.filter((w) => w.startsWith('Inspire cannot share'));
   assert.ok(warning, JSON.stringify(got.data.warnings));
-  assert.match(warning, /^Inspire cannot share main\.s\.orders \(owner admins and data-eng\) with the App this build makes/);
+  assert.match(warning, /^Inspire cannot share main\.s\.orders \(owned by admins and data-eng\) with the App this build makes/);
   assert.match(warning, /The build still runs\. When it ends, the Build page offers Grant access with my permissions to grant it as you in one click, or the grant SQL to send to admins and data-eng$/);
   assert.deepEqual(got.data.summary.app_reads.tables, [{ table: 'main.s.orders', owner: 'admins and data-eng' }]);
   assert.ok(got.data.warnings.includes(got.data.summary.app_reads.text), 'the wizard shows the same words the plan warns with');

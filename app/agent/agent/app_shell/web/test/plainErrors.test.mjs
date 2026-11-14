@@ -27,7 +27,7 @@ const shown = (page, selector) => page.locator(selector).evaluateAll((els) => el
 
 test('the shell and the Inspire App split errors with one helper', () => {
   const { plain, details } = splitTechnical(DENIED);
-  assert.equal(plain, 'Insufficient privileges: User does not have SELECT on Table `main`.`sales`.`loss`. Ask the owner to give you the access listed under Details');
+  assert.equal(plain, 'Insufficient privileges: User does not have SELECT on Table `main`.`sales`.`loss`. Ask your data owner to give you the access listed under Details');
   assert.deepEqual(details, ['GRANT SELECT ON TABLE main.sales.loss TO `sam@example.com`', 'INSUFFICIENT_PERMISSIONS', 'SQLSTATE: 42501']);
   assert.deepEqual(splitTechnical('Keep WEEKS_LEFT under 52'), { plain: 'Keep WEEKS_LEFT under 52', details: [] });
   assert.deepEqual(splitTechnical('Set WEEKS_LEFT'), { plain: 'Set WEEKS_LEFT', details: [] });

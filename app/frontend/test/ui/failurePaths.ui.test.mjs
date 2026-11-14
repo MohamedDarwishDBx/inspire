@@ -158,7 +158,7 @@ test('Launch says a lost connection once, not once per list', async () => {
 });
 
 const STAGE_FAILURES = [
-  ['Metadata', 'Read the tables', '[INSUFFICIENT_PERMISSIONS] Insufficient privileges: User does not have SELECT on Table `main`.`s`.`orders`. SQLSTATE: 42501', /access to table main\.s\.orders was refused, so ask its owner/i, false, 'SELECT on Table'],
+  ['Metadata', 'Read the tables', '[INSUFFICIENT_PERMISSIONS] Insufficient privileges: User does not have SELECT on Table `main`.`s`.`orders`. SQLSTATE: 42501', /access to table main\.s\.orders was refused, so ask your data owner/i, false, 'SELECT on Table'],
   ['Use cases', 'Write the use cases', '{"error_code":"REQUEST_LIMIT_EXCEEDED","message":"Too Many Requests (HTTP 429) for request 0f8c2d1e-9a3b-4c5d-8e7f-1a2b3c4d5e6f"}', /Databricks is busy right now, so wait a minute and try again/i, true, 'Too Many Requests (HTTP 429)'],
   ['Scoring', 'Score the use cases', '[TABLE_OR_VIEW_NOT_FOUND] The table or view `main`.`s`.`__inspire_usecases` cannot be found. SQLSTATE: 42P01', /table main\.s\.__inspire_usecases does not exist, so check/i, false, 'cannot be found'],
   ['Artifacts', 'Write the catalog', 'RESOURCE_EXHAUSTED: quota exceeded for workspace 1234567890123456', /reached one of its Databricks limits, so remove what you no longer use/i, false, 'quota exceeded'],
@@ -190,7 +190,7 @@ for (const [stage, name, message, said, transient, raw] of STAGE_FAILURES) {
 }
 
 for (const [label, answer, said, transient, statusText] of [
-  ['refused', [403, { error: '[PERMISSION_DENIED] User does not have CREATE SCHEMA on Catalog `main`. SQLSTATE: 42501' }], /access to catalog main was refused, so ask its owner or a workspace admin to give you access/i, false, 'Forbidden'],
+  ['refused', [403, { error: '[PERMISSION_DENIED] User does not have CREATE SCHEMA on Catalog `main`. SQLSTATE: 42501' }], /access to catalog main was refused, so ask your data owner or a workspace admin to give you access/i, false, 'Forbidden'],
   ['over a quota', [400, { error: '{"error_code":"QUOTA_EXCEEDED","message":"Workspace 1234567890123456 has reached the quota of jobs"}' }], /reached one of its Databricks limits/i, false, 'Bad Request'],
   ['busy', [429, { error: 'REQUEST_LIMIT_EXCEEDED: Too Many Requests (HTTP 429)' }], /Databricks is busy right now, so wait a minute and try again/i, true, 'Too Many Requests'],
 ]) {

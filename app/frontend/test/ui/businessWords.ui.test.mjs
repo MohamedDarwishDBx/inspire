@@ -60,7 +60,7 @@ test('Results of a run still writing show a calm note, not a red error', async (
 
 test('a build that needs access shows a plain sentence and keeps the GRANT statements under Details only', async () => {
   const grant = 'GRANT SELECT ON TABLE main.sales.orders TO `inspire-app`';
-  const failed = built({ spec_version: 2, status: 'failed', status_message: `The App cannot read 1 table. Ask the owner to run: ${grant}`, updated_at: new Date().toISOString() });
+  const failed = built({ spec_version: 2, status: 'failed', status_message: `The App cannot read 1 table. Ask your data owner to run: ${grant}`, updated_at: new Date().toISOString() });
   const ui = await openUi('implement', { ...STUDIO_STATE, history: [failed, built()] });
   const { page } = ui;
   try {
@@ -68,7 +68,7 @@ test('a build that needs access shows a plain sentence and keeps the GRANT state
     await expandBuild(page);
     const reason = page.locator('[data-mvp-progress] [data-build-reason]');
     await reason.waitFor({ timeout: 15000 });
-    assert.equal(await reason.innerText(), 'The App cannot read 1 table. Ask the owner to give the App the access listed under Details');
+    assert.equal(await reason.innerText(), 'The App cannot read 1 table. Ask your data owner to give the App the access listed under Details');
     const details = page.locator('[data-mvp-progress] [data-technical-details]').first();
     assert.equal(await details.locator('summary').innerText(), 'Details');
     assert.equal(await details.getAttribute('open'), null, 'Details starts closed');
@@ -108,8 +108,8 @@ test('the Build pane names the next step without the left/right wording or the n
   }
 });
 
-const DENIED = 'PERMISSION_DENIED: User does not have USE SCHEMA on Schema main._inspire. Ask the owner to run: GRANT USE SCHEMA ON SCHEMA main._inspire TO `someone@example.com`';
-const DENIED_PLAIN = 'User does not have USE SCHEMA on Schema main._inspire. Ask the owner to give you the access listed under Details';
+const DENIED = 'PERMISSION_DENIED: User does not have USE SCHEMA on Schema main._inspire. Ask your data owner to run: GRANT USE SCHEMA ON SCHEMA main._inspire TO `someone@example.com`';
+const DENIED_PLAIN = 'User does not have USE SCHEMA on Schema main._inspire. Ask your data owner to give you the access listed under Details';
 
 async function plainError(page, needle) {
   await page.getByText(needle).first().waitFor({ timeout: 15000 });
@@ -143,7 +143,7 @@ test('Monitor says it cannot read a run the person may not see, instead of waiti
   try {
     const status = page.locator('[data-testid="monitor-status"]');
     await page.waitForFunction(() => document.querySelector('[data-testid="monitor-status"]')?.dataset.status === 'failed', null, { timeout: 15000 });
-    assert.match(await status.innerText(), /^Cannot read this run\s+Inspire cannot read this run with your sign-in: User cannot view run 777, so ask its owner or a workspace admin to give you access\./);
+    assert.match(await status.innerText(), /^Cannot read this run\s+Inspire cannot read this run with your sign-in: User cannot view run 777, so ask your data owner or a workspace admin to give you access\./);
     assert.doesNotMatch(await shownText(page), /waiting to start|PERMISSION_DENIED/, 'no waiting claim and no code outside Details (must-exclude)');
   } finally {
     await ui.close();

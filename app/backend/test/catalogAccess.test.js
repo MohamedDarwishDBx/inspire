@@ -66,7 +66,7 @@ for (const c of CASES.source_tables) {
     assert.match(text, new RegExp(`${CASES.app.name} \\(application id ${CASES.app.id}\\)`));
     assert.doesNotMatch(text, /swap/i);
     for (const sql of c.grants) assert.ok(text.includes(sql), sql);
-    assert.match(text, c.can_grant ? /Use Let Inspire read these tables/ : c.grants.length ? /Ask the owner to run/ : /no missing grant/);
+    assert.match(text, c.can_grant ? /Use Let Inspire read these tables/ : c.grants.length ? /Ask your data owner to run/ : /no missing grant/);
   });
 }
 
@@ -154,8 +154,8 @@ test('a rerun the App cannot read refuses with the named App reason, never the s
     const got = await call(url, `/api/inspire/implement/rerun?${Q}`, { method: 'POST', body: { overrides: {} } });
     assert.equal(got.status, 409, JSON.stringify(got.data));
     assert.match(got.data.error, /the build cannot read a source table: builds run as the App service principal inspire-manual/);
-    assert.doesNotMatch(got.data.error.split('. Ask the owner')[0], /main\.s\.orders/);
-    assert.match(got.data.error, /Ask the owner to run: GRANT USE SCHEMA ON SCHEMA `main`\.`s` TO `app-sp-id`; GRANT SELECT ON TABLE `main`\.`s`\.`orders` TO `app-sp-id`; GRANT READ METADATA ON TABLE `main`\.`s`\.`orders` TO `app-sp-id`$/);
+    assert.doesNotMatch(got.data.error.split('. Ask your data owner')[0], /main\.s\.orders/);
+    assert.match(got.data.error, /Ask your data owner to run: GRANT USE SCHEMA ON SCHEMA `main`\.`s` TO `app-sp-id`; GRANT SELECT ON TABLE `main`\.`s`\.`orders` TO `app-sp-id`; GRANT READ METADATA ON TABLE `main`\.`s`\.`orders` TO `app-sp-id`$/);
     assert.doesNotMatch(got.data.error, /swap/i);
     assert.deepEqual(got.data.missing_tables, []);
     assert.equal(got.data.app_unreadable.can_grant, false);
@@ -174,7 +174,7 @@ test('plan and submit refuse a build the App cannot read with the named App reas
         const got = await call(url, `/api/inspire/implement/${route}`, { method: 'POST', body });
         assert.equal(got.status, 409, `${route}: ${JSON.stringify(got.data)}`);
         assert.match(got.data.error, /^the build cannot read a source table: builds run as the App service principal inspire-manual \(application id app-sp-id\)/);
-        assert.match(got.data.error, canGrant ? /Use Let Inspire read these tables to run: GRANT USE SCHEMA/ : /Ask the owner to run: GRANT USE SCHEMA/);
+        assert.match(got.data.error, canGrant ? /Use Let Inspire read these tables to run: GRANT USE SCHEMA/ : /Ask your data owner to run: GRANT USE SCHEMA/);
         assert.doesNotMatch(got.data.error, /swap/i);
         assert.deepEqual(got.data.missing_tables, []);
         assert.equal(got.data.app_unreadable.can_grant, canGrant);
@@ -234,7 +234,7 @@ test('Let Inspire read these tables refuses with 403 and grants nothing when the
   await withApp(overrides, async (url) => {
     const got = await call(url, `/api/inspire/implement/grant-access?${Q}&kind=source_tables`, { method: 'POST', body: { tables: ['main.s.orders'] } });
     assert.equal(got.status, 403, JSON.stringify(got.data));
-    assert.match(got.data.error, /Ask the owner to run/);
+    assert.match(got.data.error, /Ask your data owner to run/);
     assert.equal(got.data.app_unreadable.can_grant, false);
     assert.deepEqual(got.data.app_unreadable.app, { name: 'inspire-manual', id: 'app-sp-id' });
     assert.deepEqual(grants, []);
@@ -459,7 +459,7 @@ test('a build output table is never checked as a source: the preflight names no 
     assert.doesNotMatch(JSON.stringify(preflight.data.checks.sources), /churn_out/, 'the output table is not a source');
     assert.equal(preflight.data.checks.sources.ok, false, 'the real source the App cannot read still refuses');
     assert.match(preflight.data.checks.sources.detail, /^the build cannot read a source table: /);
-    assert.doesNotMatch(preflight.data.checks.sources.detail.split('Ask the owner')[0], /main\.s\.orders/);
+    assert.doesNotMatch(preflight.data.checks.sources.detail.split('Ask your data owner')[0], /main\.s\.orders/);
   });
 });
 

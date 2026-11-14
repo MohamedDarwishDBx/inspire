@@ -54,8 +54,9 @@ export function CopySendChoice({ text }) {
   );
 }
 
-export function PlainMessage({ text, after = '', as: Tag = 'p', className = '', onRetry = null, copy = false, actions = null, ...rest }) {
-  const split = splitTechnical(text);
+// securable names the object a refusal is on, as the caller knows it: 'compute' or 'workspace' ask the workspace admin, and omitted means data.
+export function PlainMessage({ text, after = '', as: Tag = 'p', className = '', onRetry = null, copy = false, actions = null, securable = '', ...rest }) {
+  const split = splitTechnical(text, { securable });
   const { details } = split;
   const plain = split.plain && after ? `${split.plain}${/[.!?…]$/.test(split.plain) ? '' : '.'} ${after}` : split.plain;
   if (!plain && !details.length) return null;

@@ -82,7 +82,7 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
     const app = who.name && who.name !== who.id ? `${who.name} (application id ${who.id})` : `with application id ${who.id}`;
     return { tables, app: { name: who.name, id: who.id }, grants: [], can_grant: false, builtin: [],
       text: `The App service principal ${app} cannot read ${count}, so the build cannot check that its results keep the access rules. `
-        + 'Sign in and build again, or ask the table owner to grant the App read access' };
+        + 'Sign in and build again, or ask your data owner to grant the App read access' };
   }
 
   async function sourceAccess(req, warehouseId, tables, job = 'build') {

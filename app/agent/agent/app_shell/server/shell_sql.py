@@ -35,7 +35,7 @@ def rebuild_action(what: str = "it", first: bool = False) -> str:
 NO_ACCESS_LEAD = "No access to "
 ACCESS_ON = re.compile(r"\bon (?:table|view|schema|catalog|volume|function) (`[^`]+`(?:\.`[^`]+`){0,2}|'[^']+'|[\w-]+(?:\.[\w-]+){0,2})", re.I)
 PLAIN_ERRORS = {
-    "not_allowed": f"{NO_ACCESS_LEAD}part of this App's data yet. Ask the owner of that data for read access, then try again.",
+    "not_allowed": f"{NO_ACCESS_LEAD}part of this App's data yet. Ask your data owner for read access, then try again.",
     "missing_table": "Part of this App's data is not there yet. It appears after the next run; if it stays missing, ask the person who built "
                      "the App to run it again.",
     "missing_column": f"The data changed since the App was built. Ask the person who built the App to {rebuild_action()}.",

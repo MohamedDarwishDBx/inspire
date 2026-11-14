@@ -72,7 +72,7 @@ function sampleCopyPermission(failed, principal) {
 
 function builderPermission(catalog, builderGrant, builder) {
   return permissionRequired({ statements: [...readStatements(catalog, builder), builderGrant], principal: builder,
-    why: `The identity Inspire builds as cannot write to this schema yet. Its owner grants it:` });
+    why: `The identity Inspire builds as cannot write to this schema yet. Your data owner grants it:` });
 }
 
 module.exports = { folderPermission, permissionRequired, readStatements, readStatementsFor, appReadStatements, appReadPermissions, sampleCopyPermission, builderPermission };

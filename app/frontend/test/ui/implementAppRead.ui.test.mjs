@@ -65,7 +65,7 @@ test('Let Inspire read these tables runs the exact grants with the person sign-i
     await panel.waitFor({ timeout: 15000 });
     const reason = await panel.locator('p').first().textContent();
     assert.match(reason, /^the build cannot read a source table: builds run as the App service principal inspire-manual \(application id app-sp-id\)/);
-    assert.doesNotMatch(reason.split('Ask the owner')[0], /main\.s\.orders/, 'the sentence names no id; the grant lines sit under Details');
+    assert.doesNotMatch(reason.split('Ask your data owner')[0], /main\.s\.orders/, 'the sentence names no id; the grant lines sit under Details');
     assert.doesNotMatch(reason, /swap/i);
     assert.deepEqual(await grantsNeeded(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT]);
     await panel.getByRole('button', { name: APP_READ_ACTION, exact: true }).click();
@@ -92,7 +92,7 @@ test('a person who cannot grant sees the named reason and the statements with no
     const panel = panelOf(page);
     await panel.waitFor({ timeout: 15000 });
     const reason = await panel.locator('p').first().textContent();
-    assert.match(reason, /Ask the owner to give the App the access listed under Details$/, 'the sentence names no grant; the grants are under Details');
+    assert.match(reason, /Ask your data owner to give the App the access listed under Details$/, 'the sentence names no grant; the grants are under Details');
     assert.deepEqual(await grantsNeeded(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT]);
     assert.deepEqual(await grantsNeeded(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT]);
     assert.equal(await panel.getByRole('button', { name: APP_READ_ACTION }).count(), 0);
@@ -111,7 +111,7 @@ test('a person who cannot grant sees the named reason and the statements with no
     await action.click();
     const result = panel.getByRole('status', { name: 'Grant result' });
     await result.getByText(/^Your grant was refused: the build cannot read a source table: builds run as the App service principal inspire-manual/).waitFor({ timeout: 15000 });
-    assert.match(await result.locator('p').first().textContent(), /Ask the owner to give the App the access listed under Details$/);
+    assert.match(await result.locator('p').first().textContent(), /Ask your data owner to give the App the access listed under Details$/);
     assert.equal(await result.locator('[data-technical-details] pre').textContent(), `${SCHEMA_GRANT}\n${TABLE_GRANT}\n${METADATA_GRANT}`);
     await until(async () => await panel.getByRole('button', { name: APP_READ_ACTION }).count() === 0, 'the action goes once the person cannot grant');
     assert.deepEqual(second.live.grants, [], 'a 403 runs no grant');
@@ -151,7 +151,10 @@ test('the App tile offers to let new Apps use the result table catalog, grants w
     await goToStep(page, 'What to deliver');
     const tile = page.locator('[data-output="app"]');
     await tile.locator('[data-blocked-reason="app"]').waitFor({ timeout: 15000 });
-    assert.deepEqual(await tile.getByRole('list', { name: 'Grant Inspire can run for new Apps' }).locator('li').allTextContents(), [CATALOG_GRANT]);
+    // The block can show before its grant list does (the list comes with a later check result), so wait for the list too, not only the block.
+    const grantList = tile.getByRole('list', { name: 'Grant Inspire can run for new Apps' });
+    await grantList.locator('li').first().waitFor({ timeout: 15000 });
+    assert.deepEqual(await grantList.locator('li').allTextContents(), [CATALOG_GRANT]);
     await tile.getByRole('button', { name: NEW_APPS_ACCESS_ACTION, exact: true }).click();
     const result = tile.getByRole('status', { name: 'New Apps access result' });
     await result.getByText('Inspire granted USE CATALOG on main to account users with your sign-in, which opens no data by itself', { exact: true })

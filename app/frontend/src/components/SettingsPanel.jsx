@@ -113,7 +113,7 @@ function WarehouseSelector({ settings, update }) {
       </div>
 
       {error && (
-        <PlainMessage text={error} className="text-xs text-error-fg mt-1" />
+        <PlainMessage text={error} securable="compute" className="text-xs text-error-fg mt-1" />
       )}
     </div>
   );

@@ -9,21 +9,21 @@ test('splitTechnical moves every GRANT statement out of the sentence a business 
   const { splitTechnical, ASK_OWNER_APP_TEXT } = await lib('plainText.js');
   const grant = 'GRANT USE CATALOG ON CATALOG main TO `app-sp`';
   const select = 'GRANT SELECT ON TABLE main.sales.orders TO `app-sp`';
-  const { plain, details } = splitTechnical(`The App cannot read 2 tables. Ask the owner to run: ${grant}; ${select}`);
+  const { plain, details } = splitTechnical(`The App cannot read 2 tables. Ask your data owner to run: ${grant}; ${select}`);
   assert.equal(plain, `The App cannot read 2 tables. ${ASK_OWNER_APP_TEXT}`);
   assert.deepEqual(details, [grant, select]);
   assert.doesNotMatch(plain, /GRANT|main\.sales/);
 });
 
-test('a grant for a service principal asks the owner to give the App the access, never you, and never shows its id; a grant for a person still says you (must-exclude)', async () => {
+test('a grant for a service principal asks your data owner to give the App the access, never you, and never shows its id; a grant for a person still says you (must-exclude)', async () => {
   const { splitTechnical, ASK_OWNER_APP_TEXT, ASK_OWNER_TEXT } = await lib('plainText.js');
   const sp = '7c1e2d3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f';
-  const wall = `a new App could not read main.sales.out: its service principal needs USE SCHEMA on schema main.sales. Ask the owner to run: GRANT MANAGE ON SCHEMA main.sales TO \`${sp}\`; or choose a result table in a catalog and schema Inspire manages`;
+  const wall = `a new App could not read main.sales.out: its service principal needs USE SCHEMA on schema main.sales. Ask your data owner to run: GRANT MANAGE ON SCHEMA main.sales TO \`${sp}\`; or choose a result table in a catalog and schema Inspire manages`;
   const { plain, details } = splitTechnical(wall);
   assert.equal(plain, `a new App could not read main.sales.out: its service principal needs USE SCHEMA on schema main.sales. ${ASK_OWNER_APP_TEXT}; or choose a result table in a catalog and schema Inspire manages`);
   assert.doesNotMatch(plain, new RegExp(sp));
   assert.deepEqual(details, [`GRANT MANAGE ON SCHEMA main.sales TO \`${sp}\``]);
-  assert.ok(splitTechnical('Ask the owner to run: GRANT SELECT ON TABLE main.s.t TO `pat@example.com`').plain.startsWith(ASK_OWNER_TEXT));
+  assert.ok(splitTechnical('Ask your data owner to run: GRANT SELECT ON TABLE main.s.t TO `pat@example.com`').plain.startsWith(ASK_OWNER_TEXT));
 });
 
 test('splitTechnical moves the machine paths and hosts of a build message to Details and keeps workspace folders in the sentence (must-exclude)', async () => {
@@ -40,8 +40,8 @@ test('splitTechnical moves the machine paths and hosts of a build message to Det
 
 test('splitTechnical keeps the clause after the statements and the lower-case ask inside a sentence', async () => {
   const { splitTechnical } = await lib('plainText.js');
-  const { plain, details } = splitTechnical('Inspire cannot create the schema; ask the owner of main to run GRANT CREATE SCHEMA ON CATALOG main TO `someone@example.com`, then pick Its own schema again.');
-  assert.equal(plain, 'Inspire cannot create the schema; ask the owner to give you the access listed under Details, then pick Its own schema again.');
+  const { plain, details } = splitTechnical('Inspire cannot create the schema; ask your data owner to run GRANT CREATE SCHEMA ON CATALOG main TO `someone@example.com`, then pick Its own schema again.');
+  assert.equal(plain, 'Inspire cannot create the schema; ask your data owner to give you the access listed under Details, then pick Its own schema again.');
   assert.deepEqual(details, ['GRANT CREATE SCHEMA ON CATALOG main TO `someone@example.com`']);
 });
 
@@ -71,7 +71,7 @@ test('splitTechnical unwraps a raw JSON error body and moves the Databricks erro
   const { splitTechnical } = await lib('plainText.js');
   const body = JSON.stringify({ error: 'PERMISSION_DENIED: User does not have USE SCHEMA on Schema main._inspire.' });
   assert.deepEqual(splitTechnical(`Could not load: ${body}`), {
-    plain: 'Could not load: access to schema main._inspire was refused, so ask its owner or a workspace admin to give you access.',
+    plain: 'Could not load: access to schema main._inspire was refused, so ask your data owner or a workspace admin to give you access.',
     details: ['PERMISSION_DENIED: User does not have USE SCHEMA on Schema main._inspire.'] });
   assert.deepEqual(splitTechnical('[TABLE_OR_VIEW_NOT_FOUND] The table or view `main`.`s`.`t` cannot be found. SQLSTATE: 42P01'),
     { plain: 'Table main.s.t does not exist, so check that it was not renamed or dropped, or pick another one.',
@@ -126,7 +126,7 @@ test('JSON errors are read in any key order and nested bodies are unwrapped', as
     'Publish failed: {"error":"{\\"error_code\\":\\"PERMISSION_DENIED\\",\\"message\\":\\"User does not have permission\\"}"}',
   ]) {
     const { plain, details } = splitTechnical(raw);
-    assert.equal(plain, 'Publish failed: User does not have permission, so ask its owner or a workspace admin to give you access.', raw);
+    assert.equal(plain, 'Publish failed: User does not have permission, so ask your data owner or a workspace admin to give you access.', raw);
     assert.ok(details.join(' ').includes('PERMISSION_DENIED'), raw);
   }
 });

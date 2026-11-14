@@ -51,7 +51,7 @@ def test_a_service_principal_denied_the_abac_read_is_refused_with_its_name_and_t
         inst._implement_protection_gate(context, [])
     reason = str(stop.value)
     assert reason.startswith(f"Inspire did not publish. The App's service principal {APP} cannot read the access policies of the source table")
-    assert "The table owner or a manager can run the GRANT shown under Details" in reason
+    assert "Your data owner or a manager can run the GRANT shown under Details" in reason
     assert SOURCE not in reason and "owner@example.com" not in reason, "the sentence names no table id or owner email; the GRANT sits under Details"
     assert "`" not in reason and GRANT not in reason
     assert context["asset_status"]["protection"]["sql"] == [f"{GRANT};"]

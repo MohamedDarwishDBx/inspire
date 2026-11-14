@@ -215,8 +215,8 @@ def test_a_privilege_the_build_lacks_on_its_own_data_stops_the_output_at_once_an
         inst._implement_genie_loop(context, writer, "Dashboard", "Build the dashboard.", deploy)
     assert len(writer.prompts) == 1, "Genie cannot grant a privilege, so no second round"
     assert str(stopped.value) == (
-        "inspire-sp does not have SELECT on table main.s.customers, and no change to the Dashboard can grant it: ask data-team, "
-        "its owner, to run GRANT SELECT ON TABLE `main`.`s`.`customers` TO `inspire-sp`, then build again")
+        "inspire-sp does not have SELECT on table main.s.customers, and no change to the Dashboard can grant it: ask data-team "
+        "to run GRANT SELECT ON TABLE `main`.`s`.`customers` TO `inspire-sp`, then build again")
     assert inst.looked == ["main.s.customers"]
     assert inst.logger.matching("[IMPLEMENT-DENIED FIRED] N01-U01: the Dashboard is not sent back to Genie")
 
@@ -230,7 +230,7 @@ def test_a_denial_with_no_owner_found_asks_the_owner_or_a_metastore_admin(agent_
 
     with pytest.raises(agent_ns["ImplementBlocked"]) as stopped:
         inst._implement_genie_loop(context, Writer(), "Genie Agent", "Build the Genie Agent.", deploy)
-    assert "ask the owner of table main.s.customers or a metastore admin to run GRANT SELECT ON TABLE `main`.`s`.`customers` " \
+    assert "ask your data owner of table main.s.customers or a metastore admin to run GRANT SELECT ON TABLE `main`.`s`.`customers` " \
            "TO `inspire-sp`" in str(stopped.value)
 
 
@@ -247,7 +247,7 @@ def test_a_denial_keeps_the_owner_and_the_denied_user_and_masks_any_other_email_
         inst._implement_genie_loop(context, Writer(), "Dashboard", "Build the dashboard.", deploy)
     assert str(stopped.value) == (
         "builder.two@example.com does not have SELECT on table main.s.customers, and no change to the Dashboard can grant it: "
-        "ask owner.one@example.com, its owner, to run GRANT SELECT ON TABLE `main`.`s`.`customers` TO `builder.two@example.com`, "
+        "ask your data owner to run GRANT SELECT ON TABLE `main`.`s`.`customers` TO `builder.two@example.com`, "
         "then build again")
     assert "other.three" not in str(stopped.value)
 
@@ -328,7 +328,7 @@ def test_sharing_grants_the_source_tables_the_dashboard_reads_and_names_the_gran
     assert warnings == [
         "Sharing: planners may not be able to read the result table, which the dashboard and the Genie Agent read with the "
         "credentials of each viewer: Inspire cannot grant this access, because it "
-        "neither owns nor holds MANAGE on it. If planners does not have it yet, ask the owner to run: GRANT SELECT ON TABLE "
+        "neither owns nor holds MANAGE on it. If planners does not have it yet, ask your data owner to run: GRANT SELECT ON TABLE "
         "`main`.`s`.`customers` TO `planners`"]
     assert inst.looked.count(RESULT) == 1, "the result table is planned once"
 

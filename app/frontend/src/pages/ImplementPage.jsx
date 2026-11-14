@@ -1291,7 +1291,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     if (choice.id === 'copy' && choice.sql) {
       try {
         await navigator.clipboard.writeText(choice.sql);
-        setProtectionCopy('The SQL is copied. Send it to the owner of the result tables.');
+        setProtectionCopy('The SQL is copied. Send it to your data owner.');
       } catch (e) {
         setProtectionCopy(`The SQL could not be copied: ${e.message}. Select it above and copy it.`);
       }
@@ -1640,7 +1640,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
             </div>
           ))}
           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-secondary pt-2">Job runs</div>
-          {status?.runs?.ok === false && <PlainMessage as="p" text={status.runs.error} className="text-[12px] text-error-fg" />}
+          {status?.runs?.ok === false && <PlainMessage as="p" text={status.runs.error} securable="workspace" className="text-[12px] text-error-fg" />}
           {(status?.runs?.runs || []).map((run) => (
             <div key={run.run_id} className="border border-border rounded-lg bg-surface px-3 py-2 text-[12px]">
               <div>{runStateText(run.state) || RUN_STATE_UNKNOWN} · {runProfileText(run.profile)} · {run.trigger === 'PERIODIC' ? 'scheduled' : 'started by hand'}</div>

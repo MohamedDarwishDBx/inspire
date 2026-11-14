@@ -468,7 +468,7 @@ def access_said(statement: str) -> tuple:
 
 def access_owners(tables: list) -> str:
     owners = list(dict.fromkeys(t["owner"] for t in tables if t.get("owner")))
-    return " or ".join(owners) if owners else "the owner of that data"
+    return " or ".join(owners) if owners else "your data owner"
 
 
 def settings_problems(settings: dict, pages: list) -> list:

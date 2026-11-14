@@ -125,7 +125,7 @@ test('the short reason names the place Inspire lacks access to, never a schema w
   assert.equal(w.blockWhy('its service principal needs USE CATALOG on catalog `main`; Inspire cannot manage the warehouse wh1'),
     'Needs access Inspire does not have on the catalog and the SQL warehouse.');
   assert.equal(w.blockWhy('you lack USE CATALOG, USE SCHEMA and CREATE TABLE'), 'Needs access Inspire does not have yet.', 'a right named alone is no place (must-exclude)');
-  assert.equal(w.blockWhy('its service principal needs USE CATALOG on catalog `main`. Ask the owner to run: GRANT MANAGE ON CATALOG `main`; or choose a result table in a catalog and schema Inspire manages'),
+  assert.equal(w.blockWhy('its service principal needs USE CATALOG on catalog `main`. Ask your data owner to run: GRANT MANAGE ON CATALOG `main`; or choose a result table in a catalog and schema Inspire manages'),
     'Needs access Inspire does not have on the catalog.', 'advice that names a table or schema adds no place (must-exclude)');
   assert.equal(w.blockWhy('the name is taken'), w.CANNOT_HERE, 'not an access gap (must-exclude)');
   const blocks = w.outputBlocks(ON, null, {}, { checks: { app_access: { ok: false, detail: warehouse } } });
