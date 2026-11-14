@@ -2310,8 +2310,11 @@ export default function ImplementWizard({
         {Object.values(checkNotes).filter(Boolean).map((note) => (
           <p key={note} role="note" data-check-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs text-warning-fg">{note}</p>
         ))}
-        {lastStep && accessVerdict === 'pending' && (
-          <p role="status" data-access-verdict="pending" className="text-xs text-text-secondary">{ACCESS_CHECKING}</p>
+        {/* The line is always there on the last step, so the answer that clears it does not shrink the footer and re-centre the dialog. */}
+        {lastStep && (
+          <p role="status" data-access-verdict={accessVerdict === 'pending' ? 'pending' : undefined} className="min-h-4 text-xs text-text-secondary">
+            {accessVerdict === 'pending' ? ACCESS_CHECKING : ''}
+          </p>
         )}
         {lastStep && (accessVerdict === 'error' || accessVerdict === 'unknown') && (
           <div role="alert" data-access-verdict={accessVerdict} className="flex items-center justify-between gap-3 bg-error-bg border border-error/20 rounded-md px-3 py-2 text-xs text-error-fg">
@@ -2368,7 +2371,7 @@ export default function ImplementWizard({
               <button
                 type="button"
                 disabled={implementBlocked}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-db-red-solid disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-1.5 min-w-52 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-db-red-solid disabled:opacity-50"
                 onClick={submit}
               >
                 {(busy || checksBusy || !placeSettled) && <Loader2 size={14} className="animate-spin" />}

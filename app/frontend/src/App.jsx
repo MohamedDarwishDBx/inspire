@@ -11,10 +11,22 @@ import ScrollProgressRing from './components/ScrollProgressRing';
 import ParticleField from './components/ParticleField';
 import ShowcaseBar from './components/ShowcaseBar';
 import { RESULTS_FRAME } from './lib/layout';
+import { withDeadline } from './lib/startDeadline';
+import { PlainMessage } from './components/TechnicalDetails';
 import { showcaseSettings, showcasesFrom, staysInShowcase } from './lib/showcase';
 import PermissionHost from './components/PermissionHost';
 
 const noop = () => {};
+
+// The boot reads answer within this bound. A read that never answers shows the load error with Try again, not a spinner forever.
+const BOOT_ANSWER_MS = 20000;
+const BOOT_TIMEOUT_TEXT = 'Inspire did not answer within 20 seconds while it connected to the workspace.';
+const bootTimedOut = () => Object.assign(new Error(BOOT_TIMEOUT_TEXT), { deadline: true });
+// A boot read: the response body is read inside the deadline, so a stalled reply cannot hold the page either.
+const bootRead = (url) => withDeadline(async (signal) => {
+  const resp = await fetch(url, { signal });
+  return resp.ok ? resp.json() : null;
+}, { ms: BOOT_ANSWER_MS, error: bootTimedOut() });
 
 const LATER_PAGES = {
   launch: () => import('./pages/LaunchPage'),
@@ -99,6 +111,8 @@ class ErrorBoundary extends Component {
 export default function App() {
   // Start in 'loading' — resolve backend config before rendering any page.
   const [page, setPage] = useState('loading');
+  const [bootError, setBootError] = useState('');
+  const [bootAttempt, setBootAttempt] = useState(0);
 
   // Settings: server defaults (from /api/defaults) are the source of truth.
   // localStorage is just a cache for non-App mode (local dev with PAT).
@@ -224,8 +238,7 @@ export default function App() {
       const startHash = window.location.hash;
       try {
         // 1. Fetch server-side defaults (always available, no auth needed)
-        const defResp = await fetch('/api/defaults');
-        const defaults = defResp.ok ? await defResp.json() : {};
+        const defaults = (await bootRead('/api/defaults')) || {};
 
         // 2. Build initial settings: server defaults > localStorage cache > empty
         const resolved = {
@@ -246,25 +259,19 @@ export default function App() {
         // 3. Auto-detect warehouse if installer didn't set one
         if (!resolved.warehouseId) {
           try {
-            const whResp = await fetch('/api/warehouses');
-            if (whResp.ok) {
-              const whs = (await whResp.json()).warehouses || [];
-              const pick = whs.find(w => w.state === 'RUNNING' && w.enable_serverless_compute)
-                || whs.find(w => w.state === 'RUNNING')
-                || whs[0];
-              if (pick) resolved.warehouseId = pick.id;
-            }
+            const whs = (await bootRead('/api/warehouses'))?.warehouses || [];
+            const pick = whs.find(w => w.state === 'RUNNING' && w.enable_serverless_compute)
+              || whs.find(w => w.state === 'RUNNING')
+              || whs[0];
+            if (pick) resolved.warehouseId = pick.id;
           } catch {}
         }
 
         // 4. Auto-publish notebook if not already set
         if (!resolved.notebookPath) {
           try {
-            const nbResp = await fetch('/api/notebook');
-            if (nbResp.ok) {
-              const nbData = await nbResp.json();
-              if (nbData.path) resolved.notebookPath = migrateLegacyUserHomeInspirePath(nbData.path);
-            }
+            const nbData = await bootRead('/api/notebook');
+            if (nbData?.path) resolved.notebookPath = migrateLegacyUserHomeInspirePath(nbData.path);
           } catch {}
         }
 
@@ -313,6 +320,10 @@ export default function App() {
         }
       } catch (err) {
         console.error('[bootstrap] error:', err);
+        if (err?.deadline) {
+          setBootError(BOOT_TIMEOUT_TEXT);
+          return;
+        }
         setSettings({
           databricksHost: localStorage.getItem('db_databricks_host') || '',
           token: localStorage.getItem('db_token') || '',
@@ -350,7 +361,7 @@ export default function App() {
       }
       setPage(HOME_PAGE);
     })();
-  }, []);
+  }, [bootAttempt]);
 
   // Auto-fetch SP token when in SP mode (local dev only)
   useEffect(() => {
@@ -520,7 +531,13 @@ export default function App() {
       <main className={transitioning ? 'page-exit' : 'page-enter'} key={page}>
         <ErrorBoundary key={page}>
         <Suspense fallback={<PageSpinner text="Opening the page..." />}>
-        {page === 'loading' && <PageSpinner text="Connecting to workspace..." />}
+        {page === 'loading' && (bootError
+          ? (
+            <div className="min-h-screen flex items-center justify-center p-6">
+              <PlainMessage text={bootError} className="text-sm text-error-fg max-w-md text-center" onRetry={() => { setBootError(''); setBootAttempt((n) => n + 1); }} />
+            </div>
+          )
+          : <PageSpinner text="Connecting to workspace..." />)}
 
         {page === 'setup' && (
           <SetupWizard settings={settings} update={update} onComplete={finishSetup} />
