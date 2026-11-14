@@ -21,15 +21,20 @@ LIVE_IDS = ["by_age", "aging_buckets", "by_rule"]
 
 def _page(y, ids=LIVE_IDS):
     chart = next(c for c in PAGE["charts"] if c["id"] == "by_category")
-    return dict(PAGE, charts=[dict(chart, id=i, type="bar", y=[dict(m) for m in y]) for i in ids])
+    kpis = [{k: v for k, v in kpi.items() if k != "compare"} for kpi in PAGE.get("kpis") or []]
+    return dict(PAGE, result_table="inspire_kinds_rc7._inspire_walk.n01_u05_results", kpis=kpis,
+                charts=[dict(chart, id=i, type="bar", y=[dict(m) for m in y]) for i in ids])
 
 
-def _shape(page, unfiltered_money, tested=569.0, groups=("18-30", "31-60")):
+def _shape(page, unfiltered_money, tested=569.0, groups=("18-30", "31-60"), summary=None):
     """Chart queries return one row per group. The unfiltered rule query (no WHERE) returns unfiltered_money for money measures;
     the default-filter query returns 0 for money. The tested count is nonzero and differs across the groups, as the live charts did."""
     unfiltered = {shell_sql.chart_query(page, c["id"], {})[0] for c in page["charts"]}
 
     def shape(sql):
+        if "_summary" in sql:
+            # the run's own summary row: None means no run has written one yet
+            return [summary] if summary is not None else []
         if "GROUP BY" not in sql or "low_0 AS low" in sql or "SUM(y0) OVER" in sql:
             return None
         money = unfiltered_money if sql in unfiltered else 0.0
@@ -154,3 +159,65 @@ def test_zero_matches_with_a_plain_stake_chart_fail_no_check(tmp_path):
 
     problems = _problems(tmp_path, page, empty)
     assert [p for p in problems if "returned no rows" in p or "ranks nothing" in p or "draws one group" in p] == [], problems
+
+
+# --- REQ-192 decision: the run's own flagged records decide the uniform-chart check ---
+
+ZERO_RUN = {"act_now_records": 0, "review_records": 0}
+ONE_FLAGGED = {"act_now_records": 1, "review_records": 0}
+TESTED_ONLY = {"label": "Records tested", "expression": "COUNT(*)", "format": "integer"}
+
+
+def test_no_stake_measure_with_569_tested_and_no_flagged_record_publishes(tmp_path):
+    # the live zero result without a stake-labelled measure: the rule flagged 0 records of 569 tested, so the flat chart publishes
+    # (fails before the fix: the 569 count read as an exception)
+    page = _page([TESTED_ONLY])
+    assert _ranks_nothing(_problems(tmp_path, page, _shape(page, unfiltered_money=569.0, summary=ZERO_RUN))) == []
+
+
+def test_one_flagged_record_with_a_uniform_stake_chart_still_fails(tmp_path):
+    # must-exclude: the run flagged 1 record, so a uniform chart is still sent back, on every chart
+    page = _page([PLAIN_STAKE, TESTED])
+    flat = _ranks_nothing(_problems(tmp_path, page, _shape(page, unfiltered_money=0.0, summary=ONE_FLAGGED)))
+    assert len(flat) == 3 and all("gives every group the same Amount at stake (0)" in p for p in flat), flat
+
+
+def test_one_flagged_record_with_a_uniform_count_chart_still_fails(tmp_path):
+    # must-exclude: a chart with no stake measure is still strict when the run flagged a record
+    page = _page([TESTED_ONLY])
+    flat = _ranks_nothing(_problems(tmp_path, page, _shape(page, unfiltered_money=569.0, summary=ONE_FLAGGED)))
+    assert len(flat) == 3 and all("gives every group the same Records tested (0)" in p for p in flat), flat
+
+
+def test_without_a_run_summary_only_stake_measures_decide(tmp_path):
+    # fallback: no summary row, a tested count and no stake measure: nothing can say the rule finds nothing, so it stays strict
+    page = _page([TESTED_ONLY])
+    flat = _ranks_nothing(_problems(tmp_path, page, _shape(page, unfiltered_money=569.0, summary=None)))
+    assert len(flat) == 3, flat
+
+
+def test_without_a_run_summary_a_zero_stake_chart_publishes(tmp_path):
+    page = _page([PLAIN_STAKE, TESTED])
+    assert _ranks_nothing(_problems(tmp_path, page, _shape(page, unfiltered_money=0.0, summary=None))) == []
+
+
+# --- empty-data checks: the Overview and the impact page, with zero matches everywhere ---
+
+def _empty_shape(sql):
+    return [] if "GROUP BY" in sql or "SELECT" in sql and "_summary" not in sql else None
+
+
+def test_overview_with_zero_matches_fails_no_check(tmp_path):
+    page = _page([PLAIN_STAKE, TESTED])
+    ws = ShapedWorkspace(_empty_shape)
+    s = shell_core.Shell(app_dir(tmp_path, pages=[page]), env={"DATABRICKS_WAREHOUSE_ID": "wh1"}, sp_factory=lambda: ws,
+                         user_factory=lambda h, t: ws)
+    assert s.check_overview(page, shell_core.Probe(ws, s.timer), "page n01_u05") == []
+
+
+def test_impact_with_zero_matches_fails_no_check(tmp_path):
+    page = _page([PLAIN_STAKE, TESTED])
+    ws = ShapedWorkspace(_empty_shape)
+    s = shell_core.Shell(app_dir(tmp_path, pages=[page]), env={"DATABRICKS_WAREHOUSE_ID": "wh1"}, sp_factory=lambda: ws,
+                         user_factory=lambda h, t: ws)
+    assert s.check_impact(page, shell_core.Probe(ws, s.timer), "page n01_u05") == []
