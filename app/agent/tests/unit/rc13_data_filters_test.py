@@ -91,7 +91,7 @@ def test_the_name_check_repairs_a_name_without_the_label_and_keeps_one_that_carr
     ]
     stats = labelled["ensure_data_filter_labels"](use_cases, lambda uc: [], "Starbucks", labelled["INSPIRE_TABLE_SCOPES"])
     assert stats == {"affected": 2, "carried": 1, "reasked": 0, "fallback": 1, "kept_user_named": 0, "subtitled": 0}
-    assert use_cases[0]["Name"] == "Improve Starbucks customer experience using segmentation"
+    assert use_cases[0]["Name"] == "Improve Starbucks Customer Experience Using Segmentation"
     assert use_cases[1]["Name"] == "Forecast STARBUCKS order volume", "a name that carries the label in any case is kept as written"
     assert use_cases[2]["Name"] == "Track supplier lead times", "a use case on no filtered table is never touched"
 
@@ -187,7 +187,7 @@ def test_the_reask_runs_once_for_only_the_missed_names_with_the_cache_bypassed_a
         use_cases, lambda uc: [], "Contoso", labelled["INSPIRE_TABLE_SCOPES"],
         reask=lambda misses: labelled["reask_data_filter_names"](stub, misses, "Contoso"))
     assert stats == {"affected": 2, "carried": 0, "reasked": 2, "fallback": 0, "kept_user_named": 0, "subtitled": 0}
-    assert [uc["Name"] for uc in use_cases] == ["Improve Contoso customer experience using segmentation", "Forecast Contoso order volume"]
+    assert [uc["Name"] for uc in use_cases] == ["Improve Contoso Customer Experience Using Segmentation", "Forecast Contoso Order Volume"]
     assert len(stub.calls) == 1, "one re-ask for all the missed names, never one per name"
     call = stub.calls[0]
     assert call["worker_prompt_path"] == "DATA_FILTER_LABEL_RENAME_PROMPT"
@@ -218,8 +218,8 @@ def test_when_the_reask_still_misses_the_deterministic_rewrite_fires_for_each_na
         use_cases, lambda uc: [], "Contoso", labelled["INSPIRE_TABLE_SCOPES"],
         reask=lambda misses: labelled["reask_data_filter_names"](still_wrong, misses, "Contoso"))
     assert stats == {"affected": 2, "carried": 0, "reasked": 0, "fallback": 2, "kept_user_named": 0, "subtitled": 0}
-    assert use_cases[0]["Name"] == "Improve Contoso customer experience using segmentation"
-    assert use_cases[1]["Name"] == "Forecast Contoso order volume"
+    assert use_cases[0]["Name"] == "Improve Contoso Customer Experience Using Segmentation"
+    assert use_cases[1]["Name"] == "Forecast Contoso Order Volume"
 
 
 @pytest.mark.parametrize("failure", [RuntimeError("endpoint timed out"), "garbage"])
@@ -261,7 +261,7 @@ def test_a_base_name_without_the_label_is_fixed_in_every_name_the_run_derives(la
           "Name": "Improve customer experience using segmentation", "Primary Table": ORDERS}
     stats = labelled["ensure_data_filter_labels"]([uc], lambda u: [], "Contoso", labelled["INSPIRE_TABLE_SCOPES"])
     assert stats["fallback"] == 1
-    assert uc["usecase"] == uc["Name"] == "Improve Contoso customer experience using segmentation", "both fields that name the use case carry it"
+    assert uc["usecase"] == uc["Name"] == "Improve Contoso Customer Experience Using Segmentation", "both fields that name the use case carry it"
     row = labelled["DatabricksInspire"]._uc_to_row(uc, 1, labelled["DatabricksInspire"]._normalize_usecase)
     assert row[4].count("Contoso") == 1, "the tracking use_case column carries the label once"
     assert row[5].count("Contoso") == 1, "the tracking name column carries the label once"
@@ -273,7 +273,7 @@ def test_name_with_technique_has_the_label_exactly_once_and_never_doubled(labell
           "Name": "Improve customer experience using segmentation", "Primary Table": ORDERS}
     labelled["ensure_data_filter_labels"]([uc], lambda u: [], "Contoso", labelled["INSPIRE_TABLE_SCOPES"])
     composed = _composed_name(labelled, uc)
-    assert composed == "Improve Contoso customer experience using segmentation", "the name alone: the technique is in the subtitle (REQ-175)"
+    assert composed == "Improve Contoso Customer Experience Using Segmentation", "the name alone: the technique is in the subtitle (REQ-175)"
     assert composed.count("Contoso") == 1
 
 
