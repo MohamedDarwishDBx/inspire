@@ -103,3 +103,34 @@ def test_req191_sweep_every_list_filter_column_is_shown_or_is_an_action_filter(n
         if f.get("action"):
             continue
         assert f["column"] in shown or f["column"].lower() in {c.lower() for c in shown}, f
+
+
+# --- REQ-191 follow-up: an explicit column filter that is off stays off, even on a shown Grouping column ----------------------
+
+def with_column_filters(page, entries):
+    out = copy.deepcopy(page)
+    out["records"]["column_filters"] = entries
+    return out
+
+
+def test_req191_off_column_filter_keeps_a_shown_grouping_column_off():
+    page = with_column_filters(with_grouping(returns_page(), ["channel"]), [{"column": "channel", "off": True}])
+    assert "channel" not in filter_columns(page)
+    assert grouping_columns(page) == []
+    with pytest.raises(KeyError, match="channel"):
+        shell_sql.column_options_query(page, None, "channel")
+
+
+def test_req191_off_column_filter_on_one_grouping_column_leaves_the_other_grouping_filter():
+    page = with_column_filters(with_grouping(returns_page(), ["channel", "return_reason"]),
+                               [{"column": "channel", "off": True}])
+    assert grouping_columns(page) == ["return_reason"]
+
+
+def test_req191_must_exclude_a_shown_grouping_column_with_no_column_filter_entry_keeps_its_filter():
+    page = with_grouping(returns_page(), ["channel"])
+    no_entries = copy.deepcopy(page)
+    del no_entries["records"]["column_filters"]
+    assert grouping_columns(no_entries) == ["channel"]
+    only_other_off = with_column_filters(page, [{"column": "category", "off": True}])
+    assert grouping_columns(only_other_off) == ["channel"]
