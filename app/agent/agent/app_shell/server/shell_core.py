@@ -3865,15 +3865,37 @@ class Shell:
                              f"table's key for one record, in the {shell_sql.RECORDS_DATASET} dataset"))
         return problems
 
+    def flagged_records(self, ws, who, page: dict):
+        """The run's own count of the records its rule flagged (Act now plus Review) across the whole scope, read from the run summary
+        row the App already writes (summary_query). None when the page has no result table, no run has written a summary, or the
+        counts are missing, so the caller falls back to the chart measures."""
+        if not page.get("result_table"):
+            return None
+        sql, params = shell_sql.summary_query(page)
+        try:
+            row = (self.run(ws, who, sql, params, 1).get("rows") or [None])[0]
+        except (HttpError, QueryError, ValueError):
+            return None
+        if not row:
+            return None
+        flagged = [count_of(row.get("act_now_records")), count_of(row.get("review_records"))]
+        return None if None in flagged else int(sum(flagged))
+
     def rule_finds_nothing(self, page: dict, chart: dict, ws, who=None, every_measure: bool = False) -> bool:
-        """True when the chart's stake measures are zero for every group with no filter applied: the rule has no exception in its
-        scope. A stake measure is a currency measure or one the App labels with its stake words (shell_sql.stake_measure), so a
-        plain-number 'Amount at stake' still counts. A chart with a count of the records the rule tested still reads True, because
-        a tested record is not an exception. every_measure=True counts every measure (the zero-state panel says 'none found', so no
-        tested record may show)."""
+        """True when the rule has no exception in the whole scope (no filter applied). The check (every_measure=False) decides from the
+        rule's own output: the records the run flagged. Without a run summary it falls back to the chart's stake measures only
+        (shell_sql.stake_measure), so a tested-records count never reads as an exception. The zero-state panel (every_measure=True)
+        keeps the strict reading: every measure must be zero, so 'none found' never sits over records that were tested."""
         measures = list(enumerate(chart.get("y") or []))
-        money = [i for i, y in measures if shell_sql.stake_measure(y)]
-        checked = [i for i, _y in measures] if every_measure or not money else money
+        if not every_measure:
+            flagged = self.flagged_records(ws, who, page)
+            if flagged is not None:
+                return flagged == 0
+            checked = [i for i, y in measures if shell_sql.stake_measure(y)]
+            if not checked:
+                return False
+        else:
+            checked = [i for i, _y in measures]
         sql, params = shell_sql.chart_query(page, chart["id"], {})
         rows = self.run(ws, who, sql, params, shell_sql.CAPS["chart_rows"]).get("rows") or []
         return not any(abs(shell_sql.as_number(row.get(f"y{i}")) or 0) > 1e-12 for row in rows for i in checked)
