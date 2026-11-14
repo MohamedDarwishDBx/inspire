@@ -1894,12 +1894,13 @@ function registerImplementRoutes(app, deps) {
     const warehouseId = warehouseOf(req);
     const { catalog, schema } = dbOf(req, splitInspireDatabase);
     const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
-    const history = await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId);
+    const [history, useCase] = await Promise.all([loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
+      loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId)]);
     const target = I.implementSettingsTarget(history, useCaseId);
     const built = history.some((row) => I.IMPLEMENT_DONE_STATUSES.includes(row.status));
     const refusal = !built ? [409, I.IMPLEMENT_SETTINGS_NOT_BUILT] : !target ? [409, I.IMPLEMENT_SETTINGS_NO_APP]
       : !I.implementAppUrlOk(target.url) ? [409, I.IMPLEMENT_SETTINGS_NOT_APP_URL] : !P.forwardedTokenOf(req) ? [401, I.IMPLEMENT_SETTINGS_NO_SIGN_IN] : null;
-    return { history, built, target: target && I.implementAppUrlOk(target.url) ? target : null, refusal };
+    return { history, built, useCase, target: target && I.implementAppUrlOk(target.url) ? target : null, refusal };
   }
 
   async function callApp(req, target, method, path, body) {
@@ -1962,8 +1963,12 @@ function registerImplementRoutes(app, deps) {
       const sent = req.body || {};
       const custom = keys.includes('name') ? I.customSqlProblem(sent.name, sent.value) : '';
       if (custom) return res.status(400).json({ error: custom });
-      const { history, target, refusal } = await settingsContext(req);
+      const { history, target, refusal, useCase } = await settingsContext(req);
       if (refusal) return res.status(refusal[0]).json({ error: refusal[1] });
+      // REQ-193: a family C use case fits one model, so a column Grouping is refused on save, before the App is asked.
+      const oneModel = sent.name === GR.GROUP_BY && GR.fitsOneModel(useCase && useCase.analytics_technique);
+      const refused = oneModel ? GR.oneModelProblem(sent.value, true) : '';
+      if (refused) return res.status(400).json({ error: refused });
       const body = { page: target.page, ...Object.fromEntries(keys.filter((key) => sent[key] !== undefined).map((key) => [key, sent[key]])) };
       let got;
       try {

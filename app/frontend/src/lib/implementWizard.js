@@ -1881,7 +1881,7 @@ export function sectionErrors(section, spec, extras = {}) {
   if (section === 'kpi') errors.push(...kpiTargetProblems(spec, extras.kpiOptions || []));
   if (section === 'settings') errors.push(...settingsProblems(spec, extras.settings || []));
   if (section === 'grouping' || section === 'first_run') {
-    errors.push(...scopeProblems(scopeValues((name) => spec.config?.widgets?.[name]), section));
+    errors.push(...scopeProblems(scopeValues((name) => spec.config?.widgets?.[name]), section, extras.scopeProfile?.one_model === true));
   }
   if (section === 'holdout') errors.push(...holdoutProblems(spec));
   if (section === 'app_owners' && spec.outputs.app && !joinsApp(spec)) errors.push(...appOwnerProblems(spec.outputs.app_owners));

@@ -323,7 +323,7 @@ export function groupingChoices(profile, settingChoices = []) {
   const columns = (Array.isArray(profile?.columns) ? profile.columns : []).filter(isMap);
   const shown = columns.map((c) => text(c.name)).filter(Boolean);
   const joinOf = new Map(columns.filter((c) => isMap(c.join)).map((c) => [text(c.name), c.join]));
-  const extra = recommended.length || shown.length ? [] : (settingChoices || []).map(text).filter((c) => c && ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
+  const extra = recommended.length || shown.length || profile?.one_model ? [] : (settingChoices || []).map(text).filter((c) => c && ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
   const known = [...new Set([...recommended, ...shown, ...extra])];
   const withJoin = (choice) => {
     const via = choice.columns.filter((c) => joinOf.has(c)).map((c) => `${c} joins on ${text(joinOf.get(c).key)} = ${text(joinOf.get(c).ref_column)}`);
@@ -635,8 +635,21 @@ export function firstRunCoversText(profile, values, everything = '') {
   return `${FIRST_RUN_COVERS} everything${size}.${found.estimate ? ` ${found.estimate}.` : ''}`;
 }
 
-export function groupingProblems(values) {
+// REQ-193: a family C use case (segmentation, clustering) fits one registered model, so a Grouping of columns is refused on save,
+// in the wizard and in the run. The text matches the notebook's INSPIRE_ONE_MODEL_REFUSED.
+export const ONE_MODEL_REFUSED = 'this use case fits one model across all of the data, and Inspire registers one model per use case, so '
+  + 'splitting the data into groups would need one registered model per group, which Inspire does not register; choose all, the whole data as one group';
+
+export function oneModelProblem(value, oneModel = false) {
+  const columns = groupByColumns(value).filter((c) => ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
+  if (oneModel !== true || !columns.length) return '';
+  return `${SCOPE_LABELS[GROUP_BY]} is '${text(value)}': ${ONE_MODEL_REFUSED}`;
+}
+
+export function groupingProblems(values, oneModel = false) {
   const problems = [];
+  const refused = oneModelProblem(values?.[GROUP_BY], oneModel);
+  if (refused) problems.push(refused);
   const custom = customSqlProblem(GROUP_BY, values?.[GROUP_BY], SCOPE_LABELS[GROUP_BY]);
   if (custom) problems.push(custom);
   const columns = groupByColumns(values?.[GROUP_BY]);
@@ -692,9 +705,9 @@ export function firstRunContradictions(values) {
   });
 }
 
-export function scopeProblems(values, part = 'both') {
-  if (part === 'grouping') return groupingProblems(values);
-  return part === 'first_run' ? firstRunProblems(values) : [...firstRunProblems(values), ...groupingProblems(values)];
+export function scopeProblems(values, part = 'both', oneModel = false) {
+  if (part === 'grouping') return groupingProblems(values, oneModel);
+  return part === 'first_run' ? firstRunProblems(values) : [...firstRunProblems(values), ...groupingProblems(values, oneModel)];
 }
 
 export const SCOPE_DIFFERENT_NOTE = 'The previous run covered a different scope.';
