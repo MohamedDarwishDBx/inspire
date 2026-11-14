@@ -10,8 +10,8 @@ export const BOOT_ANSWER_MS = 20000;
 export const BOOT_TIMEOUT_TEXT = `Inspire did not answer within ${BOOT_ANSWER_MS / 1000} seconds while it connected to the workspace.`;
 const bootTimedOut = () => Object.assign(new Error(BOOT_TIMEOUT_TEXT), { deadline: true });
 // Parsed JSON, or null when the server answers with a failure status. The body is read inside the deadline too.
-export const bootRead = (url) => withDeadline(async (signal) => {
-  const resp = await fetch(url, { signal });
+export const bootRead = (url, init = {}) => withDeadline(async (signal) => {
+  const resp = await fetch(url, { ...init, signal });
   return resp.ok ? resp.json() : null;
 }, { ms: BOOT_ANSWER_MS, error: bootTimedOut() });
 

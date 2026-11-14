@@ -42,8 +42,12 @@ export default function SetupWizard({ settings, update, onComplete }) {
   const [publishResult, setPublishResult] = useState(null);
   const [creatingDb, setCreatingDb] = useState(false);
   const [isDatabricksApp, setIsDatabricksApp] = useState(false);
-  const [detectError, setDetectError] = useState('');
+  // The one alert for a page read that never answered: its text, and the action Try again runs.
+  const [readError, setReadError] = useState({ text: '', retry: null });
   const [detectRound, setDetectRound] = useState(0);
+  const [warehouseRound, setWarehouseRound] = useState(0);
+  const failRead = (err, retry) => { if (err?.deadline) setReadError({ text: BOOT_TIMEOUT_TEXT, retry }); };
+  const retryDetect = () => setDetectRound((n) => n + 1);
 
   const { databricksHost, token, warehouseId, inspireDatabase, authMode } = settings;
 
@@ -94,14 +98,14 @@ export default function SetupWizard({ settings, update, onComplete }) {
               });
             } catch {}
 
-            // Auto-publish notebook
+            // Auto-publish notebook. A read that never answers stops here: the page says so, and Try again runs the detect again.
             try {
-              const nbResp = await fetch('/api/notebook', { headers: autoHeaders });
-              if (nbResp.ok) {
-                const nbData = await nbResp.json();
-                if (nbData.path) update('notebookPath', nbData.path);
-              }
-            } catch {}
+              const nbData = await bootRead('/api/notebook', { headers: autoHeaders });
+              if (nbData?.path) update('notebookPath', nbData.path);
+            } catch (err) {
+              failRead(err, retryDetect);
+              return;
+            }
 
             // Complete setup immediately
             onComplete();
@@ -109,8 +113,8 @@ export default function SetupWizard({ settings, update, onComplete }) {
           }
         }
       } catch (err) {
-        // A boot read that never answered: the page says so and Try again asks again. Other failures keep the form as it is.
-        if (err?.deadline) setDetectError(BOOT_TIMEOUT_TEXT);
+        // Other failures keep the form as it is.
+        failRead(err, retryDetect);
       }
     })();
   }, [detectRound]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -118,10 +122,9 @@ export default function SetupWizard({ settings, update, onComplete }) {
   // Load warehouses when auth is ready (or in Databricks App mode where token is auto-injected)
   useEffect(() => {
     if ((!token && !isDatabricksApp) || step < 2) return;
-    fetch('/api/warehouses', { headers: headers() })
-      .then(r => r.json())
+    bootRead('/api/warehouses', { headers: headers() })
       .then(data => {
-        const whs = data.warehouses || [];
+        const whs = data?.warehouses || [];
         setWarehouses(whs);
         // Auto-select first running serverless warehouse
         if (whs.length > 0) {
@@ -130,8 +133,8 @@ export default function SetupWizard({ settings, update, onComplete }) {
           if (first) update('warehouseId', (chosen) => chosen || first.id);
         }
       })
-      .catch(() => {});
-  }, [token, databricksHost, step]);
+      .catch((err) => failRead(err, () => setWarehouseRound((n) => n + 1)));
+  }, [token, databricksHost, step, warehouseRound]);
 
   // Load catalogs when warehouse is ready (warehouse_id enables SQL fallback for SP / UC REST gaps)
   useEffect(() => {
@@ -250,9 +253,9 @@ export default function SetupWizard({ settings, update, onComplete }) {
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center px-6 py-12">
       <div className="max-w-2xl w-full">
-        {detectError && (
-          <PlainMessage text={detectError} role="alert" data-detect-error="" className="mb-4 px-4 py-3 rounded-xl border border-error/20 bg-error-bg text-xs text-error-fg"
-            onRetry={() => { setDetectError(''); setDetectRound((n) => n + 1); }} />
+        {readError.text && (
+          <PlainMessage text={readError.text} role="alert" data-setup-error="" className="mb-4 px-4 py-3 rounded-xl border border-error/20 bg-error-bg text-xs text-error-fg"
+            onRetry={() => { const { retry } = readError; setReadError({ text: '', retry: null }); retry(); }} />
         )}
         {/* Header */}
         <div className="text-center mb-10">
