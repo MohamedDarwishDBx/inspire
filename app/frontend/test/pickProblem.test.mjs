@@ -2,7 +2,7 @@
 // A busy or denied read stays retryable or fixable by a grant, and is not permanent.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { METRIC_VIEW_REFUSAL, permanentPickProblem } from '../src/lib/pickProblem.js';
+import { METRIC_VIEW_REFUSAL, TYPE_CHECK_BUSY, permanentPickProblem } from '../src/lib/pickProblem.js';
 
 const METRIC_REFUSAL = 'adb_fe_uae_01.default.order_revenue_metrics is a metric view, so Inspire leaves it out of Data Filters; pick its source table instead';
 const GONE = '[TABLE_OR_VIEW_NOT_FOUND] The table or view `amr_ali`.`sales`.`orders` cannot be found. Verify the spelling. SQLSTATE: 42P01';
@@ -31,4 +31,10 @@ const UNREADABLE = 'amr_ali.sales.orders has no columns Inspire can read. It was
 
 test('a picked table that reads no columns is a permanent pick problem, named and without Try again', () => {
   assert.equal(permanentPickProblem(UNREADABLE), 'missing');
+});
+
+test('a type check the workspace could not answer twice is retryable, never a permanent pick problem (REQ-180)', () => {
+  const busy = 'Inspire could not check the type of main.s.orders right now, so the table cannot be read yet. The workspace did not answer; check again.';
+  assert.ok(TYPE_CHECK_BUSY.test(busy));
+  assert.equal(permanentPickProblem(busy), '');
 });

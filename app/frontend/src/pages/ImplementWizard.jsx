@@ -1411,7 +1411,8 @@ export default function ImplementWizard({
   // A picked table that is gone, a metric view, or a table whose type cannot be read stays wrong until the person changes the pick: no Try again.
   const footerRetry = new Map([
     ...Object.entries(columnsErrors).filter(([, e]) => e && !permanentPickProblem(e)).map(([table, e]) => [e, () => loadColumns(table)]),
-    [planError, checkAgain],
+    // A refusal of the pick (metric view, unknown type, gone table) stays wrong until the pick changes: no Try again. A busy check does.
+    ...(planError && !permanentPickProblem(planError) ? [[planError, checkAgain]] : []),
     [preflightError, checkAgain],
   ].filter(([e]) => e));
   const accessVerdict = accessVerdictOf({ preflight, error: preflightError, busy: checksBusy, unread: appUnreadable });
