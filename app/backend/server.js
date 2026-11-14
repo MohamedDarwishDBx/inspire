@@ -1039,8 +1039,9 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
     });
 
     if (!createResp.ok) {
-      logApiBody('Job create', createResp.status, await createResp.text());
-      const err = new Error(apiRefusalText('create the job for this run', createResp.status));
+      const refusalBody = await createResp.text();
+      logApiBody('Job create', createResp.status, refusalBody);
+      const err = new Error(apiRefusalText('create the job for this run', createResp.status, refusalBody));
       err.statusCode = createResp.status;
       throw err;
     }
@@ -1064,8 +1065,9 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   });
 
   if (!response.ok) {
-    logApiBody('Job run', response.status, await response.text());
-    const err = new Error(apiRefusalText('start the run', response.status));
+    const refusalBody = await response.text();
+    logApiBody('Job run', response.status, refusalBody);
+    const err = new Error(apiRefusalText('start the run', response.status, refusalBody));
     err.statusCode = response.status;
     throw err;
   }
@@ -1306,7 +1308,7 @@ app.post('/api/auth/sp-token', async (req, res) => {
     if (!resp.ok) {
       const errText = await resp.text();
       console.error(`SP token failed (${resp.status}): ${errText.substring(0, 200)}`);
-      return res.status(resp.status).json({ error: apiRefusalText('get a sign-in token', resp.status) });
+      return res.status(resp.status).json({ error: apiRefusalText('get a sign-in token', resp.status, errText) });
     }
 
     const data = await resp.json();
@@ -1361,8 +1363,9 @@ app.get('/api/workspace/list', rejectUnsafeQueryPath, requireToken, async (req, 
         const response = await dbFetch(req.dbHost, req.dbToken, fsApiPath('directories', wsPath));
         if (!response.ok) {
           lastStatus = response.status;
-          logApiBody('List folder', response.status, await response.text());
-          lastErr = apiRefusalText('list that folder', response.status);
+          const refusalBody = await response.text();
+          logApiBody('List folder', response.status, refusalBody);
+          lastErr = apiRefusalText('list that folder', response.status, refusalBody);
           continue;
         }
         const data = await response.json();
@@ -1378,8 +1381,9 @@ app.get('/api/workspace/list', rejectUnsafeQueryPath, requireToken, async (req, 
       const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.0/workspace/list?path=${encodeURIComponent(wsPath)}`);
       if (!response.ok) {
         lastStatus = response.status;
-        logApiBody('List folder', response.status, await response.text());
-        lastErr = apiRefusalText('list that folder', response.status);
+        const refusalBody = await response.text();
+        logApiBody('List folder', response.status, refusalBody);
+        lastErr = apiRefusalText('list that folder', response.status, refusalBody);
         continue;
       }
       const data = await response.json();
@@ -1412,8 +1416,9 @@ app.get('/api/workspace/export', rejectUnsafeQueryPath, requireToken, async (req
         const response = await dbFetch(req.dbHost, req.dbToken, fsApiPath('files', wsPath));
         if (!response.ok) {
           lastStatus = response.status;
-          logApiBody('Read file', response.status, await response.text());
-          lastErr = apiRefusalText('read that file', response.status);
+          const refusalBody = await response.text();
+          logApiBody('Read file', response.status, refusalBody);
+          lastErr = apiRefusalText('read that file', response.status, refusalBody);
           continue;
         }
         res.setHeader('Content-Disposition', attachmentHeader(baseName));
@@ -1444,8 +1449,9 @@ app.get('/api/workspace/export', rejectUnsafeQueryPath, requireToken, async (req
         return res.send(Buffer.from(await resp2.arrayBuffer()));
       }
       lastStatus = resp2.status;
-      logApiBody('Read file', resp2.status, await resp2.text());
-      lastErr = apiRefusalText('read that file', resp2.status);
+      const refusalBody = await resp2.text();
+      logApiBody('Read file', resp2.status, refusalBody);
+      lastErr = apiRefusalText('read that file', resp2.status, refusalBody);
     }
 
     return PM_ERROR.sendFailure(res, lastStatus, lastErr, { tried: candidates });
@@ -1895,8 +1901,9 @@ app.get('/api/warehouses', requireToken, async (req, res) => {
     const response = await dbFetch(req.dbHost, req.dbToken, '/api/2.0/sql/warehouses');
     if (!response.ok) {
       const action = 'list the SQL warehouses';
-      logApiBody(action, response.status, await response.text());
-      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     const data = await response.json();
     const warehouses = (data.warehouses || []).map(w => ({
@@ -1951,8 +1958,9 @@ app.post('/api/publish', requireToken, async (req, res) => {
 
     if (!response.ok) {
       const action = 'publish the notebook';
-      logApiBody(action, response.status, await response.text());
-      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
 
     let notebookPath = destination_path;
@@ -2010,8 +2018,9 @@ app.post('/api/publish/upload', requireToken, upload.single('file'), async (req,
 
     if (!response.ok) {
       const action = 'publish the notebook';
-      logApiBody(action, response.status, await response.text());
-      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
 
     res.json({ success: true, path: destination_path });
@@ -2246,8 +2255,9 @@ async function runJobIdOf(req, runId) {
 async function refuseRunAgain(req, res, response) {
   const runId = req.params.runId;
   const action = `read run ${runId} to run it again`;
-  logApiBody(action, response.status, await response.text());
-  if (response.status !== 403) return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
+  const refusalBody = await response.text();
+  logApiBody(action, response.status, refusalBody);
+  if (response.status !== 403) return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
   const jobId = await runJobIdOf(req, runId);
   const who = RP.forwardedPerson(req.headers);
   const job = jobId ? `job ${jobId}` : 'the job of this run';
@@ -2499,8 +2509,9 @@ app.get('/api/run/:runId', requireToken, async (req, res) => {
     const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
     if (!response.ok) {
       const action = `read run ${req.params.runId}`;
-      logApiBody(action, response.status, await response.text());
-      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     const data = parseExactJson(await response.text());
     const state = data.state || {};
@@ -2539,8 +2550,9 @@ app.get('/api/run/:runId/output', requireToken, async (req, res) => {
     const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get-output?run_id=${req.params.runId}`);
     if (!response.ok) {
       const action = `read the output of run ${req.params.runId}`;
-      logApiBody(action, response.status, await response.text());
-      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     const data = await response.json();
     res.json({
@@ -2568,8 +2580,9 @@ app.post('/api/run/:runId/cancel', requireToken, async (req, res) => {
     });
     if (!response.ok) {
       const action = `cancel run ${req.params.runId}`;
-      logApiBody(action, response.status, await response.text());
-      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     res.json({ success: true });
   } catch (err) {
@@ -3433,8 +3446,9 @@ app.get('/api/workspace/status', rejectUnsafeQueryPath, requireToken, async (req
     if (!response.ok) {
       if (response.status === 404) return res.json({ exists: false });
       const action = 'check the notebook';
-      logApiBody(action, response.status, await response.text());
-      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status));
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     const data = await response.json();
     res.json({ exists: true, object_type: data.object_type, path: data.path, language: data.language });

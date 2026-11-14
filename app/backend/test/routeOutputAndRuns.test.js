@@ -148,16 +148,16 @@ test('a Databricks refusal on a run read answers in plain words and never sends 
   S.reset({ launchers: { 501: 'launcher@example.com' }, runStates: {} });
   const got = await S.request('GET', '/api/run/501', { person: NONOWNER });
   assert.equal(got.status, 404, got.text);
-  assert.equal(got.data.error, 'Inspire could not read run 501: the service cannot find it.');
-  assert.doesNotMatch(got.text, /error_code|does not exist/);
+  assert.equal(got.data.error, 'Inspire could not read run 501: Run 501 does not exist.');
+  assert.doesNotMatch(got.text, /error_code|RESOURCE_DOES_NOT_EXIST|request_id/);
 });
 
 test('a refused workspace file download answers in plain words and never sends the API body (REQ-184 sweep)', async () => {
   S.reset({ sessionRows: { [S.APP_DB]: [{ session_id: '1001', generation_path: OUT, business_name: 'Acme' }] }, launches: [launched('1001', '/Users/launcher@example.com/inspire_out')], exportDenied: true });
   const got = await S.request('GET', `/api/workspace/export?path=${encodeURIComponent(`${OUT}/acme/catalog.csv`)}`, { person: NONOWNER });
   assert.equal(got.status, 403, got.text);
-  assert.equal(got.data.error, `Inspire could not read that file: the service refused it, so your sign-in or the App lacks a permission it needs. Ask an App manager to check the grants, then try again.`);
-  assert.doesNotMatch(got.text, /error_code|PERMISSION_DENIED|raw workspace detail/);
+  assert.equal(got.data.error, 'Inspire could not read that file: raw workspace detail. Your sign-in or the App lacks a permission it needs. Ask an App manager to check the grants, then try again.');
+  assert.doesNotMatch(got.text, /error_code|PERMISSION_DENIED/);
 });
 
 test('the cluster list route is gone', async () => {

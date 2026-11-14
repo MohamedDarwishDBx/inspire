@@ -347,8 +347,9 @@ async function triggerDemoDataPipeline(
       body: JSON.stringify(createPayload),
     });
     if (!createResp.ok) {
-      logApiBody('Demo job create', createResp.status, await createResp.text());
-      throw new Error(apiRefusalText('create the demo job', createResp.status));
+      const refusalBody = await createResp.text();
+      logApiBody('Demo job create', createResp.status, refusalBody);
+      throw new Error(apiRefusalText('create the demo job', createResp.status, refusalBody));
     }
     ({ job_id: jobId } = await createResp.json());
     viewer = await grantJobViewer(dbFetch, host, token, jobId, launchedBy);
@@ -369,8 +370,9 @@ async function triggerDemoDataPipeline(
     ),
   });
   if (!runResp.ok) {
-    logApiBody('Demo run', runResp.status, await runResp.text());
-    throw new Error(apiRefusalText('start the demo run', runResp.status));
+    const refusalBody = await runResp.text();
+    logApiBody('Demo run', runResp.status, refusalBody);
+    throw new Error(apiRefusalText('start the demo run', runResp.status, refusalBody));
   }
   const { run_id: runId } = await runResp.json();
   rememberViewer(runId, viewer);
