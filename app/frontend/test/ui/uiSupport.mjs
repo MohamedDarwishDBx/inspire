@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { createServer } from 'vite';
+import { createLogger as createViteLogger, createServer } from 'vite';
 import { chromium } from 'playwright';
 import { HARNESS_USE_CASE } from './implementFixtures.js';
 import { expandBuild } from '../../../scripts/showcaseRecorder.mjs';
@@ -49,6 +49,13 @@ function dispatch(req, res) {
   res.end(id === undefined ? `a request without ${UI_HEADER} reached ${backends.size} open UI tests` : `no open UI test ${id}`);
 }
 
+// Dependency-optimizer notes of this process's dev server. A re-optimization after start reloads the page's modules under it, so a test asserts there are none.
+export const optimizerNotes = [];
+function optimizerLogger() {
+  const real = createViteLogger('error', { allowClearScreen: false });
+  return { ...real, info(msg) { if (/optimi[sz]/i.test(String(msg))) optimizerNotes.push(String(msg).replace(/\x1b\[[0-9;]*m/g, '')); } };
+}
+
 async function startServers() {
   const backend = http.createServer(dispatch);
   await new Promise((resolve) => backend.listen(0, '127.0.0.1', resolve));
@@ -56,6 +63,7 @@ async function startServers() {
   try {
     const vite = await createServer({
       ...viteOptions(VITE_CACHE_DIR),
+      customLogger: optimizerLogger(),
       server: { host: '127.0.0.1', port: 0, proxy: { '/api': url, '/showcase': url, '/run': url }, hmr: false },
     });
     try {
