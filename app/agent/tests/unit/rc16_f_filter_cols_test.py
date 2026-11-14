@@ -126,7 +126,8 @@ def test_the_cases_the_app_reads_match_the_shared_fixture_the_writers_are_checke
     agent_ns["INSPIRE_TABLE_SCOPES"].update(agent_ns["parse_table_scopes"](json.dumps(fixture["scopes"])))
     try:
         for case in fixture["cases"]:
-            uc = {"Primary Table": case["uc"]["primary_table"], "Tables Involved": case["uc"]["tables_involved"]}
+            uc = agent_ns["DatabricksInspire"]._stamp_data_filter_scopes(
+                {"Primary Table": case["uc"]["primary_table"], "Tables Involved": case["uc"]["tables_involved"]})
             filters = agent_ns["use_case_data_filters"](uc)
             got = [{"column": n, "text": agent_ns["data_filter_cell"](filters, n)} for n in agent_ns["data_filter_names"](filters)]
             assert got == case["columns"], case["name"]
