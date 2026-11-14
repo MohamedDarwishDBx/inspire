@@ -76,7 +76,11 @@ def _builder(ns, tmp_path, monkeypatch, hosted=True, asset_status=None, assets=N
 def _own_files(ns, tmp_path, monkeypatch):
     inst, context, seen = _builder(ns, tmp_path / "own", monkeypatch, hosted=False)
     inst._implement_app(context, _pages(_churn_page(ns)))
-    return seen["deployed"][0][1]
+    # The deploy stub captures the files the page check read, under candidate view names. Publish writes the same files under the
+    # live names (scope_publish_rename), so the expected text drops the candidate suffix.
+    suffix = ns["CANDIDATE_VIEW_SUFFIX"]
+    return {name: (text.replace(suffix, "") if isinstance(text, str) else text.replace(suffix.encode(), b""))
+            for name, text in seen["deployed"][0][1].items()}
 
 
 def _settings(files):
