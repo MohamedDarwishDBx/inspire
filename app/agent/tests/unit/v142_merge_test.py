@@ -186,7 +186,7 @@ def test_a_merged_app_adds_this_page_keeps_the_other_pages_and_the_hosts_access_
     assert settings["title"] == "N01-U07 Sales desk" and settings["genie"] == {"space_id": "gA", "title": "Sales questions"}
     assert json.loads(files["pages/n01_u07.json"]) == _host_page(agent_ns), "the host's page is deployed unchanged"
     ours = json.loads(files["pages/n01_u01_s5150.json"])
-    assert ours["use_case_id"] == "N01-U01" and ours["title"] == "Price-loss decision desk"
+    assert ours["use_case_id"] == "N01-U01" and ours["title"] == "Predict churn", "REQ-063: the page title is the use case name"
     assert seen["checked"] == [(_without_requirements(files), "wh1")], "one App check runs over every page before the deploy"
     assert files["requirements.txt"] == ""
     assert {"main.inspire.sales_out", "main.s.stores", "main.inspire.churn_out", "main.s.orders"} <= set(reads)
@@ -212,7 +212,7 @@ def test_merging_again_replaces_only_this_use_cases_page_in_place(agent_ns, tmp_
     inst._implement_app(context, None)
     files = seen["deployed"][0][1]
     assert json.loads(files["inspire_app.json"])["pages"] == ["n01_u07", "n01_u01_s5150", "n02_u03"]
-    assert json.loads(files["pages/n01_u01_s5150.json"])["title"] == "Price-loss decision desk"
+    assert json.loads(files["pages/n01_u01_s5150.json"])["title"] == "Predict churn"
     assert json.loads(files["pages/n02_u03.json"]) == third
 
 
@@ -423,9 +423,9 @@ def test_rebuilding_a_use_cases_own_app_keeps_the_pages_merged_into_it(agent_ns,
     assert json.loads(files["pages/n01_u02.json"]) == merged_page, "a use case's own rebuild never drops another use case's page"
     assert "genie" not in merged_page, "a page that joined before each page had its own Genie Agent keeps none until it is rebuilt"
     own_page = json.loads(files["pages/n01_u01.json"])
-    assert own_page["title"] == "Price-loss decision desk" and own_page["genie"]["space_id"] == "g1" and own_page["genie_note"] == ""
+    assert own_page["title"] == "Predict churn" and own_page["genie"]["space_id"] == "g1" and own_page["genie_note"] == ""
     assert settings["genie"]["space_id"] == "g1" and space_id == "g1"
-    assert (settings["style"], settings["layout"], settings["theme"], settings["title"]) == ("a", "home", "dark", "N01-U01 Predict churn")
+    assert (settings["style"], settings["layout"], settings["theme"], settings["title"]) == ("a", "home", "dark", "Predict churn")
     assert {"main.inspire.sales_out", "main.s.stores"} <= set(reads) and "_warnings" not in fields
     assert fields["_asset"] == {"page": "n01_u01"}, "every App deploy records the page of this use case, its own App as well as a joined one"
 
@@ -700,7 +700,7 @@ def test_a_dashboard_merge_appends_this_use_cases_pages_keeps_the_others_and_pub
     board = json.loads(patch["serialized_dashboard"])
     assert [p["name"] for p in board["pages"]] == ["home", "filters", "s5150_n01_u01_overview", "s5150_n01_u01_run_health"]
     assert board["pages"][:2] == HOST_BOARD["pages"], "the host's pages and its global filters stay as they were"
-    assert [p["displayName"] for p in board["pages"][2:]] == ["N01-U01 Price-loss decision desk", "N01-U01 Run health"]
+    assert [p["displayName"] for p in board["pages"][2:]] == ["N01-U01 Predict churn", "N01-U01 Run health"]
     assert [d["name"] for d in board["datasets"]] == ["sales", "s5150_n01_u01_trend", "s5150_n01_u01_records",
                                                        "s5150_n01_u01_run_health", "s5150_n01_u01_chart_3_parts"]
     ours = [item["widget"] for page in board["pages"][2:] for item in page["layout"]]

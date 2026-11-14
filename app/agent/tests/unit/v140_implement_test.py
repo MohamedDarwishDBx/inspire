@@ -5400,7 +5400,7 @@ def test_the_app_is_built_from_genie_page_json_checked_at_its_defaults_then_depl
     name, files, reads, space_id = seen["deployed"][0]
     settings, page = json.loads(files["inspire_app.json"]), json.loads(files["pages/n01_u01.json"])
     assert (name, page["id"], page["use_case_id"], settings["pages"]) == ("churn-desk", "n01_u01", "N01-U01", ["n01_u01"])
-    assert settings["genie"]["space_id"] == "g1" and space_id == "g1" and settings["title"] == "N01-U01 Predict churn"
+    assert settings["genie"]["space_id"] == "g1" and space_id == "g1" and settings["title"] == "Predict churn"
     assert reads == ["main.s.orders", "main.inspire.churn_out"]
     assert seen["checked"] == [(_without_requirements(files), "wh1")], "the App's own query path runs once, on the files that deploy"
     assert files["requirements.txt"] == "", "an App on Delta tables deploys an empty requirements.txt, which drops any Lakebase packages"
