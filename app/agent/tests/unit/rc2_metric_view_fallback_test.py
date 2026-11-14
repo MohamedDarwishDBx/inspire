@@ -75,7 +75,7 @@ def test_a_table_whose_type_cannot_be_read_is_left_out_and_logged(agent_ns, monk
     assert UNREADABLE not in _listed(tables), "fail closed: a table whose type cannot be read is never offered"
     lines = [m for _lvl, m in inst.logger.records if "[TABLE-TYPE UNKNOWN]" in m]
     assert len(lines) == 1, lines
-    assert lines[0].startswith("[TABLE-TYPE UNKNOWN] 1 table left out of ") and lines[0].endswith(": Inspire could not read their type"), lines
+    assert lines[0].startswith("[TABLE-TYPE UNKNOWN] 1 table left out of ") and lines[0].endswith(": Inspire could not read its type"), lines
 
 
 def test_a_plain_view_is_not_taken_for_a_metric_view(agent_ns, monkeypatch):
