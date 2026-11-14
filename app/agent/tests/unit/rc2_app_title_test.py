@@ -10,6 +10,7 @@ import os
 
 from v120_artifacts_support import FakeSpark
 from v140_implement_test import _churn_page, _inspire
+from v142_dash_test import _runner as _pages_of
 
 GENIE_TITLE = "Silent franchise sales monitor"
 NAME = "Restore Sales At Silent Franchises"
@@ -102,3 +103,21 @@ def test_an_heir_takes_the_app_title_as_the_use_case_name_not_an_id_prefix(agent
     owner = {"use_case_id": "N02-U01", "name": NAME, "page_id": "n02_u01"}
     settings, _kept = agent_ns["implement_app_take_out"](held, [{"id": "n01_u01"}, {"id": "n02_u01", "title": NAME}], "n01_u01", owner)
     assert settings["title"] == NAME
+
+
+def test_a_rolled_back_app_keeps_the_title_its_saved_version_had(agent_ns, tmp_path):
+    """Must-exclude (coordinator, int2): a rollback replays a saved page, and that page keeps the title it was saved with, even
+    when the use case now has another name. Only a fresh build from Genie takes the use case name."""
+    from v142_dash_test import _flow
+    from v143_vibes_test import _no_loop, _NoGenie, _saved
+    from v143_vibes_test import _churn_page as _v143_page
+    saved_page = _v143_page(agent_ns, title="Desk as it was in v1")
+    built, built_context, built_seen = _flow(agent_ns, tmp_path, outputs={"dashboard": False})
+    built._implement_app(built_context, _pages_of(saved_page))
+    again, context, again_seen = _flow(agent_ns, tmp_path / "again", outputs={"dashboard": False}, assets={"app": "churn-desk"})
+    again._implement_genie_loop = _no_loop
+    context["replay"] = {"app": _saved(saved_page)}
+    assert again._implement_app(context, _NoGenie())["app_name"] == "churn-desk"
+    _name, files, _reads, _space = again_seen["deployed"][0]
+    rolled = json.loads(files["pages/n01_u01.json"])
+    assert rolled["title"] == "Desk as it was in v1", "a rollback restores the saved page, title included"

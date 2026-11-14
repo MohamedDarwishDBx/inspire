@@ -231,7 +231,7 @@ def test_the_dashboard_and_the_app_each_ask_genie_with_their_own_vibes_and_share
     assert inst._implement_app(context, app)["app_name"] == "churn-desk"
     assert len(app.prompts) == 1, "an App with vibes of its own gets its own Genie round"
     assert _block(agent_ns, "app", "Show a map") in app.prompts[0] and VIBES not in app.prompts[0]
-    assert json.loads(seen["deployed"][0][1]["pages/n01_u01.json"])["title"] == "Map desk"
+    assert json.loads(seen["deployed"][0][1]["pages/n01_u01.json"])["title"] == "Predict churn", "REQ-063: a fresh App page takes the use case name"
     plain, plain_context, _seen = _flow(agent_ns, tmp_path / "plain", outputs={"dashboard_vibes": VIBES})
     plain._implement_dashboard(plain_context, _pages(_churn_page(agent_ns)))
     again = _pages(_churn_page(agent_ns))

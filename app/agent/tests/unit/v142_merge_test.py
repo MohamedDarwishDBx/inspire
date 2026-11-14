@@ -700,7 +700,7 @@ def test_a_dashboard_merge_appends_this_use_cases_pages_keeps_the_others_and_pub
     board = json.loads(patch["serialized_dashboard"])
     assert [p["name"] for p in board["pages"]] == ["home", "filters", "s5150_n01_u01_overview", "s5150_n01_u01_run_health"]
     assert board["pages"][:2] == HOST_BOARD["pages"], "the host's pages and its global filters stay as they were"
-    assert [p["displayName"] for p in board["pages"][2:]] == ["N01-U01 Predict churn", "N01-U01 Run health"]
+    assert [p["displayName"] for p in board["pages"][2:]] == ["N01-U01 Price-loss decision desk", "N01-U01 Run health"]
     assert [d["name"] for d in board["datasets"]] == ["sales", "s5150_n01_u01_trend", "s5150_n01_u01_records",
                                                        "s5150_n01_u01_run_health", "s5150_n01_u01_chart_3_parts"]
     ours = [item["widget"] for page in board["pages"][2:] for item in page["layout"]]
