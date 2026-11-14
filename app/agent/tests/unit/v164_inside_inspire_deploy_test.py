@@ -52,9 +52,18 @@ def _dirs(inst):
     inst._implement_mvp_dirs = lambda uc, key: {"use_case": MVP.rsplit("/", 1)[0], "mvp": MVP, "version": f"{MVP}/v{key[2]}"}
 
 
+def _no_scope_view(statement):
+    # A scope view that does not exist yet: Spark's SHOW CREATE TABLE fails with NOT_FOUND, as it does before a first publish.
+    # Every other statement returns no rows, as the default double does.
+    if statement.startswith("SHOW CREATE TABLE "):
+        raise RuntimeError("[TABLE_OR_VIEW_NOT_FOUND] The table or view cannot be found. SQLSTATE: 42P01")
+    return []
+
+
 def _builder(ns, tmp_path, monkeypatch, hosted=True, asset_status=None, assets=None, version=2, listing=None, files=None):
     _serve_files(ns, monkeypatch, files or {})
     inst, context, seen = _flow(ns, tmp_path, outputs={"dashboard": False, **OWN}, asset_status=asset_status, assets=assets)
+    inst.spark.responder = _no_scope_view
     if hosted:
         context["spec"] = _hosted_spec(ns, dashboard=False)
         del inst._implement_deploy_app
@@ -313,7 +322,7 @@ def test_sharing_a_page_inside_inspire_gives_its_viewers_its_warehouse_and_no_ap
 
 
 def _hosted_locked(ns, tmp_path, monkeypatch):
-    inst, previous = _locked(ns, previous_outputs=HOSTED)
+    inst, previous = _locked(ns, previous_outputs=HOSTED, responder=_no_scope_view)
     _workspace_columns(inst)
     del inst._implement_app
     carried = {k: v for k, v in BUILT.items() if k not in ("app_name", "app_url")}
