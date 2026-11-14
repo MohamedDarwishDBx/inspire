@@ -144,6 +144,14 @@ test('run status and output answer only for runs recorded in the App database; a
   assert.deepEqual(tokensTo('/api/2.1/jobs/runs/get'), [APP_TOKEN]);
 });
 
+test('a Databricks refusal on a run read answers in plain words and never sends the API body (REQ-184 sweep)', async () => {
+  S.reset({ launchers: { 501: 'launcher@example.com' }, runStates: {} });
+  const got = await S.request('GET', '/api/run/501', { person: NONOWNER });
+  assert.equal(got.status, 404, got.text);
+  assert.equal(got.data.error, 'Inspire could not read run 501: the service cannot find it.');
+  assert.doesNotMatch(got.text, /error_code|does not exist/);
+});
+
 test('the cluster list route is gone', async () => {
   S.reset();
   const got = await S.request('GET', '/api/clusters', { person: NONOWNER });

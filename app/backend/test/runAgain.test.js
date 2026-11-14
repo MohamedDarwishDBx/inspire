@@ -71,3 +71,62 @@ test('runAgainOf reads the notebook and settings of an ended run and names why i
   assert.match(LC.runAgainOf({}, '9', '2').problem, /has not ended yet/);
   assert.match(LC.runAgainOf(null, '9', '2').problem, /has not ended yet/);
 });
+
+// REQ-184: the run is read with the launcher's own sign-in, so a run the person may see runs again even when the App cannot view its job.
+const readsOf = () => S.state.calls.filter((c) => c.path === '/api/2.1/jobs/runs/get').map((c) => c.token);
+const RUN_AGAIN_ERROR = (runId) => `Inspire could not read run ${runId} to run it again: you need CAN VIEW (or CAN MANAGE RUN) on job 5 in Databricks. `
+  + "Ask an App manager or the job's owner to grant it, then try again.";
+
+test('Run again reads the old run with the launcher\'s own sign-in, so a run the App cannot view still runs again (REQ-184)', async () => {
+  const { runId, before } = await failedLaunch();
+  S.state.runViewDenied = { tokens: [S.APP_TOKEN], jobId: '5' };
+  const again = await S.request('POST', `/api/run/${runId}/again`, { person: ME, body: { session_id: '7200' } });
+  assert.equal(again.status, 200, again.text.slice(0, 300));
+  assert.deepEqual(readsOf(), [S.PERSON_TOKEN], 'the old run is read with the person token, never the App token');
+  assert.equal(creates().length, before + 1);
+  assert.deepEqual([...new Set(S.state.calls.filter((c) => c.path === '/api/2.1/jobs/run-now').map((c) => c.token))], [S.APP_TOKEN],
+    'the launch keeps the App identity launchDiscover always uses');
+});
+
+test('when the person cannot view the job either, Run again names the job and the grant in plain words, with no API body (REQ-184)', async () => {
+  const { runId, before } = await failedLaunch();
+  S.state.runViewDenied = { tokens: [S.APP_TOKEN, S.PERSON_TOKEN], jobId: '5' };
+  const again = await S.request('POST', `/api/run/${runId}/again`, { person: ME, body: { session_id: '7200' } });
+  assert.equal(again.status, 403, again.text.slice(0, 300));
+  assert.equal(again.data.error, RUN_AGAIN_ERROR(runId));
+  assert.doesNotMatch(again.text, /error_code|PERMISSION_DENIED|does not have/);
+  const [grant] = again.data.permissions;
+  assert.equal(grant.principal, ME);
+  assert.match(grant.instructions.join('\n'), /\/api\/2\.0\/permissions\/jobs\/5/);
+  assert.match(grant.instructions.join('\n'), /CAN_VIEW/);
+  assert.equal(creates().length, before, 'no job starts');
+
+  S.state.launches = [];
+  const unnamed = await S.request('POST', `/api/run/${runId}/again`, { person: ME, body: { session_id: '7200' } });
+  assert.equal(unnamed.status, 403, unnamed.text.slice(0, 300));
+  assert.match(unnamed.data.error, /on the job of this run in Databricks\./);
+  assert.doesNotMatch(unnamed.text, /error_code|PERMISSION_DENIED/);
+  assert.match(unnamed.data.permissions[0].instructions.join('\n'), /find the job of run/);
+});
+
+test('a Databricks answer other than a refusal on the read says so in plain words, without the API body (REQ-184)', async () => {
+  const { runId, before } = await failedLaunch();
+  S.state.runViewDenied = { tokens: [S.PERSON_TOKEN], jobId: '5', status: 404 };
+  const again = await S.request('POST', `/api/run/${runId}/again`, { person: ME, body: { session_id: '7200' } });
+  assert.equal(again.status, 404, again.text.slice(0, 300));
+  assert.equal(again.data.error, `Inspire could not read run ${runId} to run it again: the service cannot find it.`);
+  assert.doesNotMatch(again.text, /error_code|does not exist/);
+  assert.equal(creates().length, before);
+});
+
+test('the refusal sentence names the status in plain words for each answer and never carries an API body', () => {
+  const { apiRefusalText } = require('../lib/apiRefusal');
+  for (const status of [400, 403, 404, 429, 500]) {
+    const text = apiRefusalText('read run 9', status);
+    assert.match(text, /^Inspire could not read run 9: /);
+    assert.doesNotMatch(text, /[{}"]|error_code|PERMISSION_DENIED/);
+  }
+  assert.match(apiRefusalText('read run 9', 403), /Ask an App manager/);
+  assert.match(apiRefusalText('read run 9', 404), /cannot find it\.$/);
+  assert.match(apiRefusalText('read run 9', 500), /HTTP 500\. Try again/);
+});

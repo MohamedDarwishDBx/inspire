@@ -38,7 +38,7 @@ function reset(overrides = {}) {
   Object.assign(state, {
     managers: [], managerGroups: [], personGroups: [], aclStatus: 200, personAppsScope: true, launchers: {}, sessionLaunchers: {}, history: [], calls: [],
     launches: [], knownSessions: [], ledgerSessions: [], nextRunId: 501, holdFetch: null, createFailure: '', sessionRows: {}, groupParents: {}, indirectGroups: [], conflictOn: null, ucSchemas: null, ucTables: null,
-    createdJob: null, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, tableColumns: {}, files: {}, sessionBusiness: {},
+    createdJob: null, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runViewDenied: null, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, tableColumns: {}, files: {}, sessionBusiness: {},
     ...folderModel({ folders: { '/Shared/demos': { id: 7, writers: '*' } } }),
   }, overrides);
 }
@@ -85,6 +85,11 @@ function answerSql(body) {
   if (/^\s*SELECT 1 AS seen\b/i.test(sql) && sql.includes('__inspire_launch')) {
     const sid = paramOf(body, 'session_id');
     return sqlResult(['seen'], state.ledgerSessions.includes(sid) || state.sessionLaunchers[sid] ? [['1']] : []);
+  }
+  if (/^\s*SELECT job_id FROM\b/i.test(sql) && sql.includes('__inspire_launch')) {
+    const run = paramOf(body, 'run_id');
+    const row = state.launches.find((l) => l.run_id === run);
+    return sqlResult(['job_id'], row ? [[row.job_id]] : []);
   }
   if (/^\s*SELECT\b/i.test(sql) && sql.includes('__inspire_launch') && sql.includes('run_id = :run_id')) {
     const who = state.launchers[paramOf(body, 'run_id')];
@@ -269,6 +274,12 @@ async function stubFetch(url, opts = {}) {
   }
   if (u.pathname === '/api/2.1/jobs/runs/get' && state.runStates) {
     const id = u.searchParams.get('run_id');
+    // runViewDenied = { tokens, jobId, status } answers the listed tokens with Databricks' refusal for a job they cannot view.
+    if (state.runViewDenied && state.runViewDenied.tokens.includes(token)) {
+      const denied = state.runViewDenied;
+      if (denied.status === 404) return json({ error_code: 'RESOURCE_DOES_NOT_EXIST', message: `Run ${id} does not exist.` }, 404);
+      return json({ error_code: 'PERMISSION_DENIED', message: `User 00000000-0000-0000-0000-000000000000 does not have View or Admin or Manage Run or Owner permissions on job ${denied.jobId}.` }, 403);
+    }
     if (!state.runStates[id]) return json({ error_code: 'RESOURCE_DOES_NOT_EXIST', message: `Run ${id} does not exist.` }, 404);
     const job = state.runJobs[id] || {};
     const run = typeof state.runStates[id] === 'object' ? state.runStates[id] : { life_cycle_state: state.runStates[id] };
