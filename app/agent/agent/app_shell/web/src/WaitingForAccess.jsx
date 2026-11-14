@@ -1,13 +1,13 @@
 import { useEffect } from 'react';
 import { WAITING_FOR_ACCESS_TITLE } from './api.js';
 import { ACCESS_CHECKED, AccessActions } from './ui.jsx';
+import { waitingAskOf } from './plainText.js';
 
 export const WAITING_REASON = 'The App cannot read the tables this page uses yet, so its numbers and records stay empty until access is granted.';
-export const WAITING_OWNER = 'your data owner';
 
 export default function WaitingForAccess({ waiting, onCheck, compact = false }) {
   const tables = waiting?.tables || [];
-  const owner = waiting?.owners?.length ? waiting.owners.join(' or ') : WAITING_OWNER;
+  const ask = waitingAskOf(waiting?.owners);
   useEffect(() => {
     if (!onCheck) return undefined;
     const again = () => onCheck();
@@ -18,7 +18,7 @@ export default function WaitingForAccess({ waiting, onCheck, compact = false }) 
   if (compact) {
     return (
       <div className="waiting-access waiting-access--compact tile-err" role="status" aria-label={WAITING_FOR_ACCESS_TITLE} data-waiting-for-access="" data-waiting-compact="">
-        <p>{WAITING_REASON} Ask {owner} to grant it.</p>
+        <p>{WAITING_REASON} {ask}</p>
         {actions}
       </div>
     );
@@ -26,7 +26,7 @@ export default function WaitingForAccess({ waiting, onCheck, compact = false }) 
   return (
     <section className="card waiting-access" role="status" aria-label={WAITING_FOR_ACCESS_TITLE} data-waiting-for-access="">
       <h2>{WAITING_FOR_ACCESS_TITLE}</h2>
-      <p>{WAITING_REASON} Ask {owner} to grant it.</p>
+      <p>{WAITING_REASON} {ask}</p>
       {tables.length > 0 && (
         <details data-waiting-details="">
           <summary>Details</summary>

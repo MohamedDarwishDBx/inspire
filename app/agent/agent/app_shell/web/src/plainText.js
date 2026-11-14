@@ -135,3 +135,16 @@ export function splitTechnical(text, { securable = '' } = {}) {
     .trim();
   return { plain, details };
 }
+
+// The owner of an App-owned view is Inspire itself, so its page names no person to ask: the App owner presses Check again after a
+// rebuild, or Inspire grants it on the next build. A service principal id is never named.
+export const INSPIRE_OWNER = 'Inspire';
+export const WAITING_INSPIRE_ACTION = 'Its owner can press Check again after a rebuild, or Inspire grants it on the next build.';
+const PRINCIPAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function waitingAskOf(owners) {
+  const listed = (owners || []).map((o) => String(o || '').trim()).filter(Boolean);
+  const named = listed.filter((o) => o !== INSPIRE_OWNER && !PRINCIPAL_ID.test(o));
+  if (!named.length && listed.includes(INSPIRE_OWNER)) return WAITING_INSPIRE_ACTION;
+  return `Ask ${named.length ? named.join(' or ') : 'your data owner'} to grant it.`;
+}

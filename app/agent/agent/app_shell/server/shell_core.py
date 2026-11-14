@@ -106,6 +106,12 @@ WAITING_FOR_ACCESS = "This App is waiting for access to its data. Your data owne
 
 NO_ACCESS_LIST = re.compile(r"No access to ([^;]+)")
 CARD_WAITING = "This App is waiting for access to this data. Ask {owner} to grant it."
+# The owner of an App-owned view is Inspire itself: its owner presses Check again after a rebuild, or Inspire grants it on the next build.
+INSPIRE_OWNER = "Inspire"
+WAITING_INSPIRE_ACTION = "Its owner can press Check again after a rebuild, or Inspire grants it on the next build."
+CARD_WAITING_INSPIRE = "This App is waiting for access to this data. " + WAITING_INSPIRE_ACTION
+# A service principal id is never someone to ask: the page names a person, a group, Inspire, or "your data owner".
+SERVICE_PRINCIPAL_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
 def access_refusal(text: str) -> bool:
@@ -127,7 +133,10 @@ def refusal_details(texts) -> str:
 
 
 def card_waiting_text(owners) -> str:
-    return CARD_WAITING.format(owner=" or ".join(owners) if owners else "your data owner")
+    named = [owner for owner in owners if owner != INSPIRE_OWNER]
+    if owners and not named:
+        return CARD_WAITING_INSPIRE
+    return CARD_WAITING.format(owner=" or ".join(named) if named else "your data owner")
 
 
 def waiting_for_access_body(error, owners=()) -> dict:
@@ -467,7 +476,7 @@ def access_said(statement: str) -> tuple:
 
 
 def access_owners(tables: list) -> str:
-    owners = list(dict.fromkeys(t["owner"] for t in tables if t.get("owner")))
+    owners = list(dict.fromkeys(t["owner"] for t in tables if t.get("owner") and not SERVICE_PRINCIPAL_ID.fullmatch(str(t["owner"]))))
     return " or ".join(owners) if owners else "your data owner"
 
 
@@ -2370,7 +2379,8 @@ class Shell:
         text = " ".join(texts).replace("`", "").lower()
         owners = self.settings.get("unread_owners") or {}
         return list(dict.fromkeys(str(owner) for table, owner in owners.items()
-                                  if owner and str(table).replace("`", "").lower() in text and "@" not in str(owner)))
+                                  if owner and str(table).replace("`", "").lower() in text and "@" not in str(owner)
+                                  and not SERVICE_PRINCIPAL_ID.fullmatch(str(owner))))
 
     def dispatch(self, method: str, path: str, query: dict, headers: dict, body: bytes) -> tuple:
         status, answer = self.answer(method, path, query, headers, body)
