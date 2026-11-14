@@ -606,16 +606,16 @@ def test_grant_sql_renders_one_need_for_one_principal(agent_ns):
 def test_access_gap_messages_name_the_privilege_the_owner_and_the_statement(agent_ns):
     assert agent_ns["implement_access_gap_message"]("bob@x", [GAP_CATALOG]) == (
         "bob@x may not be able to read the result table: Inspire cannot grant this access, because it "
-        "neither owns nor holds MANAGE on it. If bob@x does not have it yet, ask the owner to run: "
+        "neither owns nor holds MANAGE on it. If bob@x does not have it yet, ask your data owner to run: "
         "GRANT USE CATALOG ON CATALOG `main` TO `bob@x`")
     assert agent_ns["implement_access_gap_message"]("bob@x", [GAP_CATALOG, dict(GAP_SCHEMA, owner="")]) == (
         "bob@x may not be able to read the result table: Inspire cannot grant these accesses, because it "
         "neither owns nor holds MANAGE on them. If bob@x does not have them yet, "
-        "ask the owner to run: GRANT USE CATALOG ON CATALOG `main` TO `bob@x`; GRANT USE SCHEMA ON SCHEMA `main`.`inspire` TO `bob@x`")
+        "ask your data owner to run: GRANT USE CATALOG ON CATALOG `main` TO `bob@x`; GRANT USE SCHEMA ON SCHEMA `main`.`inspire` TO `bob@x`")
     assert agent_ns["implement_app_access_message"](ACCESS_TABLE, [GAP_CATALOG, GAP_SCHEMA], "inspire-sp") == (
         "a new App could not read the result table: its service principal needs these accesses, which not all account users have, "
         "and Inspire can grant them only "
-        "with MANAGE or ownership. Ask the owner to run: GRANT MANAGE ON CATALOG `main` TO `inspire-sp`; GRANT MANAGE ON SCHEMA "
+        "with MANAGE or ownership. Ask your data owner to run: GRANT MANAGE ON CATALOG `main` TO `inspire-sp`; GRANT MANAGE ON SCHEMA "
         "`main`.`inspire` TO `inspire-sp`, or GRANT USE CATALOG ON CATALOG `main` TO `account users`; GRANT USE SCHEMA ON SCHEMA "
         "`main`.`inspire` TO `account users`, which open no data by themselves; or choose a result table in a catalog and schema "
         "Inspire manages")
@@ -4152,7 +4152,7 @@ def test_the_lost_table_message_names_every_table_and_its_reason(agent_ns):
                                                          {"table": "main.s.b", "reason": "no read access"}], "runner@example.com") == (
         "the preview cannot run because this source table is missing, so open Edit, Data step, and swap it for a table with "
         "the same role or remove it, and this run reads source tables as runner@example.com, which cannot read this source table. "
-        "Ask the owner of that table to run: GRANT USE CATALOG ON CATALOG `main` TO `runner@example.com`; GRANT USE SCHEMA ON SCHEMA "
+        "Ask your data owner of that table to run: GRANT USE CATALOG ON CATALOG `main` TO `runner@example.com`; GRANT USE SCHEMA ON SCHEMA "
         "`main`.`s` TO `runner@example.com`; GRANT SELECT ON TABLE `main`.`s`.`b` TO `runner@example.com`")
 
 
@@ -4178,8 +4178,8 @@ def _probe_inspire(ns, responder, carried_status):
      "the preview cannot run because this source table is missing, so open Edit, Data step, and swap it for a table "
      "with the same role or remove it"),
     ("[INSUFFICIENT_PERMISSIONS] Insufficient privileges: User does not have SELECT on Table 'main.s.returns'.", "no read access",
-     "the preview cannot run because this run reads source tables as runner@example.com, which cannot read this source table. Ask the "
-     "owner of that table to run: GRANT USE CATALOG ON CATALOG `main` TO `runner@example.com`; GRANT USE SCHEMA ON SCHEMA `main`.`s` "
+     "the preview cannot run because this run reads source tables as runner@example.com, which cannot read this source table. Ask your "
+     "data owner of that table to run: GRANT USE CATALOG ON CATALOG `main` TO `runner@example.com`; GRANT USE SCHEMA ON SCHEMA `main`.`s` "
      "TO `runner@example.com`; GRANT SELECT ON TABLE `main`.`s`.`returns` TO `runner@example.com`"),
 ])
 def test_a_lost_source_table_stops_the_run_before_genie_or_a_preview_and_names_the_table(agent_ns, error, reason, said):

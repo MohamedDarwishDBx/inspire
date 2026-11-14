@@ -124,7 +124,7 @@ test('a volume needs a probe the platform lets the person create, read with the 
     S.reset({ notebookPresent: true, personGroups: ['analysts'], groupParents: { analysts: ['lake-writers'] }, volumes: volume ? { 'main.sales.files': volume } : {} });
     const got = await launch('/Volumes/Main/Sales/Files/out');
     assert.equal(got.status, status, `${label}: ${got.text}`);
-    if (status === 403) assert.match(got.data.error, /ask an owner of the volume main\.sales\.files for WRITE VOLUME on it\.$/, label);
+    if (status === 403) assert.match(got.data.error, /ask your data owner for WRITE VOLUME on the volume main\.sales\.files\.$/, label);
     if (status === 200) assert.deepEqual([S.state.launches[0].output_folder, S.state.created.length], ['/Volumes/main/sales/files/out', 0], label);
     const reads = S.state.calls.filter((c) => c.path.startsWith('/api/2.0/fs/'));
     assert.ok(reads.some((c) => c.token === S.PERSON_TOKEN), `${label}: the person check uses the person token`);
@@ -291,7 +291,7 @@ test('a folder that does not exist yet is checked on its nearest existing parent
   assert.deepEqual((await ask(`${HOME}/made`)).data.warnings, [], 'an existing folder the App can write says nothing');
   S.reset({ volumes: { 'main.sales.files': { writers: [OWNER] } } });
   const volume = await ask('/Volumes/main/sales/files/new_out');
-  assert.deepEqual(volume.data.warnings, ["The Inspire App can't write to /Volumes/main/sales/files/new_out, so the run saves no files there. Ask an owner of its volume to give the App WRITE VOLUME on it."],
+  assert.deepEqual(volume.data.warnings, ["The Inspire App can't write to /Volumes/main/sales/files/new_out, so the run saves no files there. Ask your data owner to give the App WRITE VOLUME on it."],
     'a volume needs WRITE VOLUME, never CAN MANAGE');
 });
 

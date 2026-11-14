@@ -96,8 +96,8 @@ test('the swap lookup keeps its own no-sign-in reason', () => {
 });
 
 const { RUN_NO_SIGN_IN } = require('../lib/ucReads');
-const cannotRead = (names) => `You can't read ${names}. Pick tables and files you can read, or ask their owner for access`; // file paths
-const tableCannotRead = () => "You can't read this source table. Pick tables you can read, or ask their owner for access";
+const cannotRead = (names) => `You can't read ${names}. Pick tables and files you can read, or ask your data owner for access`; // file paths
+const tableCannotRead = () => "You can't read this source table. Pick tables you can read, or ask your data owner for access";
 const insertedSpec = (made) => JSON.parse(made.sqlCalls.find((c) => /^INSERT/.test(String(c.sql)) && String(c.sql).includes('__inspire_implement'))
   .parameters.find((p) => p.name === 'spec').value);
 const DB = { inspire_database: 'main.inspire', warehouse_id: 'wh1', session_id: '42' };

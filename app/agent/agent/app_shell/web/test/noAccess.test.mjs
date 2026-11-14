@@ -51,15 +51,15 @@ test('a page whose data the App cannot read shows one banner naming the table an
   }
 });
 
-test('without a recorded owner the banner says the owner of that data can grant it, and a per-user App says you', async () => {
-  const errors = { 'chart:pareto': "No access to part of this App's data yet. Ask the owner of that data for read access, then try again." };
+test('without a recorded owner the banner says your data owner can grant it, and a per-user App says you', async () => {
+  const errors = { 'chart:pareto': "No access to part of this App's data yet. Ask your data owner for read access, then try again." };
   const { page, context } = await openApp(browser, served.base, appInfo({ auth: 'user' }), { errors });
   try {
     const banner = page.locator('[data-no-access-banner]');
     await banner.waitFor();
     const said = await banner.innerText();
     assert.match(said, /You cannot read part of its data yet/);
-    assert.match(said, /The owner of that data can give you read access/);
+    assert.match(said, /Your data owner can give you read access/);
     assert.doesNotMatch(said, REBUILD);
     assert.equal(await page.locator('[data-card="pareto"] .tile-err').innerText(), 'No access to this data');
   } finally {

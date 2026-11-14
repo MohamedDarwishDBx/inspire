@@ -8,7 +8,7 @@ const { NO_PERSON_TOKEN } = createRequire(import.meta.url)('../../../backend/lib
 test.after(closeBrowser);
 
 const REFUSED = 'You cannot read main.s.salaries with your own sign-in, and Inspire never reads for you what you cannot read: '
-  + 'choose only tables and files you can read, or ask their owner for access';
+  + 'choose only tables and files you can read, or ask your data owner for access';
 const forbidden = (line) => /status of 40[13]/.test(line);
 
 test('with no sign-in the Launch page lists no catalog and shows the sign-in refusal as it came, asked once, with no grant advice', async () => {

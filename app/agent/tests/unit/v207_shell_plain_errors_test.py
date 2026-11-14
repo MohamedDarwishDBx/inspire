@@ -60,8 +60,8 @@ def test_a_sentence_the_shell_wrote_keeps_its_reason_and_next_step_and_only_the_
     kept = {
         f"The App did not ask Genie about this record: you cannot read it in Unity Catalog ({DENIED})":
             "The App did not ask Genie about this record: you cannot read it in Unity Catalog",
-        f"Nothing was saved: you may not change `a`.`b`.`c` in Unity Catalog ({DENIED}). Ask the owner of that table.":
-            "Nothing was saved: you may not change `a`.`b`.`c` in Unity Catalog. Ask the owner of that table.",
+        f"Nothing was saved: you may not change `a`.`b`.`c` in Unity Catalog ({DENIED}). Ask your data owner of that table.":
+            "Nothing was saved: you may not change `a`.`b`.`c` in Unity Catalog. Ask your data owner of that table.",
         "Nothing was saved: you cannot read t (Error: [X_FAILED] at line (3)), so the App records no decision on it":
             "Nothing was saved: you cannot read t, so the App records no decision on it",
     }

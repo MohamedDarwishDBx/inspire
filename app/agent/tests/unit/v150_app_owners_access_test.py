@@ -172,7 +172,7 @@ def test_an_assumptions_table_inspire_cannot_manage_names_the_grants_to_ask_for(
     assert owners_warning == [
         f"App: the owners of this use case cannot change its money at stake assumptions in the App until its service principal sp-1 "
         "can read and change the result table. Inspire cannot grant these accesses, because it neither owns nor holds MANAGE on them. "
-        "If sp-1 does not have them yet, ask the owner to run: GRANT SELECT ON TABLE `main`.`inspire`.`churn_out_assumptions` TO "
+        "If sp-1 does not have them yet, ask your data owner to run: GRANT SELECT ON TABLE `main`.`inspire`.`churn_out_assumptions` TO "
         "`sp-1`; GRANT MODIFY ON TABLE `main`.`inspire`.`churn_out_assumptions` TO `sp-1`"]
     assert not any(s.startswith("GRANT") and "assumptions" in s for s in spark.statements)
 
