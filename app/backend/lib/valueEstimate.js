@@ -44,7 +44,7 @@ function totalsOf(estimates) {
 
 // The rows the estimate route reads. Each takes already-qualified table names; ids are validated by the caller.
 function useCasesSql(table, sid) {
-  return `SELECT id, business_domain FROM ${table} WHERE session_id = ${sid}`;
+  return `SELECT id, business_domain, CAST(value_estimate AS STRING) AS value_estimate FROM ${table} WHERE session_id = ${sid}`;
 }
 
 // The latest spec of every use case in the session, which carries its Measure rule (money) and its result table (config).
@@ -57,6 +57,14 @@ function latestSpecsSql(table, sid) {
 // The KPI baseline a use case was measured at, in its own result table's summary (written when its App measures the KPI).
 function baselineSql(summaryTable) {
   return `SELECT kpi_baseline FROM ${summaryTable} WHERE use_case_id = :uc ORDER BY updated_at DESC NULLS LAST LIMIT 1`;
+}
+
+// Discover writes each use case's own value estimate on its row. Status "measured" means its KPI query read a money total, so the
+// figure is measured (the value ledger may not hold it yet) and no rule estimate may replace it.
+function discoveredMeasured(row) {
+  const raw = row && row.value_estimate;
+  const parsed = raw && typeof raw === 'object' ? raw : parseSpec(raw);
+  return Boolean(parsed && parsed.status === 'measured');
 }
 
 function parseSpec(raw) {
@@ -84,7 +92,7 @@ async function estimatesFor({ useCases, specs, measured, baselineOf }) {
       .sort((a, b) => byText(a.app, b.app) || byText(a.sid, b.sid));
     const ownRule = own && own.money ? [{ app: String(own.use_case_name || id), money: own.money, borrowed: false }] : [];
     const rules = [...ownRule, ...siblingRules].filter((rule) => rule.money);
-    const isMeasured = Boolean(measured && measured[id] && measured[id].measured);
+    const isMeasured = Boolean((measured && measured[id] && measured[id].measured) || discoveredMeasured(row));
     const table = own && own.config && own.config.result_table;
     const baseline = isMeasured || !rules.length || !table ? null : await baselineOf(String(table), id);
     out[id] = estimateOf({ measured: isMeasured, baseline, rules });
@@ -109,4 +117,4 @@ function mergeTotals(list) {
   return { estimated };
 }
 
-module.exports = { estimateOf, totalsOf, useCasesSql, latestSpecsSql, baselineSql, parseSpec, estimatesFor, sessionsSql, mergeTotals };
+module.exports = { estimateOf, totalsOf, useCasesSql, latestSpecsSql, baselineSql, parseSpec, discoveredMeasured, estimatesFor, sessionsSql, mergeTotals };

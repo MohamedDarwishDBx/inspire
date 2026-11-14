@@ -48,8 +48,10 @@ export function EstimateTotals({ totals, className = '' }) {
 }
 
 export default function ValueEstimateLine({ uc = null, estimate: given = null, className = '', onSetRule = null }) {
-  if (given && given.status) return <RuleEstimateLine estimate={given} className={className} onSetRule={onSetRule} />;
-  const estimate = given || valueEstimateOf(uc);
+  const own = valueEstimateOf(uc);
+  // A measured figure is the figure: a rule estimate never replaces it (REQ-078).
+  if (given && given.status && !own?.measured) return <RuleEstimateLine estimate={given} className={className} onSetRule={onSetRule} />;
+  const estimate = own?.measured ? own : (given || own);
   if (!estimate) return null;
   return (
     <p data-value-estimate={estimate.measured ? 'measured' : 'not-measured'}
