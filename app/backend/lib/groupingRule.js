@@ -1,4 +1,4 @@
-const { RUN_SCOPES } = require('../../frontend/src/lib/runScope.js');
+const { RUN_SCOPES, oneModelProblem, ONE_MODEL_REFUSED } = require('../../frontend/src/lib/runScope.js');
 const { PERSONAL_NAME_RE, PERSONAL_TAG_RE, personalColumn } = require('../../frontend/src/lib/personalColumns.js');
 const { technique_records: TECHNIQUE_RECORDS, execution_family: EXECUTION_FAMILY, one_model_families: ONE_MODEL_FAMILIES } = require('../../agent/agent/app_shell/kinds.json');
 const GROUP_BY = 'group_by';
@@ -329,6 +329,8 @@ module.exports = {
   groupingApplies,
   standaloneRecords,
   fitsOneModel,
+  oneModelProblem,
+  ONE_MODEL_REFUSED,
   groupByParts,
   groupByMode,
   groupByColumns,

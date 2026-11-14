@@ -279,7 +279,7 @@ export default function ScopeSettings({
   part = 'both', values, onChange, profile = null, profileState = 'off', profileError = '', groups = null, settings = [], editable = true, children = null,
   unrecorded = false, everything = '', groupingChosenBy = '',
 }) {
-  const problems = scopeProblems(values, part);
+  const problems = scopeProblems(values, part, profile?.one_model === true);
   const editableOf = (name) => editable && settings.find((s) => s.name === name)?.editable !== false;
   const listing = groups || { state: profileState, profile, error: profileError };
   return (
@@ -320,7 +320,7 @@ export function ScopeSection({ settings, editable, scope = null, onSave, childre
   const shown = draft || saved;
   const changed = scopeChanges(saved, shown).filter((name) => list.some((s) => s.name === name && s.editable !== false));
   const canEdit = Boolean(editable) && list.some((s) => s.editable !== false);
-  const blocked = scopeProblems(shown, part).length > 0;
+  const blocked = scopeProblems(shown, part, scope?.profile?.one_model === true).length > 0;
   const save = async () => {
     setSaving(true);
     setMessage('');
