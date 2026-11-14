@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { REMOVE_TABLE } from '../lib/implementWizard';
 import { PlainMessage } from './TechnicalDetails';
+import { unusableReasonOf } from '../lib/tableUsability';
 
 const same = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
 
@@ -78,8 +79,9 @@ export default function SourceTables({
               {chosen !== original && !(options || []).some((s) => s.table === chosen) && <option value={chosen}>{chosen}</option>}
               {options === undefined && <option disabled value="">Finding similar tables…</option>}
               {options && options.length === 0 && !why && <option disabled value="">No similar table found</option>}
-              {(options || []).filter((s) => s.table !== original).map((s) => (
-                <option key={s.table} value={s.table}>{s.copy ? `Your copy of ${original} (${s.table})` : `${s.table} (${s.matched} of ${s.total} columns match)`}</option>
+              {(options || []).filter((s) => s.table !== original).map((s) => (unusableReasonOf(s)
+                ? <option key={s.table} value={s.table} disabled data-unusable-option="">{`${s.table}: ${unusableReasonOf(s)}`}</option>
+                : <option key={s.table} value={s.table}>{s.copy ? `Your copy of ${original} (${s.table})` : `${s.table} (${s.matched} of ${s.total} columns match)`}</option>
               ))}
               <option value={REMOVE_TABLE} disabled={Boolean(blocker)}>{blocker ? `Don't use this table (${blocker})` : "Don't use this table"}</option>
             </select>

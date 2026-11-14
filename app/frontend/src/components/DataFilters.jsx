@@ -4,6 +4,7 @@ import { PlainMessage } from './TechnicalDetails';
 import { groupLabelOf } from '../lib/implementWizard';
 import { raisePermissions } from '../lib/permissionBus';
 import { METRIC_VIEW_REFUSAL } from '../lib/pickProblem';
+import { leftOutLine, unusableReasonOf } from '../lib/tableUsability';
 import {
   SCOPE_OPS, columnKindOf, filterValuesOf, filteredTablesOf, isGroupRow, normalizeTableScope, pickedTableNames, scopeKeyOf,
   scopeOpOf, scopeProblems, tableBrowseQuery, tableScopeOf,
@@ -135,6 +136,17 @@ function TableLeaf({ level, table, summary, selected, onSelect }) {
   );
 }
 
+// The listed tables of one schema, with the tables that cannot be picked (fail closed) and the count the listing left out.
+function listedOf(d, name) {
+  const rows = d.tables || [];
+  const fqn = (t) => t.full_name || `${name}.${t.name}`;
+  return {
+    tables: rows.map(fqn),
+    unusable: Object.fromEntries(rows.filter((t) => unusableReasonOf(t)).map((t) => [fqn(t), unusableReasonOf(t)])),
+    leftOut: d.left_out ? { count: d.left_out.count, schema: d.left_out.schema || name } : null,
+  };
+}
+
 function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouseId, renderTable }) {
   const [manual, setOpen] = useState(null);
   const open = manual ?? tableNames.length > 0;
@@ -144,7 +156,7 @@ function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouse
     if (!open || !listable || listed) return undefined;
     let cancelled = false;
     apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
-      .then((d) => { if (!cancelled) setListed({ tables: (d.tables || []).map((t) => t.full_name || `${name}.${t.name}`) }); })
+      .then((d) => { if (!cancelled) setListed(listedOf(d, name)); })
       .catch((e) => { if (!cancelled) setListed({ error: e.message || `Inspire could not list the tables of ${name}.` }); });
     return () => { cancelled = true; };
   }, [open, listable, listed, apiFetch, warehouseId, catalog, schema, name]);
@@ -158,7 +170,10 @@ function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouse
       error={open ? listed?.error : ''}>
       {open && listable && !listed && <li role="none" className="px-2 text-text-tertiary">Listing the tables of {name}</li>}
       {open && listed?.tables && listed.tables.length === 0 && <li role="none" className="px-2 text-text-secondary">{name} has no tables.</li>}
-      {names.map(renderTable)}
+      {names.map((t) => (listed?.unusable?.[t]
+        ? <li role="none" key={t} data-unusable-table={t} className="px-2 text-[11px] text-text-secondary">{shortName(t)}: {listed.unusable[t]}</li>
+        : renderTable(t)))}
+      {open && listed?.leftOut && <li role="none" data-left-out="" className="px-2 text-[11px] text-text-secondary">{leftOutLine(listed.leftOut)}</li>}
     </Branch>
   );
 }

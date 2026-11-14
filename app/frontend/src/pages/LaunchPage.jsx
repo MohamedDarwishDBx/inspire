@@ -42,6 +42,7 @@ import { parseStrategicContext, splitPriorities, validateStrategicContextText, w
 import UcPermissionErrorHelp from '../components/UcPermissionErrorHelp';
 import DataFilters from '../components/DataFilters';
 import { groupLabelOf } from '../lib/implementWizard';
+import { leftOutLine, unusableReasonOf } from '../lib/tableUsability';
 import { scopesFromObject, serializeTableScopes, filterValuesOf, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
@@ -264,6 +265,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [catalogBrowseError, setCatalogBrowseError] = useState('');
   const [schemasReadError, setSchemasReadError] = useState('');
   const [tablesReadError, setTablesReadError] = useState('');
+  const [tablesLeftOut, setTablesLeftOut] = useState([]);
   const [catalogsWhy, setCatalogsWhy] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showStrategy, setShowStrategy] = useState(false);
@@ -561,19 +563,24 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   // Load tables when schemas selected
   useEffect(() => {
     setTablesReadError('');
+    setTablesLeftOut([]);
     if (selectedSchemas.length === 0) { setTables([]); return; }
     if (!canUseUcApi) { setTables([]); return; }
     let cancelled = false;
     setLoadingTables(true);
     const failed = [];
+    const leftOutNotes = [];
     Promise.all(
       selectedSchemas.map((schemaFullName) => {
         const [catalog, schema] = schemaFullName.split('.');
         return apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
-          .then(d => (d.tables || []).map(t => ({
-            ...t,
-            full_name: t.full_name || `${catalog}.${schema}.${t.name}`,
-          })))
+          .then(d => {
+            if (d.left_out) leftOutNotes.push(leftOutLine(d.left_out));
+            return (d.tables || []).map(t => ({
+              ...t,
+              full_name: t.full_name || `${catalog}.${schema}.${t.name}`,
+            }));
+          })
           .catch((err) => { failed.push(pickerReadFailure('tables', schemaFullName, err)); return []; });
       })
     ).then((r) => {
@@ -582,6 +589,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
         console.log(`[tables] loaded ${allTables.length} for ${selectedSchemas.join(',')}`);
         setTables(allTables);
         setTablesReadError(failed.join('\n'));
+        setTablesLeftOut(leftOutNotes.filter(Boolean));
       }
     }).finally(() => { if (!cancelled) setLoadingTables(false); });
     return () => { cancelled = true; };
@@ -1398,12 +1406,16 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                           else setSelectedTables((p) => [...p, name]);
                         }}
                         getKey={(t) => t.full_name}
+                        disabledReasonOf={unusableReasonOf}
                         getLabel={(t) => selectedSchemas.length > 1 ? `${t.schema_name}.${t.name}` : t.name}
                         searchValue={tableSearch}
                         onSearch={setTableSearch}
                         searchPlaceholder="Search tables..."
                         emptyText={selectedSchemas.length === 0 ? 'Select schemas first' : loadingTables ? 'Loading...' : tablesReadError ? 'Inspire could not list the tables. The message above says why.' : `No tables you can see in ${selectedSchemas.join(', ')}`}
                       />
+                      {tablesLeftOut.map((line) => (
+                        <p key={line} data-tables-left-out="" className="text-[11px] text-text-secondary px-1 pt-1">{line}</p>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -2026,7 +2038,7 @@ function GlowSelect({ value, onChange, options }) {
   );
 }
 
-function PickerList({ items, selected, onToggle, getKey, getLabel, searchValue, onSearch, searchPlaceholder, emptyText }) {
+function PickerList({ items, selected, onToggle, getKey, getLabel, disabledReasonOf = () => '', searchValue, onSearch, searchPlaceholder, emptyText }) {
   return (
     <div className="rounded-lg border border-border bg-bg overflow-hidden flex flex-col min-h-0">
       <div className="relative shrink-0">
@@ -2052,12 +2064,16 @@ function PickerList({ items, selected, onToggle, getKey, getLabel, searchValue, 
             const key = getKey(item);
             const label = getLabel(item);
             const active = selected.includes(key);
+            // Fail closed: an item that cannot be used is shown with its plain reason and cannot be picked.
+            const reason = disabledReasonOf(item);
             return (
               <button
                 key={key}
                 type="button"
                 title={label}
-                onClick={() => onToggle(key)}
+                disabled={Boolean(reason)}
+                aria-disabled={reason ? 'true' : undefined}
+                onClick={() => { if (!reason) onToggle(key); }}
                 className={`w-full flex items-start gap-2 px-2.5 py-2 rounded-md text-xs text-start transition-smooth ${
                   active
                     ? 'bg-db-red-50 text-db-red-fg border border-db-red/20'
@@ -2070,6 +2086,7 @@ function PickerList({ items, selected, onToggle, getKey, getLabel, searchValue, 
                   {active && <CheckCircle2 size={10} className="text-white" />}
                 </div>
                 <span className="font-mono break-all leading-snug">{label}</span>
+                {reason && <span data-unusable-reason="" className="text-[10px] text-error-fg leading-snug">{reason}</span>}
               </button>
             );
           })
