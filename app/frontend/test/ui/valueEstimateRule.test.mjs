@@ -40,11 +40,26 @@ test('the set-rule button only appears when the card can open the wizard', () =>
   assert.doesNotMatch(line({ status: 'set_rule' }), /data-value-set-rule/);
 });
 
-test('a column or equation rule says it cannot estimate yet, and shows no number', () => {
-  const html = line({ status: 'cannot', app: 'Sales App', method: 'column' });
+test('an own column or equation rule says it cannot estimate yet and what to set, and shows no number', () => {
+  const html = line({ status: 'cannot', app: 'Sales App', method: 'column', borrowed: false });
   assert.match(html, /data-value-estimate="cannot"/);
-  assert.match(html, /Cannot estimate yet: Sales App&#x27;s money rule values each record by column/);
+  assert.match(html, /Cannot estimate yet: this use case&#x27;s money rule values each record by column\. Set a fixed amount to estimate\./);
+  assert.doesNotMatch(html, /borrows|Estimated \d/);
+});
+
+test('a borrowed rule that cannot estimate names the rule it borrows from and gives the action (REQ-078 walk defect 4)', () => {
+  const html = line({ status: 'cannot', app: 'Sales App', method: 'column', borrowed: true });
+  assert.match(html, /data-value-estimate="cannot"/);
+  assert.match(html, /this use case has no money rule of its own\. It borrows Sales App&#x27;s money rule, which values each record by column\./);
+  assert.match(html, /Set a fixed amount, or this use case&#x27;s own money rule, to estimate\./);
   assert.doesNotMatch(html, /Estimated \d/);
+});
+
+test('the Set rule button does not repeat the sentence before it (REQ-078 walk defect 6)', () => {
+  const html = line({ status: 'set_rule' }, { onSetRule: () => {} });
+  assert.match(html, /Set a money rule to see its value\./);
+  assert.match(html, />Set rule<\/button>/);
+  assert.equal((html.match(/Set a money rule/g) || []).length, 1, 'the words appear once');
 });
 
 test('no KPI baseline gives no number, and says why', () => {
