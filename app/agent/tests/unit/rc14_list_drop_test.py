@@ -54,7 +54,8 @@ def test_a_swapped_measure_rewrites_the_title_and_statement_and_notes_the_swap(a
     named = _uc("N05-U01", "Our own name", [_kpi("open first-time buyers", swapped_from="first-time buyers")],
                 user_named="Our own name", Statement="Reach the first-time buyers.")
     inst._apply_measure_swap_text([swapped, named])
-    assert swapped["Name"] == swapped["usecase"] == "Follow up with first time buyers"
+    # REQ-182: the one name writer applies the title rule to a generated name, the swap included.
+    assert swapped["Name"] == swapped["usecase"] == "Follow Up with First Time Buyers"
     assert swapped["Statement"] == "Reach the first time buyers who have not bought again."
     assert swapped["key_measure_note"] == "measured on first time buyers because first-time buyers has no rows"
     assert named["Name"] == "Our own name" and named["Statement"] == "Reach the first-time buyers.", "a renamed use case is never rewritten"

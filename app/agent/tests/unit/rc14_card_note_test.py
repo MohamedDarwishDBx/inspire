@@ -20,7 +20,8 @@ def test_a_swap_rewrites_the_kpi_name_with_the_title_and_statement(agent_ns):
     inst = make_inspire(agent_ns)
     uc = _uc()
     inst._apply_measure_swap_text([uc])
-    assert uc["Name"] == "Follow up with first time buyers"
+    # REQ-182: the one name writer applies the title rule to a generated name, the swap included.
+    assert uc["Name"] == "Follow Up with First Time Buyers"
     assert uc["Statement"] == "Reach first time buyers."
     assert uc["KPIs"][0]["name"] == "open first time buyers", "the KPI says the measure that is used"
 
