@@ -105,9 +105,11 @@ test('a scope under the forecast minimum shows one plain warning on the data ste
     assert.equal(await page.locator('[data-too-few-rows]').innerText(), 'Only 30 rows are in this scope, fewer than the 60 this use case needs; you can still go on.');
     await page.getByRole('button', { name: 'Back', exact: true }).click();
     await onStep(page, 'Data');
+    await page.locator('[data-too-few-rows]').waitFor();
     made.state.readinessRows = [{ row_count: '61' }];
     await page.getByRole('button', { name: 'Next', exact: true }).click();
-    await page.locator('[aria-current="step"]', { hasText: /^\s*Data\s*$/ }).waitFor({ state: 'detached' });
+    // The warning clears when the 61-row count lands. The Data step is labelled "Data & results", so a step-label wait matched nothing and returned at once.
+    await page.locator('[data-too-few-rows]').waitFor({ state: 'detached' });
     assert.equal(await page.locator('[data-too-few-rows]').count(), 0);
     assert.deepEqual(pageErrors, []);
   } finally {

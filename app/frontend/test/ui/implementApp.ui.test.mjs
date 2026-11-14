@@ -388,13 +388,18 @@ for (const layout of LOOK_LAYOUTS) {
       await tab('Charts').click();
       await shown({ 'app-sample': 'charts' });
       for (const line of await clippedSample(sample)) cut.push(`${layout}/${style}/charts ${line}`);
-      for (const control of ['Runs', 'Alerts', 'Impact', 'Ask Genie', 'Things to fix']) {
-        await goToStep(page, 'Where it lives');
-        await openAppPages(page);
-        await pages.getByRole('button', { name: new RegExp(`^${control}`) }).click();
-        await goToStep(page, 'App look');
+    }
+    // Each page is opened once on Where it lives, then all three styles are checked on it. The page pick is the only trip back.
+    const pageKeys = { Runs: 'runs', Alerts: 'alerts', Impact: 'impact', 'Ask Genie': 'genie', 'Things to fix': 'fix' };
+    for (const [control, key] of Object.entries(pageKeys)) {
+      await goToStep(page, 'Where it lives');
+      await openAppPages(page);
+      await pages.getByRole('button', { name: new RegExp(`^${control}`) }).click();
+      await goToStep(page, 'App look');
+      for (const style of ['A', 'B', 'C']) {
         await tab('Style').click();
-        await shown({ 'app-sample': { Runs: 'runs', Alerts: 'alerts', Impact: 'impact', 'Ask Genie': 'genie', 'Things to fix': 'fix' }[control] });
+        await look.getByText(`Style ${style}`, { exact: true }).click();
+        await shown({ 'app-sample': key });
         for (const line of await clippedSample(sample)) cut.push(`${layout}/${style}/${control} ${line}`);
       }
     }
