@@ -115,3 +115,20 @@ def test_explicit_metric_view_on_a_catalog_without_information_schema_is_left_ou
 def test_the_strategy_prompt_states_that_a_metric_view_is_not_a_table(agent_ns):
     prompt = agent_ns["PROMPT_TEMPLATES"]["STRATEGY_ALIGNMENT_PROMPT"]
     assert "A metric view is not a table" in prompt
+
+
+class _Named:
+    def __init__(self, table_name, table_type):
+        self.table_name = table_name
+        self.table_type = table_type
+
+
+def test_join_inference_never_reads_a_metric_view_as_a_table(agent_ns, monkeypatch):
+    """Join inference reads every table of a schema and infers FKs from their columns. A metric view's columns would feed that
+    graph, so the view is left out of the schema's table names (information_schema types every table on this path)."""
+    rows_out = [_Named(TABLE, "MANAGED"), _Named(VIEW, "METRIC_VIEW"), _Named(PLAIN_VIEW, "VIEW")]
+    monkeypatch.setitem(agent_ns, "_metadata_rows", lambda spark, query, args=None, logger=None, context="metadata query": rows_out)
+    inst = object.__new__(agent_ns["DataLoader"])
+    inst.spark = object()
+    inst.logger = CapturingLogger()
+    assert inst._schema_table_names(CAT, SCH) == {TABLE, PLAIN_VIEW}
