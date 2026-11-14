@@ -151,7 +151,10 @@ test('the App tile offers to let new Apps use the result table catalog, grants w
     await goToStep(page, 'What to deliver');
     const tile = page.locator('[data-output="app"]');
     await tile.locator('[data-blocked-reason="app"]').waitFor({ timeout: 15000 });
-    assert.deepEqual(await tile.getByRole('list', { name: 'Grant Inspire can run for new Apps' }).locator('li').allTextContents(), [CATALOG_GRANT]);
+    // The block can show before its grant list does (the list comes with a later check result), so wait for the list too, not only the block.
+    const grantList = tile.getByRole('list', { name: 'Grant Inspire can run for new Apps' });
+    await grantList.locator('li').first().waitFor({ timeout: 15000 });
+    assert.deepEqual(await grantList.locator('li').allTextContents(), [CATALOG_GRANT]);
     await tile.getByRole('button', { name: NEW_APPS_ACCESS_ACTION, exact: true }).click();
     const result = tile.getByRole('status', { name: 'New Apps access result' });
     await result.getByText('Inspire granted USE CATALOG on main to account users with your sign-in, which opens no data by itself', { exact: true })
