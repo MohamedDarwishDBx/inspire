@@ -1291,7 +1291,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     if (choice.id === 'copy' && choice.sql) {
       try {
         await navigator.clipboard.writeText(choice.sql);
-        setProtectionCopy('The SQL is copied. Send it to the owner of the result tables.');
+        setProtectionCopy('The SQL is copied. Send it to your data owner.');
       } catch (e) {
         setProtectionCopy(`The SQL could not be copied: ${e.message}. Select it above and copy it.`);
       }

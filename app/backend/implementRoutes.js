@@ -1192,7 +1192,7 @@ function registerImplementRoutes(app, deps) {
       const granted = (principals || []).map((p) => {
         const statements = left.flatMap((t) => t.grants.filter((g) => I.appReadGrantFor(g, p)));
         return PM.permissionRequired({ statements, principal: p, why: `${p} opens the App ${record.app_name || ''} and reads its data with its own access, `
-          + 'so it needs these grants. Ask the owner of the table to run them, then click Try again.' });
+          + 'so it needs these grants. Ask your data owner to run them, then click Try again.' });
       }).filter(Boolean);
       // A user-authorization App reads a source table directly: its viewers get the App's views, never the raw table. The App must be
       // rebuilt to read through a view; nothing here is a grant to run.
@@ -1274,7 +1274,7 @@ function registerImplementRoutes(app, deps) {
         const grant = I.useCaseSchemaBuilderGrant(catalog, schema, builder.applicationId || builder.userName);
         const { failed } = grant ? await runPersonGrants(req, token, warehouseId, [grant]) : { failed: ['the identity Inspire builds as could not be read'] };
         if (failed.length) {
-          warnings.push(`The identity Inspire builds as may not write to ${catalog}.${schema} until its owner grants `
+          warnings.push(`The identity Inspire builds as may not write to ${catalog}.${schema} until your data owner grants `
             + `${I.USE_CASE_SCHEMA_BUILDER_PRIVILEGES} on it: ${failed.join('; ')}`);
           if (grant) permissions.push(PM.builderPermission(catalog, grant, builder.applicationId || builder.userName));
         }

@@ -36,9 +36,9 @@ export const FAILURE_CAUSES = [
   { kind: 'denied', test: /\bPERMISSION_DENIED\b|\bINSUFFICIENT_PERMISSIONS\b|\bInsufficient privileges\b|\bUser does not have\b|\(HTTP 403\)/i,
     text: (raw) => {
       const object = objectOf(raw, OBJECT_ON);
-      if (object) return `access to ${object} was refused, so ask its owner or a workspace admin to give you access`;
+      if (object) return `access to ${object} was refused, so ask your data owner or a workspace admin to give you access`;
       const reason = statedReason(raw);
-      return `${reason || 'access to what it needs was refused'}, so ask its owner or a workspace admin to give you access`;
+      return `${reason || 'access to what it needs was refused'}, so ask your data owner or a workspace admin to give you access`;
     } },
   { kind: 'server', transient: true, test: /\bINTERNAL_ERROR\b|\bInternal (?:server )?error\b|\(HTTP 50[0-4]\)|\bBad Gateway\b|\bService Unavailable\b/i,
     text: () => 'Databricks had a problem on its side, so try again in a minute' },

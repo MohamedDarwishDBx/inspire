@@ -1126,7 +1126,7 @@ export function useCaseSchemaTags({ sessionId, useCaseId, businessName, inspireD
 export function ownSchemaFallbackNote(catalog, me = '') {
   const who = String(me || '').trim() ? `\`${String(me).trim()}\`` : 'you';
   return `You cannot create schemas in ${catalog}, so this use case's tables go to the Inspire database schema. For a schema of its own, `
-    + `ask the owner of ${catalog} to run GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO ${who}, then pick Its own schema again.`;
+    + `ask your data owner to run GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO ${who}, then pick Its own schema again.`;
 }
 
 export function ownSchemaHolderText(holder = {}, { useCaseId = '', inspireDatabase = '' } = {}) {
@@ -2826,7 +2826,7 @@ export function tableRows(reads) {
 }
 
 export function appReadsOwners(reads) {
-  return joinWords([...new Set((reads?.tables || []).map((t) => t.owner).filter(Boolean))]) || 'your data owner';
+  return joinWords([...new Set((reads?.tables || []).map((t) => t.owner).filter((o) => o && !o.includes('@')))]) || 'your data owner';
 }
 
 export function appReadsSql(reads) {
@@ -2845,7 +2845,7 @@ export function appReadsChoices(reads) {
   return [
     { id: 'grant', label: APP_READS_GRANT, detail: 'Inspire runs exactly the grants listed here as you, then checks the App again. It works when you own the data or hold MANAGE on it.' },
     { id: 'copy', label: `Copy the grant SQL to send to ${owners}`, detail: `${owners} runs it in the SQL editor, then you press ${APP_READS_CHECK}.`, sql: appReadsSql(reads) },
-    { id: 'check', label: APP_READS_CHECK, detail: 'Inspire checks again whether the App can read its data, for example after the owner granted it.' },
+    { id: 'check', label: APP_READS_CHECK, detail: 'Inspire checks again whether the App can read its data, for example after your data owner grants it.' },
   ];
 }
 
@@ -2889,7 +2889,7 @@ export function protectionChoices(stop) {
   return [
     ...(stop.tables?.length && stop.canGrant !== false ? [{ id: 'grant', label: APP_READ_ACTION, detail: 'Grants the App read metadata on its source tables with your sign-in, then checks again.' }] : []),
     ...(stop.sql.length ? [{ id: 'copy', label: PROTECTION_SQL_LABEL, sql: stop.sql.join('\n'),
-      detail: 'The owner of the result tables runs it in the SQL editor, then you press Check again.' }] : []),
+      detail: 'Your data owner runs it in the SQL editor, then you press Check again.' }] : []),
     { id: 'check', label: APP_READS_CHECK, detail: 'Inspire reads the row filters, column masks and access policies again, and publishes once the results keep them.' },
   ];
 }
@@ -2918,7 +2918,7 @@ export function grantGapPermissions(got) {
     statements: g.grants,
     instructions: [],
     principal: g.owner || 'the table owner',
-    why: `Inspire cannot grant READ METADATA on ${g.table} with your sign-in, because you cannot manage it. Ask ${g.owner || 'the table owner'} to run these commands, then click Try again.`,
+    why: `Inspire cannot grant READ METADATA on ${g.table} with your sign-in, because you cannot manage it. Ask ${g.owner && !g.owner.includes('@') ? g.owner : 'your data owner'} to run these commands, then click Try again.`,
   }));
 }
 

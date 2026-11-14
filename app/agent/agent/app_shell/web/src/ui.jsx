@@ -89,7 +89,7 @@ export function noAccessBanner(tables, owners, auth) {
   const who = [...new Set(tables.map((t) => owners?.[t]).filter(Boolean))];
   const reader = auth === 'user' ? 'You cannot' : 'This App cannot';
   const what = tables.length ? tables.join(', ') : SOME_DATA.replace("this App's", 'its');
-  const grant = `${who.length ? who.join(', ') : 'The owner of that data'} can give ${auth === 'user' ? 'you' : 'the App'} read access in Unity Catalog`;
+  const grant = `${who.length ? who.join(', ') : 'Your data owner'} can give ${auth === 'user' ? 'you' : 'the App'} read access in Unity Catalog`;
   return `${reader} read ${what} yet, so parts of this page show no data from ${tables.length === 1 ? 'it' : 'them'}. ${grant}. Then press Check again.`;
 }
 
@@ -148,7 +148,7 @@ export function AccessActions({ access: given }) {
     setSql(found.sql);
     try {
       await navigator.clipboard.writeText(found.sql);
-      setNote('The grant SQL is copied. Send it to the owner of that data, or run it in the SQL editor if you own it.');
+      setNote('The grant SQL is copied. Send it to your data owner, or run it in the SQL editor if you own it.');
     } catch {
       setNote('Select the grant SQL below to copy it.');
     }
@@ -171,7 +171,7 @@ export function AccessActions({ access: given }) {
         </span>
       )}
       {access?.can_grant && !access.you_can_grant && !note && (
-        <small data-access-hint="">You cannot grant this access yourself, because you neither own the data nor hold MANAGE on it. Copy the grant SQL and send it to {access.tables.map((t) => t.owner).filter(Boolean).join(' or ') || 'the owner of that data'}.</small>
+        <small data-access-hint="">You cannot grant this access yourself, because you neither own the data nor hold MANAGE on it. Copy the grant SQL and send it to {access.tables.map((t) => t.owner).filter(Boolean).join(' or ') || 'your data owner'}.</small>
       )}
       {note && <small role="status" data-access-note="">{note}</small>}
       {error && <PlainNote text={error} as="small" className="g-err" role="alert" data-access-error="" />}

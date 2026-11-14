@@ -3157,7 +3157,7 @@ function newAppsAccessText(catalog, decision, real) {
     const shown = real.slice(0, IMPLEMENT_REAL_GRANTS_SHOWN);
     const more = real.length - shown.length;
     return `Inspire did not grant USE CATALOG on ${catalog} to account users: they already hold ${joinAnd(more ? [...shown, `${more} more`] : shown)}, `
-      + 'which USE CATALOG would open to every account user. Ask the catalog owner to grant MANAGE on it to Inspire, or to choose which of them to keep';
+      + 'which USE CATALOG would open to every account user. Ask your data owner to grant MANAGE on it to Inspire, or to choose which of them to keep';
   }
   return `you cannot grant on ${catalog}: you need to own it or hold MANAGE on it`;
 }
@@ -3292,8 +3292,8 @@ function appUnreadableMessage(offer, job = 'build') {
   const count = one ? 'a source table' : `${offer.tables.length} source tables`;
   const head = `${words.who} cannot read ${count}: ${words.runs} as the App service principal ${app}, and you can read `
     + `${one ? 'this table' : 'these tables'} but the App cannot`;
-  if (!offer.grants.length) return `${head}, and Inspire finds no missing grant to name: ask the table owner why the App cannot read ${one ? 'it' : 'them'}`;
-  return `${head}. ${offer.can_grant ? words.grant : 'Ask the owner to run'}: ${offer.grants.join('; ')}`;
+  if (!offer.grants.length) return `${head}, and Inspire finds no missing grant to name: ask your data owner why the App cannot read ${one ? 'it' : 'them'}`;
+  return `${head}. ${offer.can_grant ? words.grant : 'Ask your data owner to run'}: ${offer.grants.join('; ')}`;
 }
 
 const APP_READ_GRANT = /^GRANT (USE CATALOG|USE SCHEMA|SELECT|READ METADATA) ON (CATALOG|SCHEMA|TABLE) (`[^`]+`(?:\.`[^`]+`){0,2}) TO `([^`]+)`$/;
@@ -3418,9 +3418,9 @@ function appReadsUpdateStatement(table, row, left) {
 function appReadsText(left, app, refused = []) {
   if (!left.length) return 'The App can read all its data now';
   const tables = joinAnd(left.map((t) => t.table));
-  const owners = joinAnd([...new Set(left.map((t) => t.owner).filter(Boolean))]);
+  const owners = joinAnd([...new Set(left.map((t) => ownerLabel(t.owner)))]);
   const head = `The App ${app ? `${app} ` : ''}cannot read ${left.length === 1 ? 'this table' : `${left.length} tables`}, so its pages show no data from ${left.length === 1 ? 'it' : 'them'}`;
-  const ask = owners ? 'the table owner can grant it' : 'the owner of each table can grant it';
+  const ask = `${owners} can grant it`;
   const plain = `${head}. ${ask[0].toUpperCase()}${ask.slice(1)}`;
   return refused.length ? `${plain}. Your grant was refused; the statements and the error are under Details` : plain;
 }
@@ -3433,8 +3433,8 @@ function newAppReadsGaps(tables, plans) {
 function newAppReadsWarning(unshared) {
   if (!unshared.length) return '';
   const one = unshared.length === 1;
-  const owners = joinAnd([...new Set(unshared.map((t) => t.owner).filter(Boolean))]) || 'the owner of each table';
-  return `Inspire cannot share ${joinAnd(unshared.map((t) => (t.owner ? `${t.table} (owner ${t.owner})` : t.table)))} with the App this build makes, `
+  const owners = joinAnd([...new Set(unshared.map((t) => ownerLabel(t.owner)))]);
+  return `Inspire cannot share ${joinAnd(unshared.map((t) => (t.owner ? `${t.table} (owned by ${ownerLabel(t.owner)})` : t.table)))} with the App this build makes, `
     + `because Inspire neither owns nor manages ${one ? 'it' : 'them'}, so the App cannot read ${one ? 'it' : 'them'} on its own. The build still runs. `
     + `When it ends, the Build page offers Grant access with my permissions to grant ${one ? 'it' : 'them'} as you in one click, or the grant SQL to send to ${owners}`;
 }
@@ -3447,7 +3447,7 @@ function accessGapMessage(who, gaps) {
   const it = gaps.length === 1 ? 'it' : 'them';
   const statements = gaps.map((g) => grantSql(g, who)).join('; ');
   return `${who} may not be able to read the result table: Inspire cannot grant ${gaps.length === 1 ? 'this access' : 'these accesses'}, because it `
-    + `neither owns nor holds MANAGE on ${it}. If ${who} does not have ${it} yet, ask the owner to run: ${statements}`;
+    + `neither owns nor holds MANAGE on ${it}. If ${who} does not have ${it} yet, ask your data owner to run: ${statements}`;
 }
 
 function appAccessPermission(gaps, me = '') {
@@ -3465,7 +3465,7 @@ function appAccessMessage(table, gaps, me = '') {
     : '';
   return `a new App could not read the result table: its service principal needs ${gaps.length === 1 ? 'this access' : 'these accesses'}, which not all `
     + `account users have, and Inspire can grant ${one ? 'it' : 'them'} only with MANAGE or ownership. `
-    + `Ask the owner to run: ${statements}${shared}; or choose a result table in a catalog and schema Inspire manages`;
+    + `Ask your data owner to run: ${statements}${shared}; or choose a result table in a catalog and schema Inspire manages`;
 }
 
 function principalNames(principals) {

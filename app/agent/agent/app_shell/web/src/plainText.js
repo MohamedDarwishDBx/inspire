@@ -7,12 +7,12 @@ const SQLSTATE = /\s*\(?\bSQLSTATE:\s*\w+\)?/g;
 const MACHINE_PATH = /\s*\([^()]*(?:https?:\/\/|(?<![\w.])\/(?:home|tmp|local_disk0|databricks|root)\/)[^()]*\)|(?:\s+(?:at|from)(?=\s))?\s*\b(?:https?:\/\/[^\s)]+|(?<![\w.])\/(?:home|tmp|local_disk0|databricks|root)\/[^\s)]*)/g;
 export const MACHINE_ID = /\s*\((?:[^()]*\s)?(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)|\s*\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\s*(?<![\w.-])\d{10,}(?![\w-])|\s*(?<![\w.-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{16}(?![\w-])/gi;
 const GRANTEE = /\b(?:TO|FROM)\s+`?([^`\s]+)`?$/;
-const ASK_TO_RUN = /\b(?:please\s+)?ask\s+(?:the\s+)?owner(?:\s+of\s+[`\w.-]+)?\s+to\s+run:?\s*/i;
+const ASK_TO_RUN = /\b(?:please\s+)?ask\s+(?:the\s+|your\s+)?(?:data\s+)?owner(?:\s+of\s+[`\w.-]+)?\s+to\s+run:?\s*/i;
 
 export const DETAILS_LABEL = 'Details';
 export const CODE_ONLY_TEXT = 'Only an error code came back, listed under Details';
-export const ASK_OWNER_TEXT = 'Ask the owner to give you the access listed under Details';
-export const ASK_OWNER_APP_TEXT = 'Ask the owner to give the App the access listed under Details';
+export const ASK_OWNER_TEXT = 'Ask your data owner to give you the access listed under Details';
+export const ASK_OWNER_APP_TEXT = 'Ask your data owner to give the App the access listed under Details';
 export const NO_ACCESS_LEAD = 'No access to ';
 export const SOME_DATA = "part of this App's data";
 
