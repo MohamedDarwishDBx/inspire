@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 import sys
 
@@ -11,6 +12,7 @@ if SERVER not in sys.path:
 
 import shell_agent  # noqa: E402
 import shell_core  # noqa: E402
+from shell_db import HttpError, QueryError  # noqa: E402
 from v141_app_shell_test import PAGE, app_dir  # noqa: E402
 from v142_edits_test import edit_page  # noqa: E402
 from v144_app_data_test import DECIDE, EDITOR  # noqa: E402
@@ -157,3 +159,51 @@ def test_the_weather_must_exclude_still_refuses_on_a_select_star_page(tmp_path, 
     turn = ask(s, question, page=sales_page()["id"])
     assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
     assert llm.main_calls() == [] and len(llm.bodies) == 1
+
+
+FAILURES = [HttpError(502, "warehouse is busy"), QueryError("column read failed")]
+
+
+def failing_list_columns(exc):
+    def raise_it(self, ws, who, page, dataset="records"):
+        raise exc
+    return raise_it
+
+
+@pytest.mark.parametrize("exc", FAILURES, ids=["HttpError", "QueryError"])
+def test_a_failed_column_read_leaves_the_source_entry_unchanged(tmp_path, monkeypatch, exc):
+    monkeypatch.setattr(shell_core.Shell, "list_columns", failing_list_columns(exc))
+    llm = FakeLLM([], related=lambda body: False)
+    ws = AgentWorkspace(llm=llm, listed=SALES_COLUMNS)
+    s = shell_core.Shell(app_dir(tmp_path, DECIDE, [sales_page(select_star=True)]),
+                         env={"DATABRICKS_WAREHOUSE_ID": "wh1", "DATABRICKS_HOST": "dbc-1.example.com"},
+                         sp_factory=lambda: ws, user_factory=lambda host, token: ws)
+    page = sales_page(select_star=True)
+    sources = shell_agent.page_sources(page)
+    before = [dict(d) for d in sources]
+    s.agent.source_columns(ws, "me", page, sources)
+    assert sources == before and next(d for d in sources if d["dataset"] == "sales")["columns"] == []
+
+
+@pytest.mark.parametrize("exc", FAILURES, ids=["HttpError", "QueryError"])
+@pytest.mark.parametrize("model_says", [True, False])
+def test_the_ask_survives_a_failed_column_read_and_decides_by_the_rest(tmp_path, monkeypatch, exc, model_says):
+    monkeypatch.setattr(shell_core.Shell, "list_columns", failing_list_columns(exc))
+    llm = FakeLLM([said("Franchise A led with the most sales last month.")], related=lambda body: model_says)
+    s = live_shell(tmp_path, llm, select_star=True)
+    turn = ask(s, LIVE_QUESTION, page=sales_page()["id"])
+    assert turn["state"] == "done" and "Traceback" not in json.dumps(turn) and turn.get("error") in (None, "")
+    if model_says:
+        assert turn["refused"] is False and turn["answer"] != shell_agent.OFF_TOPIC
+    else:
+        assert turn["refused"] is True and turn["answer"] == shell_agent.OFF_TOPIC
+    assert llm.bodies[0]["max_tokens"] == shell_agent.TOPIC_TOKENS, "the failed read leaves the model check to decide"
+    assert len(llm.bodies) == (2 if model_says else 1)
+
+
+def test_a_failed_read_still_refuses_weather_with_no_exception(tmp_path, monkeypatch):
+    monkeypatch.setattr(shell_core.Shell, "list_columns", failing_list_columns(HttpError(502, "busy")))
+    llm = FakeLLM([said("A has 4.")], related=lambda body: False)
+    s = live_shell(tmp_path, llm, select_star=True)
+    turn = ask(s, "What is the weather in Paris?", page=sales_page()["id"])
+    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
