@@ -9,7 +9,7 @@ test.after(closeBrowser);
 
 const OWNER = ['owner', 'example.com'].join('@');
 const ME = { me: { userName: OWNER, displayName: 'Owner' } };
-const MARK = { method: '[data-measure-method]', direction: '[data-measure-direction]', currency: '[data-money-convert]', window: '[data-money-window]', off: '[data-money-off]', impact: '[aria-label="Measure impact"]' };
+const MARK = { method: '[data-measure-method]', direction: '[data-measure-direction]', currency: '[data-money-convert]', window: '[data-money-window]', off: '[data-money-off]', kpi: '[data-choice="kpi"]', holdout: '[data-choice="holdout"]' };
 const parts = (page) => page.locator('[data-money-part]').evaluateAll((els) => els.map((e) => e.dataset.moneyPart));
 const current = (page, part) => page.locator(`[data-money-part="${part}"]`).evaluate((el) => el.closest('li').hasAttribute('data-money-current'));
 const visible = (page, sel) => page.locator(sel).evaluateAll((els) => els.some((e) => e.getClientRects().length > 0));
@@ -32,7 +32,7 @@ test('Measure shows one decision per screen, Measure impact last, Following deci
   const { page } = ui;
   try {
     await goToStep(page, 'Measure');
-    const list = ['method', 'direction', 'currency', 'window', 'off', 'impact'];
+    const list = ['method', 'direction', 'currency', 'window', 'off', 'kpi', 'holdout'];
     for (const [width, height] of [[1280, 800], [1440, 900]]) {
       await page.setViewportSize({ width, height });
       for (const [i, part] of list.entries()) {

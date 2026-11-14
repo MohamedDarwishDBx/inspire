@@ -77,7 +77,7 @@ test('Measure impact, a screen of Measure, starts ticked with its badge, takes a
     await impact.getByText(SHARE_PROBLEM, { exact: true }).waitFor();
     await next(page);
     await page.locator('[role="alert"] p', { hasText: SHARE_PROBLEM }).waitFor();
-    assert.equal(await page.locator('[data-money-part="impact"]').evaluate((el) => el.closest('li').hasAttribute('data-money-current')), true, 'a share above half the records keeps the person on Measure impact');
+    assert.equal(await page.locator('[data-money-part="holdout"]').evaluate((el) => el.closest('li').hasAttribute('data-money-current')), true, 'a share above half the records keeps the person on the hold-back decision');
     await share.fill('');
     await page.locator('[role="alert"] p', { hasText: SHARE_PROBLEM }).waitFor();
     await box.uncheck();

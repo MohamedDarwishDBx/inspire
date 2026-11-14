@@ -29,5 +29,5 @@ test('a holdout share out of range blocks Measure, not First run', () => {
 
 test('the Target KPI and Hold back summary rows Change to Measure on the impact screen', () => {
   const rows = pickedSummary(base, [], {}).filter((r) => r.id === 'kpi' || r.id === 'holdout');
-  assert.deepEqual(rows.map((r) => [r.id, r.step, r.part]), [['kpi', 'stake', MEASURE_IMPACT_PART], ['holdout', 'stake', MEASURE_IMPACT_PART]]);
+  assert.deepEqual(rows.map((r) => [r.id, r.step, r.part]), [['kpi', 'stake', 'kpi'], ['holdout', 'stake', 'holdout']]);
 });

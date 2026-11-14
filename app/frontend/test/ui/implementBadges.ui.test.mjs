@@ -11,9 +11,11 @@ test.after(closeBrowser);
 async function auditEveryStep(page, { look = true } = {}) {
   const seen = new Set();
   const labels = (await page.locator('[data-wizard-header] ol li').allTextContents()).map((l) => l.replace(/^\d+\.\s*/, '').trim());
-  for (const label of labels) {
+  // Measure impact is two decisions on two screens, so the audit visits both (kpi, then holdout).
+  const visits = labels.flatMap((label) => (label === MEASURE_LABEL ? [[label, 'kpi'], [label, 'holdout']] : [[label, null]]));
+  for (const [label, impact] of visits) {
     await goToStep(page, label);
-    if (label === MEASURE_LABEL) await goToMeasureImpact(page);
+    if (impact) await goToMeasureImpact(page, impact);
     if (label === APP_STEP.label) await page.getByText('Finding the Apps Inspire built').waitFor({ state: 'detached' });
     // Folds open one at a time now (opening one folds the other), so each closed section is opened in turn and audited.
     const folds = await page.locator('[data-wizard-body] button[aria-expanded="false"][aria-label^="Change "]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label').replace(/^Change /, '')));
