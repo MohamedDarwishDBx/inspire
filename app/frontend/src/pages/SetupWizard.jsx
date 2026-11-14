@@ -35,8 +35,8 @@ export default function SetupWizard({ settings, update, onComplete }) {
   const [catalogsCut, setCatalogsCut] = useState(false);
   const [catalogsWhy, setCatalogsWhy] = useState('');
   const [catalogsRound, setCatalogsRound] = useState(0);
-  // True while the catalog read is in flight: the Database step cannot move on until it settles, so a refusal drawn by that read is seen.
-  const [catalogsBusy, setCatalogsBusy] = useState(false);
+  // The key of the catalog read that has settled. Busy is derived from it, so the render that enters the Database step is already busy.
+  const [catalogsSettled, setCatalogsSettled] = useState('');
   const [schemas, setSchemas] = useState([]);
   const [verification, setVerification] = useState(null);
   const [verifying, setVerifying] = useState(false);
@@ -139,11 +139,13 @@ export default function SetupWizard({ settings, update, onComplete }) {
   }, [token, databricksHost, step, warehouseRound]);
 
   // Load catalogs when warehouse is ready (warehouse_id enables SQL fallback for SP / UC REST gaps)
+  // The read is busy from the render that enters the Database step until its own key settles (step is in the key, so a re-entry is busy too).
+  const catalogKey = [step, token, databricksHost, warehouseId, isDatabricksApp, catalogsRound].join('|');
+  const catalogsBusy = step >= 3 && (Boolean(token) || isDatabricksApp) && catalogsSettled !== catalogKey;
   useEffect(() => {
-    if ((!token && !isDatabricksApp) || step < 3) { setCatalogsBusy(false); return undefined; }
+    if ((!token && !isDatabricksApp) || step < 3) return undefined;
     let current = true;
     const q = warehouseId ? `?warehouse_id=${encodeURIComponent(warehouseId)}` : '';
-    setCatalogsBusy(true);
     fetch(`/api/catalogs${q}`, { headers: headers() })
       .then(async (r) => {
         if (!r.ok) throw await responseError(r);
@@ -154,13 +156,14 @@ export default function SetupWizard({ settings, update, onComplete }) {
         setCatalogs(data.catalogs || []);
         setCatalogsCut(Boolean(data.truncated));
         setCatalogsWhy('');
+        setCatalogsSettled(catalogKey);
       })
       .catch((e) => {
         if (!current) return;
         setCatalogs([]);
         setCatalogsWhy(e.message);
-      })
-      .finally(() => { if (current) setCatalogsBusy(false); });
+        setCatalogsSettled(catalogKey);
+      });
     // A read the step has left answers into nothing: a newer read owns the busy flag.
     return () => { current = false; };
   }, [token, databricksHost, step, warehouseId, isDatabricksApp, headers, catalogsRound]);
