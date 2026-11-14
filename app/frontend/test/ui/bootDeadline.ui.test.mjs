@@ -82,13 +82,98 @@ test('the setup page says when its own boot read never answers, and Try again as
   };
   const ui = await openUi('app', {}, '', { mount });
   try {
-    await ui.page.locator('[data-detect-error]').getByText('did not answer within 20 seconds').waitFor({ timeout: 30000 });
+    await ui.page.locator('[data-setup-error]').getByText('did not answer within 20 seconds').waitFor({ timeout: 30000 });
     answering = true;
-    await ui.page.locator('[data-detect-error]').getByRole('button', { name: 'Try again', exact: true }).click();
-    await ui.page.locator('[data-detect-error]').waitFor({ state: 'detached', timeout: 20000 });
+    await ui.page.locator('[data-setup-error]').getByRole('button', { name: 'Try again', exact: true }).click();
+    await ui.page.locator('[data-setup-error]').waitFor({ state: 'detached', timeout: 20000 });
     assert.deepEqual(ui.pageErrors.filter((e) => !e.includes('did not answer within 20 seconds')), []);
   } finally {
     release();
+    await ui.close();
+  }
+});
+
+// Under StrictMode the App's boot effect runs twice, so its first two reads of a route are the App's. Later reads come from
+// the setup page, which is the read the test holds.
+const holdFromThird = () => {
+  const state = { calls: 0, answering: false, release: null };
+  state.held = new Promise((resolve) => { state.release = resolve; });
+  state.gate = async () => { state.calls += 1; if (state.calls > 2 && !state.answering) await state.held; };
+  return state;
+};
+const SETUP_DEFAULTS = { envSkipsSetupWizard: false, isDatabricksApp: true, databricksHost: 'https://workspace.example.com', warehouseId: 'wh1', inspireDatabase: 'main.inspire', notebookPath: '' };
+
+test('the setup page\'s own /api/defaults read that never answers shows its alert with Try again, and Try again runs it again', async () => {
+  const gate = holdFromThird();
+  const mount = (app) => {
+    app.get('/api/defaults', async (_req, res) => { await gate.gate(); res.json({ ...SETUP_DEFAULTS, isDatabricksApp: false, warehouseId: '', inspireDatabase: '' }); });
+    app.get('/api/health', (_req, res) => res.json({ isDatabricksApp: false }));
+    app.get('/api/warehouses', (_req, res) => res.json({ warehouses: [] }));
+    app.get('/api/notebook', (_req, res) => res.json({ path: '' }));
+    app.get('/api/showcase', (_req, res) => res.json({}));
+  };
+  const ui = await openUi('app', {}, '', { mount });
+  try {
+    await ui.page.locator('[data-setup-error]').getByText('did not answer within 20 seconds').waitFor({ timeout: 30000 });
+    gate.answering = true;
+    await ui.page.locator('[data-setup-error]').getByRole('button', { name: 'Try again', exact: true }).click();
+    await ui.page.locator('[data-setup-error]').waitFor({ state: 'detached', timeout: 20000 });
+    assert.deepEqual(ui.pageErrors.filter((e) => !e.includes('did not answer within 20 seconds')), []);
+  } finally {
+    gate.release();
+    await ui.close();
+  }
+});
+
+test('the setup page\'s warehouse read that never answers shows its alert with Try again, and the warehouse list loads once it answers', async () => {
+  const gate = holdFromThird();
+  const mount = (app) => {
+    app.get('/api/defaults', (_req, res) => res.json({ ...SETUP_DEFAULTS, warehouseId: '', inspireDatabase: '', envSkipsSetupWizard: false }));
+    app.get('/api/health', (_req, res) => res.json({ isDatabricksApp: true }));
+    app.get('/api/notebook', (_req, res) => res.json({ path: '' }));
+    app.get('/api/warehouses', async (_req, res) => {
+      await gate.gate();
+      res.json({ warehouses: [{ id: 'wh9', name: 'Serverless', state: 'RUNNING', enable_serverless_compute: true }] });
+    });
+    app.get('/api/showcase', (_req, res) => res.json({}));
+  };
+  const ui = await openUi('app', {}, '', { mount });
+  try {
+    await ui.page.getByText('Connect to your Databricks workspace').waitFor({ timeout: 20000 });
+    for (let i = 0; i < 5 && !(await ui.page.getByText('Loading warehouses...').count()); i += 1) {
+      await ui.page.getByRole('button', { name: 'Continue', exact: true }).click();
+      await ui.page.waitForLoadState('networkidle');
+    }
+    await ui.page.locator('[data-setup-error]').getByText('did not answer within 20 seconds').waitFor({ timeout: 30000 });
+    gate.answering = true;
+    await ui.page.locator('[data-setup-error]').getByRole('button', { name: 'Try again', exact: true }).click();
+    await ui.page.getByText('Serverless', { exact: false }).first().waitFor({ timeout: 20000 });
+    assert.deepEqual(ui.pageErrors.filter((e) => !e.includes('did not answer within 20 seconds')), []);
+  } finally {
+    gate.release();
+    await ui.close();
+  }
+});
+
+test('the setup page\'s notebook read that never answers stops the auto-complete with its alert, and Try again completes setup', async () => {
+  const gate = holdFromThird();
+  const mount = (app) => {
+    // Host, warehouse and database are all set, so the setup page auto-completes once the notebook read answers.
+    app.get('/api/defaults', (_req, res) => res.json({ ...SETUP_DEFAULTS, envSkipsSetupWizard: false, autoSetup: false }));
+    app.get('/api/health', (_req, res) => res.json({ isDatabricksApp: true }));
+    app.post('/api/setup/create-database', (_req, res) => res.json({ ok: true }));
+    app.get('/api/notebook', async (_req, res) => { await gate.gate(); res.json({ path: '' }); });
+    app.get('/api/showcase', (_req, res) => res.json({}));
+  };
+  const ui = await openUi('app', {}, '', { mount });
+  try {
+    await ui.page.locator('[data-setup-error]').getByText('did not answer within 20 seconds').waitFor({ timeout: 30000 });
+    gate.answering = true;
+    await ui.page.locator('[data-setup-error]').getByRole('button', { name: 'Try again', exact: true }).click();
+    await ui.page.getByRole('button', { name: 'Get Started' }).first().waitFor({ timeout: 30000 });
+    assert.deepEqual(ui.pageErrors.filter((e) => !e.includes('did not answer within 20 seconds')), []);
+  } finally {
+    gate.release();
     await ui.close();
   }
 });

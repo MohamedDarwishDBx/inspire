@@ -86,6 +86,8 @@ test('with no sign-in the Setup page shows the sign-in refusal under the catalog
     const next = page.getByRole('button', { name: 'Continue' });
     for (let i = 0; i < 5; i += 1) {
       await why.or(next).first().waitFor();
+      // The refusal is drawn when the catalog answer lands, a moment after Continue shows. Wait for it before moving past the step.
+      await why.waitFor({ timeout: 4000 }).catch(() => {});
       if (await why.count()) break;
       await next.click();
       await page.waitForLoadState('networkidle');
