@@ -196,6 +196,12 @@ export async function openUi(open, overrides = {}, query = '', { mount, init } =
     const { origin } = await sharedServers();
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: { [UI_HEADER]: id } });
     record = { id, page, origin, opened: Date.now(), pageErrors: [], responses: [], firstPaintMs: undefined };
+    // Optional CPU throttle for reproducing load-dependent timing (INSPIRE_UI_CPU_RATE=6). Unset in CI, so the default run is unchanged.
+    if (process.env.INSPIRE_UI_CPU_RATE) {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.INSPIRE_UI_CPU_RATE) });
+      opened.push(async () => { await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 }).catch(() => null); await cdp.detach().catch(() => null); });
+    }
     recordByPage.set(page, record);
     // Watchdog: while the page is alive, a request pending for 8 s dumps the page state once (the post-close dump loses in-flight requests).
     const pendingSince = new Map();

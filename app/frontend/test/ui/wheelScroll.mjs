@@ -60,6 +60,30 @@ async function reach(page, region) {
   }
 }
 
+// Wheel up until the region is at its top. The bound counts wheel steps that did not move the region, not elapsed time:
+// under CPU load each step takes longer, and a wall-clock cap stops the loop while the wheel is still working.
+export async function wheelToTop(page, region, name) {
+  const STALLED_STEPS = 12;
+  let stalled = 0;
+  for (let i = 0; i < 400; i += 1) {
+    const was = await region.evaluate((el) => el.scrollTop);
+    if (was === 0) break;
+    await page.mouse.wheel(0, -1000);
+    await region.evaluate((el, before) => new Promise((done) => {
+      const started = performance.now();
+      const tick = () => {
+        if (el.scrollTop !== before || performance.now() - started > 150) done();
+        else requestAnimationFrame(tick);
+      };
+      tick();
+    }), was);
+    stalled = (await region.evaluate((el) => el.scrollTop)) === was ? stalled + 1 : 0;
+    if (stalled >= STALLED_STEPS) break;
+  }
+  const start = await region.evaluate((el) => el.scrollTop);
+  assert.equal(start, 0, `${name}: the wheel up does not bring the region back to its top (scrollTop ${start})`);
+}
+
 export async function wheelToEnd(page, region, last, name, over = null) {
   await frames(page);
   await reach(page, over || region);
@@ -68,13 +92,7 @@ export async function wheelToEnd(page, region, last, name, over = null) {
   assert.ok(at.seen >= 40, `${name}: the region shows ${at.seen} px on screen, too little to scroll ${JSON.stringify(at)}`);
   assert.ok(at.hit, `${name}: something covers the region where the pointer sits (${at.cover}) ${JSON.stringify(at)}`);
   await aimCentre(page, over || region);
-  const topBy = Date.now() + 4000;
-  while (Date.now() < topBy && (await region.evaluate((el) => el.scrollTop)) > 0) {
-    await page.mouse.wheel(0, -1000);
-    await new Promise((done) => setTimeout(done, 50));
-  }
-  const start = await region.evaluate((el) => el.scrollTop);
-  assert.equal(start, 0, `${name}: the wheel up does not bring the region back to its top`);
+  await wheelToTop(page, region, name);
   let before = -1;
   let absorbed = 0;
   for (let i = 0; i < 400; i += 1) {
