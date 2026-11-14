@@ -1,0 +1,48 @@
+{
+  "_about": "Internal terms that must never reach customer copy (REQ-059). Each term is a regular expression. Node (frontend source) and Python (notebook strings) both read this file, so the list lives in one place. Add a term here when a run surfaces a new internal name.",
+  "terms": [
+    {
+      "id": "step_code",
+      "pattern": "\\b(?:batch|depth|attempt|split|pass|retry|worker)\\s*\\d+\\b",
+      "flags": "i",
+      "why": "run bookkeeping numbers such as 'batch 1 depth0 attempt1'"
+    },
+    {
+      "id": "prompt_key",
+      "pattern": "\\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_PROMPT\\b",
+      "flags": "",
+      "why": "prompt registry keys such as FILTER_BUSINESS_TABLES_PROMPT"
+    },
+    {
+      "id": "internal_table",
+      "pattern": "__inspire_\\w*",
+      "flags": "",
+      "why": "Inspire's own tracking tables"
+    },
+    {
+      "id": "log_tag",
+      "pattern": "\\[[A-Z][A-Z0-9-]*\\s+FIRED\\]",
+      "flags": "",
+      "why": "log tags such as [DATA-FILTER-LABEL FIRED]"
+    },
+    {
+      "id": "mode_name_on_run_output",
+      "pattern": "AI Enhanced Discovery|Standard Discovery",
+      "flags": "",
+      "why": "the discovery mode name as a label on run output; the chooser may name the modes, run output says Discovery",
+      "scope": "run_output"
+    }
+  ],
+  "run_output_files": [
+    "components/ResultsInsights.jsx",
+    "pages/MonitorPage.jsx",
+    "lib/v130UseCase.js"
+  ],
+  "run_output_forbidden_interpolations": [
+    "\\{access\\.type\\}",
+    "\\$\\{discovery\\}",
+    "\\{discovery\\}",
+    "\\{discoveryType\\}",
+    "\\$\\{discoveryType\\}"
+  ]
+}

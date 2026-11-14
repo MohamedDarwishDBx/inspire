@@ -23,7 +23,7 @@ def test_a_batch_and_the_theme_step_read_as_plain_words_on_the_live_status_line(
     agent = agent_ns["DatabricksInspire"].__new__(agent_ns["DatabricksInspire"])
     _stage, step, live = agent._story_pipeline_labels("Use Cases Generation", "Writing More Use Cases, Batch 1", "Writing More Use Cases, Batch 1",
                                                        "started", "")
-    assert (step, live) == ("Inspire is working on writing more use cases, batch 1", "In progress: writing more use cases, batch 1")
+    assert (step, live) == ("Inspire is working on writing more use cases", "In progress: writing more use cases")  # batch and depth numbers are run bookkeeping, never copy (REQ-059)
     assert agent_ns["PROMPT_STORY_TITLES"]["THEME_ASSIGNMENT_PROMPT"] == ("Use Case Prioritization", "Grouping Use Cases Into Themes")
     assert '"step_name": "Idea Themes"' not in _code() and '"step_name": "Grouping Use Cases Into Themes"' in _code()
 
