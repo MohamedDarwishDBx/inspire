@@ -137,6 +137,8 @@ INFO_TABLES = {
 
 INFO_REF = re.compile(r"`([^`]+)`\.`information_schema`\.`([^`]+)`")
 DESCRIBE_RE = re.compile(r"^\s*DESCRIBE\s+TABLE\s+`([^`]+)`\.`([^`]+)`\.`([^`]+)`\s*$", re.I)
+# DESCRIBE TABLE EXTENDED ... AS JSON: its documented "type" field (the table type), as the live workspace returns it.
+DESCRIBE_JSON_RE = re.compile(r"^\s*DESCRIBE\s+TABLE\s+EXTENDED\s+`([^`]+)`\.`([^`]+)`\.`([^`]+)`\s+AS\s+JSON\s*$", re.I)
 SHOW_SCHEMAS_RE = re.compile(r"^\s*SHOW\s+SCHEMAS\s+IN\s+`([^`]+)`\s*$", re.I)
 SHOW_TABLES_RE = re.compile(r"^\s*SHOW\s+TABLES\s+IN\s+`([^`]+)`\.`([^`]+)`\s*$", re.I)
 
@@ -215,6 +217,9 @@ class SqliteSpark:
         m = DESCRIBE_RE.match(query)
         if m:
             return self._describe(*m.groups())
+        m = DESCRIBE_JSON_RE.match(query)
+        if m:
+            return self._describe_type(*m.groups())
         m = SHOW_SCHEMAS_RE.match(query)
         if m:
             schemas = sorted(self.model.get(m.group(1), {}))
@@ -235,6 +240,16 @@ class SqliteSpark:
             fields = [d[0] for d in cur.description]
             rows = cur.fetchall()
         return FakeDF(fields, rows)
+
+    def _describe_type(self, catalog, schema, table):
+        fqn = f"{catalog}.{schema}.{table}"
+        if fqn in self.describe_denied:
+            raise RuntimeError(f"PERMISSION_DENIED: User does not have USE/SELECT on {fqn}")
+        try:
+            spec = self.model[catalog][schema][table]
+        except KeyError:
+            raise RuntimeError(f"[TABLE_OR_VIEW_NOT_FOUND] {fqn}")
+        return FakeDF(["json_metadata"], [[json.dumps({"table_name": table, "type": spec.get("table_type", "MANAGED")})]])
 
     def _describe(self, catalog, schema, table):
         fqn = f"{catalog}.{schema}.{table}"

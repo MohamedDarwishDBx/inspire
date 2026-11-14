@@ -3,6 +3,8 @@ returns no type column (docs: sql-ref-syntax-aux-show-tables lists database, tab
 type comes from DESCRIBE TABLE EXTENDED ... AS JSON, whose documented "type" field is METRIC_VIEW for a metric view
 (docs: sql-ref-syntax-aux-describe-table). A table whose type cannot be read stays listed and is logged; a plain VIEW is kept."""
 import json
+import threading
+import time
 
 from v120_artifacts_support import CapturingLogger
 
@@ -44,6 +46,7 @@ def _inst(agent_ns, names=(VIEW, TABLE, UNREADABLE, PLAIN_VIEW)):
     inst.logger = CapturingLogger()
     inst.spark = object()
     inst.catalog_capabilities = {CAT: True}
+    inst.streaming_batch_size = 1000
     inst._show_table_names = lambda query, limit=None, offset=0: list(names)
     return inst
 
@@ -62,16 +65,17 @@ def test_show_tables_fallback_leaves_out_a_metric_view_and_keeps_a_table(agent_n
     inst = _inst(agent_ns)
     tables = inst._fetch_tables_for_schema(CAT, SCH)
     assert VIEW not in _listed(tables), "a metric view must not be listed: it is never a use case's table or a Data Filters pick"
-    assert {TABLE, UNREADABLE, PLAIN_VIEW} <= _listed(tables)
+    assert _listed(tables) == {TABLE, PLAIN_VIEW}, "a table whose type cannot be read is left out too (fail closed)"
 
 
-def test_a_table_whose_type_cannot_be_read_stays_listed_and_the_probe_is_logged(agent_ns, monkeypatch):
+def test_a_table_whose_type_cannot_be_read_is_left_out_and_logged(agent_ns, monkeypatch):
     _patch(monkeypatch, agent_ns, _fake_rows(_types(), unreadable={UNREADABLE}))
     inst = _inst(agent_ns)
     tables = inst._fetch_tables_for_schema(CAT, SCH)
-    assert UNREADABLE in _listed(tables), "an unreadable type is not a metric view, so the table is kept (and logged)"
-    lines = [m for _lvl, m in inst.logger.records if "[METRIC-VIEW PROBE]" in m]
-    assert len(lines) == 1 and "1 of 4" in lines[0], lines
+    assert UNREADABLE not in _listed(tables), "fail closed: a table whose type cannot be read is never offered"
+    lines = [m for _lvl, m in inst.logger.records if "[TABLE-TYPE UNKNOWN]" in m]
+    assert len(lines) == 1, lines
+    assert lines[0].startswith("[TABLE-TYPE UNKNOWN] 1 table left out of ") and lines[0].endswith(": Inspire could not read their type"), lines
 
 
 def test_a_plain_view_is_not_taken_for_a_metric_view(agent_ns, monkeypatch):
@@ -132,3 +136,93 @@ def test_join_inference_never_reads_a_metric_view_as_a_table(agent_ns, monkeypat
     inst.spark = object()
     inst.logger = CapturingLogger()
     assert inst._schema_table_names(CAT, SCH) == {TABLE, PLAIN_VIEW}
+
+
+# The live shape of DESCRIBE TABLE EXTENDED ... AS JSON for a metric view whose source table is gone (coordinator capture on
+# my-uae, 2026-11-14: a json_metadata column with "type":"METRIC_VIEW"). Trimmed: the other keys follow the documented fields.
+LIVE_METRIC_VIEW_JSON = json.dumps({
+    "table_name": "order_revenue_metrics", "catalog_name": CAT, "schema_name": SCH, "namespace": [SCH],
+    "type": "METRIC_VIEW", "language": "YAML",
+    "view_text": "version: 0.1\nsource: amr_ali.sales.orders\nmeasures:\n  - name: revenue\n    expr: SUM(amount)\n",
+    "columns": [{"name": "revenue", "type": "DOUBLE", "is_measure": True}],
+}, sort_keys=True)
+
+
+def test_the_live_json_metadata_shape_types_a_metric_view(agent_ns, monkeypatch):
+    monkeypatch.setitem(agent_ns, "_metadata_rows", lambda spark, query, args=None, logger=None, context="metadata query": [_Row(LIVE_METRIC_VIEW_JSON)])
+    views, unknown = agent_ns["metric_view_names_by_describe"](object(), [f"`{CAT}`.`{SCH}`.`{VIEW}`"], CapturingLogger())
+    assert views == {f"{CAT}.{SCH}.{VIEW}"} and unknown == []
+
+
+def test_a_denied_describe_metric_view_is_never_a_use_case_table(agent_ns, monkeypatch):
+    # The must-exclude case: the view's DESCRIBE is denied, so its type is unknown and it is left out of the listing. The grounding
+    # universe is built from that listing, so a use case that names the view has no verified table and cannot be grounded on it.
+    _patch(monkeypatch, agent_ns, _fake_rows(_types(), unreadable={VIEW}))
+    inst = _inst(agent_ns)
+    tables = inst._fetch_tables_for_schema(CAT, SCH)
+    assert VIEW not in _listed(tables)
+    validator = object.__new__(agent_ns["DatabricksInspire"])
+    validator.logger = CapturingLogger()
+    validator.global_table_names = {f"{CAT}.{SCH}.{name}" for name in _listed(tables)}
+    validator.data_category_map = {}
+    validator.discovery_evidence = None
+    schema = [(CAT, SCH, name, "c", "string", None) for name in _listed(tables)]
+    row = {"No": "AI-01-U09", "Name": "Denied view", "Tables Involved": f"{CAT}.{SCH}.{VIEW}"}
+    _valid, dropped, kept = validator._validate_use_case_tables([row], schema, "[Batch P1_1]")
+    assert not kept and len(dropped) == 1
+
+
+def test_fallback_typing_of_fifty_tables_runs_in_parallel_within_the_worker_bound(agent_ns, monkeypatch):
+    names = [f"t{i:02d}" for i in range(50)]
+    types = {name: "MANAGED" for name in names}
+    types["t07"] = "METRIC_VIEW"
+    lock = threading.Lock()
+    state = {"now": 0, "peak": 0, "calls": 0}
+
+    def rows(spark, query, args=None, logger=None, context="metadata query"):
+        if "information_schema" in query:
+            raise RuntimeError("PERMISSION_DENIED: information_schema.tables is not readable")
+        name = query[len("DESCRIBE TABLE EXTENDED "):-len(" AS JSON")].replace("`", "").split(".")[-1]
+        with lock:
+            state["now"] += 1
+            state["peak"] = max(state["peak"], state["now"])
+            state["calls"] += 1
+        try:
+            time.sleep(0.05)
+        finally:
+            with lock:
+                state["now"] -= 1
+        return [_Row(json.dumps({"table_name": name, "type": types[name]}))]
+
+    monkeypatch.setitem(agent_ns, "_metadata_rows", rows)
+    monkeypatch.setitem(agent_ns, "_with_metadata_retries", lambda spark, work, logger=None, context="": work())
+    inst = _inst(agent_ns, names=names)
+    started = time.perf_counter()
+    tables = inst._fetch_tables_for_schema(CAT, SCH)
+    elapsed = time.perf_counter() - started
+    print(f"\n[timing] 50-table fallback listing, 50ms DESCRIBE fake: {elapsed:.3f}s, peak parallel DESCRIBE {state['peak']}")
+    assert state["calls"] == 50
+    assert "t07" not in _listed(tables) and len(_listed(tables)) == 49
+    assert 1 < state["peak"] <= agent_ns["METADATA_PARALLELISM"], state
+    assert elapsed < 1.0, f"sequential typing takes 2.5s; parallel typing took {elapsed:.3f}s"
+
+
+def test_the_probe_cap_bounds_the_describes_and_logs_what_it_leaves_out(agent_ns, monkeypatch):
+    names = [f"t{i:02d}" for i in range(50)]
+    calls = []
+
+    def rows(spark, query, args=None, logger=None, context="metadata query"):
+        if "information_schema" in query:
+            raise RuntimeError("PERMISSION_DENIED: information_schema.tables is not readable")
+        calls.append(query)
+        return [_Row(json.dumps({"type": "MANAGED"}))]
+
+    monkeypatch.setitem(agent_ns, "_metadata_rows", rows)
+    monkeypatch.setitem(agent_ns, "_with_metadata_retries", lambda spark, work, logger=None, context="": work())
+    inst = _inst(agent_ns, names=names)
+    inst.streaming_batch_size = 20
+    tables = inst._fetch_tables_for_schema(CAT, SCH)
+    logs = [m for _lvl, m in inst.logger.records]
+    assert len(calls) == 20 and len(_listed(tables)) == 20
+    assert any(m.startswith("[TABLE-TYPE PROBE CAP] 30 tables beyond the probe cap of 20") for m in logs), logs
+    assert any("[TABLE-TYPE UNKNOWN] 30 tables left out of" in m for m in logs), logs
