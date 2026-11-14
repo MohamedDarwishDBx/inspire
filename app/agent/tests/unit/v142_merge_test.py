@@ -285,7 +285,8 @@ def test_a_user_app_with_two_viewers_grants_both_and_lists_the_one_refused_grant
         {"service_principal_name": "sp-7", "all_permissions": [{"permission_level": "CAN_MANAGE"}]}]}
     inst, context, _calls, _imported = _deploy_inspire(agent_ns, [host, sharing] + DEPLOYED, access=[])
     view = "main.s.orders_scope"
-    inst._genie_scopes = lambda use_case: {"main.s.orders": {"table": "main.s.orders", "view": view, "view_sql": "SELECT 1", "ready": True}}
+    inst._genie_scopes = lambda use_case: {"main.s.orders": {"table": "main.s.orders", "view": view, "view_sql": "SELECT 1", "source": "(SELECT 1)",
+                                                                      "view_ref": ".".join(f"`{p}`" for p in view.split(".")), "ready": True}}
     context["app_host"] = dict(agent_ns["implement_app_host"]("sales-desk"), app=host, merged=True, source=SOURCE, settings={
         "auth": "user", "options": {"modify": False, "decisions": False}})
     attempts = []
@@ -322,7 +323,8 @@ def test_the_build_persists_the_scope_view_and_the_source_table_the_app_reads_di
     host = dict(HOST_APP, user_api_scopes=["sql:restricted-query", "genie"])
     inst, context, _calls, _imported = _deploy_inspire(agent_ns, [host, {"access_control_list": []}] + DEPLOYED, access=[])
     view, source = "main.s.orders_scope", "main.s.returns"
-    inst._genie_scopes = lambda use_case: {"main.s.orders": {"table": "main.s.orders", "view": view, "view_sql": "SELECT 1", "ready": True}}
+    inst._genie_scopes = lambda use_case: {"main.s.orders": {"table": "main.s.orders", "view": view, "view_sql": "SELECT 1", "source": "(SELECT 1)",
+                                                                      "view_ref": ".".join(f"`{p}`" for p in view.split(".")), "ready": True}}
     context["app_host"] = dict(agent_ns["implement_app_host"]("sales-desk"), app=host, merged=True, source=SOURCE, settings={
         "auth": "user", "options": {"modify": False, "decisions": False}})
     fields = inst._implement_deploy_app(context, "sales-desk", SHELL_FILES, [view, source, context["result_table"]], "gA", poll_s=0)
