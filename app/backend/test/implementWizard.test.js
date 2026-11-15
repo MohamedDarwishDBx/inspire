@@ -811,6 +811,10 @@ test('the Implement page shows lost tables from a refused re-run first, else onl
     + 'Swap main.s.pax for a table with the same role, because the primary table can be swapped, not removed, and swap or remove the others.');
   assert.equal(w.lostTablesText([]), '');
   assert.equal(w.lostTablesText(undefined), '');
+  // REQ-240: a blocked preview offers the Data step's picker; no missing table offers nothing.
+  assert.deepEqual(w.missingSourcePick([{ table: 'main.s.pax', reason: 'not found', primary: true }]), { label: 'Choose a replacement table', step: 'data' });
+  assert.equal(w.missingSourcePick([]), null, 'a preview with no missing table offers no picker');
+  assert.equal(w.missingSourcePick(undefined), null);
 });
 
 test('the business Hub App is inspire-hub- and the business name, at most 30 characters, and a fresh App of a known business takes that name', async () => {
