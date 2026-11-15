@@ -49,10 +49,11 @@ def test_a_page_id_is_not_rewritten_inside_a_longer_id(agent_ns):
     assert shell_facts.plain_check_text(f"page {PAGE_ID}2 is not this page", pages) == f"page {PAGE_ID}2 is not this page"
 
 
-def test_the_vibe_refusal_for_another_page_names_no_page_id(agent_ns):
+def test_the_vibe_refusal_is_a_genie_verdict_so_it_keeps_the_exact_page_id(agent_ns):
+    """The refusal is sent back to Genie (D-NAMES: Genie reads exact names), so it keeps the page id and is not person copy."""
     target, reason = agent_ns["implement_vibes_target"](f"app:page:{PAGE_ID}", {"id": "n07_u02", "title": "Stock on hand"})
-    assert target is None and "Stock on hand" in reason
-    assert "n07_u02" not in reason and PAGE_ID not in reason and internal_hits(reason) == []
+    assert target is None
+    assert f"builds the App page n07_u02" in reason and f"the page {PAGE_ID} is not one Inspire builds here" in reason
 
 
 def test_the_page_spot_is_the_one_wording_for_an_app_page(agent_ns):
