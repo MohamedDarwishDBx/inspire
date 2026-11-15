@@ -16,8 +16,10 @@ test('the Build wizard lets a person build the App without a Genie Agent: the Ge
     const app = page.getByRole('checkbox', { name: /^Agentic App/ }).first();
     await genie.waitFor();
     assert.equal(await app.isChecked(), true, 'the App is on by default');
-    assert.equal(await genie.isChecked(), true, 'the Genie Agent is ticked by default');
+    assert.equal(await genie.isChecked(), false, 'the Genie Agent is not ticked by default (REQ-322)');
     assert.equal(await genie.isDisabled(), false, 'the Genie Agent is not locked while the App is on');
+    await genie.check();
+    assert.equal(await genie.isChecked(), true, 'the Genie Agent ticks');
     await genie.uncheck();
     assert.equal(await genie.isChecked(), false, 'the Genie Agent unticks');
     assert.equal(await app.isChecked(), true, 'the App stays on');

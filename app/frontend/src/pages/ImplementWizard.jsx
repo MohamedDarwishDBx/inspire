@@ -94,6 +94,7 @@ import {
   SOURCE_REFUSED_REASON,
   SOURCE_BUILT_IN_REFUSED_REASON,
   ACCESS_CHECKING,
+  accessCheckingText,
   ACCESS_UNKNOWN,
   accessVerdictOf,
   NEW_APPS_ACCESS_ACTION,
@@ -307,6 +308,7 @@ import {
   scopedGroupRows,
 } from '../lib/runScope';
 
+const CARD_CONTROL_SELECTOR = 'label,input,button,a,select,textarea,[role="radio"],[role="checkbox"],[role="button"]';
 const ICONS = { notebook: NotebookPen, dashboard: LayoutDashboard, genie_space: Sparkles, app: AppWindow, alert: Bell };
 const ASSET_NOUNS = { dashboard: 'a dashboard', genie_space: 'a Genie Agent', app: 'an App', alert: 'an alert' };
 const ACCESS_ICONS = { user: UserRound, sp: KeyRound };
@@ -481,6 +483,13 @@ export default function ImplementWizard({
   const [preflight, setPreflight] = useState(null);
   const [preflightError, setPreflightError] = useState('');
   const [checksBusy, setChecksBusy] = useState(false);
+  const [checkSeconds, setCheckSeconds] = useState(0);
+  useEffect(() => {
+    if (!checksBusy) { setCheckSeconds(0); return undefined; }
+    const started = Date.now();
+    const timer = setInterval(() => setCheckSeconds(Math.round((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [checksBusy]);
   const [outputCheck, setOutputCheck] = useState(null);
   // True once Next has run the write check: from then on the check re-runs when its inputs change (see writeCheckKey).
   const writeCheckRun = useRef(false);
@@ -1821,8 +1830,14 @@ export default function ImplementWizard({
                   const mergeable = on && item.id !== 'app' && MERGE_OUTPUTS.includes(item.id) && !held[item.id];
                   const gone = on && (context?.gone_assets || []).includes(item.id);
                   const holding = sharedHolding(item.id, shared, liveCheck);
+                  // REQ-325: a click on the card outside its label (the padding, the gaps) ticks it too; a click on a control inside it keeps its own action.
+                  const cardClick = (e) => {
+                    if (cannot && !on) return;
+                    if (e.target.closest(CARD_CONTROL_SELECTOR)) return;
+                    toggleOutput(item.id, !on);
+                  };
                   return (
-                    <div key={item.id} data-output={item.id} data-blocked={cannot ? '' : undefined} className={`border rounded-lg p-3 space-y-2 ${on ? 'border-db-red/50 bg-db-red-50/40' : 'border-border'} ${cannot && !on ? 'border-dashed bg-bg cursor-not-allowed' : ''}`}>
+                    <div key={item.id} data-output={item.id} data-blocked={cannot ? '' : undefined} onClick={cardClick} className={`border rounded-lg p-3 space-y-2 ${on ? 'border-db-red/50 bg-db-red-50/40' : 'border-border'} ${cannot && !on ? 'border-dashed bg-bg cursor-not-allowed' : 'cursor-pointer'}`}>
                       <div className="relative">
                         <label className="flex items-start gap-3 cursor-pointer">
                           <input type="checkbox" value={item.id} className="mt-0.5" checked={on} disabled={(cannot || lockedWhileChecking) && !on} onChange={(e) => toggleOutput(item.id, e.target.checked)} />
@@ -2353,6 +2368,9 @@ export default function ImplementWizard({
           </button>
           <div className="flex items-center gap-2">
             {/* The Build button already reads Checking access while the check runs, so the status is announced, not shown. Absolute, so it takes no room and the footer keeps its height. */}
+            {lastStep && checksBusy && (
+              <p data-access-progress="" className="text-[11px] text-text-secondary">{accessCheckingText(spec, checkSeconds)}</p>
+            )}
             {lastStep && (
               <p role="status" data-access-verdict={accessVerdict === 'pending' ? 'pending' : undefined} className="sr-only">
                 {accessVerdict === 'pending' ? ACCESS_CHECKING : ''}

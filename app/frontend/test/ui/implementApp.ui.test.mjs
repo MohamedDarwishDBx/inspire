@@ -41,7 +41,7 @@ const rgb = (hex) => {
   return `rgb(${parseInt(full.slice(0, 2), 16)}, ${parseInt(full.slice(2, 4), 16)}, ${parseInt(full.slice(4, 6), 16)})`;
 };
 
-test('the App starts on with its Genie Agent locked on and the alert off, App access starts with each person signing in, per-user keeps record decisions and hides alerts, and App look previews every style, layout and palette', async () => {
+test('the App starts on with its Genie Agent off (REQ-322) and the alert off, App access starts with each person signing in, per-user keeps record decisions and hides alerts, and App look previews every style, layout and palette', async () => {
   const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' }, columns: DATED });
   const { page, made } = ui;
   try {
@@ -49,9 +49,8 @@ test('the App starts on with its Genie Agent locked on and the alert off, App ac
     const genie = page.getByRole('checkbox', { name: /^Genie Agent/ });
     const box = (name) => page.getByRole('checkbox', { name: new RegExp(`^${name}`) });
     assert.deepEqual([await box('Dashboard').isChecked(), await genie.isChecked(), await box('Agentic App').isChecked(), await box('Alert').isChecked()],
-      [false, true, true, false], 'the Genie Agent and App start on, the dashboard and the alert off');
+      [false, false, true, false], 'the App starts on, the Genie Agent, the dashboard and the alert off');
     assert.equal(await genie.isDisabled(), false, 'the App does not lock the Genie Agent (REQ-152)');
-    await page.locator('[data-output="genie_space"]').getByText("The App's own agent answers Ask.").waitFor();
     await toAppAccess(page);
     await openFolded(page, 'Who sees which rows');
     const access = page.getByRole('region', { name: 'App access' });
@@ -141,7 +140,7 @@ test('the App starts on with its Genie Agent locked on and the alert off, App ac
     await page.getByRole('region', { name: 'App pages' }).locator('[data-app-page="runs"]').getByRole('switch').uncheck();
     await startWhenReady(page);
     const spec = submittedSpec(made);
-    assert.deepEqual([spec.outputs.app, spec.outputs.genie_space, spec.outputs.app_access], [true, true, 'user']);
+    assert.deepEqual([spec.outputs.app, spec.outputs.genie_space, spec.outputs.app_access], [true, false, 'user']);
     assert.deepEqual(spec.outputs.app_look, { style: 'c', layout: 'home', palette: 'nordic', theme: 'dark' });
     assert.deepEqual(spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' }, 'per-user sends decisions on and alerts off');
     assert.deepEqual(spec.outputs.app_charts, ['trend', 'bars', 'split', 'pareto'], 'the build gets the kinds of chart picked');
@@ -823,6 +822,7 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
   try {
     await toDelivery(page);
     await page.getByRole('checkbox', { name: /^Dashboard/ }).check();
+    await page.getByRole('checkbox', { name: /^Genie Agent/ }).check();
     const dash = page.locator('[data-merge="dashboard"]');
     await dash.getByRole('button', { name: 'Create new' }).waitFor();
     assert.equal(await dash.getByRole('button', { name: 'Create new' }).getAttribute('aria-pressed'), 'true', 'Create new is the default');

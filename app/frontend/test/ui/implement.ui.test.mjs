@@ -71,7 +71,7 @@ function submittedSpec(made) {
   return JSON.parse(inserts[0].parameters.find((p) => p.name === 'spec').value);
 }
 
-test('the wizard opens on Use case with no MVP or notebook choice, Deliver ticks the App and Genie Agent, drops the App step while the App is unticked, and All Good, Build it Now launches one run', async () => {
+test('the wizard opens on Use case with no MVP or notebook choice, Deliver ticks the App only, drops the App step while the App is unticked, and All Good, Build it Now launches one run', async () => {
   const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' } });
   const { page, made } = ui;
   const withApp = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Review & build'];
@@ -88,7 +88,8 @@ test('the wizard opens on Use case with no MVP or notebook choice, Deliver ticks
     await page.getByRole('heading', { name: 'How will people use this use case?' }).waitFor();
     assert.equal(await page.locator('[data-output="notebook"] input').isChecked(), true, 'the notebook is always built');
     assert.equal(await page.locator('[data-output="notebook"] input').isDisabled(), true);
-    for (const name of [/^Genie Agent/, /^Agentic App A Databricks/]) assert.equal(await page.getByRole('checkbox', { name }).isChecked(), true, String(name));
+    assert.equal(await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).isChecked(), true, 'the Agentic App is ticked');
+    assert.equal(await page.getByRole('checkbox', { name: /^Genie Agent/ }).isChecked(), false, 'the Genie Agent is not ticked by default (REQ-322)');
     for (const name of [/^Dashboard/, /^Alert/]) assert.equal(await page.getByRole('checkbox', { name }).isChecked(), false, `${name} starts off but stays a choice`);
     assert.equal(await page.locator('[data-output="app"] [data-recommended]').count(), 1, 'the App tile is Recommended');
     assert.equal(await page.locator('[data-choice="outputs"]').evaluate((g) => [...g.querySelectorAll('[data-recommended]')].filter((b) => b.closest('[data-choice]') === g).length),
@@ -143,7 +144,7 @@ test('the wizard opens on Use case with no MVP or notebook choice, Deliver ticks
     assert.equal(spec.config.result_table, RESULT_TABLE);
     assert.deepEqual(
       { dashboard: spec.outputs.dashboard, genie_space: spec.outputs.genie_space, app: spec.outputs.app, alert: spec.outputs.alert },
-      { dashboard: true, genie_space: true, app: true, alert: true },
+      { dashboard: true, genie_space: false, app: true, alert: true },
     );
     assert.equal(spec.outputs.app_name, 'inspire-hub-acme');
     assert.equal(spec.outputs.app_access, 'sp');

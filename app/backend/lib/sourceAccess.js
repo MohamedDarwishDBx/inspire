@@ -89,18 +89,23 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
   async function sourceAccess(req, warehouseId, tables, job = 'build') {
     const app = await appTokenOf(req);
     if (!app) return { missing: [], app_unreadable: unverifiedOffer(tables) };
-    const probes = await Promise.all(tables.map((table) => sqlRows(req.dbHost, app, warehouseId, I.tableProbeStatement(table))
-      .then(() => null)
-      .catch((err) => {
-        const reason = I.tableAccessReason(table, err && err.message);
-        return reason ? { table, reason, error: String(err.message || '').slice(0, 300) } : null;
-      })));
-    const lost = probes.filter(Boolean);
     const person = P.personTokenOf(req);
-    const policyLost = (await Promise.all(tables.map(async (t) => ((await abacUnreadable(req, app, t)) ? t : null)))).filter(Boolean);
-    const personPolicyLost = person && person !== app
-      ? (await Promise.all(tables.map(async (t) => ((await personAbacUnreadable(req, person, t)) ? t : null)))).filter(Boolean)
-      : [];
+    // REQ-324: the probes and both policy checks are independent of each other, so they run together, not one after another.
+    const [probes, policyRows, personRows] = await Promise.all([
+      Promise.all(tables.map((table) => sqlRows(req.dbHost, app, warehouseId, I.tableProbeStatement(table))
+        .then(() => null)
+        .catch((err) => {
+          const reason = I.tableAccessReason(table, err && err.message);
+          return reason ? { table, reason, error: String(err.message || '').slice(0, 300) } : null;
+        }))),
+      Promise.all(tables.map(async (t) => ((await abacUnreadable(req, app, t)) ? t : null))),
+      person && person !== app
+        ? Promise.all(tables.map(async (t) => ((await personAbacUnreadable(req, person, t)) ? t : null)))
+        : Promise.resolve([]),
+    ]);
+    const lost = probes.filter(Boolean);
+    const policyLost = policyRows.filter(Boolean);
+    const personPolicyLost = personRows.filter(Boolean);
     if (personPolicyLost.length) {
       const label = (await appIdentity(req, person)).name;
       const builtIn = personPolicyLost.filter((t) => I.builtInSampleTable(t));

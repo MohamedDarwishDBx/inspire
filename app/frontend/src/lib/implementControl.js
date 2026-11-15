@@ -211,6 +211,22 @@ export function cardAssetLinks(latest) {
     .filter((link) => delivered.has(link.id) && /^https:\/\//i.test(link.url));
 }
 
+// REQ-323: a build this page just submitted, until the history read shows a newer version of that use case. `pending` maps a use case id
+// to { at, name, before } where before is the version the list showed at submit. A build that never lands is dropped after 15 minutes.
+export const PENDING_BUILD_TTL_MS = 15 * 60 * 1000;
+export function withPendingBuilds(latest, pending, now) {
+  const rows = Array.isArray(latest) ? latest : [];
+  const byId = new Map(rows.map((row) => [String(row?.use_case_id ?? ''), row]));
+  const placeholders = [];
+  for (const [id, entry] of [...pending]) {
+    const row = byId.get(id);
+    const landed = row && String(row.spec_version ?? '') !== entry.before;
+    if (landed || now - entry.at > PENDING_BUILD_TTL_MS) { pending.delete(id); continue; }
+    if (!row) placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, pending: true });
+  }
+  return placeholders.length ? [...rows, ...placeholders] : rows;
+}
+
 export function buildSummary(items) {
   const list = Array.isArray(items) ? items : [];
   const mvps = list.filter((item) => item.state?.kind === 'mvp');

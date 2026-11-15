@@ -1011,9 +1011,10 @@ function registerImplementRoutes(app, deps) {
 
   async function sourceCheckOf(req, warehouseId, useCase, spec, history) {
     if (!sourcesReadBy(spec, history)) return { refusal: null, reads: NO_READS, app_unreadable: null };
-    const sourced = await sourceAccess(req, warehouseId, I.sourceTables(spec, I.useCaseTables(useCase)));
+    // REQ-324: the App's probes and the person's read plan are independent, so they run together.
+    const tables = I.sourceTables(spec, I.useCaseTables(useCase));
+    const [sourced, reads] = await Promise.all([sourceAccess(req, warehouseId, tables), U.runReadPlan(dbFetch, req, { tables })]);
     const blocking = I.blockingMissingTables(sourced.missing, spec, useCase);
-    const reads = await U.runReadPlan(dbFetch, req, { tables: I.sourceTables(spec, I.useCaseTables(useCase)) });
     const refusal = sourced.app_unreadable
       ? Object.assign(I.badRequest(sourced.app_unreadable.text, 409), { details: { missing_tables: sourced.missing, app_unreadable: sourced.app_unreadable } })
       : blocking.length
@@ -1063,17 +1064,23 @@ function registerImplementRoutes(app, deps) {
         appName ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.0/apps/${encodeURIComponent(appName)}`) : null,
       ]);
       const warehouseName = warehouses.ok ? (warehouses.data.name || warehouseId) : warehouseId;
-      let output = null;
-      let outputError = '';
-      let moved = null;
-      try {
-        const viewed = [wantsDashboard && 'the dashboard', wantsGenie && 'the Genie Agent'];
-        moved = await movedResultTable(req, warehouseId, useCaseId, resultTable);
-        output = await checkOutput(req, warehouseId, moved ? moved.to : resultTable, useCaseId,
-          { principals, warehouseName, viewed, appWarehouse });
-      } catch (err) {
-        outputError = err.message || String(err);
-      }
+      // REQ-324: the output check and the use case and build record reads do not depend on each other, so they run together.
+      const outputStage = (async () => {
+        try {
+          const viewed = [wantsDashboard && 'the dashboard', wantsGenie && 'the Genie Agent'];
+          const moved = await movedResultTable(req, warehouseId, useCaseId, resultTable);
+          const output = await checkOutput(req, warehouseId, moved ? moved.to : resultTable, useCaseId,
+            { principals, warehouseName, viewed, appWarehouse });
+          return { output, outputError: '', moved };
+        } catch (err) {
+          return { output: null, outputError: err.message || String(err), moved: null };
+        }
+      })();
+      const [{ output, outputError, moved }, useCaseNow, historyNow] = await Promise.all([
+        outputStage,
+        loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
+        loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
+      ]);
       const outputDetail = output && (output.write.ok ? `${output.write.detail}; ${output.safety.detail}` : output.write.detail);
       const denied = !output && I.isReadDenied(outputError);
       const unchecked = denied
@@ -1088,10 +1095,6 @@ function registerImplementRoutes(app, deps) {
           : unchecked,
       };
       if (output && output.model) checks.model = output.model;
-      const [useCaseNow, historyNow] = await Promise.all([
-        loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
-        loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
-      ]);
       const sent = req.body?.spec && typeof req.body.spec === 'object' ? req.body.spec : ((historyNow[0] && historyNow[0].spec_json) || {});
       const checkSpec = I.withResultTable(sent, moved ? moved.to : (resultTable || (sent.config && sent.config.result_table) || ''));
       const verdict = await sourceCheckOf(req, warehouseId, useCaseNow, checkSpec, historyNow);

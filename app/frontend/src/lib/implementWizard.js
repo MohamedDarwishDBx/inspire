@@ -1313,7 +1313,8 @@ export function defaultSpecFromUseCase(uc, { warehouseId, inspireDatabase, sessi
     },
     outputs: {
       dashboard: false,
-      genie_space: true,
+      // REQ-322: a Genie Agent is optional for the App (GENIE_FOR_APP_NOTE), so it is not ticked by default.
+      genie_space: false,
       app: true,
       dashboard_name: '',
       dashboard_filters: [],
@@ -3030,6 +3031,18 @@ export const SOURCE_BUILT_IN_REFUSED_REASON = 'The App cannot read its sources y
 
 export const ACCESS_CHECKING = 'Checking access';
 export const ACCESS_UNKNOWN = 'Could not check access';
+
+// REQ-324: what the access check is looking at while it runs. The check asks the warehouse, the result table, the source tables and each
+// output the person ticked, all in one request, so the line names those parts and the seconds so far instead of a bare spinner.
+export function accessCheckingText(spec, seconds = 0) {
+  const outputs = spec?.outputs || {};
+  const parts = ['the warehouse', 'the result table', 'the source tables'];
+  if (outputs.app) parts.push('the App name');
+  if (outputs.genie_space) parts.push('the Genie Agent');
+  if (outputs.alert) parts.push('the alert');
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+  return `Checking ${list}, ${seconds} s so far`;
+}
 
 export function accessVerdictOf({ preflight = null, error = '', busy = false, unread = null } = {}) {
   if (preflight && !busy) {
