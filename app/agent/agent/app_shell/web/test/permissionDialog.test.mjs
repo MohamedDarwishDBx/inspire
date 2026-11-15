@@ -1,0 +1,92 @@
+// REQ-311: an MVP App that cannot read its data opens the Permission Required dialog: one instruction line, a block of only the GRANT
+// statements, Copy, and Request access only when the workspace has a destination for them. The request is sent as the viewer.
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+import { appInfo, openApp, serveDist, until } from './harness.mjs';
+
+const TABLE = 'main.pricing.items';
+const GRANTS = ['GRANT USE SCHEMA ON SCHEMA `main`.`pricing` TO `viewer@example.com`', 'GRANT SELECT ON TABLE `main`.`pricing`.`items` TO `viewer@example.com`'];
+const FOUND = { tables: [{ table: TABLE, owner: 'data-eng', grants: GRANTS, you_can_grant: false }], can_grant: true, you_can_grant: false,
+  sql: GRANTS.map((g) => `${g};`).join('\n'), seen: 'c'.repeat(64) };
+const WAITING = { state: 'waiting_for_access', message: 'This App is waiting for access to its data.', tables: [TABLE], owners: ['data-eng'], detail: `No access to ${TABLE}` };
+const COPY_LINE = 'Copy the text below and pass it on to your Databricks admin.';
+const OFFER = { offered: true, destinations: ['owner@example.com'], reason: '' };
+
+let served;
+let browser;
+
+before(async () => {
+  served = await serveDist();
+  browser = await chromium.launch();
+});
+
+after(async () => {
+  await browser?.close();
+  served?.close();
+});
+
+// The page is waiting: its load answers the waiting state, and the access routes answer what the test sets.
+function waitingRoutes({ check = { offered: false, destinations: [], reason: 'no one has set up where access requests for these go yet' }, send } = {}) {
+  const state = { checks: 0, sends: [] };
+  const routes = {
+    page: ({ json }) => json(200, WAITING),
+    access: ({ json }) => json(200, FOUND),
+    'access-request/check': ({ json }) => { state.checks += 1; return json(200, check); },
+    'access-request': ({ route, json }) => {
+      state.sends.push(route.request().postDataJSON?.() ?? null);
+      return json(200, send || { sent: false, destinations: [], reason: 'no destination' });
+    },
+  };
+  return { state, routes };
+}
+
+test('a waiting App opens the Permission Required dialog: one instruction line, only the GRANT statements, and Copy', async () => {
+  const { routes } = waitingRoutes();
+  const { page, context, seen } = await openApp(browser, served.base, appInfo({ unread: { [TABLE]: GRANTS }, unread_owners: { [TABLE]: 'data-eng' } }), { routes });
+  try {
+    const dialog = page.locator('[data-permission-dialog]');
+    await dialog.waitFor({ timeout: 15000 });
+    assert.equal(await dialog.getByText(COPY_LINE, { exact: true }).count(), 1, 'one instruction line');
+    const block = (await dialog.locator('[data-permission-statements]').textContent()).trim();
+    assert.equal(block, GRANTS.map((g) => `${g};`).join('\n'), 'the block holds the GRANT statements, each ending with a semicolon, and nothing else');
+    assert.equal(await dialog.getByRole('button', { name: 'Copy', exact: true }).count(), 1);
+    assert.equal(await dialog.getByRole('button', { name: 'Request access' }).count(), 0, 'no Request access without a destination');
+    assert.deepEqual(seen.errors, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Request access shows only when the workspace has a destination, and sends the viewer\'s grants as the person', async () => {
+  const { state, routes } = waitingRoutes({ check: OFFER, send: { sent: true, destinations: ['owner@example.com'], reason: '' } });
+  const { page, context } = await openApp(browser, served.base, appInfo({ unread: { [TABLE]: GRANTS }, unread_owners: { [TABLE]: 'data-eng' } }), { routes });
+  try {
+    const dialog = page.locator('[data-permission-dialog]');
+    const button = dialog.getByRole('button', { name: 'Request access' });
+    await button.waitFor({ timeout: 15000 });
+    await button.click();
+    const result = dialog.locator('[data-access-request-result]');
+    await result.waitFor({ timeout: 15000 });
+    assert.equal((await result.textContent()).trim(), 'Request sent to owner@example.com');
+    await until(() => state.sends.length === 1, 5000);
+    assert.equal(state.checks >= 1, true);
+    assert.equal(await page.locator('[data-permission-dialog]').count(), 1, 'one dialog, not a second one');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a refused request is shown as its plain reason in the same dialog', async () => {
+  const { routes } = waitingRoutes({ check: OFFER, send: { sent: false, destinations: [], reason: 'PERMISSION_DENIED: you cannot request this securable' } });
+  const { page, context } = await openApp(browser, served.base, appInfo({ unread: { [TABLE]: GRANTS }, unread_owners: { [TABLE]: 'data-eng' } }), { routes });
+  try {
+    const dialog = page.locator('[data-permission-dialog]');
+    await dialog.getByRole('button', { name: 'Request access' }).click();
+    const result = dialog.locator('[data-access-request-result]');
+    await result.waitFor({ timeout: 15000 });
+    assert.equal((await result.textContent()).trim(), 'Request not sent: PERMISSION_DENIED: you cannot request this securable');
+  } finally {
+    await context.close();
+  }
+});
