@@ -54,3 +54,37 @@ test('the backend live build row is the kept v6 under keep-previous, not the new
   assert.equal(I.liveBuiltRow(plain).spec_version, 3, 'without a kept App the newest built row is live');
   assert.equal(I.liveBuiltRow([]), null, 'no built row means no live row');
 });
+
+// REQ-241 (D-LIVE), backend: fixture pinned on the real kept-entry shape read from a live status record (ids anonymised).
+// The newest built row (v7) lists the kept older App in kept.assets; its own app_name/app_url is the side App.
+const keptShapeRows = () => [
+  { session_id: 's1', use_case_id: 'UC1', spec_version: 7, status: 'ready_with_warnings', app_name: 'side-app-v7', app_url: 'https://side.example.test',
+    updated_at: '2026-11-15T04:00:00Z', spec_json: { use_case_name: 'Fraud', outputs: { app: true } },
+    asset_status: { app: { state: 'ready', spec_version: 7, snapshot: true },
+      kept: { state: 'kept', assets: [{ output: 'app', id: 'kept-app-live', url: 'https://kept.example.test', title: 'kept-app-live', version: 6, kept_in: 7 }] } } },
+  { session_id: 's1', use_case_id: 'UC1', spec_version: 6, status: 'ready', app_name: 'kept-app-live', app_url: 'https://kept.example.test',
+    updated_at: '2026-11-14T04:00:00Z', spec_json: { use_case_name: 'Fraud', outputs: { app: true } },
+    asset_status: { app: { state: 'ready', spec_version: 6, snapshot: true } } },
+];
+
+test('the live App name and URL come from the kept entry, never the side App (appShellUpdate and the publish listing)', () => {
+  const I = require('../lib/inspireImplement');
+  const rows = keptShapeRows();
+  assert.deepEqual(I.liveAppOf(rows), { name: 'kept-app-live', url: 'https://kept.example.test', version: 6 });
+  const pages = I.runPages(rows);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].kind, 'app');
+  assert.equal(pages[0].app_name, 'kept-app-live', 'the publish listing names the live App, not the side App');
+  assert.equal(pages[0].app_url, 'https://kept.example.test');
+  assert.equal(pages[0].version, 6, 'the App page carries the live App version');
+  const update = I.appShellUpdate(rows, { version: '9.9.9', shell: 'new-shell' });
+  assert.equal(update && update.version, 6, 'the App code update targets the kept live App v6');
+});
+
+test('without a kept App the publish listing and App update use the newest built row own App', () => {
+  const I = require('../lib/inspireImplement');
+  const plain = [{ session_id: 's1', use_case_id: 'UC1', spec_version: 3, status: 'ready', app_name: 'app-v3', app_url: 'https://v3.example.test',
+    updated_at: '2026-11-15T04:00:00Z', spec_json: { use_case_name: 'Fraud', outputs: { app: true } }, asset_status: { app: { state: 'ready', spec_version: 3, snapshot: true } } }];
+  assert.deepEqual(I.liveAppOf(plain), { name: 'app-v3', url: 'https://v3.example.test', version: 3 });
+  assert.equal(I.runPages(plain)[0].app_name, 'app-v3');
+});
