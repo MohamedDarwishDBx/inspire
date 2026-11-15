@@ -9,7 +9,7 @@ import ValueBadge, { OverallValue } from '../components/ValueBadge';
 import { EstimateTotals } from '../components/ValueEstimateLine';
 import { valueChips, valueQuery } from '../lib/valueLedger';
 import { useValueRead } from '../lib/useValueLedger';
-import { makeApiFetch, requestHeaders } from '../lib/apiClient';
+import { makeApiFetch, requestHeaders, responseError } from '../lib/apiClient';
 import { buildFilterOf, portfolioCard, runCounts, runLabel, runFilterText, runsOfCard } from '../lib/reviewFigures';
 import { sessionCountsLine, sessionStatus } from '../lib/monitorState';
 import { SHOWCASE_BUTTON } from '../lib/showcase';
@@ -203,6 +203,7 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
     try {
       const q = new URLSearchParams({ inspire_database: inspireDatabase, warehouse_id: warehouseId, session_id: String(sessionId) });
       const resp = await fetch(`/api/inspire/session?${q}`, { method: 'DELETE', headers: requestHeaders(token, databricksHost) });
+      if (!resp.ok) await responseError(resp.clone());
       if (resp.ok) {
         setSessions(prev => prev.filter(s => s.session_id !== sessionId));
         setDeleteError(null);
@@ -229,6 +230,7 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
           session_id: sid,
         });
         const resp = await fetch(`/api/inspire/usecases?${q}`, { headers: requestHeaders(token, databricksHost, {}, showcase) });
+        if (!resp.ok) await responseError(resp.clone());
         if (resp.ok) {
           const data = await resp.json();
           setQuickViewUcsBySession((prev) => ({ ...prev, [sid]: data.usecases || [] }));
@@ -252,6 +254,7 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
       try {
         const q = new URLSearchParams({ inspire_database: inspireDatabase, warehouse_id: warehouseId, all: '1' });
         const resp = await fetch(`/api/inspire/sessions?${q}`, { headers: requestHeaders(token, databricksHost, {}, showcase) });
+        if (!resp.ok) await responseError(resp.clone());
         if (resp.ok) {
           const data = await resp.json();
           setSessions(data.sessions || []);

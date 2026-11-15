@@ -52,8 +52,34 @@ function failureBody(res, message) {
   return { error: message, ...(permission ? { permissions: [permission] } : {}) };
 }
 
-function sendFailure(res, code, message, extra) {
-  return res.status(code).json({ ...(extra || {}), ...failureBody(res, message) });
+// One rule for every route that reads data: a warehouse or Unity Catalog refusal is HTTP 403 with the Permission Required payload,
+// whatever status the route would have given a failure. A route never answers a denial with a 500 (REQ-314).
+const CODED_DENIAL = new Set(['PERMISSION_DENIED', 'INSUFFICIENT_PERMISSIONS']);
+function accessDenied(failure) {
+  if (failure && typeof failure === 'object') {
+    if (CODED_DENIAL.has(failure.error_code) || failure.http_status === 403) return true;
+    if (failure.denial && accessDenied(failure.denial)) return true;
+    return DENIED.test(String(failure.message || ''));
+  }
+  return DENIED.test(String(failure || ''));
 }
 
-module.exports = { deniedObjectOf, permissionFor, errorPermission, failureBody, sendFailure };
+// The status a failed route answers with: 403 for an access denial, otherwise the error's own status or 500.
+function failureStatus(err, fallback = 500) {
+  if (accessDenied(err)) return 403;
+  return err && Number.isFinite(err.statusCode) ? err.statusCode : fallback;
+}
+
+// Body for a failed response. Carries structured grants only when the message (or the warehouse's own refusal text, when a route words
+// its refusal in plain text) is a permission refusal.
+function failureBody(res, message, denial) {
+  const permission = errorPermission((res && res.req) || {}, denial || message);
+  return { error: message, ...(permission ? { permissions: [permission] } : {}) };
+}
+
+function sendFailure(res, code, message, extra, denial) {
+  const status = accessDenied(denial || message) ? 403 : code;
+  return res.status(status).json({ ...(extra || {}), ...failureBody(res, message, denial) });
+}
+
+module.exports = { deniedObjectOf, permissionFor, errorPermission, failureBody, sendFailure, accessDenied, failureStatus };

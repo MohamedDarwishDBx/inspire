@@ -131,7 +131,7 @@ test('a missing target schema the person cannot create answers 409 with the exac
     },
   });
   const got = await copy({ entries: [SOURCE], destination: DEST });
-  assert.equal(got.status, 409, got.text.slice(0, 300));
+  assert.equal(got.status, 403, 'a refusal to create answers 403 with the payload, never a 500 (REQ-314)');
   assert.match(got.data.error, /main\.inspire does not exist/);
   assert.match(got.data.error, /cannot create it/);
   assert.ok(got.data.error.includes('CREATE SCHEMA IF NOT EXISTS `main`.`inspire`'), 'the message carries the exact statement to copy');

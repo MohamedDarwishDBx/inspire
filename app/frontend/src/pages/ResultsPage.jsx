@@ -108,7 +108,7 @@ import { buildUseCaseList } from '../lib/useCaseList';
 import { cardAssetLinks, liveAppRenameStale, renameRestyleSpec } from '../lib/implementControl';
 import { ARCHIVE_VIEWS, archiveKeyOf, inArchiveView, loadArchiveMap, toggledArchive } from '../lib/useCaseArchive';
 import QualityGateDrops from '../components/QualityGateDrops';
-import { makeApiFetch, makeApiPostJson, requestHeaders } from '../lib/apiClient';
+import { makeApiFetch, makeApiPostJson, requestHeaders, responseError } from '../lib/apiClient';
 import { RESULTS_PENDING_TEXT, noResultsText, resultsReadFailure, reviewLinkText } from '../lib/runPages';
 import { sessionFailed, sessionFinished, sessionSucceeded } from '../lib/monitorState';
 import { placeholderWords } from '../lib/placeholderWords';
@@ -829,7 +829,7 @@ export default function ResultsPage({
     const scan = async (dir) => {
       try {
         const resp = await fetch(`/api/workspace/list?path=${encodeURIComponent(dir)}`, { headers });
-        if (!resp.ok) return;
+        if (!resp.ok) { await responseError(resp); return; }
         const data = await resp.json();
         const files = visibleArtifactFiles(data.files);
         setArtifactTree(prev => ({ ...prev, [dir]: { files, loading: false, error: null } }));
@@ -856,6 +856,7 @@ export default function ResultsPage({
     for (const path of expandWorkspaceListCandidates(genPath)) {
       try {
         const resp = await fetch(`/api/workspace/list?path=${encodeURIComponent(path)}`, { headers });
+        if (!resp.ok) await responseError(resp.clone());
         if (resp.ok) {
           const data = await resp.json();
           if (data.files && data.files.length > 0) {
@@ -881,6 +882,7 @@ export default function ResultsPage({
     const headers = artifactHeaders();
     try {
       const resp = await fetch(`/api/workspace/list?path=${encodeURIComponent(folderPath)}`, { headers });
+      if (!resp.ok) await responseError(resp.clone());
       if (resp.ok) {
         const data = await resp.json();
         setArtifactTree(prev => ({ ...prev, [folderPath]: { files: visibleArtifactFiles(data.files), loading: false, error: null } }));
@@ -906,6 +908,7 @@ export default function ResultsPage({
   const exportedFile = useCallback(async (filePath, fileName, action) => {
     setFileProblem('');
     const resp = await fetch(`/api/workspace/export?path=${encodeURIComponent(filePath)}`, { headers: artifactHeaders() }).catch(() => null);
+    if (resp && !resp.ok) await responseError(resp.clone());
     const blob = resp?.ok ? await resp.blob().catch(() => null) : null;
     if (blob) return blob;
     setFileProblem(await fileProblemText(action, fileName, resp?.ok ? null : resp));
@@ -951,7 +954,7 @@ export default function ResultsPage({
     let resp = null;
     try {
       resp = await fetch(`/api/workspace/export?path=${encodeURIComponent(filePath)}`, { headers });
-      if (!resp.ok) throw new Error('fetch failed');
+      if (!resp.ok) { await responseError(resp.clone()); throw new Error('fetch failed'); }
       const ext = fileExtension({ name: fileName });
       if (ext === 'pdf') {
         const blob = new Blob([await resp.blob()], { type: 'application/pdf' });

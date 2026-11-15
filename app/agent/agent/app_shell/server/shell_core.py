@@ -2683,12 +2683,17 @@ class Shell:
                 return 200, getattr(self.alerts, ALERT_ROUTES[route[1]])(headers, data)
             raise HttpError(404, f"no API route {method} /api/{path.strip('/')}")
         except HttpError as error:
-            if error.status == 502 and NO_ACCESS.search(str(error.message)) and not is_write_route(method, route[1]):
+            # REQ-313, REQ-314: a refusal from the warehouse or Unity Catalog on a read is the waiting state, whatever status the
+            # route raised it with (a 403 read refusal used to bypass it as plain text).
+            if error.status in (403, 502) and NO_ACCESS.search(str(error.message)) and not is_write_route(method, route[1]):
                 return 200, waiting_for_access_body(str(error.message), self.access_owners([str(error.message)]))
             return error.status, error_body(error.message, error.code, error.extra)
         except QueryError as error:
-            if NO_ACCESS.search(str(error)) and not is_write_route(method, route[1]):
-                return 200, waiting_for_access_body(error, self.access_owners([str(error)]))
+            if NO_ACCESS.search(str(error)):
+                # A refusal on a read is the waiting state; on a write it is a 403 denial, never a 502 gateway failure (REQ-314).
+                if not is_write_route(method, route[1]):
+                    return 200, waiting_for_access_body(error, self.access_owners([str(error)]))
+                return 403, {"error": shell_sql.error_text(error)}
             return 502, {"error": shell_sql.error_text(error)}
         except (ValueError, KeyError) as error:
             return 400, error_body(shell_sql.error_text(error), getattr(error, "code", ""))

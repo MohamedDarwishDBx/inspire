@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { PlainMessage } from './TechnicalDetails';
 import { unusableReasonOf } from '../lib/tableUsability';
+import { responseError } from '../lib/apiClient';
 
 export default function TableBrowser({
   token,
@@ -31,7 +32,7 @@ export default function TableBrowser({
     const headers = {};
     if (token) { headers['Authorization'] = `Bearer ${token}`; headers['X-DB-PAT-Token'] = token; }
     const resp = await fetch(url, { headers });
-    if (!resp.ok) throw new Error(`API error ${resp.status}`);
+    if (!resp.ok) { await responseError(resp.clone()); throw new Error(`API error ${resp.status}`); }
     return resp.json();
   }, [token]);
 

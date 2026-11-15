@@ -51,6 +51,8 @@ const SAMPLES = [
   { key: 'POST /api/inspire/implement/feedback/vibe', rule: 'owners', method: 'POST', path: `/api/inspire/implement/feedback/vibe?${qs(UC)}`, body: { feedback_id: 'f1' } },
   { key: 'POST /api/inspire/implement/settings/preview', rule: 'any', method: 'POST', path: `/api/inspire/implement/settings/preview?${qs(UC)}`,
     body: { name: 'act_now_share', value: '0.1' } },
+  { key: 'POST /api/access-request/check', rule: 'any', method: 'POST', path: '/api/access-request/check', body: { statements: ['GRANT SELECT ON TABLE `main`.`s`.`orders` TO `amr@example.com`'] } },
+  { key: 'POST /api/access-request', rule: 'any', method: 'POST', path: '/api/access-request', body: { statements: ['GRANT SELECT ON TABLE `main`.`s`.`orders` TO `amr@example.com`'] } },
   { key: 'POST /api/inspire/implement/alerts/preview', rule: 'any', method: 'POST', path: `/api/inspire/implement/alerts/preview?${qs(UC)}`, body: { watch: {} } },
   { key: 'POST /api/run', rule: 'any', method: 'POST', path: '/api/run', body: { params: {} } },
   { key: 'POST /api/run/check', rule: 'any', method: 'POST', path: '/api/run/check', body: { params: {} } },

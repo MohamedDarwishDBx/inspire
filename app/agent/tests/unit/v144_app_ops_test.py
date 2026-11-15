@@ -572,7 +572,7 @@ def test_refresh_needs_a_page_with_a_job_and_reports_a_refused_jobs_call(tmp_pat
     refused = shell_db.QueryError("GET /api/2.2/jobs/runs/list answered HTTP 403: the App may not view this job")
     s, sp, _now = ops_shell(tmp_path / "refused", JobsWorkspace(refuse=refused))
     status, out = call(s, "POST", "refresh", headers=signed(DANA), body={"page": "n01_u05"})
-    assert status == 502 and "HTTP 403" in out["error"] and sp.jobs_calls("run-now") == []
+    assert status == 403 and "HTTP 403" in out["error"] and sp.jobs_calls("run-now") == []  # a refusal of a write is a 403 denial (REQ-314)
 
 
 def test_refresh_returns_pending_when_the_new_run_cannot_be_read_yet(tmp_path):

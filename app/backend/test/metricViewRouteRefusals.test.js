@@ -193,7 +193,7 @@ const busyOnce = (calls) => ({ 'table_type FROM': () => {
   return { rows: [{ table_type: 'MANAGED' }] };
 } });
 
-test('a denied type lookup is permanent: one try, then the named not-usable refusal, with no retry', async () => {
+test('a denied type lookup is permanent: one try, then the Permission Required payload (403), with no retry (REQ-313)', async () => {
   const calls = { n: 0 };
   const statements = { 'table_type FROM': () => {
     calls.n += 1;
@@ -201,8 +201,8 @@ test('a denied type lookup is permanent: one try, then the named not-usable refu
   } };
   await withApp({ statements }, async (url, made) => {
     const got = await plan(url);
-    assert.equal(got.status, 400, JSON.stringify(got.data));
-    assert.match(got.data.error, UNKNOWN_LINE);
+    assert.equal(got.status, 403, JSON.stringify(got.data));
+    assert.ok(Array.isArray(got.data.permissions) && got.data.permissions.length > 0, 'the grants the person needs are named');
     assert.equal(calls.n, 1, 'a permanent denial is never retried');
     assert.deepEqual(countsOf(made), []);
   });

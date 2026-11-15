@@ -145,7 +145,7 @@ test('GET money reviews the latest version and treats tables a run has not writt
   });
   await withApp({ history: [BUILT], sqlErrors: { churn_out_summary: 'PERMISSION_DENIED: no SELECT' } }, async (base) => {
     const got = await call(base, `/api/inspire/implement/money?${Q}`);
-    assert.equal(got.status, 500);
+    assert.equal(got.status, 403, 'a denial answers 403, never a 500 (REQ-314)');
     assert.match(got.data.error, /PERMISSION_DENIED/);
   });
 });

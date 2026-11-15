@@ -73,9 +73,11 @@ function makeApp(overrides = {}, { mount } = {}) {
     executeSql: async (_h, token, warehouse, sql, parameters, options) => {
       if (options && options.signal && options.signal.aborted) throw sqlCancelledError(null);
       sqlCalls.push({ sql, parameters, token, warehouse, options });
-      for (const [needle, message] of Object.entries(state.sqlErrors || {})) if (sql.includes(needle)) throw new Error(message);
+      // A denial needle matches the statement text and its bound parameters (a picked table is often bound, not written, into the SQL).
+      const denialText = `${sql} ${JSON.stringify(parameters || [])}`;
+      for (const [needle, message] of Object.entries(state.sqlErrors || {})) if (denialText.includes(needle)) throw new Error(message);
       // sqlDeniedFor: { [token]: { [needle]: message } } refuses a read made with that token only (REQ-267: the person cannot read the App's table).
-      for (const [needle, message] of Object.entries((state.sqlDeniedFor || {})[token] || {})) if (sql.includes(needle)) throw new Error(message);
+      for (const [needle, message] of Object.entries((state.sqlDeniedFor || {})[token] || {})) if (denialText.includes(needle)) throw new Error(message);
       for (const [needle, out] of Object.entries(state.statements || {})) {
         if (sql.includes(needle)) return typeof out === 'function' ? out(sql, parameters, token) : out;
       }
