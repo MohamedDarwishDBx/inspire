@@ -14,6 +14,17 @@ export function progressLink(scope, open, href) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+// The use case whose build the person started in this app, until its page opens the panel. Set when the build is submitted (markBuildPending).
+const STARTED = new Map();
+const START_MARK_MS = 2 * 60 * 1000;
+export function noteBuildStarted(scope, now = Date.now()) {
+  STARTED.set(String(scope), now);
+}
+function startedHere(scope, now = Date.now()) {
+  const at = STARTED.get(String(scope));
+  return at !== undefined && now - at < START_MARK_MS;
+}
+
 function rememberedChoice(scope) {
   try { return globalThis.sessionStorage?.getItem(CHOICE_KEY(scope)) ?? null; } catch { return null; }
 }
@@ -26,7 +37,8 @@ function saveChoice(scope, open) {
 // while this use case is shown). A choice the person made in this tab is remembered, so a reload keeps it.
 export function useProgressView(scope, building = false) {
   const [view, setView] = useState({ scope: null, open: null, fromBuild: false });
-  const [seenBuilding, setSeenBuilding] = useState(building);
+  // A page that mounts after the build was submitted (the wizard hands over to a fresh page) already sees building true; the start mark opens it.
+  const [seenBuilding, setSeenBuilding] = useState(() => building && !startedHere(scope));
   const chosen = view.scope === scope ? view.open : null;
   const fromBuild = view.scope === scope && view.fromBuild;
   const remembered = rememberedChoice(scope);
@@ -40,7 +52,10 @@ export function useProgressView(scope, building = false) {
   if (building !== seenBuilding) {
     // A build that starts while this use case is shown opens the panel once (state adjusted during render, not in an effect).
     setSeenBuilding(building);
-    if (building) setView({ scope, open: true, fromBuild: true });
+    if (building) {
+      STARTED.delete(String(scope));
+      setView({ scope, open: true, fromBuild: true });
+    }
   }
   return { open, fromBuild, show: () => keep(true), close: () => keep(false) };
 }

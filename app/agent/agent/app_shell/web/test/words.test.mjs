@@ -91,7 +91,7 @@ test('a Genie answer that is still running says how long it has taken and how lo
   assert.equal(paceText(95), '95 s: longer than usual, Genie keeps working for up to 3 minutes');
   assert.equal(paceText(181), '181 s: Genie stops at 3 minutes');
   assert.match(src('Genie.jsx'), /<Pace since=\{m\.n\} \/>/);
-  assert.match(src('Genie.jsx'), /label: answerLabel\(c\.name\)/);
+  assert.match(src('genieAnswerView.js'), /label: answerLabel\(c\.name\)/, 'the answer column label moved with the table helpers (REQ-330, f65ef7861)');
 });
 
 test('a list where every row is low confidence says so once, with why and what would raise it', async () => {
