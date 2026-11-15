@@ -459,7 +459,7 @@ def test_only_outputs_that_deployed_save_a_snapshot_and_a_version_with_none_writ
     inst._implement_genie_space, inst._implement_dashboard = space, dashboard
     _verdicts(inst, ["Answer in plain words"])
     status = _run(inst, dict(previous, outputs={**ALL, "genie_space_vibes": VIBES, "dashboard_vibes": "Put the top 10 first"}))
-    assert status == "ready_with_warnings", "the dashboard that did not build leaves its ask unmet; the genie space still publishes"
+    assert status == "failed", "REQ-252 / D-INCOMPLETE: a dashboard that did not build ends the version failed; the genie space still publishes"
     assert "Dashboard: Answer in plain words: the Dashboard was not built" in inst.updates[-1]["status_message"]
     [saved] = [u for u in inst.updates if "asset_snapshots" in u]
     assert set(saved) == {"genie_space_id", "genie_space_url", "asset_snapshots"}
@@ -568,9 +568,9 @@ def test_a_rollback_with_nothing_saved_fails_only_that_output_and_the_others_sti
     inst._implement_genie_space = space
     _verdicts(inst, ["Answer in plain words"])
     current = dict(previous, outputs={**ALL, "genie_space_vibes": VIBES}, rollback_outputs={"dashboard": 1, "alert": 3})
-    assert _run(inst, current) == "ready_with_warnings"
+    assert _run(inst, current) == "failed", "REQ-252 / D-INCOMPLETE: an unpublished dashboard ends the version failed"
     final = inst.updates[-1]
-    assert final["status_message"] == "Dashboard not published: v1 has no saved Dashboard to roll back to; Alert not set up: v3 has no saved Alert to roll back to"
+    assert final["status_message"] == "Dashboard not published: v1 has no saved Dashboard to roll back to; Alert not set up: v3 has no saved Alert to roll back to" + NEXT_UNPUBLISHED
     assert final["asset_status"]["dashboard"] == {"state": "failed", "error": "v1 has no saved Dashboard to roll back to", "spec_version": 3}
     assert final["asset_status"]["alert"] == {"state": "failed", "error": "v3 has no saved Alert to roll back to", "spec_version": 3}
     space_status = final["asset_status"]["genie_space"]
@@ -580,6 +580,10 @@ def test_a_rollback_with_nothing_saved_fails_only_that_output_and_the_others_sti
     out = capsys.readouterr().out
     assert "[IMPLEMENT-ROLLBACK] N01-U01 dashboard v1 -> v3" in out and "[IMPLEMENT-ROLLBACK] N01-U01 alert v3 -> v3" in out
     assert len([s for s in inst.spark.statements if s.startswith("SELECT asset_snapshots")]) == 1, "v3 is never read for v3"
+
+
+# REQ-252 / P63: a failed version names the next step after its status text.
+NEXT_UNPUBLISHED = "; Next step: press Try again, or send a vibe that changes what it needs"
 
 
 def _gone_dashboard(ns):
@@ -621,10 +625,10 @@ def test_a_rollback_of_a_gone_dashboard_whose_new_build_fails_says_both(agent_ns
         raise RuntimeError("the warehouse is stopped")
 
     inst._implement_dashboard = dashboard
-    assert _run(inst, dict(previous, rollback_outputs={"dashboard": 1})) == "ready_with_warnings", inst.updates[-1]
+    assert _run(inst, dict(previous, rollback_outputs={"dashboard": 1})) == "failed", inst.updates[-1]  # REQ-252 / D-INCOMPLETE
     assert waits == [60, 60], "a stopped warehouse starts on the next query, so each retry waits a minute for it"
     final = inst.updates[-1]
-    assert final["status_message"] == f"Dashboard not published: Inspire tried 3 times and could not build it: the warehouse is stopped; {GONE_WARNING}"
+    assert final["status_message"] == f"Dashboard not published: Inspire tried 3 times and could not build it: the warehouse is stopped; {GONE_WARNING}" + NEXT_UNPUBLISHED
     assert final["asset_status"]["dashboard"]["state"] == "failed"
 
 
