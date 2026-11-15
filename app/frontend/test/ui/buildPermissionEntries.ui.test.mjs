@@ -9,7 +9,7 @@ test.after(closeBrowser);
 const STATEMENT = 'GRANT SELECT ON TABLE `main`.`inspire`.`churn_scope` TO `app-sp-2`';
 const PERMISSION = {
   statements: [STATEMENT], instructions: [], principal: 'app-sp-2',
-  why: 'The App cannot read its Data Filters view yet, so the filters show nothing. Ask your workspace admin to run these commands, then click Try again.',
+  why: 'The App cannot read its Data Filters view yet, so the filters show nothing.',
 };
 
 function buildWithPermission() {

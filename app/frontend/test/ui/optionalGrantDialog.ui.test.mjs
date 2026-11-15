@@ -21,7 +21,7 @@ const USE_CASES = [
 const OPTIONAL = { statements: ['GRANT CREATE ON DATABASE databricks_postgres TO "builder@example.com";'], instructions: [],
   principal: 'builder@example.com', why: 'Optional: pages load faster once your admin runs this. Until then the App reads Delta tables.', optional: true };
 const REQUIRED = { statements: ['GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp-2`;'], instructions: [], principal: 'app-sp-2',
-  why: 'Inspire reads this with your own access. Ask your workspace admin to run these commands, then click Try again.' };
+  why: 'Inspire reads this with your own access.' };
 
 const historyWith = (permissions) => {
   const row = built({ status: 'ready_with_warnings', use_case_id: 'N01-U01' });
@@ -86,6 +86,8 @@ test('a required grant still opens Permission Required as a grant the person mus
     await page.getByRole('heading', { name: 'Build', exact: true }).waitFor({ timeout: 20000 });
     const dialog = page.locator('[data-permission-dialog=""]').first();
     await dialog.waitFor({ timeout: 15000 });
+    // REQ-313: the grant's heading and SQL sit under Advanced; open it so the text reads.
+    await dialog.locator('details[data-permission-advanced=""]').evaluate((el) => { el.open = true; });
     const text = await dialog.innerText();
     assert.match(text, /For app-sp-2/, 'a required grant has a short heading for its grantee (REQ-300)');
     assert.doesNotMatch(text, /Ask your admin/, 'the repeated Ask your admin sentence is gone (REQ-300)');

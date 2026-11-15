@@ -72,6 +72,8 @@ const SAMPLES = [
   { key: 'POST /api/inspire/implement/submit', rule: 'any', name: 'first build', method: 'POST',
     path: `/api/inspire/implement/submit?${qs({ ...UC, use_case_id: 'N09-U09' })}`, body: { spec: { use_case_id: 'N09-U09' } } },
   { key: 'POST /api/grouping/profile', rule: 'any', method: 'POST', path: '/api/grouping/profile', body: { ...UC } },
+  { key: 'POST /api/access-request/check', rule: 'any', method: 'POST', path: '/api/access-request/check', body: { statements: [] } },
+  { key: 'POST /api/access-request', rule: 'any', method: 'POST', path: '/api/access-request', body: { statements: [] } },
   { key: 'POST /api/money/currency-rates', rule: 'any', method: 'POST', path: '/api/money/currency-rates', body: { ...UC, base: 'USD' } },
   { key: 'POST /api/money/describe-value', rule: 'any', method: 'POST', path: '/api/money/describe-value', body: { ...UC, text: 'x', columns: ['a'] } },
   { key: 'POST /api/money/value-preview', rule: 'any', method: 'POST', path: '/api/money/value-preview', body: { ...UC, value: { method: 'fixed', amount: 120, currency: 'USD' } } },

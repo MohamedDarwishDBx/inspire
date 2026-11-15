@@ -83,7 +83,26 @@ async function resolvePrincipal(call, grantee, cache) {
   return found;
 }
 
-// Reads the destinations of each requestable securable once, resolves each grantee, and keeps the requests that can be sent.
+// REQ-315: a table with no destination of its own inherits its schema's, then its catalog's. The first level that names one wins.
+function parentsOf(securable) {
+  const parts = String(securable.full_name || '').split('.');
+  const parents = [];
+  if ((securable.type === 'TABLE' || securable.type === 'VOLUME') && parts.length >= 2) parents.push({ type: 'SCHEMA', full_name: parts.slice(0, 2).join('.') });
+  if (securable.type !== 'CATALOG' && parts.length >= 1) parents.push({ type: 'CATALOG', full_name: parts[0] });
+  return parents;
+}
+
+async function destinationsOfChain(call, securable) {
+  for (const level of [securable, ...parentsOf(securable)]) {
+    const got = await call(destinationsPath(level), { method: 'GET' });
+    if (!got.ok) return { labels: [], reason: failureText(got) };
+    const found = Array.isArray(got.data?.destinations) ? got.data.destinations : [];
+    if (found.length) return { labels: found.map((d) => destinationLabel(d, level)), reason: '' };
+  }
+  return { labels: [], reason: '' };
+}
+
+// Reads the destinations of each requestable securable once (with its parents), resolves each grantee, and keeps the requests that can be sent.
 async function checkAccessRequest({ call, who, statements }) {
   if (!who) return { offered: false, destinations: [], reason: NO_PERSON, pending: [] };
   const requests = requestsOf(statements);
@@ -93,14 +112,9 @@ async function checkAccessRequest({ call, who, statements }) {
   for (const request of requests) {
     const key = `${request.securable.type}:${request.securable.full_name}`;
     if (destinationsOfSecurable.has(key)) continue;
-    const got = await call(destinationsPath(request.securable), { method: 'GET' });
-    if (!got.ok) {
-      reason = failureText(got);
-      destinationsOfSecurable.set(key, []);
-      continue;
-    }
-    const found = Array.isArray(got.data?.destinations) ? got.data.destinations : [];
-    destinationsOfSecurable.set(key, found.map((d) => destinationLabel(d, request.securable)));
+    const found = await destinationsOfChain(call, request.securable);
+    if (found.reason) reason = found.reason;
+    destinationsOfSecurable.set(key, found.labels);
   }
   const cache = new Map();
   const pending = [];

@@ -148,3 +148,18 @@ test('a destination with no address names the owner of the securable', () => {
   assert.equal(AR.destinationLabel({ special_destination: 'SPECIAL_DESTINATION_SCHEMA_OWNER' }, { type: 'SCHEMA', full_name: 'main.s' }), 'the owner of schema main.s');
   assert.equal(AR.destinationLabel({ destination_id: 'a@b.c' }, { type: 'TABLE', full_name: 'x' }), 'a@b.c');
 });
+
+test('REQ-315: a table with no destination of its own falls back to its schema, then its catalog, and names the level it used', async () => {
+  const none = { ok: true, status: 200, data: {} };
+  const { call, calls } = fakeCall({
+    'GET /api/3.0/rfa/destinations/table/main.s.orders': none,
+    'GET /api/3.0/rfa/destinations/schema/main.s': none,
+    'GET /api/3.0/rfa/destinations/catalog/main': { ok: true, status: 200, data: EMAIL_DEST },
+    'POST /api/3.0/rfa/requests': { ok: true, status: 200, data: {} },
+  });
+  const got = await AR.sendAccessRequest({ call, who: WHO, statements: [GRANTS[2]] });
+  assert.deepEqual(got, { sent: true, destinations: ['owner@example.com'], reason: '' });
+  assert.deepEqual(calls.filter((c) => c.method === 'GET').map((c) => c.path), [
+    '/api/3.0/rfa/destinations/table/main.s.orders', '/api/3.0/rfa/destinations/schema/main.s', '/api/3.0/rfa/destinations/catalog/main',
+  ]);
+});

@@ -15,7 +15,8 @@ const STATEMENTS = [
   `GRANT SELECT ON TABLE \`main\`.\`s\`.\`orders\` TO \`${PERSON}\``,
 ];
 const PERMISSION = { statements: STATEMENTS, principal: PERSON, why: 'Launch reads main.s.orders with your own access, and you cannot read it yet.' };
-const COPY_LINE = 'Copy the text below and pass it on to your Databricks admin.';
+// REQ-313: the one instruction line sits under Advanced (REQ-300: exactly one instruction line).
+const COPY_LINE = 'Copy the SQL below and send it to your Databricks admin.';
 
 async function openDialog(overrides) {
   const ui = await openUi('launch', { ...STATE, checkPermissions: [PERMISSION], ...overrides });
@@ -39,12 +40,14 @@ test('when a destination is set, Request access sends the grants and says where 
   });
   const button = dialog.getByRole('button', { name: 'Request access' });
   await button.waitFor({ timeout: 15000 });
+  assert.equal(await dialog.locator('details[data-permission-advanced=""]').evaluate((el) => el.open), false, 'a destination: the SQL stays under the closed Advanced section');
   await button.click();
   const result = dialog.locator('[data-access-request-result=""]');
   await result.waitFor({ timeout: 15000 });
   assert.equal((await result.textContent()).trim(), 'Request sent to owner@example.com');
   assert.deepEqual(ui.made.state.accessSent, STATEMENTS, 'the dialog sends its own grants');
-  assert.equal(await dialog.getByRole('button', { name: 'Copy' }).count(), 1, 'the copy text stays available beside the request');
+  await dialog.locator('details[data-permission-advanced=""]').evaluate((el) => { el.open = true; });
+  assert.equal(await dialog.getByRole('button', { name: 'Copy' }).count(), 1, 'the copy text stays under Advanced, beside the request');
   assert.ok(page);
 });
 
@@ -55,6 +58,9 @@ test('when no destination is set, there is no Request access button and the dial
   assert.equal(await dialog.getByRole('button', { name: 'Request access' }).count(), 0, 'no button without a destination');
   assert.equal(await dialog.getByText(COPY_LINE).count(), 1, 'the copy-paste line stays');
   assert.equal(await dialog.locator('[data-access-request-result=""]').count(), 0);
+  assert.equal(await dialog.locator('details[data-permission-advanced=""]').evaluate((el) => el.open), true, 'no destination: Advanced opens by default');
+  const said = (await dialog.innerText()).match(/admin/gi) || [];
+  assert.equal(said.length, 1, 'exactly one admin instruction in the dialog (REQ-300)');
 });
 
 test('a refused request is shown as its plain reason, and nothing opens over the dialog', async () => {

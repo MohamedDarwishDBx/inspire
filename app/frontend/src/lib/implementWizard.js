@@ -2949,7 +2949,7 @@ export function appReadsText(reads, appName = '') {
 // REQ-131, REQ-260: the grant commands an owner runs are the Permission Required dialog's payload, the one copy path for GRANT SQL.
 export function appReadsPermission(reads) {
   const statements = [...new Set((reads?.tables || []).flatMap((t) => t.grants || []))];
-  return statements.length ? { statements, instructions: [], principal: appReadsOwners(reads), why: 'Your data owner runs these commands, then you press Check again.' } : null;
+  return statements.length ? { statements, instructions: [], principal: appReadsOwners(reads), why: 'Only your data owner can grant this.' } : null;
 }
 
 export function appReadsChoices(reads) {
@@ -3032,7 +3032,7 @@ export function grantGapPermissions(got) {
     statements: g.grants,
     instructions: [],
     principal: g.owner || 'the table owner',
-    why: `Inspire cannot grant READ METADATA on ${g.table} with your sign-in, because you cannot manage it. Ask ${g.owner && !g.owner.includes('@') ? g.owner : 'your data owner'} to run these commands, then click Try again.`,
+    why: `Inspire cannot grant READ METADATA on ${g.table} with your sign-in, because you cannot manage it.`,
   }));
 }
 
@@ -3049,7 +3049,7 @@ export function grantFailurePermissions(got) {
     statements,
     instructions: [],
     principal,
-    why: 'Inspire could not run these grants with your sign-in. Ask your workspace admin to run these commands, then click Try again.',
+    why: 'Inspire could not run these grants with your sign-in.',
   }));
 }
 

@@ -9,7 +9,7 @@ const SP = 'app-sp-2';
 const SCOPE_SELECT = 'GRANT SELECT ON TABLE `main`.`inspire`.`churn_scope` TO `app-sp-2`';
 const PERMISSION = {
   statements: [SCOPE_SELECT], instructions: [], principal: SP,
-  why: 'The App cannot read its Data Filters view yet, so the filters show nothing. Ask your workspace admin to run these commands, then click Try again.',
+  why: 'The App cannot read its Data Filters view yet, so the filters show nothing.',
 };
 
 function built(assets) {

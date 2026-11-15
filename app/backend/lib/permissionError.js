@@ -34,7 +34,7 @@ function permissionFor(message, principal) {
     statements = readStatementsFor([denied.name], who);
   }
   return permissionRequired({ statements, principal: who,
-    why: 'Inspire reads this with your own access. Ask your workspace admin to run these commands, then click Try again.' });
+    why: 'Inspire reads this with your own access.' });
 }
 
 // The one principal rule for every failure response: the App for App-identity routes, otherwise the signed-in person.
