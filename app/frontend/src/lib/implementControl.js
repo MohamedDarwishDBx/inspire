@@ -5,6 +5,7 @@ import {
   APP_INSIDE_PLACEMENT, VIBE_FEATURES_LABEL, VIBE_PREVIOUS_DEFAULT, insideInspire, isAppUpdate, liveAppVersion, mvpFilterMatches, sideAppVersion, nextSpecFrom, openVibeAsks, undeliveredOutputs, withCollectedVibes,
 } from './implementWizard.js';
 import { formatWhen } from './formatWhen.js';
+import { noteBuildStarted } from './progressView.js';
 import { plural } from './plural.js';
 import { assetNotes, OUTPUT_STEP, planActionText, planActions, rephrasableAsks } from './mvpProgress.js';
 import { rowImpact, stakeLabel, stakeWords } from './targetKpi.js';
@@ -218,6 +219,7 @@ const PENDING_BUILDS = new Map();
 
 export function markBuildPending(useCaseId, { name = '', version = 0 } = {}, now = Date.now()) {
   PENDING_BUILDS.set(String(useCaseId), { at: now, name: String(name || ''), version: Number(version) || 0 });
+  noteBuildStarted(useCaseId, now);
 }
 
 export function withPendingBuilds(latest, now = Date.now()) {
