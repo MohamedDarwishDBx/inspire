@@ -701,7 +701,8 @@ function implementStakeNoun(impact = null) {
 }
 
 function implementStakeWords(impact = null) {
-  return `${implementStakeNoun(impact)} at stake`;
+  const kind = isPlainObject(impact) ? spacedText(pythonFalsy(impact.kind) ? 'money' : String(impact.kind)).toLowerCase() : '';
+  return `${kind === 'money' ? 'value' : implementStakeNoun(impact)} at stake`;
 }
 
 function implementPart(id, impact = null) {

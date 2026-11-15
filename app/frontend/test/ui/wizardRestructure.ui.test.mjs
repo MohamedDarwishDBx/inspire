@@ -56,8 +56,8 @@ test('What to deliver is the first step, Data and results is one page, and Where
     await goToStep(page, 'Measure');
     const measure = page.getByRole('region', { name: 'Measure' });
     await measure.waitFor();
-    assert.equal(await measure.locator('[data-money-rule-editor]').count(), 1, 'Measure holds the money rule editor, so the person defines how money at stake is counted');
-    // Money at stake opens one part at a time. With one currency in the data the Currency part shows the picker with its default
+    assert.equal(await measure.locator('[data-money-rule-editor]').count(), 1, 'Measure holds the money rule editor, so the person defines how value at stake is counted');
+    // Value at stake opens one part at a time. With one currency in the data the Currency part shows the picker with its default
     // and offers no conversion, so no reporting-currency prompt (must-exclude). Rates are covered by measureRule.
     await moneyPart(page, 'Currency');
     assert.equal(await measure.locator('[data-money-currency-mode="per_currency"]').isChecked(), true, 'the Currency part starts on keeping each currency separate');

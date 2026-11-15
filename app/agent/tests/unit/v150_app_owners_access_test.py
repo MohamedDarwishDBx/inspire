@@ -148,7 +148,7 @@ def test_an_assumptions_grant_that_fails_is_a_plain_warning_and_the_app_still_sh
     _inst, fields = _deploy(agent_ns, spark)
     assert fields["app_url"] == "https://churn-desk.example"
     assert fields["_warnings"] == [
-        f"App: the owners of this use case cannot change its money at stake assumptions in the App until its service principal sp-1 "
+        f"App: the owners of this use case cannot change its value at stake assumptions in the App until its service principal sp-1 "
         f"can read and change the result table. {reason}"]
 
 
@@ -168,9 +168,9 @@ def test_an_assumptions_table_inspire_cannot_manage_names_the_grants_to_ask_for(
                                       "me": "inspire-sp"}])
     inst, fields = _deploy(agent_ns, spark, answers=[{"description": OURS_APP, "compute_status": {"state": "ACTIVE"},
                                                       "service_principal_client_id": "sp-1"}] + NEW_APP[2:])
-    owners_warning = [w for w in fields["_warnings"] if "money at stake assumptions" in w]
+    owners_warning = [w for w in fields["_warnings"] if "value at stake assumptions" in w]
     assert owners_warning == [
-        f"App: the owners of this use case cannot change its money at stake assumptions in the App until its service principal sp-1 "
+        f"App: the owners of this use case cannot change its value at stake assumptions in the App until its service principal sp-1 "
         "can read and change the result table. Inspire cannot grant these accesses, because it neither owns nor holds MANAGE on them. "
         "If sp-1 does not have them yet, ask your data owner to run: GRANT SELECT ON TABLE `main`.`inspire`.`churn_out_assumptions` TO "
         "`sp-1`; GRANT MODIFY ON TABLE `main`.`inspire`.`churn_out_assumptions` TO `sp-1`"]

@@ -277,7 +277,7 @@ test('the control tower lists every built asset grouped by output with its parts
   assert.deepEqual([chart.label, chart.state, chart.url, chart.what, chart.noun], ['Weekly trend chart', { label: 'Ready with warnings', tone: 'warning' }, rows[0].dashboard_url,
     'A chart on the dashboard', 'chart']);
   const formula = cards.find((x) => x.id === 'value_formula');
-  assert.deepEqual([formula.label, formula.live, formula.state.label, formula.url], ['money at stake formula', null, 'Failed', 'https://host/#workspace/nb']);
+  assert.deepEqual([formula.label, formula.live, formula.state.label, formula.url], ['value at stake formula', null, 'Failed', 'https://host/#workspace/nb']);
   assert.equal(c.vibeCards([{ ...rows[0], asset_status: { ...rows[0].asset_status, [PAGE]: { ...PARTS[PAGE], what: 'The rows to act on today' } } }, rows[1]],
     { ...rows[0], asset_status: { ...rows[0].asset_status, [PAGE]: { ...PARTS[PAGE], what: 'The rows to act on today' } } }).find((x) => x.id === PAGE).what,
   'The rows to act on today', 'the build status may say what a part is');
@@ -289,7 +289,7 @@ test('the control tower lists every built asset grouped by output with its parts
   const groups = c.assetGroups(cards, live);
   assert.deepEqual(groups.map((g) => [g.key, g.label, g.assets.map((a) => [a.title, a.group])]), [
     ['notebook', 'Genie Code notebook', [['Notebook', 'Genie Code notebook']]],
-    ['results', 'Results', [['AI reasoning', 'Results'], ['Money at stake', 'Results']]],
+    ['results', 'Results', [['AI reasoning', 'Results'], ['Value at stake', 'Results']]],
     ['app', 'App', [['The whole App', 'App'], ['Page: Decisions', 'App'], ['Page: Row detail page', 'App']]],
     ['dashboard', 'Dashboard', [['The whole dashboard', 'Dashboard'], ['Chart: Weekly trend', 'Dashboard']]],
     ['genie_space', 'Genie Agent', [['Instructions', 'Genie Agent']]],

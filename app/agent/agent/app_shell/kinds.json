@@ -2816,7 +2816,7 @@
      {
       "widget": "counter",
       "source": "__signal",
-      "title": "Money at stake"
+      "title": "Value at stake"
      }
     ]
    },

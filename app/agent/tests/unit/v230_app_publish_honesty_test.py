@@ -23,7 +23,7 @@ RUN_WIDGETS = [
     ("result_table", "main.inspire.supply_out", "Business output table"),
     ("ai_endpoint", "databricks-model", "AI endpoint for explanations"),
     ("as_of_date", "latest", "As-of date (latest = last period complete in every source table)"),
-    ("currency", "USD", "Currency of the money at stake (ISO code)"),
+    ("currency", "USD", "Currency of the value at stake (ISO code)"),
     ("act_now_share", "0.05", "Share of rows to act on now"),
     ("review_share", "0.2", "Share of rows to review next"),
     ("min_rows", "1", "Minimum usable rows"),

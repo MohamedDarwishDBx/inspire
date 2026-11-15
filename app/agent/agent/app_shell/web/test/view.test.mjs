@@ -189,15 +189,15 @@ test('the money panel folds to its title, stays folded after a reload, and unfol
     pages: { n01_u05: { ...entry([item('a', 'Blue denim jacket', null)]), money_model: model } } });
   const { routes } = tracked({ overview, money: ({ json }) => json(200, { model, editable: false, why: 'Only the owners of this App can change its assumptions', history: [] }) });
   const { page, seen, context } = await openWith(appInfo(DECIDE, 1, TABLE), routes, { hash: '#/n01_u05/dashboard' });
-  const card = page.getByRole('region', { name: 'How the money at stake is worked out' });
+  const card = page.getByRole('region', { name: 'How the value at stake is worked out' });
   await card.locator('.rule').waitFor();
-  await card.getByRole('button', { name: 'Fold How the money at stake is worked out' }).click();
+  await card.getByRole('button', { name: 'Fold How the value at stake is worked out' }).click();
   await page.waitForFunction(() => document.querySelector('.money--folded'));
   assert.equal(await card.locator('.rule, .tiers').count(), 0, 'a folded panel keeps only its title');
   assert.deepEqual((await mine(page)).folds, { n01_u05: { money: true } });
   await page.reload();
   await page.locator('.money--folded').waitFor();
-  await card.getByRole('button', { name: 'Unfold How the money at stake is worked out' }).click();
+  await card.getByRole('button', { name: 'Unfold How the value at stake is worked out' }).click();
   await card.locator('.rule').waitFor();
   assert.deepEqual((await mine(page)).folds, {});
   assert.deepEqual(seen.errors, []);
