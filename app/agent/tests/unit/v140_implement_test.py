@@ -5628,7 +5628,7 @@ def _reads_salaries(ns):
     (None, True, {"_implement_run_query_check": lambda sql, require_rows=False, limit=20: (_ for _ in ()).throw(
         RuntimeError("TABLE_OR_VIEW_NOT_FOUND"))}, "dataset records failed: TABLE_OR_VIEW_NOT_FOUND"),
     (None, True, {"_implement_app_check": lambda work, files, modules, warehouse: ["page n01_u01: chart:by_category failed: boom"]},
-     "the App was run at its default filters and page n01_u01: chart:by_category failed: boom"),
+     "the App was run at its default filters and page Predict churn: chart:by_category failed: boom"),
 ])
 def test_a_page_json_that_breaks_a_rule_goes_back_to_genie_and_nothing_deploys(agent_ns, tmp_path, make, write, stubs, needle):
     inst, context, seen = _app_flow(agent_ns, tmp_path, page=make(agent_ns) if make else None, write=write, **stubs)

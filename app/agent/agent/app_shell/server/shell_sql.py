@@ -5906,7 +5906,7 @@ def overview_query(page: dict, values: dict, picked: dict, context: dict, fields
     priced = money_columns(model) or [f"{money_sql(None)} AS `_inspire_money`", "CAST(NULL AS STRING) AS `_inspire_fx`"]
     checked = "data_quality_flag" in names
     extra = (priced if money else []) + (
-        list(WINDOW_EXTRA) if window else ["CAST(`action_due` AS DATE) AS `_inspire_due`"]) + (
+        (list(WINDOW_EXTRA) + [SNOOZE_EXTRA]) if window else ["CAST(`action_due` AS DATE) AS `_inspire_due`"]) + (
         ["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if held else []) + (
         [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`"] if checked else [])
     on = (floor or {}).get("on")
