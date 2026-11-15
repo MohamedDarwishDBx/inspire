@@ -78,3 +78,29 @@ def test_a_page_with_no_decision_list_is_described_by_its_title_and_never_its_id
     text = shell_core.informational_text(page)
     assert text.startswith(f"page {TITLE}"), text
     assert PAGE_ID not in text and internal_hits(text) == [], text
+
+
+def test_the_vibe_evidence_is_one_record_with_a_genie_rendering_and_a_person_rendering(agent_ns):
+    """REQ-237 residual: the same evidence is sent to Genie (exact id, D-NAMES) and shown on the checklist (page title)."""
+    asset = f"app:page:{PAGE_ID}"
+    done = f"page {PAGE_ID}: {TITLE}"
+    missing = f"the built App is the page {PAGE_ID} ({TITLE}), not 3 charts"
+    person = agent_ns["implement_person_evidence"]
+    assert person(done, asset, TITLE) == f"page {TITLE}"
+    assert person(missing, asset, TITLE) == f"the built App is page {TITLE}, not 3 charts"
+    resend = {asset: [{"ask": "show revenue", "evidence": missing}]}
+    genie = agent_ns["implement_vibes_missed_text"](resend)
+    assert f"the page {PAGE_ID} ({TITLE})" in genie, "Genie reads the exact id"
+    assert internal_hits(person(missing, asset, TITLE)) == []
+
+
+def test_a_title_two_pages_share_keeps_the_id_on_the_checklist(agent_ns):
+    asset = f"app:page:{PAGE_ID}"
+    missing = f"the built App is the page {PAGE_ID} ({TITLE}), not 3 charts"
+    assert agent_ns["implement_person_evidence"](missing, asset, TITLE, unique=False) == missing
+
+
+def test_a_non_page_asset_or_an_untitled_page_is_shown_as_evidence_says(agent_ns):
+    text = f"page {PAGE_ID}: {TITLE}"
+    assert agent_ns["implement_person_evidence"](text, "dashboard:chart1", TITLE) == text
+    assert agent_ns["implement_person_evidence"](text, f"app:page:{PAGE_ID}", "") == text

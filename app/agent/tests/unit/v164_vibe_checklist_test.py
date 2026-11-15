@@ -254,7 +254,7 @@ def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks
     assert any(kind == "judge" and "App page n01_u01" in prompt and "[asked in an earlier version]" in prompt for kind, prompt in seen)
     assert [(e["requirement"], e["part"], e["where"]) for e in final["checklist"]] == [
         ("Make it a horizontal bar chart", "dashboard", "widget by_region"), ("Keep the biggest regions first", "dashboard", "widget by_region"),
-        ("Keep the region filter", "app", "page n01_u01"), ("Add a count of customers at risk", "app", "page n01_u01")]
+        ("Keep the region filter", "app", "page Churn desk"), ("Add a count of customers at risk", "app", "page Churn desk")]  # REQ-237: person copy names the page by title
     assert final["checklist_summary"]["total"] == 4 and [e["status"] for e in final["checklist"][2:]] == ["met", "met"]
 
 
@@ -305,7 +305,7 @@ def test_the_checklist_is_written_and_shown_live_when_every_ask_is_met(agent_ns)
     assert context["asset_status"]["checklist"] == entries and [e["n"] for e in entries] == [1, 2, 3, 4]
     assert entries[0] == {"n": 1, "requirement": "Hold out the last 8 weeks", "part": "notebook", "where": "", "status": "met",
                           "evidence": "holdout=8", "fact": "holdout=8", "rounds": 2, "tried": [], "checks": [], "published_anyway": None}
-    assert entries[1]["part"] == "app" and entries[1]["where"] == "page n01_u01, the Fix plan table", \
+    assert entries[1]["part"] == "app" and entries[1]["where"] == "the App page, the Fix plan table", \
         "the entry names the element its check records, as every check of a run now does"
     assert entries[3]["checks"] == [{"name": "schedule: 07:00", "passed": True}] and entries[3]["part"] == "alert"
     assert emitted == [("Vibe checklist", "4 of 4 vibe requirements met", "ended_success", {"checklist": entries, "met": 4, "total": 4})]
