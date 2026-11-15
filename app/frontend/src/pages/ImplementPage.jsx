@@ -39,7 +39,7 @@ import { Counter, CounterDivider, IconChip, PANEL_CLASS, SectionTitle } from '..
 import { catalogRow } from '../lib/useCaseFacets';
 import { fieldOf } from '../lib/useCaseFields';
 import {
-  ASSET_TILES, CONTROL_REFRESH_MS, REBUILD_NOTHING, appUpdateChanges, assetFilterCounts, assetGroups, assetUninstall, buildSummary, checksSummary, collectAsk,
+  ASSET_TILES, CONTROL_REFRESH_MS, REBUILD_NOTHING, appUpdateChanges, assetFilterCounts, assetGroups, assetUninstall, buildSummary, buildSummaryLines, checksSummary, collectAsk,
   assetFiltersFrom, collectRemoval, collectedScope, controlRows, controlTiles, deliveredOutputs, dropCollected, filterByAssets, filterByMvp, heldVersion,
   keptVersions, loadAssetFilters, saveAssetFilters,
   loadCollectedVibes, missingAsks, notDoneLines, rebuildSpec, rebuildingText, rephrasedAsk, removeChanges, removeKeptChanges, rollbackChanges, rollingBackText,
@@ -137,11 +137,7 @@ function SummaryBanner({ summary }) {
   } else if (summary.mvps) {
     mark = summary.failed || summary.held || summary.unmet ? { icon: AlertTriangle, tone: 'warning' } : { icon: CheckCircle2, tone: 'success' };
     title = `${shown(summary.ready)} of ${plural(summary.mvps, 'MVP')} ready`;
-    const open = [
-      summary.failed ? `${summary.failed} failed or stopped. Open one to see why.` : '',
-      summary.held ? `${summary.held} not published, because a vibe was not met. Open one to rephrase, try again or publish anyway.` : '',
-      summary.unmet ? `${summary.unmet} built, but a vibe ask was not met, so it waits for the next build. Open one to see why.` : '',
-    ].filter(Boolean);
+    const open = buildSummaryLines(summary);
     line = open.length ? open.join(' ') : 'Every MVP of this session has finished building.';
   }
   return (
@@ -163,10 +159,16 @@ function SummaryBanner({ summary }) {
           <Counter value={building.length} label="Building" tone="red" />
           <CounterDivider />
           <Counter value={summary.ready} label="Ready" tone="success" />
-          {summary.held > 0 && (
+          {summary.vibeHeld > 0 && (
             <>
               <CounterDivider />
-              <Counter value={summary.held} label="Vibes not met" tone="warning" />
+              <Counter value={summary.vibeHeld} label="Vibes not met" tone="warning" />
+            </>
+          )}
+          {summary.untrusted > 0 && (
+            <>
+              <CounterDivider />
+              <Counter value={summary.untrusted} label="Results not trusted" tone="warning" />
             </>
           )}
           {summary.failed > 0 && (
