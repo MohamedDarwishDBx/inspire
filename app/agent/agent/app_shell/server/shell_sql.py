@@ -939,9 +939,9 @@ def spec_problems(page: dict, stored=None) -> list:
         problems += shape
         if kpi.get("open_work") is not None and not isinstance(kpi.get("open_work"), bool):
             problems.append(f"{where} open_work must be true or false")
-        elif kpi.get("open_work") and not shape and not kpi_counts_result_rows(page, kpi):
+        elif kpi.get("open_work") and not shape and not (kpi_counts_result_rows(page, kpi) and keeps_record_key(page, kpi.get("dataset"))):
             problems.append(f"{where} is marked open_work, so it must be a plain count of the result table "
-                            f"(COUNT(*), COUNT(col) or COUNT(DISTINCT col)) over a dataset that reads it")
+                            f"(COUNT(*), COUNT(col) or COUNT(DISTINCT col)) over a dataset that reads it and keeps record_key")
         problems += _format_problems(where, kpi)
         if kpi.get("good", "neutral") not in GOODS:
             problems.append(f"{where} good must be up, down or neutral")
@@ -2813,6 +2813,25 @@ def kpi_counts_result_rows(page: dict, kpi: dict) -> bool:
     return table_name(page["result_table"]) in sql or page["result_table"] in sql
 
 
+OPEN_NAMES = re.compile(r"\b(open|waiting|to decide|need action|to fix|outstanding)\b", re.I)
+
+
+def keeps_record_key(page: dict, dataset: str) -> bool:
+    """True when the dataset carries record_key: named in its SQL, or passed through by SELECT * over a source."""
+    sql = _dataset_sql(page).get(dataset, "")
+    return "record_key" in sql or re.match(r"\s*SELECT\s+\*", sql, re.I) is not None
+
+
+def kpi_open_work(page: dict, kpi: dict) -> bool:
+    """Whether a KPI counts open work and so reads the one open-work scope. An explicit open_work flag decides. Without one, a plain
+    count of the decision records that names open work in its id or label does (the page-spec default)."""
+    if isinstance(kpi.get("open_work"), bool):
+        return kpi["open_work"]
+    if kpi.get("open_work") is not None or not OPEN_NAMES.search(f"{kpi.get('id') or ''} {kpi.get('label') or ''}"):
+        return False
+    return kpi_counts_result_rows(page, kpi) and keeps_record_key(page, kpi.get("dataset"))
+
+
 def scope_counts_text(rows) -> str:
     row = (rows or [{}])[0]
     open_, held, closed, unchecked, snoozed = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked", "snoozed_"))
@@ -3059,8 +3078,9 @@ def kpi_query(page: dict, ident: str, values: dict, previous: str = None, names=
     money = kpi.get("format") == "currency"
     dataset = _dataset(page, kpi["dataset"])
     sql, params = (money_source(page, kpi["dataset"], dataset) if money else future_source(page, kpi["dataset"], dataset)), _Params()
-    if kpi.get("open_work"):  # a count of open work reads the one open-work scope, never the raw rows
-        sql = f"SELECT * FROM ({sql}) AS o WHERE {shell_facts.open_work_sql(names or RESULT_COLUMNS, 'current_date')}"
+    if kpi_open_work(page, kpi):  # a count of open work keeps the rows whose record is open in the result table, never raw rows
+        open_records = f"SELECT `record_key` FROM {table_name(page['result_table'])} WHERE {shell_facts.open_work_sql(names or RESULT_COLUMNS, 'current_date')}"
+        sql = f"SELECT * FROM ({sql}) AS o WHERE o.`record_key` IN ({open_records})"
     expression = money_expression(page, kpi["dataset"], kpi["expression"]) if money else kpi["expression"]
     where = _where(page, kpi["dataset"], values, params)
     by = money_currency_column(page, kpi)
