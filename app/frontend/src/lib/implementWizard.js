@@ -45,7 +45,9 @@ export const APP_PANELS = ['app_place', 'app_pages', 'app_access', 'app_features
 const WHERE_STEP = { id: 'where', label: WHERE_LABEL, sections: APP_PANELS, advanced: [], panels: APP_PANELS };
 const DATA_STEP = { id: 'data', label: DATA_RESULTS_LABEL, sections: ['use_case', 'data', 'configure', 'results'], advanced: ['data', 'configure', 'results'], panels: ['data', 'results'] };
 export const GROUPING_STEP = { id: 'grouping', label: 'Data groups', sections: ['grouping'], advanced: [], panels: ['grouping'] };
-export const MEASURE_STEP = { id: 'stake', label: MEASURE_LABEL, sections: ['kpi', 'holdout'], advanced: [], panels: ['stake'] };
+// REQ-265: Gains only needs a sign, which is its own Measure screen; a Gains rule with no sign stops the build with this line.
+export const GAINS_SIGN_NEEDED = 'Gains only needs a sign: name the column whose positive values are gains, or the status value that marks a gain.';
+export const MEASURE_STEP = { id: 'stake', label: MEASURE_LABEL, sections: ['money', 'kpi', 'holdout'], advanced: [], panels: ['stake'] };
 // Measure impact is two decisions, one per screen: the target KPI, then the hold-back (on or off, and its share).
 export const MEASURE_IMPACT_PARTS = ['kpi', 'holdout'];
 // The link key for the whole impact screen (old links and the Measure impact rows open its first decision).
@@ -1900,6 +1902,7 @@ export function dataFilterProblems(spec) {
 
 export function sectionErrors(section, spec, extras = {}) {
   const errors = [];
+  if (section === 'money' && spec.money && spec.money.off !== true && spec.money.rule === 'gains' && !spec.money.sign) errors.push(GAINS_SIGN_NEEDED);
   if (section === 'use_case') {
     if (!spec.use_case.goal) errors.push('write the goal sentence');
     if (!spec.use_case.decision_owner) errors.push('name the decision owner');
