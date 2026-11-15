@@ -1,48 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import BodyPortal from './BodyPortal';
-
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { useModal } from './useModal';
 
 // The one centered modal dialog. Escape closes it, the header with its Close button stays in view while the body scrolls,
-// focus moves into it on open and returns to the opener on close, and Tab stays inside it while it is open.
+// and the behaviour comes from useModal.
 export default function ModalDialog({ titleId, title, onClose, overlayAttrs = {}, dialogAttrs = {}, overlayClass = 'z-50 bg-black/30',
   widthClass = 'max-w-lg', footer = null, children }) {
   const panel = useRef(null);
+  useModal(panel, onClose);
   const closeRef = useRef(onClose);
   useEffect(() => { closeRef.current = onClose; });
-
-  useEffect(() => {
-    const opener = document.activeElement;
-    if (panel.current && !panel.current.contains(document.activeElement)) {
-      (panel.current.querySelector(FOCUSABLE) || panel.current).focus({ preventScroll: true });
-    }
-    return () => {
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
-    };
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        if (e.defaultPrevented) return;
-        e.preventDefault();
-        closeRef.current?.();
-        return;
-      }
-      if (e.key !== 'Tab' || !panel.current) return;
-      const items = [...panel.current.querySelectorAll(FOCUSABLE)];
-      if (!items.length) { e.preventDefault(); panel.current.focus(); return; }
-      const first = items[0];
-      const last = items[items.length - 1];
-      const active = document.activeElement;
-      const outside = !panel.current.contains(active);
-      if (e.shiftKey && (active === first || outside)) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && (active === last || outside)) { e.preventDefault(); first.focus(); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
 
   return (
     <BodyPortal>

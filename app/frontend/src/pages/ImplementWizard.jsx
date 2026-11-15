@@ -286,6 +286,7 @@ import { fieldOf } from '../lib/useCaseFields.js';
 import { normalizeTableScope, scopeEntryOf, tableScopeSummary } from '../lib/tableScope';
 import SamplesCopyOffer from '../components/SamplesCopyOffer';
 import { samplesTarget, validCopyTarget } from '../lib/samplesCopy';
+import { useModal } from '../components/useModal';
 import { DRAFT_BACK_NOTE, DRAFT_START_OVER, clearWizardDraft, readWizardDraft, draftStampOf, wizardDraftKey, writeWizardDraft } from '../lib/wizardDraft';
 import {
   FIRST_RUN_TITLE, FIRST_RUN_LABEL, GROUPING_EXAMPLE, GROUPING_PICK, GROUPING_TITLE, RUN_SCOPE_UNRECORDED_HIDDEN, builtFirstRunOf, deepGrouping, groupingChosenBy, isFirstRunSetting, isGroupingSetting, isScopeSetting,
@@ -3411,6 +3412,8 @@ function SourceTableBlocks({ tables, spec, columnsByTable, values, setSpec, load
 }
 
 function UseCaseDrawer({ title, ucRow, spec, patch, onOwner, onClose }) {
+  const panel = useRef(null);
+  useModal(panel, onClose);
   const facts = [
     ['Who it helps', ucRow.beneficiary || ucRow.Beneficiary],
     ['Sponsor', ucRow.sponsor || ucRow.Sponsor],
@@ -3420,8 +3423,8 @@ function UseCaseDrawer({ title, ucRow, spec, patch, onOwner, onClose }) {
   return (
     <BodyPortal>
       <div className="fixed inset-0 z-[60] bg-black/30 flex justify-end" data-use-case-drawer="">
-        <div role="dialog" aria-modal="true" aria-label={`Use case details: ${title}`} className="bg-surface border-s border-border shadow-elevated w-full max-w-md h-full flex flex-col">
-          <div className="px-5 pt-4 pb-3 border-b border-border flex items-start justify-between gap-3">
+        <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Use case details: ${title}`} className="bg-surface border-s border-border shadow-elevated w-full max-w-md h-full flex flex-col outline-none">
+          <div className="shrink-0 px-5 pt-4 pb-3 border-b border-border flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <h2 className="text-base font-semibold text-text-primary break-words">{title}</h2>
               {statement && <p className="text-[12px] text-text-secondary">{placeholderWords(statement)}</p>}
@@ -3469,13 +3472,15 @@ function UseCaseDrawer({ title, ucRow, spec, patch, onOwner, onClose }) {
 
 // The step bar shows only once the real spec and scope are known (stepsReady), so its count never changes after it first shows.
 function Overlay({ title, uc, steps, stepsReady = true, step, reach = [], done = [], onGo = null, onDetails = null, onClose, onTouch = undefined, children }) {
+  const panel = useRef(null);
+  useModal(panel, onClose);
   const row = uc ? catalogRow(uc, 0) : null;
   const facts = row ? [['Domain', row.domain], ['Subdomain', row.subdomain], ['Technique', row.technique]].filter(([, v]) => v) : [];
   return (
     <BodyPortal>
       <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-implement-overlay="">
-        <div role="dialog" aria-modal="true" onChangeCapture={onTouch} onClickCapture={onTouch} aria-label={title ? `${START_MVP_LABEL}: ${title}` : START_MVP_LABEL} className="bg-surface border border-border rounded-xl shadow-elevated w-full max-w-6xl max-h-full flex flex-col overflow-hidden">
-          <header className="px-6 pt-4 pb-3 border-b border-border space-y-3" data-wizard-header="">
+        <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" onChangeCapture={onTouch} onClickCapture={onTouch} aria-label={title ? `${START_MVP_LABEL}: ${title}` : START_MVP_LABEL} className="bg-surface border border-border rounded-xl shadow-elevated w-full max-w-6xl max-h-full flex flex-col overflow-hidden outline-none">
+          <header className="shrink-0 px-6 pt-4 pb-3 border-b border-border space-y-3" data-wizard-header="">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-db-red-fg">{START_MVP_LABEL}</p>
@@ -3523,7 +3528,7 @@ function Overlay({ title, uc, steps, stepsReady = true, step, reach = [], done =
             <p data-step-bar-loading="" className="text-[11px] text-text-tertiary">Loading the steps…</p>
           )}
           </header>
-          {children}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
         </div>
       </div>
     </BodyPortal>
