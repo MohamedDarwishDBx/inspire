@@ -146,3 +146,15 @@ def test_a_chart_series_that_reads_no_stake_keeps_its_own_label_must_exclude(age
                                                                   "format": "currency", "currency": "USD"}]}])
     page["datasets"] = [{"name": "rows", "sql": "SELECT revenue_gap, region FROM sales_rows"}]
     assert not any("value at stake" in p.lower() for p in shell_sql.money_page_problems(page))
+
+
+def test_the_discovery_falls_back_to_the_key_the_use_case_names_when_no_entity_role_is_set(agent_ns):
+    found = agent_ns["deep_grouping_suggestion"](PEER, "main.sales.franchise_sales", _discovery_profiles(), (), None, (), (), None, PEER_KIND,
+                                                 subject="Coach franchises by franchiseID against their peers")
+    assert not found or ENTITY not in found.get("group_by", []), found
+
+
+def test_the_fallback_takes_only_a_key_so_a_grouping_column_the_use_case_names_stays_groupable_must_exclude(agent_ns):
+    found = agent_ns["deep_grouping_suggestion"](PEER, "main.sales.franchise_sales", _discovery_profiles(region_groups=4), (), None, (), (),
+                                                 None, PEER_KIND, subject="Coach regions by region")
+    assert found and "region" in found.get("group_by", []), found

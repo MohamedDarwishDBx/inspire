@@ -43,3 +43,9 @@ test('another family still lists the subject-named column as a choice (must-excl
   assert.ok(d.columns.some((c) => c.name === 'franchiseID'), `choices ${JSON.stringify(d.columns.map((c) => c.name))}`);
   assert.deepEqual(d.peer_entity, []);
 });
+
+test('a peer comparison excludes only a key the use case names, so a grouping column it mentions stays choosable (must-exclude)', () => {
+  const d = GP.profileView({ ...franchises('Peer Benchmarking'), subject: 'Coach regions by region' });
+  assert.ok(d.columns.some((c) => c.name === 'region'), `choices ${JSON.stringify(d.columns.map((c) => c.name))}`);
+  assert.deepEqual(d.peer_entity, []);
+});

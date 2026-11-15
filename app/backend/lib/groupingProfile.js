@@ -505,7 +505,7 @@ function profileView({ table, technique, kind = '', columns, candidates, stats, 
   const { profiles, nests } = sampleProfile(sample, candidates);
   const heavy = new Set(kept.filter((p) => R.nullHeavy({ records, nulls: p.nulls })).map((p) => p.name));
   // A peer comparison's entity is the subject itself, so the column named after the subject is no Grouping it can recommend (REQ-293).
-  const entityKeys = new Set(R.peerComparison(technique, kind) ? keptNames.filter((n) => namedIn(subject, n)) : []);
+  const entityKeys = new Set(R.peerComparison(technique, kind) ? keptNames.filter((n) => /(id|key)$/i.test(n) && namedIn(subject, n)) : []);
   const groupable = keptNames.filter((n) => !entityKeys.has(n));
   const named = groupable.filter((n) => !heavy.has(n) && namedIn(subject, n));
   const discovered = keptColumns(deep, groupable, heavy);
