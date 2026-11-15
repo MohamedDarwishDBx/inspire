@@ -149,7 +149,7 @@ function alertBase(history, useCaseId) {
   const table = str(config.result_table).trim();
   if (!table) throw coded(409, ALERT_TEXT.noTable);
   const hosted = I.hostedRecord(live);
-  const carried = I.carriedAssets(rows);
+  const carried = I.liveCarriedAssets(rows);
   const target = !hosted && carried.app ? I.implementSettingsTarget(rows, useCaseId) : null;
   const builtRow = carried.alert ? rows.find((r) => str(r.alert_id) === str(carried.alert)) || {} : {};
   const builtAsset = isObject(builtRow.asset_status) && isObject(builtRow.asset_status.alert) ? builtRow.asset_status.alert : {};

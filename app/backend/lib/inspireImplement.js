@@ -1009,14 +1009,15 @@ function implementAppUrlOk(url) {
   }
 }
 
+// The live App's settings target: its URL from liveAppOf, its page from the row whose App serves the live name (REQ-241 D-LIVE).
 function implementSettingsTarget(history, useCaseId) {
   const rows = [...(history || [])].sort((a, b) => (b.spec_version || 0) - (a.spec_version || 0));
-  if (!carriedAssets(rows).app) return null;
-  const withUrl = rows.find((r) => str(r.app_url).trim());
-  if (!withUrl) return null;
-  const status = rows.map((r) => (isPlainObject(r.asset_status) && isPlainObject(r.asset_status.app) ? r.asset_status.app : null)).find(Boolean) || {};
+  const live = liveAppOf(rows);
+  if (!live || !live.name || !live.url) return null;
+  const liveRow = liveBuiltRow(rows) || {};
+  const status = isPlainObject(liveRow.asset_status) && isPlainObject(liveRow.asset_status.app) ? liveRow.asset_status.app : {};
   const page = str(status.merged_into).trim() && str(status.page).trim() ? str(status.page).trim() : implementAppPageId(useCaseId);
-  return { url: str(withUrl.app_url).trim().replace(/\/+$/, ''), page };
+  return { url: live.url.replace(/\/+$/, ''), page };
 }
 
 function implementSettingsRecorded(history) {
@@ -1426,7 +1427,7 @@ function registryEntries(rows, { sessionId, useCaseId } = {}) {
       app_placement: IMPLEMENT_APP_PLACEMENTS.includes(outputs.app_placement) ? outputs.app_placement : '',
       updated_at: str(first.updated_at),
     };
-    const assets = carriedAssets(sorted);
+    const assets = liveCarriedAssets(sorted);
     for (const name of IMPLEMENT_MERGE_OUTPUTS) {
       const id = str(assets[name]);
       if (!id) continue;
@@ -1813,9 +1814,18 @@ function implementCarried(history) {
   return { carried, status };
 }
 
+// The outputs carried by the newest built state. Its `app` is the NEWEST build's App: under keep-previous that is the side App, not live.
+// Use it only to ask about the newest build (built or not, the change the next build makes). Sites that mean the live App use liveCarriedAssets.
 function carriedAssets(history) {
   const { carried } = implementCarried(history);
   return Object.fromEntries(Object.entries(IMPLEMENT_OUTPUT_ID_COLUMNS).filter(([, column]) => ownKey(carried, column)).map(([output, column]) => [output, carried[column]]));
+}
+
+// REQ-241 (D-LIVE): the carried outputs with `app` replaced by the live App (liveAppOf). Every site that means "the App that serves people" uses this.
+function liveCarriedAssets(history) {
+  const { app, ...rest } = carriedAssets(history);
+  const live = liveAppOf(history);
+  return live && live.name ? { ...rest, app: live.name } : rest;
 }
 
 function implementNotebookImpact(assetStatus) {
@@ -2041,7 +2051,7 @@ function withVibePreviousDefault(history, spec) {
 
 function mvpActionProblems(history, spec) {
   const rows = [...(history || [])].sort((a, b) => (b.spec_version || 0) - (a.spec_version || 0));
-  const built = Object.keys(carriedAssets(rows)).length > 0;
+  const built = Object.keys(carriedAssets(rows)).length > 0; // any output of the newest build, side App included
   const kept = keptAssets(rows);
   const problems = [];
   if (spec.vibes && previousBuilt(rows) && !IMPLEMENT_VIBE_PREVIOUS.includes(spec.vibe_previous)) {
@@ -2123,6 +2133,7 @@ function planSubmission(history, spec, stalled = null, { requester = null, table
   const before = previousBuilt(rows);
   const previous = before ? validateImplementSpec(before.spec_json, { legacyAccess: legacyAppAccess(rows) }).spec : null;
   const hasBuiltNotebook = implementHasBuiltNotebook(rows);
+  // carriedAssets: the newest build's outputs, the App the next build changes
   const summary = implementChangeSummary(previous, spec, carriedAssets(rows), implementBuiltSettings(implementCarried(rows).status), hasBuiltNotebook, tableChange);
   if (before && summary.classes.includes('settings')) {
     const refused = implementSettingsOwnerRefusal(before, requester);
@@ -3356,15 +3367,17 @@ function appUnreadableMessage(offer, job = 'build') {
 const APP_READ_GRANT = /^GRANT (USE CATALOG|USE SCHEMA|SELECT|READ METADATA) ON (CATALOG|SCHEMA|TABLE) (`[^`]+`(?:\.`[^`]+`){0,2}) TO `([^`]+)`$/;
 const APP_READ_LEVELS = { 'USE CATALOG': 'CATALOG', 'USE SCHEMA': 'SCHEMA', SELECT: 'TABLE', 'READ METADATA': 'TABLE' };
 
+// REQ-241 (D-LIVE): the App whose reads and grants are checked is the live App: its row is the one that serves the live name, not the newest side build.
 function appReadsRecord(history) {
-  const row = (history || [])[0];
+  const row = liveBuiltRow(history);
   if (!row || !IMPLEMENT_DONE_STATUSES.includes(str(row.status))) return null;
+  const liveName = str((liveAppOf(history) || {}).name).trim();
   const app = isPlainObject(row.asset_status) && isPlainObject(row.asset_status.app) ? row.asset_status.app : null;
   const persisted = (list) => (Array.isArray(list) ? list.map(str).filter((v) => v && !resultTableNameError(v)) : []);
   if (app && (persisted(app.views).length || persisted(app.sources_read).length)) {
     // The App's own read objects, persisted by the build: its Data Filters views, its reasons view, and the source tables its
     // pages read directly. Every grant is derived from these objects and the one needs list, so the build and Check again agree.
-    const name = str(row.app_name).trim();
+    const name = liveName;
     const views = persisted(app.views);
     if (!name || name.includes('`')) return null;
     const reason = str(app.reasons_view).trim();
@@ -3381,7 +3394,7 @@ function appReadsRecord(history) {
   if (!id || id.includes('`') || !Array.isArray(unread.tables)) return null;
   const tables = unread.tables.filter((t) => isPlainObject(t) && !resultTableNameError(str(t.table)))
     .map((t) => ({ table: str(t.table), owner: ownerLabel(t.owner), grants: (Array.isArray(t.grants) ? t.grants : []).map(str).filter((g) => appReadGrantFor(g, id)) }));
-  return tables.length ? { row, app: id, app_name: str(row.app_name), tables } : null;
+  return tables.length ? { row, app: id, app_name: liveName, tables } : null;
 }
 
 function appReadGrantFor(sql, appId) {
@@ -4112,6 +4125,7 @@ module.exports = {
   implementBuildRunId,
   parseImplementRow,
   carriedAssets,
+  liveCarriedAssets,
   rollbackSpec,
   planSubmission,
   implementOwners,

@@ -51,7 +51,7 @@ function newestVersions(history) {
 
 function controlTargets(history, stalled = null) {
   const rows = newestVersions(history);
-  const assets = I.carriedAssets(rows);
+  const assets = I.liveCarriedAssets(rows);
   const jobId = str((rows.find((r) => r.job_id) || {}).job_id);
   const latest = rows[0] || {};
   const runId = I.IMPLEMENT_ACTIVE_STATUSES.includes(latest.status) && !stalled ? str(latest.implement_run_id) : '';
