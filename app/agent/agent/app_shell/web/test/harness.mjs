@@ -36,7 +36,13 @@ import shell_core
 settings, count = json.loads(sys.argv[3]), int(sys.argv[4])
 with open(sys.argv[2], encoding="utf-8") as handle:
     first = json.load(handle)
-first.update(json.loads(sys.argv[5]))
+changes = json.loads(sys.argv[5])
+original = first.get("result_table")
+first.update(changes)
+if original and changes.get("result_table") and changes["result_table"] != original:
+    # A page that moves its result table reads the new table in every dataset, so its open-work KPIs still read the table they count.
+    for dataset in first.get("datasets") or []:
+        dataset["sql"] = dataset["sql"].replace(original, changes["result_table"])
 root = tempfile.mkdtemp()
 os.mkdir(os.path.join(root, shell_core.PAGES_DIR))
 settings["pages"] = []
