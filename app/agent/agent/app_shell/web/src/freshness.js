@@ -50,12 +50,14 @@ export function stampText(value, now = Date.now()) {
   return `${new Intl.DateTimeFormat('en-US', { ...STAMP, ...year }).format(d)} UTC`;
 }
 
-export function bannerText(fresh, now = Date.now(), showThrough = true) {
+/** REQ-257 D9: two times, two plain phrases. "Data refreshed" is the last successful refresh run; "App published" is when the App was built. */
+export function bannerText(fresh, now = Date.now(), showThrough = true, builtAt = '') {
   if (!fresh) return '';
   const last = fresh.last_success;
   const through = showThrough && fresh.data_through ? ` · data through ${dayLabel(fresh.data_through)}` : '';
   const when = last ? stampText(last.ended || last.started, now) : '';
-  return `${when ? `Updated ${when}` : 'Not updated yet'}${through}`;
+  const built = stampText(builtAt, now);
+  return `${when ? `Data refreshed ${when}` : 'Data not refreshed yet'}${through}${built ? ` · App published ${built}` : ''}`;
 }
 
 export function untilText(fresh, now = Date.now()) {

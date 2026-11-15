@@ -182,7 +182,7 @@ export default function Page({ app, page, meta, state, onState, look = EMPTY_LOO
   const filters = apiValues(state);
   const scope = { page: page.id, filters: filterWords(meta?.filters, state) };
   const runDate = meta?.filters?.find((f) => f.type === 'date_range');
-  const freshness = useFreshness({ page, showThrough: !!meta && !runDate?.high, onRefreshed: () => setNonce((n) => n + 1), onRun: () => setRunNonce((n) => n + 1),
+  const freshness = useFreshness({ page, builtAt: app.built_at || '', showThrough: !!meta && !runDate?.high, onRefreshed: () => setNonce((n) => n + 1), onRun: () => setRunNonce((n) => n + 1),
     onSeeChanged: seeWhatChanged });
   const address = usePageAddress({ page, meta, state, onState, view: shown, onView: (to) => go(to), views });
   const latestRun = counted.current.latest ? latestRunText(counted.current.latest) : freshness.fresh?.last_run ? `${lastRunText(freshness.fresh.last_run).text}.`

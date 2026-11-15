@@ -752,7 +752,7 @@ test('the record panel shows the saving with its formula, why the AI flagged it,
   assert.match(await panel.locator('.hist-i').first().innerText(), /No value changed\./, 'a new AI reason is never shown as a business change');
   assert.deepEqual(await footerActions(panel), ['Mark done', 'Not an issue', 'Could not fix', 'Snooze…', 'Draft Message to Someone', 'Ask Genie to fix'].sort(), 'every drawer action can be reached');
   assert.deepEqual(await panel.getByLabel('Give to someone').locator('option').allInnerTexts(),
-    [`With ${PERSON}`, `Give to ${OTHER}`, 'Someone else…']);
+    [`With ${PERSON}`, 'Clear the owner', `Give to ${OTHER}`, 'Someone else…'], 'an owned record can be given away or its owner cleared');
   const ask = panel.getByRole('region', { name: 'Ask Genie about this' });
   assert.deepEqual(await ask.locator('.sugg').allInnerTexts(), ['Show the history of this item', 'Are there others like this?', 'What happens if we do nothing?']);
   await ask.getByRole('button', { name: 'Are there others like this?' }).click();
