@@ -72,3 +72,38 @@ test('a new grant list is saved to sessionStorage so the next page load keeps it
     delete globalThis.sessionStorage;
   }
 });
+
+// REQ-239 (rest): an optional entry with no GRANT statement is remembered too, so a reload does not reopen it.
+test('an optional grant entry with no statement shown before a page load stays closed after the load', () => {
+  const entry = { statements: [], principal: 'reload-probe-owner', securable: 'main.s.orders', privilege: 'SELECT', optional: true, why: 'pages load faster' };
+  const storage = fakeSessionStorage({ 'inspire.permissionStatementsShown': JSON.stringify([`entry:${JSON.stringify(['reload-probe-owner', 'main.s.orders', 'SELECT', 'pages load faster'])}`]) });
+  globalThis.sessionStorage = storage;
+  try {
+    const calls = [];
+    const off = subscribePermissions((permissions, extra, opts = {}) => calls.push({ quiet: Boolean(opts.quiet) }));
+    raisePermissions([entry]);
+    off();
+    assert.deepEqual(calls, [{ quiet: true }], 'a statement-less entry already shown never reopens');
+  } finally {
+    delete globalThis.sessionStorage;
+  }
+});
+
+test('a new statement-less optional entry is saved by identity, and a different one still opens', () => {
+  const storage = fakeSessionStorage();
+  globalThis.sessionStorage = storage;
+  try {
+    const first = { statements: [], principal: 'owner-a', securable: 'main.s.a', privilege: 'SELECT', optional: true, why: 'a' };
+    const other = { statements: [], principal: 'owner-b', securable: 'main.s.b', privilege: 'SELECT', optional: true, why: 'b' };
+    const calls = [];
+    const off = subscribePermissions((permissions, extra, opts = {}) => calls.push({ quiet: Boolean(opts.quiet) }));
+    raisePermissions([first]);
+    raisePermissions([first]);
+    raisePermissions([other]);
+    off();
+    assert.deepEqual(calls, [{ quiet: false }, { quiet: true }, { quiet: false }], 'open, quiet repeat, then the other entry opens');
+    assert.equal(JSON.parse(storage.data['inspire.permissionStatementsShown']).length, 2, 'both identities are saved');
+  } finally {
+    delete globalThis.sessionStorage;
+  }
+});
