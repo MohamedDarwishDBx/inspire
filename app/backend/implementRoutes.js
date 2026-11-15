@@ -684,7 +684,7 @@ function registerImplementRoutes(app, deps) {
       const versionsByUc = {};
       for (const row of history) (versionsByUc[row.use_case_id] || (versionsByUc[row.use_case_id] = [])).push(row);
       const latest = Object.values(versionsByUc).map((rows) => {
-        const live = I.previousBuilt(rows);
+        const live = I.liveBuiltRow(rows);
         return Object.assign(rows[0], { live_version: live ? live.spec_version : null, live_spec_json: live ? live.spec_json : null });
       });
       const [notebook] = await Promise.all([

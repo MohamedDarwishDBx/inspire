@@ -1894,10 +1894,15 @@ function codeStampOf(row) {
   return isPlainObject(assets[IMPLEMENT_BUILT_WITH]) ? assets[IMPLEMENT_BUILT_WITH] : null;
 }
 
-function liveCodeRow(history) {
+// REQ-241 (D-LIVE): the row whose App serves the live App name. Under keep-previous that is the kept older build, not the newest side App.
+function liveBuiltRow(history) {
   const rows = byNewest(history);
   const appVersion = liveAppVersion(rows);
-  return (appVersion != null && rows.find((r) => r.spec_version === appVersion)) || previousBuilt(rows) || rows[0] || null;
+  return (appVersion != null && rows.find((r) => r.spec_version === appVersion)) || previousBuilt(rows);
+}
+
+function liveCodeRow(history) {
+  return liveBuiltRow(history) || byNewest(history)[0] || null;
 }
 
 function stampIsCurrent(built, current) {
@@ -4133,6 +4138,7 @@ module.exports = {
   appStatusFrom,
   jobRunsFrom,
   IMPLEMENT_SPEC_WIDGETS,
+  liveBuiltRow,
   liveLogPath,
   useCaseLogLines,
   genieFeed,

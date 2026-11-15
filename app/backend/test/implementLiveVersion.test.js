@@ -46,3 +46,11 @@ test('the keep and remove choices name the live App version under keep-previous,
   assert.equal(W.liveVersionForVibes(plain), 3);
   assert.deepEqual(W.appVersionLines(plain), { live: 'Live: v3', side: '' });
 });
+
+test('the backend live build row is the kept v6 under keep-previous, not the newest side App v7 (live_version in the History route)', () => {
+  const I = require('../lib/inspireImplement');
+  assert.equal(I.liveBuiltRow(keepRows()).spec_version, 6, 'the row whose App serves the live name');
+  const plain = [{ spec_version: 3, status: 'ready', asset_status: { app: { state: 'ready', spec_version: 3 } } }];
+  assert.equal(I.liveBuiltRow(plain).spec_version, 3, 'without a kept App the newest built row is live');
+  assert.equal(I.liveBuiltRow([]), null, 'no built row means no live row');
+});

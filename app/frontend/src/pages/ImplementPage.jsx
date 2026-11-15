@@ -693,7 +693,7 @@ function AssetVersions({ asset, locked, lockedReason, onRollback }) {
   const [confirming, setConfirming] = useState(null);
   const owner = asset.id === asset.output ? asset : asset.parent;
   const versions = owner?.versions || [];
-  if (!asset.live && !versions.length) return null;
+  if (!asset.live && !asset.side && !versions.length) return null;
   const rollback = async (version) => {
     setPending(version.version);
     const ok = await onRollback(owner.id, version);
@@ -715,6 +715,13 @@ function AssetVersions({ asset, locked, lockedReason, onRollback }) {
             {asset.live.at && <span className="text-text-secondary">· {formatWhen(asset.live.at, asset.live.at)}</span>}
             <span className="ms-auto"><AssetPill state={{ tone: 'success' }}>Live</AssetPill></span>
             <p className="w-full truncate text-text-secondary" title={asset.vibes || undefined}>{asset.vibes ? `“${vibesPreview(asset.vibes)}”` : 'no vibes'}</p>
+          </li>
+        )}
+        {asset.side && (
+          <li data-version={asset.side.version} data-side-version="" className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2.5">
+            <span className="font-semibold text-text-primary">Version {asset.side.version}</span>
+            {asset.side.at && <span className="text-text-secondary">· {formatWhen(asset.side.at, asset.side.at)}</span>}
+            <span className="ms-auto"><AssetPill state={{ tone: 'warning' }}>Side App (not live yet)</AssetPill></span>
           </li>
         )}
         {versions.map((version) => (
