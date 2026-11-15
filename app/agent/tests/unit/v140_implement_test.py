@@ -3710,7 +3710,7 @@ def test_a_genie_code_install_failure_fails_only_the_outputs_genie_builds(agent_
     final = inst.updates[-1]
     assert final["status"] == "failed" and final["status_message"] == (f"Genie Agent not built: {agent_ns['implement_short_reason'](reason)}; "
                                                                       f"Dashboard not published: {agent_ns['implement_short_reason'](reason)}; "
-                                                                      f"{agent_ns['IMPLEMENT_UNPUBLISHED_NEXT']}"), "an unpublished dashboard is failed, with the next step"
+                                                                      f"{agent_ns['IMPLEMENT_NOT_DONE_NEXT']}"), "an unpublished dashboard is failed, with the next step"
     assert final["asset_status"].pop("target_kpi")["source"] == "evaluated", "the version records the KPI it tracks"
     assert final["asset_status"].pop("built_with") == agent_ns["implement_build_stamp"](), "the version records the release it was built with"
     assert final["asset_status"] == {"dashboard": {"state": "failed", "error": reason, "spec_version": 3},
