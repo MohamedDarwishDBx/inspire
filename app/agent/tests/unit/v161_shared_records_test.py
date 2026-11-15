@@ -158,7 +158,7 @@ def test_the_owner_leaving_a_shared_app_makes_the_person_behind_the_new_owner_it
     inst = _app_taker(agent_ns, tmp_path, monkeypatch, app, heirs)
     inst._implement_delete_output("app", "sales-desk", KEY, status={"state": "ready"})
     settings = json.loads(inst.deployed[0][1]["inspire_app.json"])
-    assert (settings["title"], settings["admin"]) == ("N01-U07 Sales desk", "sales.planner@example.com")
+    assert (settings["title"], settings["admin"]) == ("Sales desk", "sales.planner@example.com"), "the App title is the use case name (REQ-063)"
     nobody = _app_taker(agent_ns, tmp_path, monkeypatch, app, [dict(heirs[0], created_by="")])
     nobody._implement_delete_output("app", "sales-desk", KEY, status={"state": "ready"})
     assert json.loads(nobody.deployed[0][1]["inspire_app.json"])["admin"] == "churn.builder@example.com", \
