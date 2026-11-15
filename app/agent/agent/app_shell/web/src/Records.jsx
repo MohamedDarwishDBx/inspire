@@ -8,7 +8,7 @@ import { askGenieAbout, fixQuestion, genieOn } from './genieAsk.js';
 import { BUSY_TITLE, fieldsOf, tableContext } from './explain.js';
 import { AskGenie } from './AskGenie.jsx';
 import { DraftDialog } from './Draft.jsx';
-import { OPEN_TAB, tabChoice, withRecord, withoutRecord } from './links.js';
+import { OPEN_TAB, UNCHECKED_TAB, tabChoice, withRecord, withoutRecord } from './links.js';
 import { useDock } from './Dock.jsx';
 import { addCounts, addedParts, cap, compareValues, dayLabel, entityName, integer, kindOf, plainText, savedWords, shownUnit, unitOf } from './format.js';
 
@@ -32,7 +32,7 @@ import { recordName, recordSentenceName,
   missingSince, NOT_IN_RUN, notInRunText, overdueFirst, pageText, recordCurrency, recordKeyOf, recordRef, recordView, recordsText, savingText, statusClass,
   statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf,
   isStaleRecord, closedText, closedBatchOf, undoBatchOf, undoWordOf, UNDO_CLOSE, isClosed, skippedText, READ_ONLY, READ_ONLY_KEPT, READ_ONLY_THEIRS,
-  CLOSED_PICK, ACCEPTED, acceptable, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
+  CLOSED_PICK, ACCEPTED, acceptable, uncheckedWhy, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
 } from './records.js';
 import { SectionHelp } from './SectionHelp.jsx';
 import { ClusterBar, useChoices } from './KindParts.jsx';
@@ -475,12 +475,12 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
               );
             })()}
             {undoBatch && !work && !undoAsk && (
-              <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{undoWordOf(meta)}</button>
+              <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{undoWordOf(meta, isClosed(current))}</button>
             )}
             {undoBatch && undoAsk && (
               <div className="note note--flat undo-ask" role="group" aria-label="Undo this change">
                 <span>{UNDO_CLOSE}</span>
-                <SaveButton write="drawer:undo" className="btn btn--pri" onClick={async () => { if (await acts.undo(undoBatch, 'drawer:undo')) setUndoAsk(false); }}>{undoWordOf(meta)}</SaveButton>
+                <SaveButton write="drawer:undo" className="btn btn--pri" onClick={async () => { if (await acts.undo(undoBatch, 'drawer:undo')) setUndoAsk(false); }}>{undoWordOf(meta, isClosed(current))}</SaveButton>
                 <button type="button" className="btn" onClick={() => setUndoAsk(false)}>Keep it</button>
               </div>
             )}
@@ -551,6 +551,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
   const choices = pageChoices(app, pageId);
   const tabPick = tab ? tabChoice(choices, tab) : null;
   const tabOpen = tab === OPEN_TAB;
+  const unchecked = tab === UNCHECKED_TAB;
   const mine = tab ? tab === 'mine' : ownMine;
   const dockNow = useDock();
   const dock = docked ? dockNow : null;
@@ -579,6 +580,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
   const matching = picks.scope === scope ? picks.all : null;
   const inWindow = windowed.window ? { window: windowed.window, ...(windowed.time_zone ? { time_zone: windowed.time_zone } : {}) } : {};
   const listed = { page: pageId, filters, ai: aiPicks, search, mine, changed, ...(Object.keys(narrowed).length ? { column_filters: narrowed } : {}), ...(tabPick ? { choice: tabPick.id } : {}), ...inWindow,
+    ...(unchecked ? { unchecked: true } : {}),
     ...(tab || !noActions ? { status_counts: true } : {}), ...(only ? { focus: only } : {}) };
   const room = cap ? Math.max(1, Math.min(size, cap - offset)) : size;
   const asked = { ...listed, ...(cap ? { window_limit: cap } : {}), ...(sort ? { sort } : {}), ...(!sort && !noActions ? { due_first: true } : {}), offset, limit: room, ...(cursor ? { cursor } : {}) };
@@ -904,6 +906,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
         );
       },
     },
+    ...(unchecked ? [{ key: '_inspire_flag', label: 'Why it was not checked', className: 'wrap', render: (r) => <span data-unchecked-why>{uncheckedWhy(r._inspire_flag)}</span> }] : []),
     ...(meta.tier ? [{ key: meta.tier, label: 'Tier', render: (r) => (r[meta.tier] ? <span className={tierClass(r[meta.tier])}>{r[meta.tier]}</span> : '') }] : []),
     ...recordColumns(meta, data?.money, onFilter),
     ...(tracker ? [
