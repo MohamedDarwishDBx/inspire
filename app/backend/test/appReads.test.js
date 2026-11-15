@@ -334,3 +334,32 @@ test('the dialog and the Grant use the App service principal id read live from i
     assert.ok(w.grants.length > 0 && w.grants.every(([sql]) => sql.endsWith(`TO \`${LIVE}\``)), 'the Grant runs only on the live principal');
   });
 });
+
+// REQ-267: the Build page's Check runs on load. The build record is the App's own tracking table, so the Check reads it as the App, as
+// the Build page's status and history do. A person who cannot read that table must still get an answer, never a 500.
+const TRACKING_DENIED = "[INSUFFICIENT_PERMISSIONS] Insufficient privileges:\nPrincipal 'analyst@example.com' does not have SELECT on Table 'main.inspire.__inspire_implement'. SQLSTATE: 42501";
+
+test('Check again reads the build record as the App, so a person who cannot read the App tracking table gets an answer, not a 500 (REQ-267)', async () => {
+  const w = workspace();
+  const overrides = { ...w.overrides, dbToken: PERSON_TOKEN, tokenKind: 'person', appToken: APP_TOKEN, sqlDeniedFor: { [PERSON_TOKEN]: { __inspire_implement: TRACKING_DENIED } } };
+  await withApp(overrides, async (url, made) => {
+    const got = await call(url, `/api/inspire/implement/app-reads?${Q}`, { action: 'check' });
+    assert.equal(got.status, 200, JSON.stringify(got.data));
+    assert.equal(got.data.state, 'unreadable');
+    assert.equal(got.data.app_name, 'riverside-assets');
+    const record = made.sqlCalls.filter((c) => c.sql.includes('__inspire_implement'));
+    assert.ok(record.length > 0, 'the build record is read');
+    assert.ok(record.every((c) => c.token === APP_TOKEN), 'the build record is read with the App token, never the person token');
+  });
+});
+
+test('when the App itself cannot read its tracking table, Check answers 403 with a plain reason and no raw SQL error (REQ-267)', async () => {
+  const w = workspace();
+  const overrides = { ...w.overrides, dbToken: PERSON_TOKEN, tokenKind: 'person', appToken: APP_TOKEN, sqlDeniedFor: { [APP_TOKEN]: { __inspire_implement: TRACKING_DENIED } } };
+  await withApp(overrides, async (url) => {
+    const got = await call(url, `/api/inspire/implement/app-reads?${Q}`, { action: 'check' });
+    assert.equal(got.status, 403, JSON.stringify(got.data));
+    assert.doesNotMatch(got.data.error, /INSUFFICIENT_PERMISSIONS|SQLSTATE|Principal/, 'no raw SQL error reaches the page');
+    assert.match(got.data.error, /^Inspire cannot read the build record of this use case/);
+  });
+});

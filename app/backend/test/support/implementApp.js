@@ -67,6 +67,8 @@ function makeApp(overrides = {}, { mount } = {}) {
       if (options && options.signal && options.signal.aborted) throw sqlCancelledError(null);
       sqlCalls.push({ sql, parameters, token, warehouse, options });
       for (const [needle, message] of Object.entries(state.sqlErrors || {})) if (sql.includes(needle)) throw new Error(message);
+      // sqlDeniedFor: { [token]: { [needle]: message } } refuses a read made with that token only (REQ-267: the person cannot read the App's table).
+      for (const [needle, message] of Object.entries((state.sqlDeniedFor || {})[token] || {})) if (sql.includes(needle)) throw new Error(message);
       for (const [needle, out] of Object.entries(state.statements || {})) {
         if (sql.includes(needle)) return typeof out === 'function' ? out(sql, parameters, token) : out;
       }

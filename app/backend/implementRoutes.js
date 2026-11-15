@@ -268,6 +268,18 @@ function registerImplementRoutes(app, deps) {
     return implementRows(host, token, warehouseId, table, (existing) => I.implementHistoryStatement(table, sid, useCaseId || null, existing));
   }
 
+  // The build record is the App's own tracking table, so it is read as the App, as the Build page's status and history read it. The
+  // Check runs on load for every person: a person who cannot read that table gets a plain reason, never a 500 (REQ-267).
+  async function appRecordOf(req, warehouseId, catalog, schema, sid, useCaseId) {
+    try {
+      return await loadHistory(req.dbHost, await appTokenOf(req), warehouseId, catalog, schema, sid, useCaseId);
+    } catch (err) {
+      if (!I.isReadDenied(err && err.message)) throw err;
+      throw I.badRequest('Inspire cannot read the build record of this use case, so it cannot tell what the App still needs. '
+        + 'Ask your workspace admin to give the Inspire App SELECT on its tracking table, then click Try again.', 403);
+    }
+  }
+
   async function loadMergeTargets(req, warehouseId, catalog, schema, sid, useCaseId, only = null) {
     const table = I.implementTableName(catalog, schema);
     const [rows, hubRows] = await Promise.all([
@@ -307,11 +319,13 @@ function registerImplementRoutes(app, deps) {
     const sid = sessionIdOf(req);
     const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
     if (asked && asked.use_case_id !== useCaseId) throw I.badRequest(`the spec is for use case ${asked.use_case_id || '(none)'}, not ${useCaseId}`, 400);
-    const involved = await useCasesTables(req, warehouseId, catalog, schema, sid, [useCaseId]);
+    // The saved involved tables and the build record are the App's own tracking tables: read as the App (REQ-268 sweep, as REQ-267).
+    const appToken = await appTokenOf(req);
+    const involved = await useCasesTables(req, warehouseId, catalog, schema, sid, [useCaseId], appToken);
     if (!involved.length) throw I.badRequest(`Inspire has no source tables saved for use case ${useCaseId}, so it grants none.`, 409);
     let spec = asked;
     if (!spec) {
-      const history = await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId);
+      const history = await loadHistory(req.dbHost, appToken, warehouseId, catalog, schema, sid, useCaseId);
       const latest = [...(history || [])].sort((a, b) => (Number(b.spec_version) || 0) - (Number(a.spec_version) || 0))[0];
       spec = (latest && latest.spec_json) || {};
     }
@@ -321,9 +335,9 @@ function registerImplementRoutes(app, deps) {
     if (outside.length) throw I.badRequest(`these tables are not source tables of use case ${useCaseId}, so Inspire grants none of them: ${outside.join(', ')}`, 400);
   }
 
-  async function useCasesTables(req, warehouseId, catalog, schema, sid, useCaseIds) {
+  async function useCasesTables(req, warehouseId, catalog, schema, sid, useCaseIds, token = req.dbToken) {
     const table = `\`${catalog}\`.\`${schema}\`.\`__inspire_usecases\``;
-    const rows = await sqlRows(req.dbHost, req.dbToken, warehouseId, I.useCaseTablesStatement(table, sid, useCaseIds));
+    const rows = await sqlRows(req.dbHost, token, warehouseId, I.useCaseTablesStatement(table, sid, useCaseIds));
     return I.uniqueTables(rows.flatMap((row) => I.useCaseTables(row)));
   }
 
@@ -1222,7 +1236,7 @@ function registerImplementRoutes(app, deps) {
       const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
       const action = String((req.body && req.body.action) ?? 'check');
       if (!['check', 'grant'].includes(action)) throw I.badRequest('action must be check or grant');
-      const record = I.appReadsRecord(await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId));
+      const record = I.appReadsRecord(await appRecordOf(req, warehouseId, catalog, schema, sid, useCaseId));
       if (!record) return res.json({ state: 'readable', tables: [], ran: [], failed: [], text: I.appReadsText([], '') });
       const { left, ran, failed, principals, app } = await appReads(req, warehouseId, record, action === 'grant');
       const was = record.tables.map((t) => `${t.table}:${t.owner}:${t.grants.join(';')}`).join('|');
