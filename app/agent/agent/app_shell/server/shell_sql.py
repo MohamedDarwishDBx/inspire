@@ -6151,11 +6151,11 @@ def trends_query(page: dict, names: set, now: datetime.datetime, since: datetime
     ctes = {"kv": (f"SELECT `record_key`, `run_id`, `valid_from`, `valid_to`, `is_current`, `change_source`, {raw} AS `_t_raw`, "
                    f"{status} AS `_t_status`, LAG({raw}) OVER (PARTITION BY `record_key` ORDER BY `valid_from`) AS `_t_was`, "
                    f"{text('action_owner')} AS `_t_owner`, {due} AS `_t_due`, {money} AS `_t_money`, {reason} AS `_t_reason`, "
-                   f"{joined} AS `_t_joined`, MIN(`valid_from`) OVER (PARTITION BY `record_key`) AS `_t_first`, "
+                   f"{joined} AS `_t_joined`, COALESCE(({flagged_ok_sql(names)}), FALSE) AS `_t_ok`, MIN(`valid_from`) OVER (PARTITION BY `record_key`) AS `_t_first`, "
                    f"ROW_NUMBER() OVER (PARTITION BY `record_key` ORDER BY `valid_from` DESC) AS `_t_nth` FROM {table}"
                    f"{' WHERE ' + scope if scope else ''}"),
             "kc": "SELECT * FROM kv WHERE `is_current` AND `change_source` <> 'delete'",
-            "ko": f"SELECT * FROM kc WHERE `_t_status` IN ({opened})"}
+            "ko": f"SELECT * FROM kc WHERE `_t_status` IN ({opened}) AND `_t_ok`"}
     age = f"({now_us} - unix_micros(COALESCE(`_t_joined`, `_t_first`)))"
     fresh, month = DAY_US * (AGE_DAYS[0] + 1), DAY_US * (AGE_DAYS[1] + 1)
     open_cells = {"n": "COUNT(*)", "overdue": _count(f"`_t_due` < {today}"), "unowned": _count("NULLIF(TRIM(`_t_owner`), '') IS NULL"),
@@ -6185,13 +6185,13 @@ def trends_query(page: dict, names: set, now: datetime.datetime, since: datetime
     ctes["kr"] = (f"SELECT CAST(`run_id` AS STRING) AS `_t_run`, MAX({ran}) AS `_t_at` FROM {source}{only} GROUP BY CAST(`run_id` AS STRING) "
                   f"ORDER BY `_t_at` DESC LIMIT {CAPS['trend_runs']}")
     ctes["kp"] = (f"SELECT r.`_t_run`, r.`_t_at`, COUNT(v.`record_key`) AS `_t_n` FROM kr AS r LEFT JOIN kv AS v ON v.`valid_from` <= r.`_t_at` "
-                  f"AND (v.`valid_to` IS NULL OR v.`valid_to` > r.`_t_at`) AND v.`change_source` <> 'delete' AND v.`_t_status` IN ({opened}) "
+                  f"AND (v.`valid_to` IS NULL OR v.`valid_to` > r.`_t_at`) AND v.`change_source` <> 'delete' AND v.`_t_status` IN ({opened}) AND v.`_t_ok` "
                   f"GROUP BY r.`_t_run`, r.`_t_at`")
     ctes["kn"] = ("SELECT CAST(`run_id` AS STRING) AS `_t_run`, COUNT(*) AS `_t_n` FROM kv WHERE `valid_from` = `_t_first` AND "
                   "`change_source` = 'run' GROUP BY CAST(`run_id` AS STRING)")
     branches.append(f"{_overview_select('run', {'k': 'p.`_t_run`', 'at': 'p.`_t_at`', 'n': 'p.`_t_n`', 'm': 'COALESCE(n.`_t_n`, 0)'}, TREND_COLUMNS)} "
                     f"FROM kp AS p LEFT JOIN kn AS n ON n.`_t_run` = p.`_t_run`")
-    still = f"CASE WHEN `is_current` AND `change_source` <> 'delete' AND `_t_status` IN ({opened}) THEN 1 ELSE 0 END"
+    still = f"CASE WHEN `is_current` AND `change_source` <> 'delete' AND `_t_status` IN ({opened}) AND `_t_ok` THEN 1 ELSE 0 END"
     ctes["kf"] = (f"SELECT `record_key`, MIN(`_t_first`) AS `_t_first`, MIN(CASE WHEN `change_source` = 'action' THEN `valid_from` END) AS "
                   f"`_t_act`, MAX({still}) AS `_t_open` FROM kv WHERE unix_micros(`_t_first`) >= {since_us} GROUP BY `record_key`")
     secs = "(unix_micros(`_t_act`) - unix_micros(`_t_first`)) / 1000000.0"
