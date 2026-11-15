@@ -3114,11 +3114,13 @@ function accessPlan(name, rows, principal = '', options = {}) {
   }));
   const me = str((list.find((r) => str(r.me).trim()) || {}).me).trim();
   const holders = new Set([IMPLEMENT_ALL_USERS, ...(who ? [who.toLowerCase()] : [])]);
+  // REQ-301: the person is also known by her identity id (SCIM): Unity Catalog reports an owner by that id, not by the email.
+  const ownIds = new Set([who, ...(options.aliases || [])].map((v) => str(v).trim().toLowerCase()).filter(Boolean));
   const tableExists = facts.some((f) => f.level === 'table' && f.privilege === 'OWNER');
   const createsSchema = options.createsSchema === true && schemaNotCreated(list);
   const plan = { grants: [], gaps: [], me };
   for (const [privilege, level, levels] of needs) {
-    const owns = !!who && facts.some((f) => f.level === level && f.privilege === 'OWNER' && f.principal.toLowerCase() === who.toLowerCase());
+    const owns = !!who && facts.some((f) => f.level === level && f.privilege === 'OWNER' && ownIds.has(f.principal.toLowerCase()));
     const covers = [privilege, 'ALL PRIVILEGES', ...(IMPLEMENT_PRIVILEGE_COVERS[privilege] || [])];
     const granted = facts.some((f) => levels.includes(f.level) && covers.includes(f.privilege)
       && holders.has(f.principal.toLowerCase()));
@@ -3386,12 +3388,16 @@ function appReadsRecord(history) {
     if (!name || name.includes('`')) return null;
     const reason = str(app.reasons_view).trim();
     const sources = persisted(app.sources_read).filter((s) => !views.includes(s));
-    const objects = [...new Set([...views, ...(reason && !resultTableNameError(reason) ? [reason] : []), ...sources])];
     // views: the App-owned views a user-authorization App's audience may be granted; sources: the source tables it reads directly,
     // which are never granted to a person or group (the rebuild message covers them).
-    return { row, app: '', app_name: name, mode: str(app.access_mode) === 'user' ? 'user' : 'sp', objects: true,
-      views: [...new Set([...views, ...(reason && !resultTableNameError(reason) ? [reason] : [])])], sources,
-      tables: objects.map((table) => ({ table, owner: '', grants: [] })) };
+    // REQ-301: a user-authorization App's audience is granted its own objects only. A source table it reads directly is never a grant to
+    // list or copy, so it sits in `sources` for the rebuild sentence. A service-principal App's live grants include its sources.
+    const own = [...new Set([...views, ...(reason && !resultTableNameError(reason) ? [reason] : [])])];
+    const mode = str(app.access_mode) === 'user' ? 'user' : 'sp';
+    const granted = mode === 'user' ? own : [...new Set([...own, ...sources])];
+    return { row, app: '', app_name: name, mode, objects: true,
+      views: own, sources,
+      tables: granted.map((table) => ({ table, owner: '', grants: [] })) };
   }
   const unread = app && isPlainObject(app.unread) ? app.unread : null;
   const id = str(unread && unread.app).trim();
@@ -3449,12 +3455,12 @@ function appAudience(acl) {
 }
 
 // What each principal still needs on each App object, checked live. Service-principal and user-authorization Apps share this path.
-function appReadsLeftFor(record, principals, rows) {
+function appReadsLeftFor(record, principals, rows, aliasesOf = {}) {
   return record.tables.map((t, i) => {
     const grants = [];
     const owners = [];
     for (const principal of principals) {
-      const plan = accessPlan(t.table, rows[i], principal, { needs: IMPLEMENT_SOURCE_NEEDS });
+      const plan = accessPlan(t.table, rows[i], principal, { needs: IMPLEMENT_SOURCE_NEEDS, aliases: aliasesOf[principal] || [] });
       const order = (g) => IMPLEMENT_SOURCE_NEEDS.findIndex(([privilege]) => privilege === g.privilege);
       for (const need of [...plan.grants, ...plan.gaps].sort((a, b) => order(a) - order(b))) {
         const sql = grantSql(need, principal);

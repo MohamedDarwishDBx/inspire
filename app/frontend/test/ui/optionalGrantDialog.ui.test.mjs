@@ -78,7 +78,7 @@ test('an optional Lakebase grant opens Permission Required labelled optional, wi
   }
 });
 
-test('a required grant still opens Permission Required as a grant the person must ask an admin to run', async () => {
+test('a required grant still opens Permission Required as a grant the person must pass to an admin', async () => {
   const ui = await openUi('app', stateWith([REQUIRED]), '', { mount: mountFor({ submits: [] }) });
   const { page } = ui;
   try {
@@ -87,7 +87,8 @@ test('a required grant still opens Permission Required as a grant the person mus
     const dialog = page.locator('[data-permission-dialog=""]').first();
     await dialog.waitFor({ timeout: 15000 });
     const text = await dialog.innerText();
-    assert.match(text, /Ask your admin to grant this permission to app-sp-2:/, 'a required grant keeps the Ask your admin wording');
+    assert.match(text, /For app-sp-2/, 'a required grant has a short heading for its grantee (REQ-300)');
+    assert.doesNotMatch(text, /Ask your admin/, 'the repeated Ask your admin sentence is gone (REQ-300)');
     assert.doesNotMatch(text, /Optional:/, 'a required grant is never labelled optional');
     assert.deepEqual(ui.pageErrors, []);
   } finally {

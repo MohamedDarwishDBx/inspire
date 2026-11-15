@@ -9,8 +9,8 @@ test('an optional grant is labelled optional, not as a grant the person needs fi
   assert.doesNotMatch(line, /Ask your admin|needs this grant/);
 });
 
-test('a required grant keeps the Ask your admin wording, with its principal', () => {
-  assert.equal(grantAsk({ statements: ['GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp`;'], principal: 'app-sp' }),
-    'Ask your admin to grant this permission to app-sp:');
-  assert.equal(grantAsk({ statements: [] }), 'Ask your admin to grant this permission:');
+// REQ-300: a required grant is a short heading for its grantee, not the repeated Ask your admin sentence.
+test('a required grant has a short heading with its principal', () => {
+  assert.equal(grantAsk({ statements: ['GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp`;'], principal: 'app-sp' }), 'For app-sp');
+  assert.equal(grantAsk({ statements: [] }), 'For your admin');
 });
