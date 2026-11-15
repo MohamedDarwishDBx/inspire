@@ -709,11 +709,11 @@ test('under a record name the list and the record panel show only the key and se
   assert.deepEqual(shown, { 'zip 10001': '2016-02-29 00:00 | own series', 'Fleet fare revenue 2016-03-01': null, 'Wool coat': 'R003 · Outerwear' });
   const panel = page.locator('dialog.drawer[open] .panel-meta');
   await page.locator('.card--table tbody .cell-t', { hasText: 'Fleet fare revenue 2016-03-01' }).click();
-  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Fleet fare revenue 2016-03-01');
+  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Price-loss decision desk for Fleet fare revenue 2016-03-01');
   assert.ok(!(await panel.innerText()).includes('2016-03-01'), 'the panel does not repeat a segment the name already shows');
   await page.keyboard.press('Escape');
   await page.locator('.card--table tbody .cell-t', { hasText: 'Wool coat' }).click();
-  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Wool coat');
+  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Price-loss decision desk for Wool coat');
   assert.ok((await panel.innerText()).includes('Outerwear'), 'a segment that adds words still shows in the panel');
   assert.deepEqual(seen.errors, []);
   await context.close();
@@ -728,7 +728,7 @@ test('the record panel shows the saving with its formula, why the AI flagged it,
   await page.locator('.cell-t').first().click();
   const panel = page.locator('dialog.drawer.panel');
   await panel.locator('.dr-act').waitFor();
-  assert.equal(await panel.locator('.panel-h h2').innerText(), LABEL);
+  assert.equal(await panel.locator('.panel-h h2').innerText(), `Price-loss decision desk for ${LABEL}`);
   const meta = await panel.locator('.panel-meta').innerText();
   for (const part of ['Price-loss decision desk', 'Books', PERSON, 'Due Jan 5, 2020']) assert.ok(meta.includes(part), `${part} in ${meta}`);
   assert.equal(await panel.locator('.panel-meta .owner i').innerText(), 'PL');
