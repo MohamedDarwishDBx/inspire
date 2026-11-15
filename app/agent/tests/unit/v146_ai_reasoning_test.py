@@ -124,8 +124,8 @@ def test_the_model_writes_only_the_reason_for_the_level_the_notebook_set(agent_n
             "ai_cat_driver STRING, evidence ARRAY<STRING>'") in checked
     assert "ai_confidence " not in checked and "AS ai_confidence," not in checked
     labels = [label for label, _test, _detail in agent_ns["inspire_ai_checks"](ai)]
-    assert labels[:5] == ["endpoint error", "unreadable reply", "hedged explanation", "no confidence reason",
-                          "hedged confidence reason"] and labels[-1] == "ai_cat_driver outside its values"
+    assert labels[:6] == ["endpoint error", "unreadable reply", "hedged explanation", "explanation reads as a Python object dump",
+                          "no confidence reason", "hedged confidence reason"] and labels[-1] == "ai_cat_driver outside its values"
     hashed = agent_ns["inspire_ai_hash_sql"](ai["fingerprint"], "t")
     assert "coalesce(t.`confidence_level`, '')" in hashed and "coalesce(t.`ai_facts`, '')" in hashed, \
         "a record whose level changes is explained again"

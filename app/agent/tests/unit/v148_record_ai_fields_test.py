@@ -90,9 +90,13 @@ def test_the_hedge_and_missing_reasoning_checks_cover_every_new_text_and_the_evi
     ai = _ai(agent_ns)
     checks = agent_ns["inspire_ai_checks"](ai)
     assert [label for label, _test, _detail in checks] == [
-        "endpoint error", "unreadable reply", "hedged explanation", "no confidence reason", "hedged confidence reason",
-        "no next action", "hedged next action", "no expected result", "hedged expected result", "no other option",
-        "hedged other option", "evidence not 2 to 4 sentences", "hedged evidence", "evidence without a number from the facts",
+        "endpoint error", "unreadable reply", "hedged explanation", "explanation reads as a Python object dump",
+        "no confidence reason", "hedged confidence reason", "confidence reason reads as a Python object dump",
+        "no next action", "hedged next action", "next action reads as a Python object dump",
+        "no expected result", "hedged expected result", "expected result reads as a Python object dump",
+        "no other option", "hedged other option", "other option reads as a Python object dump",
+        "evidence not 2 to 4 sentences", "hedged evidence", "evidence without a number from the facts",
+        "evidence reads as a Python object dump",
         "explanation names another confidence level", "explanation gives the confidence as a number",
         "confidence reason names another confidence level", "confidence reason gives the confidence as a number",
         "next action names another confidence level", "next action gives the confidence as a number",
