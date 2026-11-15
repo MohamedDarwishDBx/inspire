@@ -268,7 +268,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .ask{display:flex;align-items:center;gap:10px;margin-top:16px;padding:6px 6px 6px 14px;border-radius:14px;border:1px solid var(--faint);background:var(--card);box-shadow:0 10px 30px -18px rgba(0,0,0,.35);max-width:760px}
 .ask-ic{color:var(--brand-ink);display:grid}
 .ask input{flex:1;border:0;outline:0;background:none;height:40px;font-size:15px}
-.pop{position:absolute;z-index:60;min-width:200px;max-width:320px;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;box-shadow:0 18px 40px -18px rgba(0,0,0,.45);padding:6px}
+.pop{position:fixed;z-index:60;min-width:200px;max-width:320px;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;box-shadow:0 18px 40px -18px rgba(0,0,0,.45);padding:6px}
 .menu-list button{display:flex;width:100%;align-items:center;gap:8px;padding:8px 10px;border:0;background:none;border-radius:7px;text-align:start;cursor:pointer}
 .menu-list button:hover,.menu-list button:focus-visible{background:var(--well)}
 .menu-list button:focus-visible{outline-offset:-2px}

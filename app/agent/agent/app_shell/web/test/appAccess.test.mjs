@@ -118,10 +118,10 @@ test('Genie answers why there is no data with the banner\'s own buttons, and its
     await page.getByRole('button', { name: 'Send' }).click();
     const card = page.locator('[data-confirm="access"] [data-access-actions]');
     await card.waitFor();
-    // REQ-313: the Genie card is itself an inline permission dialog, so the banner is the page-level dialog only (not .perm-dialog-inline).
-    const banner = page.locator('[data-permission-dialog]:not(.perm-dialog-inline) [data-access-actions]');
     const labels = (el) => el.locator('button').evaluateAll((bs) => bs.map((b) => b.textContent.trim()));
-    assert.deepEqual(await labels(card), await labels(banner), 'Genie shows the banner\'s own buttons');
+    // REQ-313: the Genie card holds the Permission Required dialog inline, with the same three access actions.
+    assert.deepEqual(await labels(card), ['Grant access with my permissions', 'Copy the grant SQL', 'Check again'], 'Genie shows the dialog\'s own buttons');
+    assert.equal(await page.locator('.perm-dialog-backdrop').count(), 0, 'no modal covers the chat (must-exclude)');
     assert.equal(grants(state).length, 0);
     await card.getByRole('button', { name: 'Grant access with my permissions' }).click();
     assert.equal(grants(state).length, 0, 'the Genie card asks first, like the banner');
@@ -132,7 +132,8 @@ test('Genie answers why there is no data with the banner\'s own buttons, and its
     assert.deepEqual(grants(state)[0], { step: 'grant', confirmed: true, seen: FOUND.seen });
     await card.getByText('You granted 2 read permissions to this App.').waitFor();
     await until(() => seen.pages.length > asked, 10000);
-    await page.locator('[data-permission-dialog]').waitFor({ state: 'detached' });
+    // The Genie card keeps its dialog inline with the result line; no modal may remain after the grant.
+    assert.equal(await page.locator('.perm-dialog-backdrop').count(), 0, 'the grant leaves no modal over the chat');
   } finally {
     await context.close();
   }
