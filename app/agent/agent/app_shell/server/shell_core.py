@@ -2984,7 +2984,7 @@ class Shell:
                 continue
             through = self.data_through_date(ws, who, page) if through is None else through
             # REQ-297: a run that checked records and wrote no result row says so; read the run summary once, only when a KPI needs it
-            checked = shell_sql.zero_run_checked(self.run_summary(ws, who, page)) if checked is False else checked
+            checked = shell_sql.zero_run_checked(self.run_summary_row(ws, who, page)) if checked is False else checked
             seen = self.run(ws, who, *shell_sql.kpi_rows_query(page, kpi["id"], values or {}), 1)["rows"]
             out["kpis"][kpi["id"]] = shell_sql.kpi_missing(page, shown, int((seen or [{}])[0].get("n") or 0), through, checked)
         if counts is not None:
@@ -3956,7 +3956,7 @@ class Shell:
                              f"table's key for one record, in the {shell_sql.RECORDS_DATASET} dataset"))
         return problems
 
-    def run_summary(self, ws, who, page: dict):
+    def run_summary_row(self, ws, who, page: dict):
         """The latest run summary row the App already writes (summary_query), or None when the page has no result table or no run has
         written one. The one reader of the summary: the flagged count and the zero-result reason (REQ-297) both read it."""
         if not page.get("result_table"):
@@ -3971,7 +3971,7 @@ class Shell:
         """The run's own count of the records its rule flagged (Act now plus Review) across the whole scope, read from the run summary
         row the App already writes (summary_query). None when the page has no result table, no run has written a summary, or the
         counts are missing, so the caller falls back to the chart measures."""
-        row = self.run_summary(ws, who, page)
+        row = self.run_summary_row(ws, who, page)
         if not row:
             return None
         flagged = [count_of(row.get("act_now_records")), count_of(row.get("review_records"))]
