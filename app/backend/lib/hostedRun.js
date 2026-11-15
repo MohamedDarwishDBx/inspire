@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { BOOT_GUARD_SCRIPT_HASH } = require('./bootGuardCsp');
 const os = require('os');
 const path = require('path');
 const http = require('http');
@@ -122,7 +123,8 @@ function sameOriginCsp() {
 function pagePolicy(root, assets) {
   return [
     "default-src 'none'",
-    `script-src ${assets}`,
+    // The boot guard is an inline script in the App shell's index.html; its hash is the only inline script the policy allows.
+    `script-src ${assets} '${BOOT_GUARD_SCRIPT_HASH}'`,
     `style-src ${assets}`,
     `img-src ${root} data:`,
     `font-src ${root}`,
