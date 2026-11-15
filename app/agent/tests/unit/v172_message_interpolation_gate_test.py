@@ -368,6 +368,8 @@ REVIEWED = {
         ('_implement_lakebase_ready', 'implement_lakebase_unavailable(error)'),
         ('_implement_lakebase_call', 'implement_lakebase_refused(call, self._implement_builder())'),
         ('_implement_lakebase_synced', "implement_lakebase_schema_denied(copy['synced'], self._implement_builder())"),
+        # REQ-131, REQ-260: the GRANT statement the Permission Required dialog copies (carried as the exception's statement, never in the sentence)
+        ('_implement_lakebase_synced', "implement_lakebase_schema_statement(copy['synced'], self._implement_builder())"),
         ('_implement_lakebase_views', "'; '.join(problems)"),
         ('_implement_merge_genie', "'; '.join(problems)"),
         ('_implement_one_locked', "'; '.join(errors)"),

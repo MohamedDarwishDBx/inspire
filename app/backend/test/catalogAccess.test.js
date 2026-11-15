@@ -65,8 +65,11 @@ for (const c of CASES.source_tables) {
     const text = I.appUnreadableMessage(offer);
     assert.match(text, new RegExp(`${CASES.app.name} \\(application id ${CASES.app.id}\\)`));
     assert.doesNotMatch(text, /swap/i);
-    for (const sql of c.grants) assert.ok(text.includes(sql), sql);
+    // REQ-131, REQ-260: the SQL is never in the prose; the App raises it as the Permission Required entry (sourceAccess carries it)
+    for (const sql of c.grants) assert.ok(!text.includes(sql), `must-exclude: ${sql}`);
+    assert.doesNotMatch(text, /GRANT /);
     assert.match(text, c.can_grant ? /Use Let Inspire read these tables/ : c.grants.length ? /Ask your data owner to run/ : /no missing grant/);
+    if (c.grants.length) assert.match(text, /the exact commands are in Permission Required$/);
   });
 }
 
@@ -155,7 +158,10 @@ test('a rerun the App cannot read refuses with the named App reason, never the s
     assert.equal(got.status, 409, JSON.stringify(got.data));
     assert.match(got.data.error, /the build cannot read a source table: builds run as the App service principal inspire-manual/);
     assert.doesNotMatch(got.data.error.split('. Ask your data owner')[0], /main\.s\.orders/);
-    assert.match(got.data.error, /Ask your data owner to run: GRANT USE SCHEMA ON SCHEMA `main`\.`s` TO `app-sp-id`; GRANT SELECT ON TABLE `main`\.`s`\.`orders` TO `app-sp-id`; GRANT READ METADATA ON TABLE `main`\.`s`\.`orders` TO `app-sp-id`$/);
+    assert.match(got.data.error, /Ask your data owner to run the commands: the exact commands are in Permission Required$/);
+    assert.doesNotMatch(got.data.error, /GRANT /, 'no GRANT in the refusal prose (REQ-260)');
+    assert.deepEqual(got.data.app_unreadable.permissions[0].statements, [
+      'GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `app-sp-id`', 'GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp-id`', 'GRANT READ METADATA ON TABLE `main`.`s`.`orders` TO `app-sp-id`'], 'the dialog payload carries the exact statements (must-keep)');
     assert.doesNotMatch(got.data.error, /swap/i);
     assert.deepEqual(got.data.missing_tables, []);
     assert.equal(got.data.app_unreadable.can_grant, false);
@@ -174,7 +180,9 @@ test('plan and submit refuse a build the App cannot read with the named App reas
         const got = await call(url, `/api/inspire/implement/${route}`, { method: 'POST', body });
         assert.equal(got.status, 409, `${route}: ${JSON.stringify(got.data)}`);
         assert.match(got.data.error, /^the build cannot read a source table: builds run as the App service principal inspire-manual \(application id app-sp-id\)/);
-        assert.match(got.data.error, canGrant ? /Use Let Inspire read these tables to run: GRANT USE SCHEMA/ : /Ask your data owner to run: GRANT USE SCHEMA/);
+        assert.match(got.data.error, canGrant ? /Use Let Inspire read these tables to run: the exact commands are in Permission Required$/ : /Ask your data owner to run the commands: the exact commands are in Permission Required$/);
+        assert.doesNotMatch(got.data.error, /GRANT /, 'no GRANT in the App refusal prose (REQ-260)');
+        assert.ok(got.data.app_unreadable.permissions[0].statements.some((g) => g.startsWith('GRANT USE SCHEMA')), 'the dialog payload carries the GRANT (must-keep)');
         assert.doesNotMatch(got.data.error, /swap/i);
         assert.deepEqual(got.data.missing_tables, []);
         assert.equal(got.data.app_unreadable.can_grant, canGrant);

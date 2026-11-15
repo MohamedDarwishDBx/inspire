@@ -50,9 +50,14 @@ const panelOf = (page) => page.getByRole('region', { name: 'App read access', ex
 const listOf = (panel, name) => panel.getByRole('list', { name, exact: true }).locator('li').allTextContents();
 // REQ-041: the grant SQL sits under Details. Ran and failed grants are lines there, prefixed Ran: or Failed:.
 const detailLines = async (panel) => (await panel.locator('[data-technical-details] pre').allTextContents()).join('\n').split('\n').filter(Boolean);
-const grantsNeeded = async (panel) => [...new Set((await detailLines(panel)).filter((l) => /^GRANT /.test(l)))];
-const ranOf = async (panel) => (await detailLines(panel)).filter((l) => l.startsWith('Ran: ')).map((l) => l.slice(5));
-const failedOf = async (panel) => (await detailLines(panel)).filter((l) => l.startsWith('Failed: ')).map((l) => l.slice(8));
+// a Permission Required modal that is open covers the panel's button: Escape closes it (ModalDialog) before the press
+const dismissDialog = async (page) => {
+  if (await page.locator('[data-permission-dialog]').count()) await page.keyboard.press('Escape');
+};
+// REQ-131, REQ-260: the statements the panel raises reach the Permission Required channel for this session (permissionBus keeps
+// the shown list in sessionStorage, REQ-138: a reload does not reopen a list the person already saw). The prose never carries them.
+const grantsNeeded = async (panel) => (await panel.page().evaluate(() => JSON.parse(sessionStorage.getItem('inspire.permissionStatementsShown') || '[]')))
+  .filter((g) => /^GRANT /.test(g));
 
 test('Let Inspire read these tables runs the exact grants with the person sign-in, shows them, and clears the named reason', async () => {
   const rights = { rows: OWNS };
@@ -67,16 +72,17 @@ test('Let Inspire read these tables runs the exact grants with the person sign-i
     await reasonLine.waitFor({ timeout: 15000 });
     const reason = await reasonLine.textContent();
     assert.match(reason, /^the build cannot read a source table: builds run as the App service principal inspire-manual \(application id app-sp-id\)/);
-    assert.doesNotMatch(reason.split('Ask your data owner')[0], /main\.s\.orders/, 'the sentence names no id; the grant lines sit under Details');
+    assert.doesNotMatch(reason.split('Ask your data owner')[0], /main\.s\.orders/, 'the sentence names no id; the statements sit in Permission Required');
     assert.doesNotMatch(reason, /swap/i);
+    await until(async () => (await grantsNeeded(panel)).length === 3, 'the three statements reach the Permission Required channel (REQ-131)');
     assert.deepEqual(await grantsNeeded(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT]);
-    await panel.getByRole('button', { name: APP_READ_ACTION, exact: true }).click();
+    await dismissDialog(page); await panel.getByRole('button', { name: APP_READ_ACTION, exact: true }).click();
     const result = panel.getByRole('status', { name: 'Grant result' });
     await result.getByText('Inspire ran 3 grants with your sign-in, and the App can now read these tables', { exact: true }).waitFor({ timeout: 15000 });
-    assert.deepEqual(await ranOf(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT]);
+    assert.equal(await panel.getByRole('status', { name: 'Grant result' }).getByText('Granted 3, failed 0.', { exact: true }).count(), 1, 'the counts replace the Ran lines (REQ-260)');
     assert.deepEqual(live.grants, [[SCHEMA_GRANT, PERSON], [TABLE_GRANT, PERSON], [METADATA_GRANT, PERSON]], 'only the person token grants');
     await until(async () => await panel.getByRole('button', { name: APP_READ_ACTION }).count() === 0, 'the action goes once the App can read');
-    assert.equal((await grantsNeeded(panel)).length, 0, 'the context probe no longer names the table');
+    assert.equal(await panel.getByText('the exact commands are in Permission Required', { exact: false }).count(), 0, 'the context probe no longer names the table');
     assert.ok(ui.made.sqlCalls.filter((c) => c.sql === 'SELECT * FROM `main`.`s`.`orders` LIMIT 0' && c.token === APP_TOKEN).length >= 3,
       'the context is probed again after the grants');
     assert.deepEqual(ui.pageErrors, []);
@@ -93,10 +99,10 @@ test('a person who cannot grant sees the named reason and the statements with no
   try {
     const panel = panelOf(page);
     await panel.waitFor({ timeout: 15000 });
-    const reasonLine = panel.locator('p').filter({ hasText: /Ask your data owner to give the App the access listed under Details$/ }).first();
+    const reasonLine = panel.locator('p').filter({ hasText: /the exact commands are in Permission Required$/ }).first();
     await reasonLine.waitFor({ timeout: 15000 });
     const reason = await reasonLine.textContent();
-    assert.match(reason, /Ask your data owner to give the App the access listed under Details$/, 'the sentence names no grant; the grants are under Details');
+    assert.doesNotMatch(reason, /GRANT /, 'the sentence names no grant; the grants are in Permission Required (REQ-260)');
     await until(async () => (await grantsNeeded(panel)).length === 3, 'the three grant lines are under Details');
     assert.deepEqual(await grantsNeeded(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT]);
     assert.equal(await panel.getByRole('button', { name: APP_READ_ACTION }).count(), 0);
@@ -112,11 +118,13 @@ test('a person who cannot grant sees the named reason and the statements with no
     const action = panel.getByRole('button', { name: APP_READ_ACTION, exact: true });
     await action.waitFor({ timeout: 15000 });
     later.rows = READS;
-    await action.click();
+    await dismissDialog(ui2.page); await action.click();
     const result = panel.getByRole('status', { name: 'Grant result' });
     await result.getByText(/^Your grant was refused: the build cannot read a source table: builds run as the App service principal inspire-manual/).waitFor({ timeout: 15000 });
-    assert.match(await result.locator('p').first().textContent(), /Ask your data owner to give the App the access listed under Details$/);
-    assert.equal(await result.locator('[data-technical-details] pre').textContent(), `${SCHEMA_GRANT}\n${TABLE_GRANT}\n${METADATA_GRANT}`);
+    assert.match(await result.locator('p').first().textContent(), /the exact commands are in Permission Required$/);
+    assert.doesNotMatch(await result.textContent(), /GRANT /, 'the refusal prose names no GRANT (REQ-260)');
+    await until(async () => (await grantsNeeded(panel)).length === 3, 'the three statements reach the Permission Required channel (REQ-131)');
+    assert.deepEqual(await grantsNeeded(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT]);
     await until(async () => await panel.getByRole('button', { name: APP_READ_ACTION }).count() === 0, 'the action goes once the person cannot grant');
     assert.deepEqual(second.live.grants, [], 'a 403 runs no grant');
     assert.deepEqual(ui2.pageErrors.filter((e) => !/403/.test(e)), []);
@@ -180,15 +188,12 @@ test('a partial grant shows the grants that ran, the ones that failed, and keeps
   const { page } = ui;
   try {
     const panel = panelOf(page);
-    await panel.getByRole('button', { name: APP_READ_ACTION, exact: true }).click({ timeout: 15000 });
+    await dismissDialog(page); await panel.getByRole('button', { name: APP_READ_ACTION, exact: true }).click({ timeout: 15000 });
     const result = panel.getByRole('status', { name: 'Grant result' });
     await result.getByText('Inspire ran 2 grants with your sign-in, and 1 grant failed, so the App still cannot read every table', { exact: true })
       .waitFor({ timeout: 15000 });
-    assert.deepEqual(await ranOf(panel), [SCHEMA_GRANT, METADATA_GRANT]);
-    const failed = await failedOf(panel);
-    assert.equal(failed.length, 1);
-    assert.ok(failed[0].startsWith(`${TABLE_GRANT}: `) && failed[0].includes('PERMISSION_DENIED'), failed[0]);
-    assert.deepEqual(await grantsNeeded(panel), [SCHEMA_GRANT, TABLE_GRANT, METADATA_GRANT], 'the reason stays while the App still cannot read');
+    assert.equal(await panel.getByRole('status', { name: 'Grant result' }).getByText('Granted 2, failed 1. The failed commands are in Permission Required.', { exact: true }).count(), 1);
+    assert.ok((await grantsNeeded(panel)).includes(TABLE_GRANT), 'the failed statement reached the Permission Required channel (REQ-131)');
     assert.deepEqual(live.grants.map(([, token]) => token), [PERSON, PERSON, PERSON]);
     assert.deepEqual(ui.pageErrors, []);
   } finally {

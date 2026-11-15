@@ -216,7 +216,10 @@ def test_a_privilege_the_build_lacks_on_its_own_data_stops_the_output_at_once_an
     assert len(writer.prompts) == 1, "Genie cannot grant a privilege, so no second round"
     assert str(stopped.value) == (
         "inspire-sp does not have SELECT on table main.s.customers, and no change to the Dashboard can grant it: ask data-team "
-        "to run GRANT SELECT ON TABLE `main`.`s`.`customers` TO `inspire-sp`, then build again")
+        "to grant it: the exact command is in Permission Required, then build again")
+    # REQ-131, REQ-260: the statement is the Permission Required entry on the build, never in the sentence
+    assert "GRANT" not in str(stopped.value)
+    assert context["permissions"][0]["statements"] == ["GRANT SELECT ON TABLE `main`.`s`.`customers` TO `inspire-sp`"]
     assert inst.looked == ["main.s.customers"]
     assert inst.logger.matching("[IMPLEMENT-DENIED FIRED] N01-U01: the Dashboard is not sent back to Genie")
 
@@ -230,8 +233,10 @@ def test_a_denial_with_no_owner_found_asks_the_owner_or_a_metastore_admin(agent_
 
     with pytest.raises(agent_ns["ImplementBlocked"]) as stopped:
         inst._implement_genie_loop(context, Writer(), "Genie Agent", "Build the Genie Agent.", deploy)
-    assert "ask your data owner of table main.s.customers or a metastore admin to run GRANT SELECT ON TABLE `main`.`s`.`customers` " \
-           "TO `inspire-sp`" in str(stopped.value)
+    assert "ask your data owner of table main.s.customers or a metastore admin to grant it: the exact command is in Permission Required" \
+           in str(stopped.value)
+    assert "GRANT" not in str(stopped.value)
+    assert context["permissions"][0]["statements"] == ["GRANT SELECT ON TABLE `main`.`s`.`customers` TO `inspire-sp`"]
 
 
 def test_a_denial_keeps_the_owner_and_the_denied_user_and_masks_any_other_email_in_the_error(agent_ns, tmp_path):
@@ -247,9 +252,11 @@ def test_a_denial_keeps_the_owner_and_the_denied_user_and_masks_any_other_email_
         inst._implement_genie_loop(context, Writer(), "Dashboard", "Build the dashboard.", deploy)
     assert str(stopped.value) == (
         "builder.two@example.com does not have SELECT on table main.s.customers, and no change to the Dashboard can grant it: "
-        "ask your data owner to run GRANT SELECT ON TABLE `main`.`s`.`customers` TO `builder.two@example.com`, "
+        "ask your data owner to grant it: the exact command is in Permission Required, "
         "then build again")
     assert "other.three" not in str(stopped.value)
+    assert "GRANT" not in str(stopped.value)
+    assert context["permissions"][0]["statements"] == ["GRANT SELECT ON TABLE `main`.`s`.`customers` TO `builder.two@example.com`"]
 
 
 @pytest.mark.parametrize("failure", [

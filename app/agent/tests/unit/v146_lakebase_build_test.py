@@ -961,7 +961,7 @@ def test_copies_inspire_does_not_own_or_split_pipelines_stop_lakebase_with_the_r
 
 
 @pytest.mark.parametrize("builder,ask", [
-    ("sp-app-id", "ask your data owner to run GRANT ALL PRIVILEGES ON CATALOG `inspire_lakebase` TO `sp-app-id`"),
+    ("sp-app-id", "ask your data owner to grant the identity ALL PRIVILEGES on that catalog: the exact command is in Permission Required"),
     ("", "ask your data owner to give the identity Inspire runs as ALL PRIVILEGES on that catalog"),
 ], ids=["named", "unnamed"])
 def test_a_lakebase_schema_inspire_may_not_add_tables_to_names_the_grant_that_lets_it(agent_ns, builder, ask):
@@ -974,6 +974,9 @@ def test_a_lakebase_schema_inspire_may_not_add_tables_to_names_the_grant_that_le
         inst._implement_lakebase_synced(json.loads(json.dumps(COPIES)), ["main", "inspire"], "", "_inspire_row", time.time() + 60)
     assert str(raised.value) == ("the identity Inspire runs as cannot add tables to the Lakebase schema inspire_lakebase.s; run the "
                                  f"Inspire installer again as an owner of the catalog inspire_lakebase, or {ask}")
+    # REQ-131, REQ-260: the GRANT is not in the sentence; the exception carries it for the Permission Required entry
+    assert "GRANT" not in str(raised.value)
+    assert raised.value.statement == ("GRANT ALL PRIVILEGES ON CATALOG `inspire_lakebase` TO `sp-app-id`" if builder else "")
     assert _lines(inst, "WARNING") == ["[IMPLEMENT-LAKEBASE] Databricks refused the call to create the Lakebase table inspire_lakebase.s.a: "
                                        "Principal 'app-x inspire' does not have CREATE TABLE and USE SCHEMA on Schema 'inspire_lakebase.s'"]
 
