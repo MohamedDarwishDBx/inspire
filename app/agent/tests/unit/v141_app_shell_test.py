@@ -659,12 +659,12 @@ def test_check_names_every_broken_or_empty_tile(tmp_path):
 
     problems, _ws = checked(tmp_path, shape)
     for f in ("category", "channel", "region"):
-        assert f"page Price-loss decision desk: filter {f} found no values to pick" in problems
+        assert f"page n01_u05: filter {f} found no values to pick" in problems
     for k in ("total_loss", "loss_rate", "items"):
-        assert f"page Price-loss decision desk: KPI {k} has no value at the default filters" in problems
+        assert f"page n01_u05: KPI {k} has no value at the default filters" in problems
     for c in ("loss_trend", "by_category", "channel_mix", "pareto"):
-        assert f"page Price-loss decision desk: chart {c} returned no rows at the default filters" in problems
-    assert "page Price-loss decision desk: records:records failed: TABLE_OR_VIEW_NOT_FOUND" in problems
+        assert f"page n01_u05: chart {c} returned no rows at the default filters" in problems
+    assert "page n01_u05: records:records failed: TABLE_OR_VIEW_NOT_FOUND" in problems
     assert not any("decision list returned no rows" in p for p in problems)
     assert len(problems) == 11
 
@@ -677,7 +677,7 @@ def test_check_sends_back_a_chart_that_draws_one_group(tmp_path):
 
     problems, _ws = checked(tmp_path, shape)
     one = [p for p in problems if "draws one group" in p]
-    assert one and all(p.startswith("page Price-loss decision desk: chart ") and "chart a column with 2 or more values" in p for p in one)
+    assert one and all(p.startswith("page n01_u05: chart ") and "chart a column with 2 or more values" in p for p in one)
     assert len(one) == len(problems)
 
 
@@ -709,7 +709,7 @@ def test_check_sends_back_a_chart_whose_undeclared_measure_holds_dates(tmp_path,
     s = shell_core.Shell(app_dir(tmp_path), env={"DATABRICKS_WAREHOUSE_ID": "wh1"}, sp_factory=lambda: ws,
                          user_factory=lambda h, t: ws)
     dated = [p for p in s.check({}) if " is a date, so a " in p]
-    assert dated == (["page Price-loss decision desk: chart by_category measure 1 is a date, so a horizontal_bar cannot draw it as a height or a size; show the "
+    assert dated == (["page n01_u05: chart by_category measure 1 is a date, so a horizontal_bar cannot draw it as a height or a size; show the "
                       "date as text in a KPI or a table column, count the rows instead, or draw a gantt of each start and end"]
                      if refused else []), dated
 
@@ -722,7 +722,7 @@ def test_check_sends_back_a_ranked_chart_whose_groups_all_share_one_value(tmp_pa
 
     problems, _ws = checked(tmp_path, shape)
     flat = [p for p in problems if "ranks nothing" in p]
-    assert flat == ["page Price-loss decision desk: chart by_category gives every group the same Loss (10) at the default filters, so it ranks "
+    assert flat == ["page n01_u05: chart by_category gives every group the same Loss (10) at the default filters, so it ranks "
                     "nothing; chart a measure that differs across the groups"], problems
     assert len(problems) == 1
 
@@ -746,7 +746,7 @@ def test_check_sends_back_a_decision_list_whose_rows_share_a_key(tmp_path):
         return lambda sql: [counted] if "COUNT(DISTINCT" in sql else rows if "ORDER BY `rank`" in sql else None
 
     problems, ws = checked(tmp_path, shape({"n": 9, "k": 3}))
-    assert problems == ["page Price-loss decision desk: the decision list repeats keys: 9 rows carry 3 distinct keys, so the page cannot tell its "
+    assert problems == ["page n01_u05: the decision list repeats keys: 9 rows carry 3 distinct keys, so the page cannot tell its "
                         "rows apart and their history and edits fail; select record_key, the result table's key for one record, in "
                         "the records dataset"]
     counted = [sql for sql, _p, _l in ws.sql if "COUNT(DISTINCT" in sql]
@@ -768,7 +768,7 @@ def test_check_counts_only_segment_filters_that_offer_two_values(tmp_path):
         return None
 
     problems, _ws = checked(tmp_path, shape)
-    assert problems == ["page Price-loss decision desk: 2 segment filters offer 2 or more values; region (North) offer one, so they slice nothing. "
+    assert problems == ["page n01_u05: 2 segment filters offer 2 or more values; region (North) offer one, so they slice nothing. "
                         "Filter on columns with 2 or more values so at least 3 can slice"]
 
 
@@ -836,8 +836,8 @@ def test_check_flags_a_date_filter_with_no_dates_and_a_failed_filter(tmp_path):
         return None
 
     problems, _ws = checked(tmp_path, shape)
-    assert "page Price-loss decision desk: date filter run_date found no dates" in problems
-    assert "page Price-loss decision desk: filter region failed: PERMISSION_DENIED" in problems
+    assert "page n01_u05: date filter run_date found no dates" in problems
+    assert "page n01_u05: filter region failed: PERMISSION_DENIED" in problems
     assert len(problems) == 2
 
 

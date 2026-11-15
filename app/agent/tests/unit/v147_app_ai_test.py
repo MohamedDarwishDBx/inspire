@@ -165,7 +165,7 @@ def test_a_failed_count_is_reported_without_failing_the_list_and_check_names_it(
     status, out = records(s, ai_counts=True)
     assert status == 200 and out["errors"] == {"ai": "warehouse stopped"} and out["ai"]["categories"][0]["options"] == []
     problems = s.check({})
-    assert "page Price-loss decision desk: the AI category counts failed: warehouse stopped" in problems
+    assert "page n01_u05: the AI category counts failed: warehouse stopped" in problems
 
 
 def _sqlite_run(sql, params, tables):

@@ -267,7 +267,8 @@ def test_a_shared_view_use_case_merged_into_a_per_user_app_keeps_the_hosts_scope
     assert not any("could not remove" in w for w in fields.get("_warnings") or [])
     ledger_creates = [s for s in inst.spark.statements if VALUE_LEDGER in s and s.startswith("CREATE TABLE")]
     # The viewer's own grants on the source table the pages read are the audience rule; only the identity is checked here.
-    identity = [s for s in _not_access_reads(inst.spark.statements) if "TO `viewer@example.com`" not in s]
+    # A DESCRIBE is a metadata read of the result table (the Settings companion check, P55), not a grant: only grants count here.
+    identity = [s for s in _not_access_reads(inst.spark.statements) if "TO `viewer@example.com`" not in s and not s.startswith("DESCRIBE ")]
     assert _without_feedback(identity) == ledger_creates and len(ledger_creates) == 1 and inst.genie_grants == [], \
         "each viewer of the per-user host reads with their own grants, so its identity gets none beyond the feedback table (the job identity creates the value ledger)"
     assert [s for s in inst.spark.statements if VALUE_LEDGER in s and s.startswith("GRANT")] == []
@@ -399,14 +400,14 @@ def test_an_old_page_that_now_fails_blocks_the_merge_and_names_it_while_this_pag
     with pytest.raises(_blocked(agent_ns)) as raised:
         inst._implement_app(context, None)
     assert str(raised.value) == ("the App sales-desk was not updated because its page 'Sales desk' of use case N01-U07 no longer works at "
-                                 "the default filters (page n01_u07: chart:by_category failed: TABLE_OR_VIEW_NOT_FOUND). Inspire "
+                                 "the default filters (page Sales desk: chart:by_category failed: TABLE_OR_VIEW_NOT_FOUND). Inspire "
                                  "rebuilds only this use case's page: build that use case again with Vibe/Add/Remove Features on the Build page or remove the page, then submit again")
     assert seen["deployed"] == []
     failing[:] = ["page n01_u01_s5150: kpi:revenue failed: DIVIDE_BY_ZERO"]
     with pytest.raises(RuntimeError) as raised:
         inst._implement_app(context, None)
     assert type(raised.value) is RuntimeError, "a failure of this use case's own page is Genie's to fix"
-    assert str(raised.value) == "the App was run at its default filters and page n01_u01_s5150: kpi:revenue failed: DIVIDE_BY_ZERO"
+    assert str(raised.value) == "the App was run at its default filters and page Predict churn: kpi:revenue failed: DIVIDE_BY_ZERO"
 
 
 def test_rebuilding_a_use_cases_own_app_keeps_the_pages_merged_into_it(agent_ns, tmp_path, monkeypatch):

@@ -1186,3 +1186,18 @@ def page_spot(title) -> str:
 
 def page_label(page: dict) -> str:
     return page_spot((page or {}).get("title"))
+
+
+def check_names(pages) -> dict:
+    # Person copy of a check problem: each App page by its title. Two pages that share a title (or a page with no title) keep the
+    # internal id, so no problem is attributed to the wrong page. The check itself keeps 'page <id>' keys for matching.
+    titles = [" ".join(str((p or {}).get("title") or "").split()) for p in pages or []]
+    return {str(p.get("id")): (page_spot(t) if t and titles.count(t) == 1 else f"page {p.get('id')}")
+            for p, t in zip(pages or [], titles)}
+
+
+def plain_check_text(text, pages) -> str:
+    names = check_names(pages)
+    for ident, spot in names.items():
+        text = re.sub(rf"page {re.escape(ident)}(?!\w)", lambda found, spot=spot: spot, text)
+    return text

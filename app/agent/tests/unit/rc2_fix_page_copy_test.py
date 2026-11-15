@@ -26,13 +26,27 @@ def test_a_page_with_no_title_says_the_app_page_in_plain_words(agent_ns):
     assert where == "the App page, Show the total" and PAGE_ID not in where
 
 
-def test_the_build_check_problems_name_the_page_by_title_and_match_it_by_title(agent_ns):
-    """ShellCore.check renders each App page by its title; the build's broken-page match reads the same title."""
+def test_a_check_problem_keeps_its_id_key_and_the_person_reads_the_page_title(agent_ns):
+    """The check keys each problem by page id (the build matches on it); the person copy names the page by its title."""
+    shell_facts = agent_ns["inspire_shell_facts"]
     pages = [{"id": PAGE_ID, "title": TITLE}, {"id": "n07_u02", "title": "Stock on hand"}]
-    problems = [f"{agent_ns['inspire_shell_facts'].page_label(pages[0])}: 3 charts are empty",
-                f"{agent_ns['inspire_shell_facts'].page_label(pages[1])}: 1 filter is missing"]
-    assert problems == [f"page {TITLE}: 3 charts are empty", "page Stock on hand: 1 filter is missing"]
-    assert internal_hits(" ".join(problems)) == [] and PAGE_ID not in " ".join(problems)
+    raw = f"page {PAGE_ID}: 3 charts are empty; page n07_u02: 1 filter is missing"
+    assert shell_facts.plain_check_text(raw, pages) == f"page {TITLE}: 3 charts are empty; page Stock on hand: 1 filter is missing"
+    assert internal_hits(shell_facts.plain_check_text(raw, pages)) == []
+
+
+def test_two_pages_with_the_same_title_keep_their_ids_so_no_problem_is_attributed_to_the_wrong_page(agent_ns):
+    shell_facts = agent_ns["inspire_shell_facts"]
+    pages = [{"id": PAGE_ID, "title": TITLE}, {"id": "n07_u02", "title": TITLE}, {"id": "n08_u03", "title": ""}]
+    assert shell_facts.check_names(pages) == {PAGE_ID: f"page {PAGE_ID}", "n07_u02": "page n07_u02", "n08_u03": f"page n08_u03"}
+    raw = f"page {PAGE_ID}: 2 charts are empty; page n07_u02: 1 KPI failed"
+    assert shell_facts.plain_check_text(raw, pages) == f"page {PAGE_ID}: 2 charts are empty; page n07_u02: 1 KPI failed"
+
+
+def test_a_page_id_is_not_rewritten_inside_a_longer_id(agent_ns):
+    shell_facts = agent_ns["inspire_shell_facts"]
+    pages = [{"id": PAGE_ID, "title": TITLE}]
+    assert shell_facts.plain_check_text(f"page {PAGE_ID}2 is not this page", pages) == f"page {PAGE_ID}2 is not this page"
 
 
 def test_the_vibe_refusal_for_another_page_names_no_page_id(agent_ns):

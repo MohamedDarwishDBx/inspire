@@ -305,8 +305,8 @@ def test_backend_problems_accept_a_whole_backend_and_name_every_broken_part():
         f"the Lakebase copy of {TREND_VIEW} must be a Postgres schema.table of letters, digits and underscores",
         f"the Lakebase copy of {RECORDS_VIEW} must list its columns with their Unity Catalog types",
         "the Lakebase backend holds 'main.bad' is not a catalog.schema.table name",
-        "page Price-loss decision desk dataset trend reads main.pricing_lb.not_synced, which the Lakebase backend does not hold",
-        "the Lakebase backend names dataset missing of page Price-loss decision desk, which the page does not have",
+        "page n01_u05 dataset trend reads main.pricing_lb.not_synced, which the Lakebase backend does not hold",
+        "the Lakebase backend names dataset missing of page n01_u05, which the page does not have",
         "the Lakebase backend names datasets of page other_page, which the App does not have"]
     assert shell_pg.backend_problems(dict(backend(), tables={}, datasets=None), "sp", pages) == [
         "the Lakebase backend needs tables: each Unity Catalog table or view it holds, with its Postgres table and columns",
@@ -439,7 +439,7 @@ def test_the_build_check_runs_the_things_to_fix_and_both_histories_on_lakebase_a
     missing = "Lakebase cannot serve it: main.pricing.loss_desk_out has no copy in Lakebase"
     problems = s.check({})
     for label in ("the things to fix", "the run history"):
-        assert any(p.startswith(f"page Price-loss decision desk: {label} failed: ") and missing in p for p in problems), (label, problems)
+        assert any(p.startswith(f"page n01_u05: {label} failed: ") and missing in p for p in problems), (label, problems)
     assert not [p for p in problems if "the trend" in p], problems
     asked, listed = [], []
     s.records = lambda headers, data, probe=None: {"rows": [{"entity_id": 42}], "errors": {}}
