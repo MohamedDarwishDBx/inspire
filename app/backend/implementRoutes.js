@@ -1625,6 +1625,7 @@ function registerImplementRoutes(app, deps) {
         asker: req,
         jobName: I.implementJobName(useCaseId, spec.use_case_name, plan.nextVersion),
         useCaseIds: [useCaseId],
+        useCaseName: spec.use_case_name,
         launchedBy: createdBy,
       });
     } catch (err) {

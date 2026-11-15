@@ -1005,7 +1005,7 @@ async function recordLaunchOrStop(host, token, record) {
   return { ...launch, warning: `Inspire started run ${record.runId} but could not record it, so Cancel and Run again may refuse it` };
 }
 
-async function triggerInspireNotebookJob(host, token, { params, notebook_path, cluster_id: askedClusterId, jobType = 'discovery', jobName: requestedJobName = '', useCaseIds = [], launchedBy = '', writeCheck = null, asker = null, scopePicks = undefined }) {
+async function triggerInspireNotebookJob(host, token, { params, notebook_path, cluster_id: askedClusterId, jobType = 'discovery', jobName: requestedJobName = '', useCaseIds = [], useCaseName = '', launchedBy = '', writeCheck = null, asker = null, scopePicks = undefined }) {
   normalizeUseCasesQualityParams(params);
   // Discover has no Measure rule yet: it sends the reporting currency and today's rates (or the saved averages offline).
   // Implement sends its own rule's currency and rates from startVersion, so this only fills a Discover launch.
@@ -1084,7 +1084,7 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   const launchPlan = launchPlanFor({ runAs: runAsPerson(), jobType });
   const createPayload = {
     name: jobName,
-    tags: inspireJobTags({ runType: inspireRunType, params, businessName, notebookFilename, useCaseIds }),
+    tags: inspireJobTags({ runType: inspireRunType, params, businessName, notebookFilename, useCaseIds, useCaseName }),
     tasks: [{
       task_key: 'inspire_notebook',
       notebook_task: {
