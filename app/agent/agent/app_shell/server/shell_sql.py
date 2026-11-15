@@ -3472,6 +3472,7 @@ def list_context(page: dict, columns, fields, decisions: bool) -> dict:
     join = "record_key" if versioned and "record_key" in columns else key if versioned and key in columns and key in names else None
     ai = ([n for n in AI_LISTED if n in names] + sorted(n for n in names if AI_CATEGORY.match(n))) if join else []
     return {"table": table_name(page["result_table"]) if join else None, "join": join, "held": bool(join and "held_back" in names),
+            "snoozed": bool(join and SNOOZE_COLUMN in names),
             "checked": bool(join and "data_quality_flag" in names),
             "actions": bool(join and decisions), "changes": bool(join),
             "choice": choice_sql(status_choices(page), names) if join and decisions else None,
@@ -3627,9 +3628,10 @@ def week_edges(bounds: dict, weeks: int) -> list:
     return out
 
 
-WINDOW_EXTRA = ("CAST(`action_due` AS DATE) AS `_inspire_due`", f"CAST(`{SNOOZE_COLUMN}` AS DATE) AS `_inspire_snooze`",
-                f"`{JOINED_COLUMN}` AS `_inspire_joined`")
-WINDOW_PICKED = ("c.`_inspire_due`", "c.`_inspire_snooze`", "c.`_inspire_joined`")
+WINDOW_EXTRA = ("CAST(`action_due` AS DATE) AS `_inspire_due`", f"`{JOINED_COLUMN}` AS `_inspire_joined`")
+WINDOW_PICKED = ("c.`_inspire_due`", "c.`_inspire_joined`")
+# The snooze date is a row field of every tracked list (Wake now), so it is selected in _current_cte and picked in _current_join.
+SNOOZE_EXTRA = f"CAST(`{SNOOZE_COLUMN}` AS DATE) AS `_inspire_snooze`"
 
 
 def checked_sql(alias: str = "c") -> str:
@@ -4580,7 +4582,7 @@ def _current_cte(context: dict, extra=()) -> str:
     join, actions = context["join"], context["actions"]
     mapped = f", CAST({quote(join)} AS STRING) AS `_inspire_join`" if join != "record_key" else ""
     owned = (f", `action_owner` AS `_inspire_owner`, `action_status` AS `_inspire_status`, {context.get('choice') or 'CAST(NULL AS STRING)'} "
-             "AS `_inspire_choice`") if actions else ""
+             "AS `_inspire_choice`" + (f", {SNOOZE_EXTRA}" if context.get("snoozed") else "")) if actions else ""
     explained = "".join(f", CAST({quote(n)} AS STRING) AS {quote(ai_alias(n))}" for n in context["ai"])
     more = "".join(f", {e}" for e in [*extra, f"CAST({quote(KEPT_SINCE)} AS TIMESTAMP) AS `_inspire_missing`", *context.get("money", [])])
     held = context.get("floor") or {}
@@ -4600,6 +4602,7 @@ def _current_on(context: dict, alias: str) -> str:
 
 def _current_join(context: dict, alias: str) -> tuple:
     columns = ["c.`_inspire_key`", "c.`_inspire_version`"] + (["c.`_inspire_owner`", "c.`_inspire_status`", "c.`_inspire_choice`"]
+                                                               + (["c.`_inspire_snooze`"] if context.get("snoozed") else [])
                                                                if context["actions"] else [])
     money = ["c.`_inspire_money`", "c.`_inspire_fx`"] if context.get("money") else []
     windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else [])
@@ -4790,6 +4793,8 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
         conditions.append(f"l.`_inspire_ch` IN ({wanted})" if logged_changes(context)
                           else f"(l.`_inspire_lk` IS NOT NULL AND (o.`_inspire_ok` IS NULL OR {_moved(context)}))")
         early |= {"c", "h"}
+    if context.get("snoozed") and context["actions"]:
+        early.add("c")
     filtering = set(early)
     if request["sort"] in ACTION_SORTS or money_sort:
         early.add("c")
