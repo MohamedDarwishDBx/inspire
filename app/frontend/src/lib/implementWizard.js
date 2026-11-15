@@ -302,6 +302,17 @@ export function withAppBackend(spec, backend) {
 
 export const APP_OPTION_DEFAULTS = { modify: false, replace_edits: false, decisions: true, alerts: false };
 export const APP_OPTION_KEYS = Object.keys(APP_OPTION_DEFAULTS);
+// The experience is a choice, not a switch. An App built before it existed is classic (ui) in the shell; a new build starts agentic.
+export const APP_EXPERIENCE_DEFAULT = 'agentic';
+export const APP_EXPERIENCE_QUESTION = 'How people start in the App';
+export const APP_EXPERIENCE_CHOICES = [
+  { id: 'agentic', label: 'Agentic (default)', blurb: 'The App opens on the Agent page: a briefing of the records that matter most, and a box to ask or act. Every task the classic pages allow can be done there.' },
+  { id: 'ui', label: 'Classic UI', blurb: 'The App opens on the dashboard and the decision list, as before. The Agent page is not shown.' },
+  { id: 'both', label: 'Both', blurb: 'The App keeps its classic pages and adds the Agent page in the side menu. It does not open on it.' },
+];
+export const experienceOf = (value) => (APP_EXPERIENCE_CHOICES.some((c) => c.id === value) ? value : APP_EXPERIENCE_DEFAULT);
+// A rebuild of an App that never chose an experience keeps it classic; a new build starts agentic (same rule as the backend).
+export const experienceDefault = (spec) => (spec?.based_on_version != null && spec.based_on_version !== '' ? 'ui' : APP_EXPERIENCE_DEFAULT);
 export const PER_USER_OFF = ['alerts'];
 export const APP_OPTIONS = [
   { id: 'modify', label: 'Let people edit data', blurb: 'People can change records in the App, and Inspire keeps who changed what.' },
@@ -476,7 +487,7 @@ export const FRESHNESS_OPTIONS = [
 export const IMPLEMENT_OUTPUTS = [
   { id: 'dashboard', label: 'Dashboard', blurb: 'Decision list, trend and run health.' },
   { id: 'genie_space', label: 'Genie Agent', blurb: 'An agent over the result and source tables, with 5 sample questions.' },
-  { id: 'app', label: 'App', blurb: 'A Databricks App with the decision list, row detail and Ask. Ask is answered by the App\'s own agent.' },
+  { id: 'app', label: 'Agentic App', blurb: 'A Databricks App with the decision list, row detail and Ask. Ask is answered by the App\'s own agent, and the App can open on its Agent page.' },
   { id: 'alert', label: 'Alert', blurb: 'Emails you when the latest run has rows to act on. Genie writes the check.' },
 ];
 
@@ -1220,7 +1231,7 @@ export function defaultSpecFromUseCase(uc, { warehouseId, inspireDatabase, sessi
       app_purpose: '',
       app_access: APP_ACCESS_DEFAULT,
       app_look: { ...APP_LOOK_DEFAULT },
-      app_options: { ...APP_OPTION_DEFAULTS },
+      app_options: { ...APP_OPTION_DEFAULTS, experience: APP_EXPERIENCE_DEFAULT },
       app_backend: '',
       app_owners: [],
       app_warehouse_id: '',
@@ -2070,7 +2081,7 @@ export function appOptionShown(spec, key) {
 }
 
 export function withAppOption(spec, key, value) {
-  const options = { ...spec.outputs.app_options, [key]: Boolean(value) };
+  const options = { ...spec.outputs.app_options, [key]: key === 'experience' ? experienceOf(value) : Boolean(value) };
   if (key === 'modify' && !value) options.replace_edits = false;
   return { ...spec, outputs: { ...spec.outputs, app_options: options } };
 }

@@ -17,6 +17,7 @@ export function AgentSteps({ steps }) {
 }
 
 function savedText(result) {
+  if (result?.app) return 'Saved.';
   const written = result?.written?.length || 0;
   const conflicts = result?.conflicts_count || 0;
   return `Saved ${written} ${written === 1 ? 'record' : 'records'}${conflicts ? `; ${conflicts} changed meanwhile and were left as they are` : ''}.`;

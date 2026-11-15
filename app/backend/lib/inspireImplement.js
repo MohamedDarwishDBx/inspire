@@ -86,7 +86,11 @@ const IMPLEMENT_OUTPUT_OPTIONS = {
 const IMPLEMENT_APP_LOOK_DEFAULT = { style: 'a', layout: 'sidebar', palette: 'default', theme: 'light' };
 const IMPLEMENT_APP_LOOK_LISTS = { style: 'styles', layout: 'layouts', palette: 'palettes', theme: 'themes' };
 const IMPLEMENT_APP_OPTION_DEFAULTS = { modify: false, replace_edits: false, decisions: true, alerts: false };
+// The experience is a choice, not a switch: the App lands on its Agent page (agentic), its classic pages (ui) or both.
+const IMPLEMENT_APP_EXPERIENCES = ['agentic', 'ui', 'both'];
+const IMPLEMENT_APP_EXPERIENCE_DEFAULT = 'agentic';
 const IMPLEMENT_APP_OPTION_KEYS = Object.keys(IMPLEMENT_APP_OPTION_DEFAULTS);
+const IMPLEMENT_APP_CHOICE_KEYS = ['experience'];
 const IMPLEMENT_PER_USER_OFF = ['alerts'];
 const IMPLEMENT_APP_CHARTS_MIN = 3;
 const IMPLEMENT_MERGE_OUTPUTS = ['dashboard', 'genie_space', 'app'];
@@ -533,7 +537,8 @@ function validateImplementSpec(input, { shell = null, legacyAccess = '', impact 
   const chosen = {};
   for (const name of IMPLEMENT_OUTPUTS) chosen[name] = flagField(outputs[name], `outputs.${name}`, errors);
   if (!ownKey(spec, 'outputs')) chosen.dashboard = true;
-  const app = appSettings(outputs, chosen.app, shell, errors, legacyAccess);
+  const rebuilding = spec.based_on_version != null && spec.based_on_version !== '';
+  const app = appSettings(outputs, chosen.app, shell, errors, legacyAccess, rebuilding);
   const merge = mergeChoices(outputs, chosen, errors);
   const inside = Boolean(chosen.app) && app.placement === IMPLEMENT_APP_INSIDE;
   const appName = inside ? '' : merge.app || (textValue(outputs.app_name) || '').toLowerCase();
@@ -1159,9 +1164,10 @@ function appWarehouseLock(target, asked) {
     + "too. Keep the App's SQL warehouse, or create a new App for this use case";
 }
 
-function appSettings(outputs, on, shell, errors, legacyAccess = '') {
+// A new build starts agentic. A rebuild of an App that never chose one keeps it classic (ui): the App's experience is what it already has.
+function appSettings(outputs, on, shell, errors, legacyAccess = '', rebuilding = false) {
   const look = { ...IMPLEMENT_APP_LOOK_DEFAULT };
-  const options = { ...IMPLEMENT_APP_OPTION_DEFAULTS };
+  const options = { ...IMPLEMENT_APP_OPTION_DEFAULTS, experience: rebuilding ? 'ui' : IMPLEMENT_APP_EXPERIENCE_DEFAULT };
   if (!on) return { access: '', look: {}, options: {}, backend: '', charts: [], pages: {}, placement: '' };
   const catalog = shell || appShellCatalog();
   if (!catalog.ok) {
@@ -1189,8 +1195,11 @@ function appSettings(outputs, on, shell, errors, legacyAccess = '') {
     else errors.push(`the App ${key} ${shownValue(value)} is not one Inspire offers; pick one of ${list.join(', ')}`);
   }
   for (const [key, value] of Object.entries(objectField(outputs.app_options, 'outputs.app_options', errors))) {
-    if (!IMPLEMENT_APP_OPTION_KEYS.includes(key)) {
+    if (!IMPLEMENT_APP_OPTION_KEYS.includes(key) && !IMPLEMENT_APP_CHOICE_KEYS.includes(key)) {
       errors.push(`the App has no option ${shownValue(key)}; its options are ${IMPLEMENT_APP_OPTION_KEYS.join(', ')}`);
+    } else if (key === 'experience') {
+      if (value != null && !IMPLEMENT_APP_EXPERIENCES.includes(value)) errors.push(`the App experience ${shownValue(value)} is not one Inspire offers; pick one of ${IMPLEMENT_APP_EXPERIENCES.join(', ')}`);
+      else if (value != null) options[key] = value;
     } else if (value != null && typeof value !== 'boolean') {
       errors.push(`the App option ${key} must be true or false, not ${shownValue(value)}`);
     } else if (value != null) {
@@ -1776,7 +1785,7 @@ function parseImplementRow(row) {
 function withOfferedAppOptions(spec) {
   const outputs = isPlainObject(spec) && isPlainObject(spec.outputs) ? spec.outputs : null;
   if (!outputs || !isPlainObject(outputs.app_options)) return spec;
-  const options = Object.fromEntries(Object.entries(outputs.app_options).filter(([key]) => IMPLEMENT_APP_OPTION_KEYS.includes(key)));
+  const options = Object.fromEntries(Object.entries(outputs.app_options).filter(([key]) => [...IMPLEMENT_APP_OPTION_KEYS, ...IMPLEMENT_APP_CHOICE_KEYS].includes(key)));
   return { ...spec, outputs: { ...outputs, app_options: options } };
 }
 

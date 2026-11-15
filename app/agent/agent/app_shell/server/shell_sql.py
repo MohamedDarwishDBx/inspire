@@ -1,6 +1,7 @@
 import datetime
 import functools
 import json
+import uuid
 import math
 import os
 import re
@@ -5553,6 +5554,64 @@ def scenario_events_query(page: dict, limit: int = CAPS["scenario_events"]) -> t
     params = _Params()
     return (f"SELECT {', '.join(f'`{c}`' for c in SCENARIO_COLUMNS)} FROM {scenarios_table(page)} WHERE `use_case_id` = "
             f"{params.add(str(page.get('use_case_id') or ''))} ORDER BY `changed_at` DESC, `event_id` DESC LIMIT {int(limit)}", params.items)
+
+
+# Saved threads: one row per question and answer a person keeps, in the use case's own companion table.
+THREAD_SUFFIX = "_agent_threads"
+THREAD_COLUMNS = ("event_id", "use_case_id", "thread_id", "person", "question", "answer", "blocks", "changed_at")
+THREAD_TYPES = {"event_id": "STRING", "use_case_id": "STRING", "thread_id": "STRING", "person": "STRING", "question": "STRING",
+                "answer": "STRING", "blocks": "STRING", "changed_at": "TIMESTAMP"}
+THREAD_CAPS = {"question": 1000, "answer": 8000, "blocks": 60000, "events": 200}
+
+
+def threads_table(page: dict) -> str:
+    return sibling_table(page, THREAD_SUFFIX)
+
+
+def threads_create_sql(page: dict) -> str:
+    columns = ", ".join(f"`{c}` {THREAD_TYPES[c]}" for c in THREAD_COLUMNS)
+    return f"CREATE TABLE IF NOT EXISTS {threads_table(page)} ({columns}) USING DELTA"
+
+
+def thread_event_write(page: dict, person: str, thread_id: str, question: str, answer: str, blocks: str) -> tuple:
+    params = _Params()
+    cells = [params.add(uuid_hex()), params.add(str(page.get("use_case_id") or "")), params.add(thread_id), params.add(person),
+             params.add(question[:THREAD_CAPS["question"]]), params.add(answer[:THREAD_CAPS["answer"]]), params.add(blocks[:THREAD_CAPS["blocks"]]),
+             "current_timestamp()"]
+    return (f"INSERT INTO {threads_table(page)} ({', '.join(f'`{c}`' for c in THREAD_COLUMNS)}) VALUES ({', '.join(cells)})", params.items)
+
+
+def thread_events_query(page: dict, person: str) -> tuple:
+    params = _Params()
+    return (f"SELECT {', '.join(f'`{c}`' for c in THREAD_COLUMNS)} FROM {threads_table(page)} WHERE `use_case_id` = "
+            f"{params.add(str(page.get('use_case_id') or ''))} AND `person` = {params.add(person)} "
+            f"ORDER BY `changed_at` ASC, `event_id` ASC LIMIT {THREAD_CAPS['events']}", params.items)
+
+
+def threads_of(rows: list) -> list:
+    """Group a person's saved turns into threads: newest thread first, each with its title (the first question) and its turns."""
+    grouped = {}
+    for row in sorted(rows or [], key=lambda r: (str(r.get("changed_at") or ""), str(r.get("event_id") or ""))):
+        grouped.setdefault(str(row.get("thread_id") or ""), []).append(row)
+    out = []
+    for thread_id, turns in grouped.items():
+        if not thread_id:
+            continue
+        out.append({"thread_id": thread_id, "title": str(turns[0].get("question") or "")[:120], "updated_at": str(turns[-1].get("changed_at") or ""),
+                    "turns": [{"question": t.get("question") or "", "answer": t.get("answer") or "", "blocks": _json_list(t.get("blocks"))} for t in turns]})
+    return sorted(out, key=lambda t: t["updated_at"], reverse=True)
+
+
+def _json_list(text) -> list:
+    try:
+        value = json.loads(text or "[]")
+    except (TypeError, ValueError):
+        return []
+    return value if isinstance(value, list) else []
+
+
+def uuid_hex() -> str:
+    return uuid.uuid4().hex
 
 
 def scenario_event_write(page: dict, event: dict) -> tuple:

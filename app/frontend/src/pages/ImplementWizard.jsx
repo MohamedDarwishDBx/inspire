@@ -124,6 +124,10 @@ import {
   buildWarehouseNote,
   joinedWarehouseText,
   APP_OPTIONS,
+  APP_EXPERIENCE_CHOICES,
+  APP_EXPERIENCE_DEFAULT,
+  APP_EXPERIENCE_QUESTION,
+  experienceDefault,
   APP_SCREENS,
   APP_NO_DOWNLOADS,
   APP_REFRESH_NOTE,
@@ -3044,6 +3048,18 @@ function AppFeaturesStep({ spec, onOption, best = {} }) {
                 </div>
               )}
             </div>
+          ))}
+        </div>
+        <div role="radiogroup" aria-label={APP_EXPERIENCE_QUESTION} data-choice="app-experience" className="pt-1 space-y-1">
+          <p className="text-[12px] font-medium text-text-primary">{APP_EXPERIENCE_QUESTION}</p>
+          {APP_EXPERIENCE_CHOICES.map((c) => (
+            <label key={c.id} className="flex items-start gap-2 text-[11px] cursor-pointer">
+              <input type="radio" name="app-experience" value={c.id} className="mt-0.5" checked={(options.experience || experienceDefault(spec)) === c.id} onChange={() => onOption('experience', c.id)} />
+              <span>
+                <span className="font-medium text-text-primary">{c.label}</span>
+                <span className="text-text-secondary">: {c.blurb}</span>
+              </span>
+            </label>
           ))}
         </div>
         <details className="text-[11px] text-text-secondary">

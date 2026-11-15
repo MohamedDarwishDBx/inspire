@@ -140,14 +140,14 @@ test('an App needs its access chosen: a missing or unknown app_access is an erro
   const all = { modify: true, replace_edits: true, decisions: true, alerts: true };
   const sp = check({ app_options: all });
   assert.deepEqual(sp.errors, []);
-  assert.deepEqual(sp.spec.outputs.app_options, all);
+  assert.deepEqual(sp.spec.outputs.app_options, { ...all, experience: 'agentic' });
   const user = check({ app_access: 'USER', app_options: all });
   assert.deepEqual(user.errors, []);
   assert.equal(user.spec.outputs.app_access, 'user');
-  assert.deepEqual(user.spec.outputs.app_options, { modify: true, replace_edits: true, decisions: true, alerts: false }, 'per-user sends no alerts and still records decisions');
+  assert.deepEqual(user.spec.outputs.app_options, { modify: true, replace_edits: true, decisions: true, alerts: false, experience: 'agentic' }, 'per-user sends no alerts and still records decisions');
   assert.deepEqual(check({ app_access: 'user', app_options: { decisions: false } }).spec.outputs.app_options.decisions, false, 'an explicit off is kept');
   assert.deepEqual(check({ app_options: { replace_edits: true } }).spec.outputs.app_options,
-    { modify: false, replace_edits: false, decisions: true, alerts: false }, 'replacing edits means nothing while edits are off');
+    { modify: false, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' }, 'replacing edits means nothing while edits are off');
   const off = I.validateImplementSpec({ ...BASE, outputs: { dashboard: true, app: false, app_access: 'nobody', app_options: { download: 'yes' }, inspire_url: 'https://inspire.example.com' } });
   assert.deepEqual(off.errors, [], 'App settings are not checked while the App is unticked');
   assert.deepEqual([off.spec.outputs.app_access, off.spec.outputs.app_look, off.spec.outputs.app_options], ['', {}, {}]);
@@ -161,7 +161,7 @@ test('App options are true or false only, and an unknown option, download among 
   for (const value of [true, false, 'yes', null]) {
     const got = check({ app_options: { download: value, modify: true } });
     assert.deepEqual(got.errors, [unknown('download')], `download ${JSON.stringify(value)} is refused as an option the App does not have`);
-    assert.deepEqual(got.spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false });
+    assert.deepEqual(got.spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' });
   }
   assert.deepEqual(check({ app_access: 'user', app_options: { download: false } }).errors, [unknown('download')], 'per-user refuses it too');
   assert.ok(check({ app_options: ['modify'] }).errors.includes('outputs.app_options must be an object'));
@@ -542,7 +542,7 @@ test('a version saved while the App offered downloads is read without them, so E
     assert.equal(rebuild.status, 200, JSON.stringify(rebuild.data));
     const insert = sqlCalls.find((c) => String(c.sql).includes('INSERT INTO'));
     assert.deepEqual(JSON.parse(insert.parameters.find((p) => p.name === 'spec').value).outputs.app_options,
-      { modify: true, replace_edits: false, decisions: false, alerts: false }, 'the re-submission is checked again, so alerts are set off');
+      { modify: true, replace_edits: false, decisions: false, alerts: false, experience: 'ui' }, 'the re-submission is checked again, so alerts are set off; an App that never chose an experience keeps it classic');
     assert.equal(jobs.length, 1);
   } finally {
     await srv.close();
