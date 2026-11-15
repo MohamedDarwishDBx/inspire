@@ -58,4 +58,4 @@ def test_the_run_emits_the_fired_line_as_the_label_step_with_the_detail_kept(age
         source = "".join(json.load(handle)["cells"][1]["source"])
     complete = source.index('sub_step_name="Complete",\n                                                   status="ended_warning" if label_stats["fallback"] else "ended_success", message=_label_line')
     assert "keep_detail=True" in source[complete:complete + 400], "the completion keeps the FIRED line in its message"
-    assert "log_print(_label_line)" in source, "and it is also written to the log"
+    assert "log_name_fix_lines(self.logger, label_stats" in source, "and it is written through the logger, so it reaches the info log"

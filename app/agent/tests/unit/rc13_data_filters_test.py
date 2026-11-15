@@ -314,7 +314,7 @@ def test_the_fired_line_separates_the_generation_count_from_the_count_after_repa
     with open(notebook, encoding="utf-8") as handle:
         source = "".join(_json.load(handle)["cells"][1]["source"])
     assert 'step_name="Data Filter Label"' in source and "message=_label_line" in source, "the FIRED line is a step message"
-    assert "log_print(_label_line)" in source, "and it is also written to the log"
+    assert "log_name_fix_lines(self.logger, label_stats" in source, "and it is written through the logger, so it reaches the info log"
 
 
 @pytest.mark.parametrize("label", ["iPhone", "UAE", "McDonald's", "Tokyo Tidbits"])
