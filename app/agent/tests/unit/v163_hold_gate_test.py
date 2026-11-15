@@ -288,7 +288,8 @@ def test_an_escalated_rebuild_refreshes_and_checks_the_outputs_that_read_its_res
         raise agent_ns["ImplementBlocked"](gone)
 
     inst._implement_dashboard = dashboard
-    assert _run(inst, dict(VALID, vibes=SPANISH, vibe_previous="remove")) == "ready_with_warnings", inst.updates[-1]
+    # REQ-252 / D-INCOMPLETE: a dashboard that could not be published makes the version failed (its own part record stays failed below).
+    assert _run(inst, dict(VALID, vibes=SPANISH, vibe_previous="remove")) == "failed", inst.updates[-1]
     assert len(runner.prompts) == 1
     assert [call[0] for call in calls if call[0] in ("genie_space", "dashboard", "app")] == ["genie_space", "dashboard", "app"], \
         "every output that reads the rebuilt results is refreshed in the same version"
