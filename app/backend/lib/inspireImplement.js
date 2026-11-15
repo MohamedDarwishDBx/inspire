@@ -1913,9 +1913,10 @@ function liveBuiltRow(history) {
 
 // REQ-241 (D-LIVE): the App that serves the live App name. Under keep-previous the newest build lists the kept older App (kept.assets, output 'app'):
 // its name and URL are the live ones. Without a kept App the newest built row's own App is live.
+// D-LIVE2: when no build has finished yet (a first build still running, or one whose App crashed), the newest build's own App is the one shown.
 function liveAppOf(history) {
   const rows = byNewest(history);
-  const newest = previousBuilt(rows);
+  const newest = previousBuilt(rows) || (rows[0] && str(rows[0].app_name) ? rows[0] : null);
   if (!newest) return null;
   const kept = keptAppEntry(newest);
   if (kept) return { name: str(kept.id), url: str(kept.url), version: Number(kept.version) };
