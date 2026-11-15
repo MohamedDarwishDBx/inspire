@@ -48,7 +48,7 @@ test('the App starts on with its Genie Agent locked on and the alert off, App ac
     await toDelivery(page);
     const genie = page.getByRole('checkbox', { name: /^Genie Agent/ });
     const box = (name) => page.getByRole('checkbox', { name: new RegExp(`^${name}`) });
-    assert.deepEqual([await box('Dashboard').isChecked(), await genie.isChecked(), await box('App ').isChecked(), await box('Alert').isChecked()],
+    assert.deepEqual([await box('Dashboard').isChecked(), await genie.isChecked(), await box('Agentic App').isChecked(), await box('Alert').isChecked()],
       [false, true, true, false], 'the Genie Agent and App start on, the dashboard and the alert off');
     assert.equal(await genie.isDisabled(), false, 'the App does not lock the Genie Agent (REQ-152)');
     await page.locator('[data-output="genie_space"]').getByText("The App's own agent answers Ask.").waitFor();
@@ -143,7 +143,7 @@ test('the App starts on with its Genie Agent locked on and the alert off, App ac
     const spec = submittedSpec(made);
     assert.deepEqual([spec.outputs.app, spec.outputs.genie_space, spec.outputs.app_access], [true, true, 'user']);
     assert.deepEqual(spec.outputs.app_look, { style: 'c', layout: 'home', palette: 'nordic', theme: 'dark' });
-    assert.deepEqual(spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false }, 'per-user sends decisions on and alerts off');
+    assert.deepEqual(spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' }, 'per-user sends decisions on and alerts off');
     assert.deepEqual(spec.outputs.app_charts, ['trend', 'bars', 'split', 'pareto'], 'the build gets the kinds of chart picked');
     assert.deepEqual(spec.outputs.app_pages, { runs: false, impact: true }, 'and the pages turned off');
     assert.deepEqual(ui.pageErrors, []);
@@ -643,8 +643,8 @@ test('Where results live offers its own schema, falls back to the Inspire databa
     assert.equal(await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).isDisabled(), true, 'the check run without the App still keeps the App it cannot build from being ticked again');
     await page.locator('[data-blocked-reason="app"]').waitFor();
     await toSummary(page);
-    await page.locator('[data-picked-row="dropped"]').getByText(/^App: /).waitFor();
-    assert.deepEqual((await footerErrors(page)).filter((e) => /^App /.test(e)), [], 'a check of the dropped App never shows on the Summary (must-exclude)');
+    await page.locator('[data-picked-row="dropped"]').getByText(/^Agentic App: /).waitFor();
+    assert.deepEqual((await footerErrors(page)).filter((e) => /^Agentic App /.test(e)), [], 'a check of the dropped App never shows on the Summary (must-exclude)');
     await startWhenReady(page);
     assert.equal(submittedSpec(made).config.result_table, 'sales.mvp.n01_u01_s42_out');
     assert.equal(submittedSpec(made).outputs.app, false);

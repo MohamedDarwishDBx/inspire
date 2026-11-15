@@ -1,3 +1,4 @@
+import OUTPUT_LABELS from '../../../backend/lib/implementOutputLabels.json' with { type: 'json' };
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { newIssueUrl } from '../lib/issues';
 import {
@@ -74,7 +75,7 @@ import PermissionRequired from '../components/PermissionRequired';
 import { grantListKey, raisePermissions } from '../lib/permissionBus';
 
 const OUTPUT_ICONS = { notebook: NotebookPen, dashboard: LayoutDashboard, genie_space: GenieLogo, app: AppWindow, alert: BellRing };
-const OUTPUT_NAMES = { dashboard: 'Dashboard', genie_space: 'Genie Agent', app: 'App', alert: 'Alert' };
+const OUTPUT_NAMES = OUTPUT_LABELS;
 const NO_RAIL = { latest: [], notebook_run: null, notebook_run_error: '' };
 const NO_NOTEBOOK = { label: 'No Genie Code notebook', tone: 'idle' };
 const NO_JOB = { label: 'No job yet', tone: 'idle' };

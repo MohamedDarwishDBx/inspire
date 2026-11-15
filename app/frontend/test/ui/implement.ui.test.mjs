@@ -632,7 +632,7 @@ test('the Build page shows its tiles in a fixed order, no label is clipped besid
     await tile(page, 'app').locator('[data-tile-open="asset"]').waitFor({ timeout: 15000 });
     assert.deepEqual(await tiles.evaluateAll((els) => els.map((t) => t.dataset.assetTile)), TILE_IDS);
     const labels = await tiles.evaluateAll((els) => els.map((t) => t.querySelector('[data-tile-state]').previousElementSibling.textContent));
-    assert.deepEqual(labels, ['App', 'Dashboard', 'Genie Agent', 'Alerts', 'Notebook', 'Job']);
+    assert.deepEqual(labels, ['Agentic App', 'Dashboard', 'Genie Agent', 'Alerts', 'Notebook', 'Job']);
     const states = await tiles.evaluateAll((els) => els.map((t) => t.querySelector('[data-tile-state]')).map((s) => [s.title, s.textContent.trim()]));
     for (const [title, said] of states) assert.ok(said && title === said, `a state cut short on a narrow tile reads in full on hover: ${title} | ${said}`);
     for (const width of [1440, 1280, 1024]) {
@@ -676,7 +676,7 @@ test('the Build page shows its tiles in a fixed order, no label is clipped besid
     await appFacts.getByText('RUNNING: App is running', { exact: true }).waitFor({ timeout: 15000 });
     const appRows = await appFacts.locator('dl > div').evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('dt, dd')].map((cell) => cell.textContent)));
     assert.deepEqual(appRows.slice(0, 3), [
-      ['App', 'RUNNING: App is running'],
+      ['Agentic App', 'RUNNING: App is running'],
       ['Compute', 'ACTIVE'],
       ['Last deployment', 'SUCCEEDED: App started successfully (2026-10-25T04:10:00Z)'],
     ]);
@@ -2336,7 +2336,7 @@ test('each output the version lacks shows faded with its name and Add opens Edit
     assert.equal(await tile(page, 'dashboard').getByRole('button', { name: /^Add the / }).count(), 0, 'the output it has is not offered');
     const offered = {};
     const faded = {};
-    for (const [id, label] of [['app', 'App'], ['alert', 'Alerts'], ['genie_space', 'Genie Agent']]) {
+    for (const [id, label] of [['app', 'Agentic App'], ['alert', 'Alerts'], ['genie_space', 'Genie Agent']]) {
       const off = tile(page, id);
       await off.locator('[data-tile-state]').getByText('Not in this MVP', { exact: true }).waitFor();
       faded[id] = [await off.getAttribute('data-tile-kind'), /border-dashed/.test(await off.getAttribute('class'))];

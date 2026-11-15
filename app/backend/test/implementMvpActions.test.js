@@ -87,28 +87,28 @@ test('a vibe on a rebuild needs keep or remove while a first build takes it alon
 
 test('a vibe, a removal or an uninstall of a built version is never refused as unchanged, and an action with nothing to act on is', () => {
   for (const top of [{ vibes: 'Put the riskiest first', vibe_previous: 'keep' }, { remove_kept: [2] }, { uninstall: true }]) {
-    const plan = I.planSubmission([row(3, { kept: [keptDashboard(2, 3)] }), row(2)], { ...spec(top), based_on_version: 3 });
+    const plan = I.planSubmission([row(3, { kept: [keptDashboard(2, 3)] }), row(2)], spec({ ...top, based_on_version: 3 }));
     assert.equal(plan.unchanged, false, JSON.stringify(top));
     assert.equal(plan.nextVersion, 4);
     assert.equal(plan.summary.refill, false, `${JSON.stringify(top)} rebuilds no notebook`);
     I.refuseUnchanged(plan);
   }
-  assert.equal(I.planSubmission([row(3)], { ...spec(), based_on_version: 3 }).unchanged, true, 'the same choices are still refused');
+  assert.equal(I.planSubmission([row(3)], spec({ based_on_version: 3 })).unchanged, true, 'the same choices are still refused');
   const first = I.planSubmission([], spec({ vibes: 'Put the riskiest first' }));
   assert.deepEqual([first.unchanged, first.nextVersion, first.summary.classes], [false, 1, ['initial']], 'a first build carries its vibe into the initial build');
-  assert.throws(() => I.planSubmission([row(1, { ids: false })], { ...spec({ vibes: 'Put the riskiest first' }), based_on_version: 1 }),
+  assert.throws(() => I.planSubmission([row(1, { ids: false })], spec({ vibes: 'Put the riskiest first', based_on_version: 1 })),
     (err) => err.statusCode === 400 && /^vibe_previous must be keep or remove, because this use case has a built version/.test(err.message));
 });
 
 test('the first MVP after an uninstall builds every output and the notebook from scratch, and is never unchanged', () => {
-  const plan = I.planSubmission([uninstalledRow(4), row(3)], { ...spec(), based_on_version: 4 });
+  const plan = I.planSubmission([uninstalledRow(4), row(3)], spec({ based_on_version: 4 }));
   assert.equal(plan.unchanged, false);
   assert.equal(plan.nextVersion, 5);
   assert.deepEqual(plan.summary.classes, ['initial']);
   assert.equal(plan.summary.refill, true);
   assert.deepEqual(plan.summary.build, ['dashboard', 'genie_space', 'app', 'alert']);
   assert.deepEqual(I.carriedAssets([uninstalledRow(4), row(3)]), {}, 'nothing of the uninstalled versions is carried');
-  const before = I.planSubmission([row(3)], { ...spec(), based_on_version: 3 });
+  const before = I.planSubmission([row(3)], spec({ based_on_version: 3 }));
   assert.deepEqual([before.summary.classes, before.unchanged], [[], true], 'without the uninstall the same choices are no change');
 });
 

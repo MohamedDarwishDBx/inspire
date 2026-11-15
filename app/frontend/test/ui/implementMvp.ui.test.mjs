@@ -183,12 +183,12 @@ test('the asset filters count a built MVP\'s outputs and show only the use cases
     await filters.waitFor();
     assert.deepEqual(await filters.locator('[data-asset-filter]').evaluateAll((boxes) => boxes.map((c) => c.closest('label').textContent.trim())),
       ['Notebook 2', 'App 1', 'Dashboard 1', 'Genie Agent 1', 'Alert 1']);
-    await filters.getByRole('checkbox', { name: /^App/ }).check();
+    await filters.getByRole('checkbox', { name: /^Agentic App/ }).check();
     await nav.getByText('Score suppliers').waitFor({ state: 'detached' });
     await nav.getByText('Forecast demand').waitFor({ state: 'detached' });
     await nav.getByText('Predict churn').waitFor();
-    await filters.getByRole('checkbox', { name: /^App/ }).uncheck();
-    assert.equal(await filters.getByRole('checkbox', { name: /^App/ }).isChecked(), false, 'a second click lets the filter go');
+    await filters.getByRole('checkbox', { name: /^Agentic App/ }).uncheck();
+    assert.equal(await filters.getByRole('checkbox', { name: /^Agentic App/ }).isChecked(), false, 'a second click lets the filter go');
     await nav.getByText('Forecast demand').waitFor();
     await filters.getByRole('checkbox', { name: /^Dashboard/ }).check();
     await nav.getByText('Forecast demand').waitFor({ state: 'detached' });
@@ -215,7 +215,7 @@ test('ticking the asset boxes filters the list, ticking two shows the builds wit
     const nav = page.getByRole('navigation', { name: 'Use cases' });
     const box = (name) => filters.getByRole('checkbox', { name: new RegExp(`^${name}`) });
     await filters.waitFor();
-    await box('App').check();
+    await box('Agentic App').check();
     await nav.getByText('Score suppliers').waitFor({ state: 'detached' });
     await nav.getByText('Forecast demand').waitFor({ state: 'detached' });
     await nav.getByText('Predict churn').waitFor();
@@ -229,7 +229,7 @@ test('ticking the asset boxes filters the list, ticking two shows the builds wit
       'the two ticks come back after a reload');
     await nav.getByText('Score suppliers').waitFor();
     await nav.getByText('Forecast demand').waitFor({ state: 'detached' });
-    await box('App').uncheck();
+    await box('Agentic App').uncheck();
     await box('Dashboard').uncheck();
     await nav.getByText('Forecast demand').waitFor();
     assert.equal(await filters.locator('[data-asset-filter]:checked').count(), 0, 'no tick shows every use case');

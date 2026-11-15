@@ -54,7 +54,7 @@ const PLACEMENTS = {
 const appPath = (placement) => {
   let picked = false;
   return {
-    setup: async (page) => { await page.getByRole('checkbox', { name: /^App/ }).first().check(); },
+    setup: async (page) => { await page.getByRole('checkbox', { name: /^Agentic App/ }).first().check(); },
     beforeNext: async (page, name) => {
       if (!name.includes('Where it lives') || picked) return;
       picked = true;

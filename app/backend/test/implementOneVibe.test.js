@@ -88,7 +88,9 @@ test('a first build takes a vibe with no choice for the version before, and a re
 test('the summary of a build after an uninstall reads as a first build, as the agent plans it, even when a failed version came after the uninstall', () => {
   const plan = I.planSubmission([row(3, 'failed'), uninstalled(2), row(1)], { ...clean(), based_on_version: 3 });
   assert.deepEqual([plan.summary.classes, plan.summary.refill], [['initial'], true]);
-  const rebuild = I.planSubmission([row(2, 'failed'), row(1)], { ...clean({ data: { run_profile: 'full' } }), based_on_version: 2 });
+  // The wizard sends the App's own experience with a rebuild (ui for an App built before the choice), as the route does.
+  const classic = { ...BASE.outputs, app_options: { modify: false, replace_edits: false, decisions: true, alerts: false, experience: 'ui' } };
+  const rebuild = I.planSubmission([row(2, 'failed'), row(1)], { ...clean({ data: { run_profile: 'full' }, outputs: classic }), based_on_version: 2 });
   assert.deepEqual(rebuild.summary.classes, ['data'], 'with no uninstall the version built before is still the one compared');
 });
 

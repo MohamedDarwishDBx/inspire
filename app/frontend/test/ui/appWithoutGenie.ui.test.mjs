@@ -13,7 +13,7 @@ test('the Build wizard lets a person build the App without a Genie Agent: the Ge
     await goToStep(page, 'Data');
     await goToStep(page, 'What to deliver');
     const genie = page.getByRole('checkbox', { name: /^Genie Agent/ }).first();
-    const app = page.getByRole('checkbox', { name: /^App/ }).first();
+    const app = page.getByRole('checkbox', { name: /^Agentic App/ }).first();
     await genie.waitFor();
     assert.equal(await app.isChecked(), true, 'the App is on by default');
     assert.equal(await genie.isChecked(), true, 'the Genie Agent is ticked by default');

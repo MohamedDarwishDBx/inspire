@@ -1926,7 +1926,7 @@ def chart_kind_problems(page: dict, kinds, not_drawn) -> tuple:
 
 
 def rule_problems(page: dict, rules: dict) -> tuple:
-    vibes, label = rules.get("vibes") or "", rules.get("label") or "App"
+    vibes, label = rules.get("vibes") or "", rules.get("label") or "Agentic App"
     least = layout_chart_least(page_layout(page))
     fewer = fewer_problems(page, "fewer_charts", vibes, label, f"fewer than {least} charts",
                            f"write at least {least} charts") if layout_takes_charts(page) else []

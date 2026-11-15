@@ -1,3 +1,4 @@
+import OUTPUT_LABELS from '../../../backend/lib/implementOutputLabels.json' with { type: 'json' };
 import { displayCleanText } from './useCaseFields.js';
 import { qualityBarCountText } from './qualityBarWording.js';
 
@@ -29,7 +30,7 @@ export const PORTFOLIO_GROUPS = [
       shows: 'use cases with an MVP', none: 'No MVP has been started yet.' },
     { key: 'mvps_live', label: 'MVPs live', one: 'live MVP', many: 'live MVPs', opens: 'build', mvp: 'live',
       shows: 'use cases with a live MVP', none: 'No MVP is live yet.' },
-    { key: 'apps', label: 'Apps', one: 'App', many: 'Apps', opens: 'build', asset: 'app', shows: 'use cases with an App', none: 'No MVP has an App yet.' },
+    { key: 'apps', label: `${OUTPUT_LABELS.app}s`, one: OUTPUT_LABELS.app, many: `${OUTPUT_LABELS.app}s`, opens: 'build', asset: 'app', shows: 'use cases with an App', none: 'No MVP has an App yet.' },
     { key: 'dashboards', label: 'Dashboards', one: 'dashboard', many: 'dashboards', opens: 'build', asset: 'dashboard',
       shows: 'use cases with a dashboard', none: 'No MVP has a dashboard yet.' },
     { key: 'genie_spaces', label: 'Genie Agents', one: 'Genie Agent', many: 'Genie Agents', opens: 'build', asset: 'genie_space',

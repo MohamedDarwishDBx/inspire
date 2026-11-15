@@ -1,3 +1,4 @@
+import OUTPUT_LABELS from '../../../backend/lib/implementOutputLabels.json' with { type: 'json' };
 import { busySwapRows, unusableSwapRows } from './tableUsability.js';
 import { compareMeetsQualityBarFirst, nameOfUseCase, subtitleOfUseCase } from './useCaseFields.js';
 import { placeholderWords } from './placeholderWords.js';
@@ -486,11 +487,12 @@ export const FRESHNESS_OPTIONS = [
   { id: 'weekly', label: 'Weekly', cron: '0 0 6 ? * MON' },
 ];
 
+// The label of each output comes from the one shared file the backend reads too.
 export const IMPLEMENT_OUTPUTS = [
-  { id: 'dashboard', label: 'Dashboard', blurb: 'Decision list, trend and run health.' },
-  { id: 'genie_space', label: 'Genie Agent', blurb: 'An agent over the result and source tables, with 5 sample questions.' },
-  { id: 'app', label: 'Agentic App', blurb: 'A Databricks App with the decision list, row detail and Ask. Ask is answered by the App\'s own agent, and the App can open on its Agent page.' },
-  { id: 'alert', label: 'Alert', blurb: 'Emails you when the latest run has rows to act on. Genie writes the check.' },
+  { id: 'dashboard', label: OUTPUT_LABELS.dashboard, blurb: 'Decision list, trend and run health.' },
+  { id: 'genie_space', label: OUTPUT_LABELS.genie_space, blurb: 'An agent over the result and source tables, with 5 sample questions.' },
+  { id: 'app', label: OUTPUT_LABELS.app, blurb: 'A Databricks App with the decision list, row detail and Ask. Ask is answered by the App\'s own agent, and the App can open on its Agent page.' },
+  { id: 'alert', label: OUTPUT_LABELS.alert, blurb: 'Emails you when the latest run has rows to act on. Genie writes the check.' },
 ];
 
 export const VIBES_MAX = 2000;
@@ -2685,7 +2687,7 @@ export function pickedSummary(spec, sourceTables = [], more = {}) {
     row('schedule', FIRST_RUN_STEP.id, FRESH_LABEL, freshness === 'off' ? 'Run once now'
       : `${freshness === 'custom' ? 'Custom' : FRESHNESS_OPTIONS.find((o) => o.id === freshness).label}, runs ${cronInWords(spec.schedule.cron, spec.schedule.timezone)}`),
     ...(principals.length ? [row('sharing', 'delivery', 'Shared with', principals.join(', '))] : []),
-    ...(app ? [row('app', 'where', 'App', joined ? `Joins ${outputs.merge.app}`
+    ...(app ? [row('app', 'where', OUTPUT_LABELS.app, joined ? `Joins ${outputs.merge.app}`
       : [placement?.label, outputs.app_name].filter(Boolean).join(': ') || 'not placed yet')] : []),
     ...(app && !joined ? [
       row('app_access', 'where', 'App access', APP_ACCESS_CHOICES.find((c) => c.id === outputs.app_access)?.label || 'not picked yet'),
@@ -3300,7 +3302,7 @@ export function appStatusRows(appStatus, asset) {
   if (appStatus?.ok === false) rows.push(['Live status', appStatus.error]);
   if (appStatus?.ok) {
     const joined = (...parts) => parts.filter(Boolean).join(': ');
-    rows.push(['App', joined(appStatus.app_state, appStatus.app_message) || 'unknown']);
+    rows.push([OUTPUT_LABELS.app, joined(appStatus.app_state, appStatus.app_message) || 'unknown']);
     rows.push(['Compute', appStatus.compute_state || 'unknown']);
     const deployment = joined(appStatus.deployment_state, appStatus.deployment_message);
     rows.push(['Last deployment', deployment ? `${deployment}${appStatus.deployed_at ? ` (${appStatus.deployed_at})` : ''}` : 'none']);
