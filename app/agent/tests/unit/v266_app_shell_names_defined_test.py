@@ -172,3 +172,28 @@ def test_a_name_bound_before_its_eager_use_or_read_only_inside_a_body_passes(sou
 ])
 def test_the_check_reports_each_kind_of_name_the_module_never_binds_before_it_is_read(source, found):
     assert any(found in problem for problem in undefined_names(source)), undefined_names(source)
+
+
+def test_every_app_shell_module_the_shipped_modules_import_is_written_and_loaded(agent_ns):
+    """REQ-320 journey walk: the Agentic App failed with "No module named 'shell_actions'" because the build writes and loads only
+    IMPLEMENT_APP_SHELL_MODULES, and the new modules the shell imports were not in it. Every shell_* module an App shell module
+    imports must be in the list, and before the first module that imports it."""
+    import re
+    payload = agent_ns["implement_app_shell_payload"](agent_ns["inspire_notebook_asset"]("app_shell"))
+    names = list(agent_ns["IMPLEMENT_APP_SHELL_MODULES"])
+    missing, late = {}, {}
+    for name in names:
+        imported = set(re.findall(r"^\s*(?:import|from)\s+(shell_[a-z_]+)", payload["files"][f"{name}.py"], re.M))
+        missing.update({name: sorted(imported - set(names))} if imported - set(names) else {})
+        late.update({name: sorted(m for m in imported & set(names) if names.index(m) > names.index(name))} if any(
+            names.index(m) > names.index(name) for m in imported & set(names)) else {})
+    assert missing == {}, f"imported by the App shell but never written for the App: {missing}"
+    assert late == {}, f"listed after a module that imports it: {late}"
+
+
+def test_the_import_closure_check_convicts_a_missing_module():
+    import re
+    files = {"shell_core.py": "import shell_actions\n", "shell_actions.py": ""}
+    names = ["shell_core"]
+    imported = set(re.findall(r"^\s*(?:import|from)\s+(shell_[a-z_]+)", files["shell_core.py"], re.M))
+    assert imported - set(names) == {"shell_actions"}
