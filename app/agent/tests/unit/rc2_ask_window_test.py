@@ -1,3 +1,4 @@
+import datetime
 import datetime as dt
 import os
 import sys
@@ -8,6 +9,7 @@ if SERVER not in sys.path:
     sys.path.insert(0, SERVER)
 
 import shell_agent  # noqa: E402
+import shell_sql  # noqa: E402
 from v211_genie_agent_test import AgentWorkspace, FakeLLM, ask, said, tool_call, topic_of, agent_shell  # noqa: E402
 
 LIVE_QUESTION = "What is the total sales in the last 30 days?"
@@ -25,9 +27,20 @@ class _HighWorkspace(AgentWorkspace):
         return super().run_sql(warehouse, sql, params, limit)
 
 
-def test_a_stale_as_of_anchors_the_genie_question_to_the_data_not_today():
-    sent = shell_agent.genie_question(LIVE_QUESTION, "2024-05-17", TODAY)
-    assert sent.startswith(LIVE_QUESTION) and "from 2024-05-17" in sent and "not from today" in sent
+def test_a_stale_as_of_rewrites_the_window_into_explicit_dates_for_genie():
+    assert shell_agent.genie_question(LIVE_QUESTION, "2024-05-17", TODAY) == "What is the total sales between 2024-04-18 and 2024-05-17?"
+
+
+def test_this_month_and_last_week_map_to_the_page_boundaries():
+    assert shell_agent.explicit_question("Sales this month?", datetime.date(2024, 5, 17)) == "Sales between 2024-05-01 and 2024-05-17?"
+    assert shell_agent.explicit_question("Sales last week?", datetime.date(2024, 5, 17)) == "Sales between 2024-05-06 and 2024-05-12?"
+    assert shell_agent.explicit_question("Sales today?", datetime.date(2024, 5, 17)) == "Sales on 2024-05-17?"
+
+
+def test_last_n_months_uses_the_same_start_as_the_page_preset():
+    preset = {p["id"]: p for p in shell_sql.preset_ranges("month", "2024-01-05", "2024-05-17")}["3m"]
+    sent = shell_agent.explicit_question("Sales in the last 3 months?", datetime.date(2024, 5, 17))
+    assert sent == f"Sales between {preset['from']} and {preset['to']}?"
 
 
 def test_fresh_data_leaves_the_genie_question_and_the_note_unchanged():
@@ -51,7 +64,7 @@ def test_a_stale_page_answers_genie_over_the_data_window_and_says_so(tmp_path):
     s.now = lambda: dt.datetime(2026, 11, 15, tzinfo=dt.timezone.utc)
     turn = ask(s, LIVE_QUESTION, view={"filters": {}}, visible=[])
     sent = [entry[1] for entry in ws.genie if len(entry) == 3]
-    assert sent and "from 2024-05-17" in sent[0] and sent[0].startswith(LIVE_QUESTION), sent
+    assert sent == ["What is the total sales between 2024-04-18 and 2024-05-17?"], sent
     assert turn["answer"].endswith("Counted over the last 30 days of data, to 2024-05-17.")
 
 
