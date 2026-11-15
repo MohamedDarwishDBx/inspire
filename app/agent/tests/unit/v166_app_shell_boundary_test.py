@@ -48,6 +48,12 @@ SHELL_ENTRY_POINTS = {
     ("_implement_app_block_files", "shell_sql.image_blocks"),
     ("_implement_app_block_images", "_implement_app_shell"),
     ("_implement_app_check", "shell_core.Shell"),
+    # Served App read (REQ-214): the check reads the page filters and the first decision-list rows of the App it checks, through the same
+    # Shell class the App runs, so each all-column and filter ask is judged against what the served App shows, not the spec alone.
+    ("_implement_app_check", "shell_core.Shell.filters"),
+    ("_implement_app_check", "shell_core.Shell.pages"),
+    ("_implement_app_check", "shell_core.served_filter_problem"),
+    ("implement_served_rows", "shell_core.Shell.records"),
     ("_implement_app_check", "shell_core.HttpError"),
     ("_implement_app_check", "shell_core.Shell.checked"),
     ("_implement_app_check", "shell_core.Shell.close"),
@@ -608,6 +614,8 @@ def test_the_check_reads_lakebase_rows_through_the_same_watch(agent_ns, tmp_path
     caught = {}
 
     class Shell:
+        pages = []  # the served App's pages; the real Shell always sets this, and an App with none has nothing to read
+
         def __init__(self, root, **kwargs):
             caught.update(kwargs)
 
