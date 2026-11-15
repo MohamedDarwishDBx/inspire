@@ -1,4 +1,5 @@
 import { joinWords } from './implementWizard.js';
+import { plainReason } from './useCaseFields.js';
 
 const MESSAGE_KEYS = ['message', 'text', 'reason', 'summary', 'label'];
 
@@ -61,10 +62,9 @@ export function missingDocumentsOf(results) {
   };
   for (const f of Array.isArray(r.failed_steps) ? r.failed_steps : []) {
     const step = String(f?.step || '').trim();
-    if (!step) continue;
-    const words = DOCUMENT_WORDS[step] || step;
+    if (!step || !DOCUMENT_WORDS[step]) continue;
     const into = add(f.language, 'notWritten');
-    if (!into.includes(words)) into.push(words);
+    if (!into.includes(DOCUMENT_WORDS[step])) into.push(DOCUMENT_WORDS[step]);
   }
   const gaps = r.translation_gaps && typeof r.translation_gaps === 'object' ? r.translation_gaps : {};
   for (const [language, gap] of Object.entries(gaps)) {
@@ -77,6 +77,21 @@ export function missingDocumentsOf(results) {
   for (const [language, { notWritten, englishOnly }] of byLanguage) {
     if (notWritten.length) lines.push(language ? `Not written in ${language}: ${joinWords(notWritten)}.` : `Not written: ${joinWords(notWritten)}.`);
     if (englishOnly.length && language) lines.push(`Written in English only, not in ${language}: ${joinWords(englishOnly)}.`);
+  }
+  return lines;
+}
+
+// REQ-284: a failed analysis step (Strategy Alignment, Best of Best, ...) is not a document, so it never reads "Not written".
+// It reads as what happened, with the step's own reason passed through the plain-reason helper.
+export function unfinishedStepsOf(results) {
+  const r = results && typeof results === 'object' ? results : {};
+  const lines = [];
+  for (const f of Array.isArray(r.failed_steps) ? r.failed_steps : []) {
+    const step = String(f?.step || '').trim();
+    if (!step || DOCUMENT_WORDS[step]) continue;
+    const reason = plainReason(f?.error);
+    const line = `${step} did not finish${reason ? `: ${reason}` : '.'}`;
+    if (!lines.includes(line)) lines.push(line);
   }
   return lines;
 }
@@ -94,7 +109,8 @@ export function runOutcomeOf(results, counts = null) {
   const failureKind = failed ? String(r.run_failure_kind || (empty ? 'no_use_cases' : 'error')) : '';
   const belowAll = found > 0 && meets === 0;
   const missingDocuments = missingDocumentsOf(r);
-  const warning = !failed && (r.run_status === 'warning' || belowAll || missingDocuments.length > 0);
+  const unfinishedSteps = unfinishedStepsOf(r);
+  const warning = !failed && (r.run_status === 'warning' || belowAll || missingDocuments.length > 0 || unfinishedSteps.length > 0);
   const notes = [...new Set([outcomeMessage(r.selection_outcome), outcomeMessage(r.elite_outcome)].filter(Boolean))];
   return {
     failed,
@@ -111,6 +127,7 @@ export function runOutcomeOf(results, counts = null) {
     barMessage: withoutStoredCount(outcomeMessage(bar)),
     notes,
     missingDocuments,
+    unfinishedSteps,
   };
 }
 
