@@ -47,3 +47,19 @@ test('a use case run carries the name tag, and a Discover or multi-use-case run 
   const unnamed = inspireJobTags({ runType: 'implement', params: {}, useCaseIds: ['N01-U01'] });
   assert.equal(USE_CASE_NAME_TAG in unnamed, false, 'a launch that does not know the name does not invent one');
 });
+
+test('the implement tracking row carries the encoded use case name and the warehouse the App queries, or null when unknown', () => {
+  const I = require('../lib/inspireImplement');
+  const base = { sessionId: 42, useCaseId: 'N01-U01', specVersion: 2, spec: {}, createdBy: 'a@b.c', statusMessage: 'queued', changeClasses: [] };
+  const named = I.implementInsertStatement('`c`.`s`.`__inspire_implement`', { ...base, useCaseName: 'Predict Customer Churn', warehouseId: 'wh1' });
+  assert.match(named.sql, /use_case_name_tag, warehouse_id\) VALUES/);
+  const byName = Object.fromEntries(named.parameters.map((p) => [p.name, p]));
+  assert.equal(byName.nametag.value, 'predict_customer_churn');
+  assert.equal(byName.warehouse.value, 'wh1');
+  const unknown = I.implementInsertStatement('`c`.`s`.`__inspire_implement`', { ...base });
+  const unknownByName = Object.fromEntries(unknown.parameters.map((p) => [p.name, p]));
+  assert.equal(unknownByName.nametag.value, undefined, 'no name is invented when the launch does not know it');
+  assert.equal(unknownByName.warehouse.value, undefined);
+  const columns = I.IMPLEMENT_COLUMNS.map(([n]) => n);
+  assert.ok(columns.includes('use_case_name_tag') && columns.includes('warehouse_id'), 'both columns are migrated onto existing tables');
+});

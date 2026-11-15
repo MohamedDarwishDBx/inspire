@@ -73,3 +73,17 @@ def test_the_name_tag_is_ranked_next_to_the_id_so_the_job_tag_cap_keeps_it(ns):
     tags.update({NAME_TAG: "predict_customer_churn", "dbx_inspire_ai_usecase_id": "N01-U01", "dbx_inspire_ai_version": "v1"})
     kept, _dropped = job.capped_tags(tags)
     assert NAME_TAG in kept and "dbx_inspire_ai_usecase_id" in kept
+
+
+def test_the_app_statements_carry_the_name_tag_next_to_the_id(ns):
+    import shell_db
+    assert shell_db.use_case_query_tags("N01-U01", "predict_customer_churn") == [
+        {"key": "dbx_inspire_ai_usecase_id", "value": "N01-U01"},
+        {"key": "dbx_inspire_ai_usecase_name", "value": "predict_customer_churn"}]
+    assert shell_db.use_case_query_tags("N01-U01") == [{"key": "dbx_inspire_ai_usecase_id", "value": "N01-U01"}], "no name is invented"
+    assert shell_db.use_case_query_tags("", "predict_customer_churn") == []
+
+
+def test_the_build_page_carries_the_encoded_name_for_the_app_statements(ns):
+    page = ns["implement_app_page"]({"title": "Churn desk"}, "N01-U01", {"Name": "Predict Customer Churn"}, shell_sql=None)
+    assert page["use_case_name_tag"] == "predict_customer_churn" and page["use_case_id"] == "N01-U01"
