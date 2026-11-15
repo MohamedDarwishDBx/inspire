@@ -5524,6 +5524,25 @@ def plan_performance(plan: dict, version, rows, label: str = None) -> dict:
             "truncated": len(rows or []) >= PLAN_CAPS["lines"]}
 
 
+FORECAST_PLAN = {"recommended": "forecast", "current": "actual"}
+FORECAST_PLAN_EMPTY = "Actuals arrive after the first cycle, so there is nothing to compare with the forecast yet."
+
+
+def forecast_actuals_query(page: dict) -> tuple:
+    return (f"SELECT s.`series_id`, s.`period`, s.`forecast`, s.`actual` FROM {sibling_table(page, '__series')} AS s "
+            f"WHERE NOT COALESCE(s.`is_future`, false) AND s.`actual` IS NOT NULL AND s.`forecast` IS NOT NULL "
+            f"ORDER BY s.`period` DESC, s.`series_id` LIMIT {PLAN_CAPS['series']}", [])
+
+
+def forecast_plan(rows) -> dict:
+    """Plan vs actuals for a forecast App: each past period's forecast is the plan line, its actual is the actual."""
+    lines = [dict(row, record_key=f"{row.get('series_id')}|{row.get('period')}", line_label=f"{row.get('series_id')} for {row.get('period')}")
+             for row in rows or [] if row.get("series_id") is not None]
+    version = {"plan_id": None, "label": "Model forecast", "status": "Model", "lines": {}} if lines else None
+    out = plan_performance(FORECAST_PLAN, version, lines, "line_label")
+    return dict(out, forecast=True, empty="" if lines else FORECAST_PLAN_EMPTY, missing="")
+
+
 def series_text(column: str, alias: str = "s") -> str:
     return f"CAST({alias}.`{column}` AS STRING)"
 
