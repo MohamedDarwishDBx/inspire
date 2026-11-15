@@ -225,7 +225,7 @@ test('a done build with unread tables reads as action needed, and its finish sta
   const W = await lib('implementWizard.js');
   const P = await lib('mvpProgress.js');
   const held = row(RECORD);
-  assert.deepEqual(W.implementState(held), { group: 'held', label: W.APP_READS_LABEL, tone: 'warning', kind: 'mvp' });
+  assert.deepEqual(W.implementState(held), { group: 'held', label: W.APP_READS_LABEL, tone: 'warning', kind: 'mvp', hold: 'other' }); // REQ-295: hold kind added
   assert.notEqual(W.implementState(row(null)).label, W.APP_READS_LABEL, 'an App that reads everything stays Done (must-exclude)');
   assert.equal(W.appReadsOf(row(RECORD, 'failed')), null, 'a failed build shows its failure, not the access card');
   assert.equal(W.appReadsOf(row({ app: SP, tables: [{ table: 'main.s.orders', grants: [] }] })), null, 'nothing to grant shows nothing');
@@ -238,7 +238,7 @@ test('a done build with unread tables reads as action needed, and its finish sta
   const choices = W.appReadsChoices(W.appReadsOf(held));
   assert.deepEqual(choices.map((c) => c.id), ['grant', 'copy', 'check']);
   // Round 3 decision 3 (REQ-131, REQ-260): the owner's chooser opens the Permission Required dialog; its SQL is the entry's statements
-  assert.equal(choices[1].label, 'See the grant to send to data-eng');
+  assert.equal(choices[1].label, 'See the grant'); // REQ-082 one card action: the owner's name moved out of the label into the detail
   assert.equal(choices[1].sql, undefined, 'no separate SQL copy path');
   assert.deepEqual(choices[1].permissions[0].statements, RECORDED);
   assert.match(W.appReadsText(W.appReadsOf(held), 'riverside-assets'), /App riverside-assets cannot read this table, so its pages show no data from it/);

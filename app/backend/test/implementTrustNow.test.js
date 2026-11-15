@@ -52,7 +52,7 @@ test('a scheduled run that turns unreliable after the build shows on the Build t
     assert.equal(read.sql, 'SELECT CAST(not_reliable AS STRING) AS not_reliable, CAST(updated_at AS STRING) AS updated_at FROM `main`.`inspire`.`churn_out_summary` '
       + 'WHERE use_case_id = :uc ORDER BY updated_at DESC NULLS LAST LIMIT 1', 'the same newest summary row the App and the build hold read');
     assert.deepEqual(read.parameters, [{ name: 'uc', value: 'N01-U01', type: 'STRING' }]);
-    assert.deepEqual(W.implementState(latest), { group: 'held', label: W.UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp' });
+    assert.deepEqual(W.implementState(latest), { group: 'held', label: W.UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp', hold: 'untrusted' }); // REQ-295: hold kind added
     assert.equal(W.statusReason(latest), `The latest run's results are not reliable yet: ${LATER}. Its App pages show Results not trusted yet until a run passes. `
       + 'Next step: change the data or the method so the run passes what it missed, then build again with Vibe/Add/Remove Features.');
     assert.doesNotMatch(W.statusReason(latest), /not published/, 'this App was published before the run turned unreliable');
