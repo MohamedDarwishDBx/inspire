@@ -7,6 +7,7 @@ import { DRAWER_WIDTH, loadPaneWidth, paneWidth, savePaneWidth } from '../lib/pa
 import { useModal } from './useModal';
 
 const WIDE = '(min-width: 768px)';
+const DOCK_RESERVE = '(min-width: 1280px)';
 
 function useWide() {
   const [wide, setWide] = useState(() => window.matchMedia(WIDE).matches);
@@ -30,11 +31,16 @@ export default function DrawerShell({ label, closeLabel, focusKey = null, focusO
   const openerRef = useRef(null);
   const [width, setWidth] = useState(() => loadPaneWidth(DRAWER_WIDTH));
   useEffect(() => { if (!center) savePaneWidth(DRAWER_WIDTH, width); }, [width, center]);
-  // A docked drawer sits fixed under the App header. The page keeps a column for it: the page reserves --dock-width on the right (REQ-143).
+  // A docked drawer sits fixed under the App header. From 1280px up the page keeps a column for it (--dock-width, REQ-143); below
+  // that the drawer overlays the page, because a column there leaves the use case pane no width to read or scroll.
   useLayoutEffect(() => {
     if (!docked) return undefined;
-    document.documentElement.style.setProperty('--dock-width', `${width}px`);
-    return () => document.documentElement.style.removeProperty('--dock-width');
+    const root = document.documentElement.style;
+    const media = window.matchMedia(DOCK_RESERVE);
+    const sync = () => { if (media.matches) root.setProperty('--dock-width', `${width}px`); else root.removeProperty('--dock-width'); };
+    sync();
+    media.addEventListener('change', sync);
+    return () => { media.removeEventListener('change', sync); root.removeProperty('--dock-width'); };
   }, [docked, width]);
 
   const openedByPerson = useRef(false);
