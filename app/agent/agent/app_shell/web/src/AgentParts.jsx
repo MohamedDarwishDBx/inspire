@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Icon } from './icons.jsx';
 import { accessWaiting, confirmText } from './agentView.js';
+import { STEPS_SUMMARY } from './genieAnswerView.js';
 import WaitingForAccess from './WaitingForAccess.jsx';
 import { SaveButton } from './saving.jsx';
 import './styles/agent.css';
@@ -15,6 +16,12 @@ export function AgentSteps({ steps }) {
       {steps.map((s, i) => <li key={i} data-step={s.tool}><Icon name={s.tool === 'ask_genie' ? 'code' : s.tool === 'refused' ? 'info' : 'check'} size={12} />{s.text}</li>)}
     </ol>
   );
+}
+
+// The narration of a finished answer (what Genie asked, read and looked at) sits under Details, never in the answer text.
+export function StepsDetails({ steps }) {
+  if (!steps?.length) return null;
+  return <details className="msg-steps" data-steps><summary>{STEPS_SUMMARY}</summary><AgentSteps steps={steps} /></details>;
 }
 
 function savedText(result) {

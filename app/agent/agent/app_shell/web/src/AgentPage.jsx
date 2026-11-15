@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Blocks, { ActionRow } from './AgentBlocks.jsx';
-import { AgentSteps, ConfirmCard } from './AgentParts.jsx';
+import { AgentSteps, ConfirmCard, StepsDetails } from './AgentParts.jsx';
 import { AGENT_ACTION_IDS, APP_ACTION_IDS, askBody, briefingBlocks } from './agentBlocks.js';
 import { actRecords, agentAsk, agentBriefing, agentFeedback, agentPrepare, agentThreadSave, agentThreads, agentTurn, agentWrite, getPage, undoRecords } from './api.js';
 
@@ -175,7 +175,7 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
         {thread.map((item) => (
           <li key={item.id} className="agp-turn" data-turn={item.turn?.turn_id || ''}>
             <p className="agp-q">{item.question}</p>
-            {item.turn?.steps?.length > 0 && <AgentSteps steps={item.turn.steps} />}
+            {item.turn?.steps?.length > 0 && <StepsDetails steps={item.turn.steps} />}
             {!item.turn && !item.error && <p className="agp-meta">Reading your question</p>}
             {item.error && <p className="g-err" role="alert">{item.error}</p>}
             {item.turn?.blocks && <Blocks blocks={item.turn.blocks} ctx={ctxFor(item)} />}

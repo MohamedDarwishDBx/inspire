@@ -4,14 +4,15 @@ import { agentAsk, agentFeedback, agentPrepare, agentStatus, agentTurn, askGenie
 import { POLL_MS, latestRunText, stepText } from './freshness.js';
 import WaitingForAccess from './WaitingForAccess.jsx';
 import { reducedMotion } from './theme.js';
-import { answerLabel, cellText, integer, isKeyColumn } from './format.js';
+import { integer } from './format.js';
+import { answerColumns } from './genieAnswerView.js';
 import DataTable from './DataTable.jsx';
 import Markdown from './Markdown.jsx';
 import { BUSY_TITLE, explainBody } from './explain.js';
 import { GENIE_DEFAULT, GENIE_MIN, clampGenie, genieMax, keyWidth, rememberGenieWidth, storedGenieWidth } from './genieWidth.js';
 import { GENIE_ASK, agentIntro, genieAnswer, genieKey, genieOf, genieOn, paceText } from './genieAsk.js';
 import { AGENT_CHANGED, suggestions } from './agentView.js';
-import { AgentExtras, AgentSteps, RecordOffers, confirmWrite } from './AgentParts.jsx';
+import { AgentExtras, AgentSteps, RecordOffers, StepsDetails, confirmWrite } from './AgentParts.jsx';
 import { runWrite } from './saving.jsx';
 import { pageDecides } from './records.js';
 import { NewMessages, PlainNote, useFollowBottom } from './ui.jsx';
@@ -21,14 +22,6 @@ const AGENT_POLL_MS = 1000;
 const AGENT_GIVE_UP_MS = 300000;
 const HISTORY_SENT = 6;
 const ELEMENT_CHARS = 8000;
-
-function answerColumns(answer) {
-  const rows = answer.rows || [];
-  return (answer.columns || []).map((c) => {
-    const num = !isKeyColumn(c.name, c.type) && rows.some((r) => typeof r[c.name] === 'number') && rows.every((r) => r[c.name] == null || typeof r[c.name] === 'number');
-    return { key: c.name, label: answerLabel(c.name), num, render: (r) => (r[c.name] == null ? '' : cellText(r[c.name], c)) };
-  });
-}
 
 function Pace({ since }) {
   const [now, setNow] = useState(() => Date.now());
@@ -382,7 +375,7 @@ export function Answer({ message, url, onTick, genie, rating = true }) {
   const done = message.shown >= words;
   return (
     <div className="msg-b">
-      <AgentSteps steps={message.steps} />
+      {!done && <AgentSteps steps={message.steps} />}
       <Typing message={message} onTick={onTick} />
       {done && a.rows?.length > 0 && (
         <div className="msg-t">
@@ -397,6 +390,7 @@ export function Answer({ message, url, onTick, genie, rating = true }) {
       {done && a.sql && (
         <details className="msg-sql"><summary><Icon name="code" size={13} />How Genie got this</summary><pre>{a.sql}</pre></details>
       )}
+      {done && <StepsDetails steps={message.steps} />}
       {done && genie && <AgentExtras message={message} genie={genie} rating={rating} />}
       {done && (!message.agent || message.ids) && (
         <div className="msg-f">
