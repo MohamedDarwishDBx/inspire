@@ -101,3 +101,29 @@ test('REQ-146 the Best-of-Best short-list label counts only the use cases that m
   const nb = JSON.parse(readFileSync(new URL('dbx_inspire_ai_agent.ipynb', ROOT), 'utf8'));
   assert.ok(nb.cells.some((c) => c.cell_type === 'code' && c.source.join('').includes("'meet'} the quality bar, not more than")), 'the label is in a code cell');
 });
+
+// REQ-143 must-exclude: the progress drawer never grows the page. With it open, the document is as tall as it is with it closed,
+// at a short window (1024x700) and at 1280x800, where the drawer reserves its column.
+test('REQ-143 must-exclude: the Build progress drawer does not grow the page at 1024x700 or 1280x800 (document height open equals closed)', async () => {
+  const ui = await openUi('implement', STUDIO_STATE);
+  const { page } = ui;
+  try {
+    await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
+    for (const [width, height] of [[1024, 700], [1280, 800]]) {
+      await page.setViewportSize({ width, height });
+      const card = page.locator('[data-progress-card]');
+      if (await card.getAttribute('data-progress-open') === 'true') await card.locator('[data-progress-show]').click();
+      await page.locator('[data-progress-card][data-progress-open="false"]').waitFor();
+      const closed = await page.evaluate(() => document.scrollingElement.scrollHeight);
+      await card.locator('[data-progress-show]').click();
+      await page.locator('[data-progress-dock] [data-progress-panel] [role="dialog"]').waitFor();
+      const open = await page.evaluate(() => document.scrollingElement.scrollHeight);
+      assert.ok(Math.abs(open - closed) <= 1, `the drawer does not grow the page at ${width}x${height}: closed ${closed}px, open ${open}px`);
+      assert.ok(open <= Math.max(closed, height) + 1, `the page stays within the window or its own content at ${width}x${height}`);
+      await page.locator('[data-progress-card] [data-progress-show]').click().catch(() => null);
+    }
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});
