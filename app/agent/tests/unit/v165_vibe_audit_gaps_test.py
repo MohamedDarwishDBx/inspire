@@ -267,7 +267,7 @@ def test_a_color_ask_a_restyle_newly_meets_is_met_and_never_called_nothing_new(a
     items = inst._implement_output_vibe_items(context, "app", {ASSET: ask}, dict(PAGE, hue=""), [], before=before)
     assert items[0]["built_before"] is not None and items[0]["asked_before"] == set(), "the ask was not met before, so it is new work"
     [check] = inst._implement_vibes_round({}, items, "test")["checks"][ASSET]
-    assert check["status"] == "done" and check["evidence"] == "the built App page n01_u01 shows ocean: palette ocean"
+    assert check["status"] == "done" and check["evidence"] == "the built App page Loss desk shows ocean: palette ocean"
 
 
 def test_an_unchanged_vibe_reuses_its_stored_asks_with_no_split_even_from_an_old_record(agent_ns):

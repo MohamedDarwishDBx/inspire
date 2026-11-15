@@ -123,7 +123,7 @@ def test_run_4b_the_globe_ask_changes_only_its_chart_and_genie_s_bar_to_area_cha
     assert _types(page) == [("takings_by_direction", "horizontal_bar"), ("buffer_priority", "pareto"), ("buffer_by_tier", "stacked_bar")]
     assert page["blocks"] == [GLOBE], "the ask targets the takings outlook chart, so Genie's globe in its place stays"
     assert len(runner.prompts) == 3, "the globe stands in for the chart the ask names, so the vibe gate sends it back for its rounds"
-    assert all("the built App page n02_u01 has no Fourteen-day takings outlook chart" in p for p in runner.prompts[1:])
+    assert all("the built App page Daily Fare Revenue Cash Flow Plan has no Fourteen-day takings outlook chart" in p for p in runner.prompts[1:])  # REQ-237: title
     assert not any("putting them back would undo an ask" in p for p in runner.prompts), \
         "a restore that undoes no ask needs no Genie round of its own"
     [fixed] = context["untargeted"]["app"]["restored"]
