@@ -11,11 +11,13 @@ export function cutoffNote(summary) {
   return summary?.run?.summary?.match(CUTOFF)?.[0] || '';
 }
 
-// REQ-297: the zero-result line says what the run did, in plain words: the records it checked and that it found nothing to act on.
-// Shown only when the run wrote a whole-number count of at least one record.
+// REQ-297: what a zero-result run did, in plain words. The one sentence the zero panel, the KPI reason and the Work list all show.
+export const foundNothingText = (n) => `This run checked ${grouped(n)} records and found nothing to act on`;
+
+// The zero-result line: shown only when the run wrote a whole-number count of at least one record.
 export function checkedNote(zero) {
   const n = zero?.rows_checked;
-  return Number.isInteger(n) && n >= 1 ? `This run checked ${grouped(n)} records and found nothing to act on` : '';
+  return Number.isInteger(n) && n >= 1 ? foundNothingText(n) : '';
 }
 
 // The rule in plain words: the decision-list definition the page already holds. Empty when the page holds none, so no line is shown.

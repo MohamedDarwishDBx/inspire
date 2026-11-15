@@ -11,6 +11,7 @@ import { DraftDialog } from './Draft.jsx';
 import { OPEN_TAB, UNCHECKED_TAB, tabChoice, withRecord, withoutRecord } from './links.js';
 import { useDock } from './Dock.jsx';
 import { addCounts, addedParts, cap, compareValues, dayLabel, entityName, integer, kindOf, plainText, savedWords, shownUnit, unitOf } from './format.js';
+import { foundNothingText } from './zeroState.js';
 
 import { hueVars, reducedMotion } from './theme.js';
 import { Failure, Popover, Skeleton, useDebounced, useDialog, useToast, PlainNote, toastFailure } from './ui.jsx';
@@ -542,14 +543,16 @@ export function RecordPanel({ meta, app, pageId, row, list, onClose, onChanged, 
   );
 }
 
-function emptyState({ search, mine, changed, fresh, windowed, narrowedAny, ranged, onClear, onWide, status = '', counts = null, onTab }) {
+function emptyState({ search, mine, changed, fresh, windowed, narrowedAny, ranged, onClear, onWide, status = '', counts = null, onTab, checked = null }) {
   const watch = counts && status === 'Open' && !narrowedAny && !ranged && !search && !mine && !changed && counts.open === 0 && counts.watch > 0;
   if (watch) {
     return <><span className="empty-t" data-empty-breakdown>{watchBreakdown(counts)}</span>{' '}
       <button type="button" className="lnk" onClick={() => onTab?.('all')} data-empty-watch>Show the watch list</button>{' '}
       <button type="button" className="lnk" onClick={() => onTab?.('all')} data-empty-all>Show all</button></>;
   }
+  // REQ-297: a run that checked records and found nothing to act on says so, on every empty list it leaves behind
   const text = search ? 'No record matches this search.' : mine ? 'You own no record on this list.' : changed ? 'No record changed since the last run.'
+    : checked ? foundNothingText(checked)
     : status && !narrowedAny && !ranged ? `No record is ${status.toLowerCase()} right now.`
     : fresh ? 'Nothing on this page changed since your last visit.' : windowed && !narrowedAny ? `All caught up: nothing is due or new for ${windowed.toLowerCase()}.`
       : narrowedAny || ranged ? 'No record matches these filters.' : 'No records yet. The next run of this use case fills this list.';
@@ -560,7 +563,7 @@ function emptyState({ search, mine, changed, fresh, windowed, narrowedAny, range
 
 export default function Records({ meta, app, pageId, filters, ai, onFilter, history = false, onChanged, nonce = 0, ready = true, onExplain, genieBusy, openKey,
   columnMeta, columnValues, onColumn, onClearColumns, onClearFilters, seeChanged = 0, onShowRuns, similarBy, keepsActions, onList, onOpen, section, sort: lookSort, onSort: onLookSort,
-  tab, focus: only, docked = false, onTab, raise }) {
+  tab, focus: only, docked = false, onTab, raise, runChecked = null }) {
   const { prefs, update } = useMyView();
   const [query, setQuery] = useState('');
   const search = useDebounced(query.trim(), 300);
@@ -1099,7 +1102,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
           {late.late > 0 && <p className="late-n" data-overdue><Icon name="calendar" size={13} />Overdue: {recordsText(late.late)} on this page, shown first.</p>}
           <DataTable label={meta.title} columns={columns} rows={tableRows} rowKey={keyOf} onRow={setOpen} paged={false} filtering="server" grid={`page:${pageId}:records`}
             empty={emptyState({ search, mine, changed, fresh, windowed: listsOpen && narrowWindow(prefs) ? windowLabel(prefs.window) : '', narrowedAny, status: tabPick ? tabPick.label : tabOpen ? 'Open' : '',
-              counts: data?.status_counts || null, onTab,
+              counts: data?.status_counts || null, onTab, checked: Number.isInteger(runChecked) && runChecked >= 1 ? runChecked : null,
               ranged: Object.values(filters || {}).some((v) => v && typeof v === 'object' && !Array.isArray(v)), onClear: clearAll,
               onWide: () => update((p) => ({ ...p, window: 'all' })) })}
             sort={shownSort ? { key: shownSort.key, dir: shownSort.dir === 'desc' ? -1 : 1 } : null} onSort={(s) => setSort({ key: s.key, dir: s.dir > 0 ? 'asc' : 'desc' })}
