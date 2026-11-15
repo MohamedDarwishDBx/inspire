@@ -61,8 +61,11 @@ def customer_strings(source):
             name, receiver = _call_name(node)
             if name == "implement_gate":
                 # REQ-227: a gate's problems (argument 1) and failure text (argument 4) reach the App. Its feedback (argument 2)
-                # is the repair prompt Genie reads, so it is not copy.
-                for position in (1, 4):
+                # is the repair prompt Genie reads, so it is not copy. A notebook gate's problems are the verdict Genie reads
+                # with exact object names, so they are not copy either: the person's copy is made plain where the warning is
+                # written (implement_plain_change_text), and req227_status_words_test pins that. AI and reply problems stay copy.
+                notebook = bool(node.args) and isinstance(node.args[0], ast.Constant) and node.args[0].value == "notebook"
+                for position in ((4,) if notebook else (1, 4)):
                     if len(node.args) > position:
                         collect(node.args[position])
             elif name in SINK_CALLS or (name in {"append", "extend"} and receiver in SINK_LISTS):
