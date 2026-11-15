@@ -5,12 +5,26 @@ import { wheelToBottom, wheelToTop } from './wheelScroll.mjs';
 // The helper's scroll-settle loop runs in the browser; Node needs the same frame callback to run it here.
 globalThis.requestAnimationFrame ??= (cb) => setTimeout(() => cb(performance.now()), 16);
 
+// Since REQ-228 the helper checks, before each wheel step, that the pointer is still over the region (where(): a hit test
+// in the page). These fakes stand for a region in full view under the pointer, so the hit test answers "over the region".
+let pointed = null;
+globalThis.window ??= { innerWidth: 1280, innerHeight: 800 };
+globalThis.document ??= { scrollingElement: null, elementFromPoint: () => pointed };
+globalThis.getComputedStyle ??= () => ({ overflowY: 'auto' });
+function inView(el) {
+  return Object.assign(el, { getBoundingClientRect: () => ({ top: 0, bottom: 600, left: 0, right: 800 }), contains: (n) => n === el });
+}
+function regionOf(el) {
+  inView(el);
+  return { evaluate: async (fn, arg) => { pointed = el; return fn(el, arg); } };
+}
+
 // A fake region and page that behave like a scroller on a loaded CPU: each wheel step takes STEP_MS of wall time
 // and moves the region by one notch (1000 px). The helper must keep wheeling while the region moves, however slow
 // each step is, and must fail with a clear message when the wheel stops moving the region.
 function scroller({ top, stepMs, moves = true }) {
   const el = { scrollTop: top };
-  const region = { evaluate: async (fn, arg) => fn(el, arg) };
+  const region = regionOf(el);
   const page = {
     mouse: {
       wheel: async (_dx, dy) => {
@@ -38,7 +52,7 @@ test('wheelToTop fails with a clear message when the wheel does not move the reg
 function growingScroller({ height, client, growBy }) {
   const el = { scrollTop: 0, scrollHeight: height, clientHeight: client };
   let grown = false;
-  const region = { evaluate: async (fn, arg) => fn(el, arg) };
+  const region = regionOf(el);
   const page = {
     mouse: {
       wheel: async (_dx, dy) => {
@@ -61,7 +75,7 @@ test('wheelToBottom resumes when the region grows after the wheel first reached 
 
 test('wheelToBottom stops when the wheel does not move the region (must-exclude: bounded, no endless wheel)', async () => {
   const el = { scrollTop: 0, scrollHeight: 3000, clientHeight: 700 };
-  const region = { evaluate: async (fn, arg) => fn(el, arg) };
+  const region = regionOf(el);
   const page = { mouse: { wheel: async () => {} } };
   const started = Date.now();
   await wheelToBottom(page, region);
