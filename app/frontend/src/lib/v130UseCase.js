@@ -485,6 +485,12 @@ export function latestFeedbackMap(latest) {
   return map;
 }
 
+// REQ-131, REQ-260: a Discover run's grants (its unreadable tables) are the Permission Required entries the results page raises.
+export function discoverPermissionsOf(results) {
+  const list = results?.data_access?.permissions;
+  return Array.isArray(list) ? list.filter((p) => Array.isArray(p?.statements) && p.statements.length) : [];
+}
+
 export function dataAccessSummary(results) {
   const raw = String(results?.discovery_type || '').trim();
   if (!raw) return null;

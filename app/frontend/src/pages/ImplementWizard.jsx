@@ -40,6 +40,7 @@ import {
   useCaseSchemaTags as schemaTagsOf,
   ownSchemaFallbackNote,
   ownSchemaGrantPermission,
+  ownSchemaPickPermission,
   defaultSpecFromUseCase,
   specFromLatest,
   tablesOf,
@@ -1170,11 +1171,6 @@ export default function ImplementWizard({
   const inspireTable = inspireSchemaResultTable(inspireDatabase, spec.use_case_id, sessionId);
   const resultPlace = resultPlaceOf(spec.config.result_table, ownTable, inspireTable);
   const placeBlocks = resultPlaceBlocks(ownSchema, ownTable, inspireTable, ownSchema?.catalog || resultTableParts(ownTable).catalog);
-  // REQ-131, REQ-260: the CREATE SCHEMA grant the own-schema fallback names opens in Permission Required (the route carries it)
-  const ownPermission = ownSchema?.permission;
-  useEffect(() => {
-    if (ownPermission?.statements?.length) raisePermissions([ownPermission]);
-  }, [ownPermission]);
   // Next runs the write check (goNext). From then on it re-runs whenever its inputs change while the results fold is shown: the table, the model name,
   // or coming back to the fold after Back, so the result on screen is never a check of other inputs. A new check clears the old result at once.
   // An own-schema table is checked after its schema is created (goNext).
@@ -1701,7 +1697,14 @@ export default function ImplementWizard({
               place={resultPlace}
               note={placeNote}
               outputCheck={outputCheck}
-              onChange={(parts) => { setSpec((prev) => withResultTable(prev, parts)); setOutputCheck(null); }}
+              onChange={(parts) => {
+                setSpec((prev) => withResultTable(prev, parts));
+                setOutputCheck(null);
+                // REQ-131, REQ-260: picking Its own schema raises its CREATE SCHEMA grant; the wizard does not raise it on load
+                const picked = resultPlaceOf([parts.catalog, parts.schema, parts.table].filter(Boolean).join('.'), ownTable, inspireTable);
+                const grant = ownSchemaPickPermission(picked, ownSchema);
+                if (grant) raisePermissions([grant]);
+              }}
               best={best.result}
               blocks={placeBlocks}
             >

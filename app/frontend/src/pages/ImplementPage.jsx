@@ -1445,13 +1445,9 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     }
   };
   const pickReads = async (choice) => {
+    // REQ-131, REQ-260: the owner's grant commands open in Permission Required; there is no separate copy path for GRANT SQL
     if (choice.id !== 'copy') return runReads(choice.id);
-    try {
-      await navigator.clipboard.writeText(choice.sql);
-      setReadsResult((was) => ({ ...(was && !was.error ? was : { tables: readsLeft.tables }), version: latest?.spec_version, action: 'copy', copied: true }));
-    } catch (e) {
-      setReadsResult((was) => ({ ...(was && !was.error ? was : { tables: readsLeft.tables }), version: latest?.spec_version, action: 'copy', copyError: e.message }));
-    }
+    raisePermissions(choice.permissions || [], {}, { explicit: true });
   };
   const autoReads = useRef({});
   const autoViewerChecks = useRef({});
@@ -1470,6 +1466,11 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     autoReads.current[key] = true;
     runReads('grant');
   }, [reads, readOnly, latest?.session_id, latest?.spec_version]);
+  // REQ-131, REQ-260: the grants a failed build's lost tables need open in Permission Required (the build status carries them)
+  const lostPermissions = latest?.status === 'failed' ? latest?.asset_status?.data?.permissions : null;
+  useEffect(() => {
+    if (lostPermissions?.length) raisePermissions(lostPermissions);
+  }, [lostPermissions]);
   const readsCard = readsLeft && (
     <section aria-label={readsLeft.tables.length ? APP_READS_HEADING : APP_READS_CLEARED} data-app-reads="" className="rounded-lg border border-warning/30 bg-warning-bg px-3.5 py-3 text-[12px] space-y-2.5">
       <div className="flex items-start gap-2.5">
