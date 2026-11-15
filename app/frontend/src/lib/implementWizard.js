@@ -1016,13 +1016,23 @@ export function dataMinimumShortfall(readiness) {
   return { have, minimum, forecast };
 }
 
-export function tooFewRowsText(readiness) {
+// The build-step refusal (REQ-255): the same words whether or not the scope is on screen. Shown beside the refused build.
+export function dataMinimumRefusalText(readiness) {
   const short = dataMinimumShortfall(readiness);
   if (!short || !(short.have > 0)) return '';
   const { have, minimum, forecast } = short;
   const what = forecast ? `${have.toLocaleString('en-US')} distinct dates` : `${have.toLocaleString('en-US')} rows`;
   const way = forecast ? 'pick a coarser period (weekly or monthly) or use a table with more history' : 'use a source with more rows';
   return `The data cannot meet the minimum this use case needs: it has ${what}, and at least ${minimum.toLocaleString('en-US')} are needed. Build is blocked. To go on, ${way}.`;
+}
+
+// The scope note on the steps before the build. Rows: one plain sentence that never blocks (the build's refusal is dataMinimumRefusalText).
+// A forecast's distinct-date shortfall reads as the refusal itself, since its build check is the one that names the period to change.
+export function tooFewRowsText(readiness) {
+  const short = dataMinimumShortfall(readiness);
+  if (!short || !(short.have > 0)) return '';
+  if (short.forecast) return dataMinimumRefusalText(readiness);
+  return `Only ${short.have.toLocaleString('en-US')} rows are in this scope, fewer than the ${short.minimum.toLocaleString('en-US')} this use case needs; you can still go on.`;
 }
 
 // The build is refused while the data has some rows but fewer than the minimum (the same count the build's check makes). Zero rows is
