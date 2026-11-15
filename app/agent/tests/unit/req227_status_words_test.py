@@ -85,10 +85,22 @@ def test_a_notebook_gate_verdict_keeps_exact_names_for_genie_and_its_person_copy
     verdict = "run r-1 did not write the companion tables its page draws: main.inspire.demand_out__series does not exist"
     assert "demand_out__series" in verdict and "companion" in verdict
     person = agent_ns["implement_plain_change_text"](verdict)
-    assert person == "run r-1 did not write the tables its page draws: main.inspire.series does not exist"
-    assert internal_hits(person) == []
+    assert person == "run r-1 did not write the tables its page draws: main.inspire.demand_out__series does not exist"
+    assert internal_hits(person.replace("main.inspire.demand_out__series", "the table")) == []  # the qualified name is kept by design
     sources = "\n".join("".join(source) for source, _cell in _code_cells())
     for site in ('implement_plain_change_text("; ".join(outcome["gate_problems"]))',
                  "implement_plain_change_text('; '.join(outcome['build_problems']))",
                  'implement_plain_change_text("; ".join(outcome.get("build_problems") or []))'):
         assert site in sources, f"the person copy of a gate verdict is not made plain at: {site}"
+
+
+def test_a_fully_qualified_table_name_reaches_the_person_verbatim(agent_ns):
+    """D-AUTO / D-NAMES: a catalog.schema.table name is kept exactly, so the person can find the table."""
+    text = "the table main.inspire.demand_out__series does not exist"
+    assert agent_ns["implement_plain_change_text"](text) == text
+
+
+def test_a_bare_internal_token_is_still_rewritten_to_plain_words(agent_ns):
+    assert agent_ns["implement_plain_change_text"]("Skip __constraints") == "Skip constraints"
+    assert agent_ns["implement_plain_change_text"]("read main.inspire.demand_out__series and __constraints") == (
+        "read main.inspire.demand_out__series and constraints")
