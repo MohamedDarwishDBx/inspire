@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { grantAsk } from '../lib/permissionBus';
 
 const BUTTON = 'inline-flex h-8 items-center justify-center px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle';
 
@@ -39,9 +40,7 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
         {(permissions || []).map((p) => (
           <div key={[...p.statements, ...(p.instructions || [])].join('|')} className="space-y-2">
             {p.why && <p className="text-sm text-text-secondary">{p.why}</p>}
-            <p className="text-sm text-text-primary">
-              Ask your admin to grant this permission{p.principal ? ` to ${p.principal}` : ''}:
-            </p>
+            <p className="text-sm text-text-primary">{grantAsk(p)}</p>
           </div>
         ))}
         <pre ref={block} data-permission-statements="" className="whitespace-pre-wrap break-all rounded-md bg-bg-subtle p-3 font-mono text-xs text-text-primary">{text}</pre>

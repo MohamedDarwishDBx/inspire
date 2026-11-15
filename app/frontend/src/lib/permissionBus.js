@@ -13,6 +13,13 @@ export function grantListKey(permissions) {
   return JSON.stringify(permissions.map((p) => JSON.stringify([...(p?.statements || [])].sort())).sort());
 }
 
+// REQ-216, REQ-131: an optional grant (the App reads Delta until an admin runs it) stays in the dialog with its Copy button, labelled optional.
+// It never gates a build: the submit does not depend on the dialog being open or closed.
+export function grantAsk(p) {
+  if (p?.optional) return 'Optional: pages load faster once your admin runs this.';
+  return `Ask your admin to grant this permission${p?.principal ? ` to ${p.principal}` : ''}:`;
+}
+
 export function subscribePermissions(fn) {
   subscribers.add(fn);
   if (pending) {
