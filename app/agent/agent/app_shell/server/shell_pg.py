@@ -383,7 +383,7 @@ def delta_by_design(pages: list, backend: dict) -> set:
     for page in pages:
         if page.get("result_table") and current_copy(backend, page["result_table"]):
             result = uc_key(page["result_table"])
-            out |= {result} | {result + suffix for suffix in shell_facts.COMPANION_SUFFIXES}
+            out |= {result} | {shell_facts.companion(result, suffix) for suffix in shell_facts.COMPANION_SUFFIXES}
     return out
 
 

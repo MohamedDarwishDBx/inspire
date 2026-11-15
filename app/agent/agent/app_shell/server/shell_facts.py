@@ -143,7 +143,9 @@ def fanning_datasets(page, names) -> dict:
 
 
 def companion(table: str, suffix: str) -> str:
-    return ".".join(p.strip() for p in str(table).split(".")) + suffix
+    """The companion table of a result table: its own name plus the suffix, as the notebook writes it and the App reads it. The one
+    naming rule for the writer, the layout and the App fit check, and every page read (REQ-264)."""
+    return ".".join(p.strip().strip("`") for p in str(table or "").split(".")) + suffix
 
 
 def acted_condition(names) -> str:
