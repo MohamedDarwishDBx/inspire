@@ -12,6 +12,7 @@ The leak patterns below are the single source for both the publisher and the lea
 (app/agent/tests/unit/ledger_leak_gate_test.py), so a pattern cannot drift between them.
 """
 import argparse
+import os
 import pathlib
 import re
 import sys
@@ -33,7 +34,18 @@ TOKEN = re.compile(
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}"
     r"|(?<![\w/.-])(?=[A-Za-z0-9+/]*\d)(?=[A-Za-z0-9+/]*[A-Z])(?=[A-Za-z0-9+/]*[a-z])[A-Za-z0-9+/]{40,}={0,2}(?![\w/.-])"
 )
-CUSTOMER = re.compile(r"(?i)\b(emirates|etisalat|adnoc|alshaya|al[- ]futtaim)\w*|\b(FAB|MAF)\b")
+# Customer and company names never live in the repo, not even in this pattern: the coordinator keeps them in a private file outside
+# the repo (one name or regex per line) and points INSPIRE_LEDGER_PRIVATE_NAMES at it. With no file, the pattern matches nothing and
+# the gate still checks every other kind; noCompanyNames.test.js guards the repo files themselves.
+def private_names(path):
+    try:
+        names = [line.strip() for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines() if line.strip() and not line.startswith("#")]
+    except (OSError, TypeError):
+        names = []
+    return re.compile(r"(?i)\b(?:" + "|".join(names) + r")\w*") if names else re.compile(r"(?!)")
+
+
+CUSTOMER = private_names(os.environ.get("INSPIRE_LEDGER_PRIVATE_NAMES"))
 # Test workspace names: a scratch App or catalog name must never reach the public ledger.
 SCRATCH_APP = re.compile(r"\binspire-(?:kinds|customer|cust|walk|e2e|rc\d|happy|fwa|fraud|amr|bakehouse|v\d)[a-z0-9-]*")
 SCRATCH_WORKSPACE = re.compile(r"\bmy-(?:uae|adp|gcp|aws)\b")
@@ -93,7 +105,6 @@ def sanitize(text):
         if old in text:
             counts["paraphrased ask"] = counts.get("paraphrased ask", 0) + text.count(old)
             text = text.replace(old, new)
-    text = swap(re.compile(r"\bemirates-network-planner\b"), "a customer reference app", "customer reference app name", text)
     text = swap(CUSTOMER, "a customer", "customer name", text)
     text = swap(SCRATCH_APP, "the scratch App", "scratch App name", text)
     text = swap(SCRATCH_WORKSPACE, "the scratch workspace", "scratch workspace name", text)

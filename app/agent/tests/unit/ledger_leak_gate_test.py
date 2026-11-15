@@ -13,6 +13,15 @@ import pytest
 APP = pathlib.Path(__file__).resolve().parents[3]  # app/
 REPO = APP.parent  # the repo root, where CLAUDE.md sits
 sys.path.insert(0, str(APP / "scripts"))
+import os  # noqa: E402
+import tempfile  # noqa: E402
+
+# The gate plants made-up company names; the real list lives outside the repo (INSPIRE_LEDGER_PRIVATE_NAMES).
+_NAMES = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False)
+_NAMES.write("contoso\nfabrikam\nnorthwind\n" + (pathlib.Path(os.environ["INSPIRE_LEDGER_PRIVATE_NAMES"]).read_text(encoding="utf-8")
+                                                if os.environ.get("INSPIRE_LEDGER_PRIVATE_NAMES") else ""))
+_NAMES.close()
+os.environ["INSPIRE_LEDGER_PRIVATE_NAMES"] = _NAMES.name
 import ledger_publish as lp  # noqa: E402
 
 PUBLIC_FILES = (APP / "docs" / "requirements" / "ledger.md", REPO / "CLAUDE.md")
@@ -45,9 +54,9 @@ def test_public_ledger_and_claude_md_have_no_leaks():
         ("token dapi" + "0123456789abcdef" * 2, "token-like string"),
         ("token ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4", "token-like string"),
         ("key " + "Zm9vYmFyYmF6cXV4" * 3 + "Q1ZyMw==", "token-like string"),
-        ("the Emirates programme", "customer name"),
-        ("the FAB account", "customer name"),
-        ("the Alshaya renewal", "customer name"),
+        ("the Contoso programme", "customer name"),
+        ("the Fabrikam account", "customer name"),
+        ("the Northwind renewal", "customer name"),
         ("the scratch App inspire-customer-fraud-v2", "scratch App name"),
         ("workspace my-uae is up", "scratch workspace name"),
         ("catalog adb_fe_uae_01.default.t", "scratch catalog name"),
@@ -79,7 +88,7 @@ def test_sanitizer_removes_every_planted_leak():
         'REQ-9 | 11-13 | run 40478529397665 by someone@example.com at /Users/someone/x, '
         'host adb-123 is in the notes, token dapi' + "0123456789abcdef" * 2 + ', '
         'catalog amr_ali.sales.orders, app inspire-walk-rc2-planning, workspace my-uae, '
-        '"the Emirates programme", "design is shit, remove"'
+        '"the Contoso programme", "design is shit, remove"'
     )
     clean, counts = lp.sanitize(raw)
     assert lp.find_leaks(clean) == [], clean
