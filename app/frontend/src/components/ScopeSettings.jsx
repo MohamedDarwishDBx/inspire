@@ -39,6 +39,47 @@ function combinable(profile) {
     .sort((a, b) => (a.distinct ?? 0) - (b.distinct ?? 0) || String(a.name).localeCompare(String(b.name)));
 }
 
+// REQ-272: Load groups on the Data groups step. It lists the groups of a chosen column from the grouping profile (no extra query), and says plainly why it cannot.
+const LOAD_GROUPS = 'Load groups';
+const LOAD_GROUPS_COLUMN = 'Column to load groups for';
+const LOAD_GROUPS_UNREAD = 'Inspire has not read the table yet, so there are no groups to load.';
+const LOAD_GROUPS_ONE_MODEL = 'Inspire fits one model for this use case, so the whole data is one group and there are no groups to load.';
+const LOAD_GROUPS_NO_COLUMN = 'No column of this table can be grouped by, so there are no groups to load.';
+
+function LoadGroups({ profile }) {
+  const columns = combinable(profile);
+  const [chosen, setChosen] = useState({ column: '', shown: false });
+  const column = columns.some((c) => String(c.name) === chosen.column) ? chosen.column : String(columns[0]?.name || '');
+  const why = !profile ? LOAD_GROUPS_UNREAD : profile.one_model === true ? LOAD_GROUPS_ONE_MODEL : columns.length ? '' : LOAD_GROUPS_NO_COLUMN;
+  const groups = !why && chosen.shown ? groupingGroupsOf(profile, column) || [] : [];
+  return (
+    <div data-load-groups="" className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        {!why && (
+          <select aria-label={LOAD_GROUPS_COLUMN} value={column} onChange={(e) => setChosen({ column: e.target.value, shown: false })} className={NUMBER}>
+            {columns.map((c) => <option key={c.name} value={String(c.name)}>{String(c.name)}</option>)}
+          </select>
+        )}
+        <button type="button" disabled={Boolean(why)} onClick={() => setChosen({ column, shown: true })}
+          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle disabled:opacity-50">
+          {LOAD_GROUPS}
+        </button>
+      </div>
+      {why && <p data-load-groups-why="" className={NOTE}>{why}</p>}
+      {!why && chosen.shown && (groups.length ? (
+        <ul aria-label={`Groups of ${column}`} className="grid gap-1 max-h-56 overflow-y-auto">
+          {groups.map((g) => (
+            <li key={g.value} data-load-group={g.value} className="flex items-center gap-2 rounded-md border border-border bg-surface px-2 py-1 text-[12px] text-text-primary">
+              <span dir="auto">{g.value}</span>
+              {g.records != null && <span className="ms-auto text-text-tertiary">{g.records.toLocaleString()}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : <p data-load-groups-none="" className={NOTE}>{column} has no groups in {profile.table || 'this table'}.</p>)}
+    </div>
+  );
+}
+
 function GroupingPart({ values, onChange, profile, read = null, settings, editable, chosenBy }) {
   const setting = settings.find((s) => s.name === GROUP_BY);
   const current = values[GROUP_BY] || GROUP_ALL;
@@ -112,6 +153,7 @@ function GroupingPart({ values, onChange, profile, read = null, settings, editab
       </div>
       <ShowAll state={cards} total={choices.filter((c) => c.columns.length === 1).length} hidden={choices.length - topShown(choices, { keep: keepCard }).length}
         onChange={setCards} name="grouping" />
+      <LoadGroups profile={profile} />
       {columns.length > 1 && (
         <Advanced open={combineOpen} onToggle={() => setCombineOpen((open) => !open)} what={GROUPING_COMBINE_WHAT}
           summary={ticked.length > 1 ? `Grouped by ${ticked.join(' + ')}` : `Grouped by ${ticked[0] || 'the default column'}`}>
