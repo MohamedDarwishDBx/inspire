@@ -3226,13 +3226,11 @@ function sampleCopyDestination(name) {
   return to;
 }
 
-// A copy's table name is the source schema's length, then the schema and the table joined by one underscore: samples.bakehouse.sales_franchises
-// lands as 9_bakehouse_sales_franchises. The length is the only part read back before the first underscore, so the name is injective:
-// two (schema, table) pairs never share a copy, even when identifiers contain underscores (a_b + c and a + b_c stay distinct). One helper
-// names both the statement and the returned copy, so the two cannot drift.
+// A copy's table name is the source schema and the table joined by a double underscore: samples.bakehouse.sales_franchises
+// lands as bakehouse__sales_franchises. One helper names both the statement and the returned copy, so the two cannot drift.
 function sampleCopyTable(source) {
   const from = tableParts(source);
-  return `${from.schema.length}_${from.schema}_${from.table}`;
+  return `${from.schema}__${from.table}`;
 }
 
 function sampleCopyName(source, destination) {
@@ -3243,6 +3241,20 @@ function sampleCopyName(source, destination) {
 function sampleTableRef(name) {
   const t = tableParts(name);
   return `\`${t.catalog}\`.\`${t.schema}\`.\`${t.table}\``;
+}
+
+// Two tables picked in one copy request that land on one name (a__b + c and a + b__c both give a__b__c) cannot both be copied: the
+// second would reuse or refuse the first. Returns the plain refusal naming both tables, or '' when every name is distinct.
+function sampleCopyClash(sources, destination) {
+  const named = new Map();
+  for (const source of sources) {
+    const copy = sampleCopyName(source, destination);
+    if (named.has(copy) && named.get(copy) !== source) {
+      return `${named.get(copy)} and ${source} would both copy to ${copy}. Copy one of them on its own.`;
+    }
+    named.set(copy, source);
+  }
+  return '';
 }
 
 function sampleCopyStatement(source, destination) {
@@ -3995,6 +4007,7 @@ module.exports = {
   sampleCopyDestination,
   sampleCopyName,
   sampleCopyTable,
+  sampleCopyClash,
   sampleCopyStatement,
   sampleCopyFailureKind,
   samplesNeedChoice,

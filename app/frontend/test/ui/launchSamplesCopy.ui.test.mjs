@@ -59,7 +59,7 @@ test('copy chosen: one action copies into the schema the person named, and the r
     await until(async () => !(await startButton(page).isDisabled()), 'Start is ready once the copies are in the picks');
     await startButton(page).click();
     await until(() => made.launches.length === 1, 'the run was sent once');
-    assert.equal(made.launches[0].params['01_uc_metadata'], `${DEST}.9_bakehouse_sales_transactions`, 'the run request names the copy (schema length, schema, table)');
+    assert.equal(made.launches[0].params['01_uc_metadata'], `${DEST}.bakehouse__sales_transactions`, 'the run request names the copy (schema length, schema, table)');
   } finally {
     await ui.close();
   }
