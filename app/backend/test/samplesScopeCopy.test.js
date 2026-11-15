@@ -76,3 +76,23 @@ test('the backend keeps the scope of a copied table when the copy destination sc
   const kept = jobParams.validateTableScopeParams(params);
   assert.deepEqual(Object.keys(JSON.parse(kept['17_table_scope'])), [COPY, 'use_case_label']);
 });
+
+// Two samples tables with one table name in different schemas: their copies must not share a name, and each scope stays on its own copy.
+test('two samples tables with one table name in different schemas copy to different tables, and their scopes stay separate', async () => {
+  const impl = require('../lib/inspireImplement');
+  const S = await lib('samplesCopy.js');
+  const dest = { catalog: 'inspire_kinds_rc7', schema: '_inspire' };
+  const A = 'samples.bakehouse.sales_franchises';
+  const B = 'samples.tpch.sales_franchises';
+  const copyA = impl.sampleCopyName(A, dest);
+  const copyB = impl.sampleCopyName(B, dest);
+  assert.notEqual(copyA, copyB, 'the copies do not collide');
+  assert.equal(copyA, 'inspire_kinds_rc7._inspire.bakehouse_sales_franchises');
+  assert.match(impl.sampleCopyStatement(A, dest), new RegExp(`\`bakehouse_sales_franchises\` AS SELECT`));
+  assert.match(impl.sampleCopyStatement(B, dest), new RegExp(`\`tpch_sales_franchises\` AS SELECT`));
+  const scopeB = { columns: ['franchiseID'], rows: [{ column: 'franchiseID', op: '>=', values: ['3000001'] }] };
+  const moved = S.scopesAfterSampleCopies({ [A]: SCOPE, [B]: scopeB }, [{ source: A, copy: copyA }, { source: B, copy: copyB }]);
+  assert.deepEqual(moved[copyA], SCOPE);
+  assert.deepEqual(moved[copyB], scopeB);
+  assert.equal(Object.keys(moved).length, 2);
+});

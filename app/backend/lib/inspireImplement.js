@@ -3226,8 +3226,16 @@ function sampleCopyDestination(name) {
   return to;
 }
 
+// A copy takes its source schema into its name, so two samples tables with one table name (in different schemas) never share a copy:
+// samples.bakehouse.sales_franchises lands as <destination>.bakehouse_sales_franchises (REQ-242 follow-up). One helper names both the
+// statement and the returned copy, so the two cannot drift.
+function sampleCopyTable(source) {
+  const from = tableParts(source);
+  return `${from.schema}_${from.table}`;
+}
+
 function sampleCopyName(source, destination) {
-  return `${destination.catalog}.${destination.schema}.${tableParts(source).table}`;
+  return `${destination.catalog}.${destination.schema}.${sampleCopyTable(source)}`;
 }
 
 // A table name as a quoted three-part reference, e.g. `samples`.`bakehouse`.`sales`.
@@ -3237,8 +3245,7 @@ function sampleTableRef(name) {
 }
 
 function sampleCopyStatement(source, destination) {
-  const from = tableParts(source);
-  return `CREATE TABLE \`${destination.catalog}\`.\`${destination.schema}\`.\`${from.table}\` AS SELECT * FROM ${sampleTableRef(source)}`;
+  return `CREATE TABLE \`${destination.catalog}\`.\`${destination.schema}\`.\`${sampleCopyTable(source)}\` AS SELECT * FROM ${sampleTableRef(source)}`;
 }
 
 // Why a copy failed: 'exists' (the copy's name is already a table), 'no_schema' (the destination schema or catalog is missing), or '' (anything else).
