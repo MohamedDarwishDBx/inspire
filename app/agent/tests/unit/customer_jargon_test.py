@@ -156,3 +156,12 @@ def test_a_bare_internal_object_name_still_fails_and_a_qualified_table_name_pass
     """D-NAMES / coordinator: the internal_object term catches a bare __token only. A catalog.schema.table name is kept."""
     assert "internal_object" in internal_hits("Skip __constraints")  # must-exclude: a bare token still fails
     assert internal_hits("the table main.inspire.demand_out__series does not exist") == []  # must-keep
+
+
+def test_req249_python_repr_fails_and_a_plain_sentence_passes():
+    """REQ-249: a Python or pandas object dump is never customer copy (must-fail); a plain sentence with a number is kept."""
+    dump = "<bound method Series.prod of inspire_group 0 1\nName: 165, dtype: object>"
+    assert "python_repr" in internal_hits(dump), "must-fail: the repr that reached a row explanation on the walker run"
+    assert "python_repr" in internal_hits("the score <function fraud_score at 0x7f3a> was printed"), "must-fail: a function repr"
+    assert internal_hits("Average transaction value rose 12% to 340 USD over the last 30 days.") == [], "must-keep: a plain sentence"
+    assert internal_hits("Name: Acme Corp, the largest account in the region") == [], "must-keep: a name label"

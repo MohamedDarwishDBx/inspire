@@ -49,6 +49,12 @@
       "flags": "",
       "why": "the discovery mode name as a label on run output; the chooser may name the modes, run output says Discovery",
       "scope": "run_output"
+    },
+    {
+      "id": "python_repr",
+      "pattern": "<bound method |<function |<built-in |<class '|object at 0x|\\bdtype: \\w+|\\bName: \\S+,? dtype",
+      "flags": "",
+      "why": "a Python or pandas object dump such as '<bound method Series.prod of ... Name: 165, dtype: object>' (REQ-249): Genie's code formatted a method or a Series instead of its value"
     }
   ],
   "run_output_files": [
