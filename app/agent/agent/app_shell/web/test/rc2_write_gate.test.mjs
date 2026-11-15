@@ -19,3 +19,14 @@ test('a nested write inside the running one still runs at once', async () => {
   const out = await runWrite('takeAll', async () => runWrite('choice:all', async () => 'inner', { inside: true }));
   assert.equal(out, 'inner');
 });
+
+test('a repeat of the same write while it is in flight joins it: the double click sends one write and both presses get its result', async () => {
+  let sent = 0;
+  const write = async () => { sent += 1; await tick(20); return 'once'; };
+  const [a, b] = await Promise.all([runWrite('work:done:r1', write), runWrite('work:done:r1', write)]);
+  assert.equal(sent, 1, 'the second press of the same write sends nothing new');
+  assert.equal(a, 'once');
+  assert.equal(b, 'once');
+  assert.equal(await runWrite('work:done:r1', write), 'once', 'once it has landed the same key runs again');
+  assert.equal(sent, 2);
+});
