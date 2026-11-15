@@ -1,7 +1,7 @@
 import {
   BUILT_ASSET_STATES, IMPLEMENT_DONE_STATUSES, IMPLEMENT_OUTPUTS, IMPLEMENT_UNINSTALLED, IMPLEMENT_VIBE_NOT_MET, assetLabel, builtVersion, heldAsks,
   holderNames, holdersText, holdoutText, joinWords, partAsks, partLabel, partOf, rebuildableOutputs, statusChip, versionActive, vibesKey, VIBE_NOT_MET_FIRST,
-  APP_INSIDE_PLACEMENT, VIBE_FEATURES_LABEL, VIBE_PREVIOUS_DEFAULT, insideInspire, isAppUpdate, mvpFilterMatches, nextSpecFrom, openVibeAsks, undeliveredOutputs, withCollectedVibes,
+  APP_INSIDE_PLACEMENT, VIBE_FEATURES_LABEL, VIBE_PREVIOUS_DEFAULT, insideInspire, isAppUpdate, liveAppVersion, mvpFilterMatches, nextSpecFrom, openVibeAsks, undeliveredOutputs, withCollectedVibes,
 } from './implementWizard.js';
 import { formatWhen } from './formatWhen.js';
 import { plural } from './plural.js';
@@ -763,8 +763,9 @@ export function controlActionText(entry) {
 
 const newestFirst = (history) => [...(history || [])].sort((a, b) => (b.spec_version || 0) - (a.spec_version || 0));
 
+// REQ-241: the live version is the one rule liveAppVersion holds (the backend uses it too). Without a live App it is the newest done build.
 export function liveVersion(history) {
-  return newestFirst(history).find((row) => DONE.includes(String(row?.status)))?.spec_version ?? null;
+  return liveAppVersion(history) ?? newestFirst(history).find((row) => DONE.includes(String(row?.status)))?.spec_version ?? null;
 }
 
 export function removeKeptChanges(version) {

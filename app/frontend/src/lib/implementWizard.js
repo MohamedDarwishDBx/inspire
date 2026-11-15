@@ -499,12 +499,35 @@ export function builtVersion(history) {
 
 export const APP_UPDATED_TEXT = 'App updated to the current Inspire App code';
 
-export function liveAppVersion(history) {
+// REQ-241: under keep-previous the previous App keeps its name and serves people; the newest build's App is a side App at a new name.
+// That previous App is listed in kept.assets with output 'app'. Its version is the live App version.
+export function keptAppEntry(row) {
+  const listed = row?.asset_status?.kept?.assets;
+  const found = Array.isArray(listed) ? listed.find((a) => a?.output === 'app' && Number.isInteger(Number(a.version)) && Number(a.version) > 0) : null;
+  return found || null;
+}
+
+function liveRowOf(history) {
   const rows = [...(history || [])].sort((a, b) => (b?.spec_version || 0) - (a?.spec_version || 0));
-  const live = rows.find((r) => r?.spec_version === builtVersion(rows));
+  return rows.find((r) => r?.spec_version === builtVersion(rows)) || null;
+}
+
+// The one rule for the App's live version (REQ-241; the backend and the Build page both read it from here).
+export function liveAppVersion(history) {
+  const live = liveRowOf(history);
+  const kept = keptAppEntry(live);
+  if (kept) return Number(kept.version);
   const entry = live?.asset_status?.app;
   if (!entry || typeof entry !== 'object' || !IMPLEMENT_DONE_STATUSES.includes(String(entry.state))) return null;
   const version = Number(entry.spec_version ?? live.spec_version);
+  return Number.isInteger(version) && version > 0 ? version : null;
+}
+
+// The side App of a keep-previous build: the newest build's App, not live until it is published as live (REQ-241).
+export function sideAppVersion(history) {
+  const live = liveRowOf(history);
+  if (!keptAppEntry(live)) return null;
+  const version = Number(live.asset_status?.app?.spec_version ?? live.spec_version);
   return Number.isInteger(version) && version > 0 ? version : null;
 }
 
