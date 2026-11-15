@@ -149,6 +149,6 @@ def test_the_re_asks_and_the_alignment_pass_are_wired_to_the_customer_rule(agent
     from _agentload import agent_source
 
     source = agent_source()
-    assert source.count("strategy_rule=strategy_rule))") == 2, "both name re-asks (labels, lengths) pass the customer rule on"
+    assert source.count("strategy_rule=strategy_rule") == 2, "both name re-asks (labels, lengths) pass the customer rule on"
     assert 'strategy_rule = strategy_name_rule(getattr(self, "strategy_tree", None))' in source
     assert "if apply_customer_goal_name(uc, record, tree, names_in_use):" in source
