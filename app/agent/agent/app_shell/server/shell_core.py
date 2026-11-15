@@ -4272,8 +4272,8 @@ class Shell:
         noun = "dates" if date else "values to pick"
         if not values:
             readable = "values that read as dates" if date else "values to pick"
-            return CHECK_NOTE, f"{where}: {label} finds nothing because its column has no {readable} in its {rows} rows (not a filter problem)"
-        return CHECK_FAILED, f"{where}: {label} found no {noun} although {values} of its {rows} rows hold one"
+            return CHECK_NOTE, f"{where}: {label} finds nothing because its column has no {readable} in its {shell_sql.plural(rows, 'row')} (not a filter problem)"
+        return CHECK_FAILED, f"{where}: {label} found no {noun} although {values} of its {shell_sql.plural(rows, 'row')} hold one"
 
     def dataset_empty(self, page: dict, name: str, ws, who=None) -> bool:
         """True when the dataset holds no row in its whole scope, with no filter applied."""

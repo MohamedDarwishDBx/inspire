@@ -79,7 +79,7 @@ def test_a_second_build_waits_for_the_build_changing_the_same_app_and_says_which
             inside.append(dict(table.rows[KEY]))
     assert inside == [{"B": "operation=Implement Use Cases session=5150 uc=N02-U01 spec=3"}], "only one build changes the App at a time"
     assert len(slept) == 3 and all(agent_ns["IMPLEMENT_LOCK_POLL_S"] <= s <= 2 * agent_ns["IMPLEMENT_LOCK_POLL_S"] for s in slept)
-    assert second.steps == [("N02-U01", "App", WAIT, "started", None), ("N02-U01", "App", FREE, "ended_success", 7)], \
+    assert second.steps == [("N02-U01", "Agentic App", WAIT, "started", None), ("N02-U01", "Agentic App", FREE, "ended_success", 7)], \
         "the wait shows once in the feed, and its step ends when the App is free"
     assert table.events == [("acquire", "A", KEY)] + [("acquire", "B", KEY), ("release", "B", KEY)] * 3 + [
         ("acquire", "B", KEY), ("release", "B", KEY), ("release", "A", KEY)], "a waiting build never keeps its own row while it waits"
@@ -139,7 +139,7 @@ def test_a_holder_that_cannot_be_read_is_named_another_build(agent_ns, monkeypat
     with first._implement_asset_lock("app", "inspire-hub-acme", "N01-U01", 6):
         with second._implement_asset_lock("app", "inspire-hub-acme", "N02-U01", 3):
             pass
-    assert second.steps[0][2].startswith("waiting for another build to finish changing the App inspire-hub-acme")
+    assert second.steps[0][2].startswith("waiting for another build to finish changing the Agentic App inspire-hub-acme")
     assert second.logger.matching(f"[IMPLEMENT-ASSET-LOCK] {KEY}: the build holding it could not be read: warehouse stopped")
 
 

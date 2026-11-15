@@ -212,7 +212,7 @@ def test_try_again_rebuilds_only_the_missed_asks_on_top_of_the_built_part_and_ke
                                 "kept": {"app:page:n01_u01": ["Keep the region filter"]}, "file": "page.json", "based": True}
     assert json.loads(built["bases"]["app"]["page.json"]) == PAGE, "Genie starts from the page as it is now"
     block = built["block"]
-    assert ("This time Inspire rebuilds only part of this App: the page n01_u01 of the App alone.\nThe page.json in your working folder "
+    assert ("This time Inspire rebuilds only part of this Agentic App: the page n01_u01 of the Agentic App alone.\nThe page.json in your working folder "
             "is the App as it is now: start from it, change only what the parts and asks named here need, and keep everything else in "
             "it as it is.") in block
     assert "try again on only these asks, which the last build missed:\n1. Add a count of customers at risk" in block
