@@ -386,7 +386,7 @@ REVIEWED = {
         ('_implement_settings_owner_check', 'refusal'),
         ('implement_vibe_routes', "'; '.join(problems)"),
         ('_implement_one_locked', 'implement_stop_message(outcome, spec, trains_model=self._implement_trains_model(use_case))'),
-        ('_implement_output_vibes_gate', "implement_vibes_missed_text(found['resend'])"),
+        ('_implement_output_vibes_gate', "implement_vibes_missed_text(found['resend'], None, implement_asset_titles(context.get('asset_status')))"),
         ('_implement_output_vibes_gate', "implement_vibes_repair(found['resend'], IMPLEMENT_OUTPUT_VIBES_LEAD)"),
         ('_implement_page_check', '[page]'),
         ('_implement_page_check', 'pages'),

@@ -82,7 +82,7 @@ def test_the_live_case_a_page_filter_added_for_a_table_ask_is_not_done(agent_ns,
     found, judged = _checks(agent_ns, PAGE, VIBE, {VIBE: SPLIT}, [verdict], V2, V1)
     assert [c["status"] for c in found] == ["missing", "missing"], found
     assert found[0]["evidence"].startswith(reason), found[0]
-    assert found[1]["evidence"] == "the built Fix plan table on the App page Costliest loss reasons and fixes never shows the words 'Act Now'"
+    assert found[1]["evidence"] == "the built Fix plan table on the App page Costliest loss reasons and fixes never shows the words 'Act Now'"  # REQ-237: by title
     assert len(judged) == 1 and SQL not in judged[0][1] and "act_now_row" not in judged[0][1]
 
 
@@ -181,8 +181,8 @@ def test_an_ask_the_builder_could_not_do_is_never_a_silent_done(agent_ns):
     found, _judged = _checks(agent_ns, PAGE, "s", asks, [{"status": "done", "evidence": "column filter: priority tier", "where": "records"}],
                              V3, V2, ["Add a slider on the loss: the App shell has no slider filter"])
     assert found == [{"ask": "Add a slider on the loss", "status": "missing", "evidence": "the App shell has no slider filter"}]
-    assert agent_ns["implement_vibes_warnings"](PAGE, found) == [
-        "App page n01_u01 vibe not done: Add a slider on the loss: the App shell has no slider filter"]
+    assert agent_ns["implement_vibes_warnings"](PAGE, found, 0, None, {PAGE: "Costliest loss reasons and fixes"}) == [
+        "App page Costliest loss reasons and fixes vibe not done: Add a slider on the loss: the App shell has no slider filter"]
 
 
 def test_the_split_marks_keep_asks_and_the_element_an_ask_names(agent_ns):

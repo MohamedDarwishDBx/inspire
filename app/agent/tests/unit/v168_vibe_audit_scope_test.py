@@ -295,7 +295,7 @@ def test_a_chart_kind_asked_of_every_chart_is_checked_on_each_chart(agent_ns):
     page = _page(U09)
     ask = {"ask": "Make every chart a line chart", "check": {"kind": "chart_type", "value": "line"}, "keep": False, "where": ""}
     checks, _judged = _round(agent_ns, U09_ASSET, "x", [ask], page, chart_types=shell_sql.CHART_TYPES)
-    assert checks[0]["status"] == "missing" and "Costliest return reasons" in checks[0]["evidence"], checks
+    assert checks[0]["status"] == "missing" and "chart Costliest return reasons" in checks[0]["evidence"], checks  # REQ-237: named by title, not by id
     lines = dict(page, charts=[dict(c, type="line") for c in page["charts"]])
     checks, _judged = _round(agent_ns, U09_ASSET, "x", [ask], lines, chart_types=shell_sql.CHART_TYPES)
     assert checks[0]["status"] == "done" and checks[0]["evidence"].count("type line") == 5, checks
