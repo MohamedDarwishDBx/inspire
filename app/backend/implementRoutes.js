@@ -607,7 +607,7 @@ function registerImplementRoutes(app, deps) {
       const ownSchema = latest ? null : await useCaseSchemaOf(req, warehouseId, `${catalog}.${schema}`, sid, useCaseId, session.business_name);
       const { missing, app_unreadable: appUnreadable } = await sourceVerdict(req, warehouseId, useCase, latest, q(req, 'result_table') || ownSchema?.table || '');
       const widgets = I.implementWidgets(history, useCase.genie_instruction || useCase.generate_genie_code_instruction || '');
-      const assets = I.carriedAssets(history);
+      const assets = I.liveCarriedAssets(history);
       const goneAssets = await goneMergeAssets(req, assets);
       const family = I.executionFamily(useCase.code_structure_mandate);
       res.json({
@@ -1416,7 +1416,7 @@ function registerImplementRoutes(app, deps) {
     if (widgetIssues.length) throw I.badRequest(`widget values are out of range: ${widgetIssues.join('; ')}`);
     if (I.IMPLEMENT_MERGE_OUTPUTS.some((name) => spec.outputs.merge[name])) {
       const targets = await loadMergeTargets(req, warehouseId, catalog, schema, sid, useCaseId, spec.outputs.merge);
-      const mergeIssues = I.mergeProblems(spec, targets, I.carriedAssets(history));
+      const mergeIssues = I.mergeProblems(spec, targets, I.liveCarriedAssets(history));
       if (mergeIssues.length) throw I.badRequest(mergeIssues.join('; '));
     }
     if (spec?.money?.rate_table) await refuseTableTypes(req, warehouseId, [spec.money.rate_table.table], { unknownType: true });
@@ -1667,7 +1667,7 @@ function registerImplementRoutes(app, deps) {
         feed = I.genieFeed(text, useCaseId, history[0] && history[0].created_at);
       }
     }
-    const appName = I.carriedAssets(history).app;
+    const appName = I.liveCarriedAssets(history).app;
     const jobId = int64Id((history.find((r) => r.job_id) || {}).job_id);
     const held = history[0] && history[0].status === I.IMPLEMENT_VIBE_NOT_MET ? history[0].spec_version : null;
     const appUpdate = history[0] ? I.appShellUpdate(history, buildStamp()) : null;
@@ -1801,7 +1801,7 @@ function registerImplementRoutes(app, deps) {
     const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
     const [history, person] = await Promise.all([loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId), personOf(req)]);
     const table = String(history[0]?.spec_json?.config?.result_table || '').trim();
-    const appTable = FB.appFeedbackTable({ database: `${catalog}.${schema}`, appName: history[0]?.app_name, useCaseId });
+    const appTable = FB.appFeedbackTable({ database: `${catalog}.${schema}`, appName: I.liveAppOf(history)?.name, useCaseId });
     const before = I.previousBuilt(history);
     const refused = before ? I.implementSettingsOwnerRefusal(before, person.username) : { status: 409, message: I.IMPLEMENT_SETTINGS_NOT_BUILT };
     return { sid, warehouseId, catalog, schema, useCaseId, history, person, table, appTable, before, refused };

@@ -88,3 +88,32 @@ test('without a kept App the publish listing and App update use the newest built
   assert.deepEqual(I.liveAppOf(plain), { name: 'app-v3', url: 'https://v3.example.test', version: 3 });
   assert.equal(I.runPages(plain)[0].app_name, 'app-v3');
 });
+
+// REQ-241 (D-LIVE), carried-state class: carriedAssets is the NEWEST build's outputs (side App), liveCarriedAssets is the App that serves people (kept v6).
+// Live-App sites (route App status and merge checks, control targets, alert targets, merge registry, settings target) read liveCarriedAssets.
+test('live-App sites read the kept live App, the newest-build helper reads the side App (carried-state class)', () => {
+  const I = require('../lib/inspireImplement');
+  const rows = keptShapeRows();
+  assert.equal(I.carriedAssets(rows).app, 'side-app-v7', 'the newest build carries the side App');
+  assert.equal(I.liveCarriedAssets(rows).app, 'kept-app-live', 'the live App is the kept one');
+  const plain = [{ session_id: 's1', use_case_id: 'UC1', spec_version: 3, status: 'ready', app_name: 'app-v3', app_url: 'https://v3.example.test',
+    updated_at: '2026-11-15T04:00:00Z', spec_json: { use_case_name: 'Fraud', outputs: { app: true } }, asset_status: { app: { state: 'ready', spec_version: 3, snapshot: true } } }];
+  assert.equal(I.liveCarriedAssets(plain).app, 'app-v3', 'without a kept App the newest App is live');
+  assert.equal(I.liveCarriedAssets([]).app, undefined, 'no build, no live App');
+});
+
+test('the settings target of the live App is the kept App URL, not the side App URL', () => {
+  const I = require('../lib/inspireImplement');
+  assert.equal(I.implementSettingsTarget(keptShapeRows(), 'UC1').url, 'https://kept.example.test');
+});
+
+// REQ-241 (D-LIVE), App reads class: the grant and check record is the live App's (its own read objects on the kept row), not the side build's.
+test('the App reads record names the live App and reads the live row objects (App reads class)', () => {
+  const I = require('../lib/inspireImplement');
+  const rows = keptShapeRows();
+  rows[1].asset_status.app = { state: 'ready', spec_version: 6, snapshot: true, access_mode: 'sp', sources_read: ['cat.sch.tbl_v6'], reasons_view: 'cat.sch.reasons_v6' };
+  const record = I.appReadsRecord(rows);
+  assert.equal(record.app_name, 'kept-app-live', 'the grants go to the live App');
+  assert.equal(record.row.spec_version, 6, 'the objects come from the kept row that the live App serves');
+  assert.deepEqual(record.tables.map((t) => t.table).sort(), ['cat.sch.reasons_v6', 'cat.sch.tbl_v6']);
+});
