@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { getRecords } from './api.js';
 import { cellText, formatValue, integer, isKeyColumn, numberOf } from './format.js';
-import { IN_PROGRESS, NEW, UNDO_CLOSE, isClosed, statusKind, actError, canDecide, choiceLabel, choiceValues, listAsOf, matchOf, noDecisionText, pageDecides, recordKeyOf, statusChoices, undoBatchOf } from './records.js';
+import { IN_PROGRESS, NEW, UNDO_CLOSE, isClosed, undoWordOf, statusKind, actError, canDecide, choiceLabel, choiceValues, listAsOf, matchOf, noDecisionText, pageDecides, recordKeyOf, statusChoices, undoBatchOf } from './records.js';
 import { QueueBulk, useActs } from './Work.jsx';
 const RecordPanel = lazy(() => import('./Records.jsx').then((m) => ({ default: m.RecordPanel })));
 import { useList } from './Layouts.jsx';
@@ -166,7 +166,7 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
       </div>
       <div className="choice-act" role="group" aria-label={`Decide ${row[page.records?.label] ?? key}`}>
         {closed && <span className="choice-done" data-decided><Icon name="check" size={13} />{decidedText(row, statusChoices(page))}</span>}
-        {batch && !undoing && <button type="button" className="link" data-unmerge onClick={() => setUndoing(true)}><Icon name="undo" size={13} />{page.records?.undo || 'Undo'}</button>}
+        {batch && !undoing && <button type="button" className="link" data-unmerge onClick={() => setUndoing(true)}><Icon name="undo" size={13} />{undoWordOf(page.records)}</button>}
         {!closed && canAct && choices.map((c) => (
           <SaveButton key={c.id} write={`choice:${key}:${c.id}`} className={`btn btn--sm ${suggested?.id === c.id ? 'btn--pri' : ''}`} data-choice={c.id}
             onClick={() => (statusKind(c.status) === 'dismissed' ? setSkipping(c) : onChoose(row, c))}>
@@ -180,7 +180,7 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
       {undoing && (
         <div className="choice-why" role="group" aria-label="Undo this decision">
           <span>{UNDO_CLOSE}</span>
-          <SaveButton write={`undo:${key}`} className="btn btn--sm btn--pri" onClick={async () => { if (await onUndo(batch, `undo:${key}`)) setUndoing(false); }}>Undo it</SaveButton>
+          <SaveButton write={`undo:${key}`} className="btn btn--sm btn--pri" onClick={async () => { if (await onUndo(batch, `undo:${key}`)) setUndoing(false); }}>{undoWordOf(page.records)}</SaveButton>
           <button type="button" className="link" onClick={() => setUndoing(false)}>Keep it</button>
         </div>
       )}

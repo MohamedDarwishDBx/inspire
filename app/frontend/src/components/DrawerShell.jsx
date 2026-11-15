@@ -23,15 +23,10 @@ const KEEP_OPEN = '[aria-modal="true"], [role="menu"], [role="listbox"], [data-r
 
 export default function DrawerShell({ label, closeLabel, focusKey = null, focusOnOpen = true, onClose, title, actions = null, below = null, footer = null, center = false, side = false, dock = null, bodyRef = null, bodyProps = {}, children, ...rest }) {
   const panelRef = useRef(null);
-  // A modal drawer (not side) traps Tab while it is open; its Escape stays in the handler below.
-  useModal(panelRef, onClose, { enabled: !side, escape: false });
-  const wide = useWide();
-  const docked = Boolean(side && dock && wide);
   const openerRef = useRef(null);
-  const [width, setWidth] = useState(() => loadPaneWidth(DRAWER_WIDTH));
-  useEffect(() => { if (!center) savePaneWidth(DRAWER_WIDTH, width); }, [width, center]);
-
   const openedByPerson = useRef(false);
+  // Capture the opener before useModal moves focus into the panel. Effects run in declaration order, so a capture placed
+  // after useModal would record the drawer's own first control, which is gone when the drawer closes (focus lost to body).
   useEffect(() => {
     openerRef.current = document.activeElement;
     openedByPerson.current = openerRef.current instanceof HTMLElement && openerRef.current !== document.body;
@@ -40,6 +35,12 @@ export default function DrawerShell({ label, closeLabel, focusKey = null, focusO
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
     };
   }, []);
+  // A modal drawer (not side) traps Tab while it is open; its Escape stays in the handler below.
+  useModal(panelRef, onClose, { enabled: !side, escape: false });
+  const wide = useWide();
+  const docked = Boolean(side && dock && wide);
+  const [width, setWidth] = useState(() => loadPaneWidth(DRAWER_WIDTH));
+  useEffect(() => { if (!center) savePaneWidth(DRAWER_WIDTH, width); }, [width, center]);
 
   useEffect(() => {
     if (openedByPerson.current && focusOnOpen) panelRef.current?.focus({ preventScroll: true });

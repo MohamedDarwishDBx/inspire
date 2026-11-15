@@ -103,6 +103,19 @@ def table_name(name) -> str:
     return ".".join(f"`{p}`" for p in parts)
 
 
+DATA_QUALITY_FLAG = "data_quality_flag"
+
+
+def flagged_ok_sql(names, segments=(), alias: str = "") -> str:
+    """The one expression for 'this row was evaluated'. The notebook writes 'ok' on every row it could check; any other flag is the
+    reason it could not be checked. Without the column every row counts as evaluated."""
+    prefix = f"{alias}." if alias else ""
+    ok = f"{prefix}`{DATA_QUALITY_FLAG}` = 'ok'" if DATA_QUALITY_FLAG in names else "TRUE"
+    if segments and "segment_or_item" in names:
+        ok += f" AND CAST({prefix}`segment_or_item` AS STRING) IN (" + ", ".join(sql_text(str(s)) for s in segments) + ")"
+    return ok
+
+
 def sql_list(values) -> str:
     return ", ".join(f"'{v}'" for v in values)
 
@@ -328,6 +341,7 @@ def estimated_cell(names: set, tier, alias: str, stake: str) -> tuple:
         return None, None, None
     shown = f"CAST({alias}.{quote(tier)} AS STRING)"
     opened = f" AND COALESCE({alias}.`action_status`, '{NEW}') IN ({sql_list(OPEN_STATUSES)})" if "action_status" in names else ""
+    opened += f" AND {flagged_ok_sql(names, alias=alias)}" if DATA_QUALITY_FLAG in names else ""
     counted = (f"COALESCE({alias}.`is_current` AND {alias}.`change_source` <> 'delete' AND {shown} IN ({sql_list(FLAGGED_TIERS)}){opened}, "
                f"FALSE)")
     return shown, f"CASE WHEN {counted} THEN 1 ELSE 0 END", f"CASE WHEN {counted} THEN {stake} END"

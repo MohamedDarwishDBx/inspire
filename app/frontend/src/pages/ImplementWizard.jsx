@@ -3544,7 +3544,7 @@ function Overlay({ title, uc, steps, stepsReady = true, step, reach = [], done =
             <p data-step-bar-loading="" className="text-[11px] text-text-tertiary">Loading the steps…</p>
           )}
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+          {children}
         </div>
       </div>
     </BodyPortal>
