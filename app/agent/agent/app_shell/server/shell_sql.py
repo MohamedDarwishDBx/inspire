@@ -3709,8 +3709,8 @@ def focus_conditions(page: dict, focus: dict, context: dict, params) -> list:
     statuses = page_statuses(page)
     opened = ", ".join(params.add(s) for s in statuses["open"])
     out = [f"COALESCE(c.`_inspire_status`, {params.add(statuses['unset'])}) IN ({opened})"]
-    if context.get("held"):
-        out.append("NOT COALESCE(c.`_inspire_held`, FALSE)")
+    # Held-back rows stay in a focus list: the focus tabs are the Dashboard's "Fix this" lists (trends_query counts held rows as open,
+    # and the All tab that carries a focus sends no window). Only the Open tab hides them (window_conditions).
     if context.get("checked"):
         out.append(checked_sql("c"))
     if focus["focus"] == "overdue":
