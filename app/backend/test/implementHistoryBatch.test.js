@@ -39,3 +39,42 @@ test('a run row is mapped back to its own use case (REQ-323)', async () => {
     await srv.close();
   }
 });
+
+// REQ-323: one missing summary table must not empty the run read of every other use case.
+test('one missing summary table still shows the other use cases runs (must-keep, REQ-323)', async () => {
+  const three = HISTORY.slice(0, 3);
+  const runs = [
+    { use_case_id: 'N01-U01', not_reliable: 'First run stopped', updated_at: '2026-11-14' },
+    { use_case_id: 'N01-U03', not_reliable: '', updated_at: '2026-11-15' },
+  ];
+  const missingMessage = '[TABLE_OR_VIEW_NOT_FOUND] The table or view `main`.`inspire`.`uc1_out_summary` cannot be found. SQLSTATE: 42P01';
+  const { app, sqlCalls } = makeApp({
+    history: three,
+    sqlErrors: { 'uc1_out_summary': missingMessage },
+    statements: { 'run_rank = 1': { rows: runs } },
+  });
+  const srv = await listen(app);
+  try {
+    const resp = await fetch(`${srv.url}/api/inspire/implement/history?${Q}`);
+    assert.equal(resp.status, 200);
+    const got = await resp.json();
+    const byId = Object.fromEntries(got.latest.map((row) => [row.use_case_id, row.latest_run]));
+    assert.deepEqual(byId['N01-U01'], { not_reliable: 'First run stopped', updated_at: '2026-11-14' }, 'the use case whose table exists keeps its run');
+    assert.deepEqual(byId['N01-U03'], { not_reliable: '', updated_at: '2026-11-15' }, 'the third use case keeps its run too');
+    assert.deepEqual(byId['N01-U02'], { not_reliable: '', updated_at: '' }, 'the use case with the missing table reads as no run, not as an error');
+    assert.ok(sqlCalls.filter((c) => String(c.sql).includes('_summary')).length >= 2, 'the batch failed, then each table was read on its own');
+  } finally {
+    await srv.close();
+  }
+});
+
+test('with every summary table present the route still issues one statement (REQ-323)', async () => {
+  const { app, sqlCalls } = makeApp({ history: HISTORY.slice(0, 5), statements: { 'run_rank = 1': { rows: [] } } });
+  const srv = await listen(app);
+  try {
+    await fetch(`${srv.url}/api/inspire/implement/history?${Q}`);
+    assert.equal(sqlCalls.filter((c) => String(c.sql).includes('_summary')).length, 1);
+  } finally {
+    await srv.close();
+  }
+});

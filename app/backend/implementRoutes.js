@@ -1317,18 +1317,32 @@ function registerImplementRoutes(app, deps) {
     }
   });
 
-  // REQ-323: the latest run of every row in one warehouse statement (I.latestRunsStatement), not one per use case.
+  // REQ-323: the latest run of every row in one warehouse statement (I.latestRunsStatement). If one summary table is missing, the batch
+  // fails, so each summary table is then read on its own: the use cases with a table that exists keep their runs.
   async function latestRunsOf(req, warehouseId, rows, historyOf) {
     for (const row of rows) if (row) row.older_build = I.olderBuildNote(historyOf(row.use_case_id), buildStamp());
     const withRuns = rows.filter((row) => row && I.runSummaryTable(row));
     if (!withRuns.length) return;
     const entries = withRuns.map((row) => ({ summaryTable: I.runSummaryTable(row), useCaseId: row.use_case_id }));
+    const readRuns = async (group) => I.latestRunsFrom(await sqlRows(req.dbHost, req.dbToken, warehouseId, I.latestRunsStatement(group)));
+    const missing = (err) => isMissingTableError(err) || I.isMissingColumnError(err);
+    let byUseCase;
     try {
-      const byUseCase = I.latestRunsFrom(await sqlRows(req.dbHost, req.dbToken, warehouseId, I.latestRunsStatement(entries)));
-      for (const row of withRuns) row.latest_run = byUseCase.get(String(row.use_case_id)) || I.latestRunFrom([]);
+      byUseCase = await readRuns(entries);
     } catch (err) {
-      if (isMissingTableError(err) || I.isMissingColumnError(err)) for (const row of withRuns) row.latest_run = I.latestRunFrom([]);
+      if (!missing(err)) return;
+      byUseCase = new Map();
+      const tables = [...new Set(entries.map((entry) => entry.summaryTable))];
+      for (const table of tables) {
+        const group = entries.filter((entry) => entry.summaryTable === table);
+        try {
+          for (const [id, run] of await readRuns(group)) byUseCase.set(id, run);
+        } catch (groupErr) {
+          if (!missing(groupErr)) continue;
+        }
+      }
     }
+    for (const row of withRuns) row.latest_run = byUseCase.get(String(row.use_case_id)) || I.latestRunFrom([]);
   }
 
   // REQ-231: who pressed Stop on this run, from the control log. A read that fails is no record, so the run reads as outside Inspire.
