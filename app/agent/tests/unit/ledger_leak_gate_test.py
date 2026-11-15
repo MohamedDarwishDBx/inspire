@@ -1,7 +1,7 @@
 """Leak gate for the public requirements ledger and CLAUDE.md.
 
-The leak patterns live in scripts/ledger_publish.py and are shared with the publisher, so the publisher and this gate
-cannot drift apart. The gate fails when docs/requirements/ledger.md or CLAUDE.md carries a 12-plus digit number, an email
+The leak patterns live in app/scripts/ledger_publish.py and are shared with the publisher, so the publisher and this gate
+cannot drift apart. The gate fails when app/docs/requirements/ledger.md or the root CLAUDE.md carries a 12-plus digit number, an email
 address, a workspace host, a home path, a token-like string, a customer name, a scratch App or catalog name, or a profanity.
 Must-fail cases plant each leak and must be caught. Must-keep cases show that public docs URLs and short ids pass.
 """
@@ -10,11 +10,12 @@ import sys
 
 import pytest
 
-ROOT = pathlib.Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(ROOT / "scripts"))
+APP = pathlib.Path(__file__).resolve().parents[3]  # app/
+REPO = APP.parent  # the repo root, where CLAUDE.md sits
+sys.path.insert(0, str(APP / "scripts"))
 import ledger_publish as lp  # noqa: E402
 
-PUBLIC_FILES = ("docs/requirements/ledger.md", "CLAUDE.md")
+PUBLIC_FILES = (APP / "docs" / "requirements" / "ledger.md", REPO / "CLAUDE.md")
 
 
 def kinds(text):
@@ -24,9 +25,9 @@ def kinds(text):
 def test_public_ledger_and_claude_md_have_no_leaks():
     leaks = {}
     for rel in PUBLIC_FILES:
-        found = lp.find_leaks((ROOT / rel).read_text(encoding="utf-8"))
+        found = lp.find_leaks(rel.read_text(encoding="utf-8"))
         if found:
-            leaks[rel] = found[:10]
+            leaks[str(rel)] = found[:10]
     assert leaks == {}
 
 
