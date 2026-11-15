@@ -182,6 +182,7 @@ test('Performance compares the approved plan with the actuals and counts the val
   assert.match(await page.locator('[data-stat="on_plan"]').innerText(), /2 of 3/);
   assert.equal(await page.locator('[data-stat="off_plan"].is-bad').count(), 1);
   assert.match(await page.locator('[data-stat="realized"]').innerText(), /\$4\.5K\s+of \$7K planned/);
+  assert.deepEqual(await page.locator('.plan-t thead th').allInnerTexts(), ['Line', 'Planned', 'Now', 'Gap', 'State', 'Override reason']);
   assert.deepEqual(await page.locator('[data-perf-line]').evaluateAll((els) => els.map((e) => [e.dataset.perfLine, e.dataset.state])), [['K3', 'off'], ['K1', 'on']]);
   assert.match(await page.locator('[data-perf-line="K3"]').innerText(), /Tea tin\s+130\s+90\s+[−-]40\s+Off plan\s+Short of tins/);
   assert.deepEqual(errors, []);
@@ -438,6 +439,7 @@ test('the forecast Plan section compares each past forecast with its actual, and
   await page.locator('[data-perf-line]').first().waitFor();
   assert.equal(await page.locator('[data-stat="realized"]').count(), 0);
   assert.match(await page.locator('[data-stat="version"]').innerText(), /Model forecast/);
+  assert.deepEqual(await page.locator('.plan-t thead th').allInnerTexts(), ['Line', 'Forecast', 'Now', 'Gap', 'State', 'Override reason']);
   assert.deepEqual(await page.locator('[data-perf-line]').evaluateAll((els) => els.map((e) => [e.dataset.perfLine, e.dataset.state])),
     [['S2|2026-10', 'off'], ['S1|2026-10', 'on']]);
   assert.deepEqual(errors, []);
