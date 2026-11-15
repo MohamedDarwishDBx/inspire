@@ -76,7 +76,7 @@ def test_a_date_filter_over_a_string_date_reads_bounds_and_its_where_with_the_sa
     where_sql, _where_params = shell_sql.chart_query(STRING_PAGE, "loss_trend", {"run_date": {"from": "2024-01-01", "to": "2024-02-01"}})
     assert "TRY_CAST(`trip_date` AS DATE)" in bounds_sql
     assert "TRY_CAST(`trip_date` AS DATE)" in scope_sql
-    assert "TRY_CAST(`trip_date` AS DATE) BETWEEN" in where_sql, "a string that is not a date reads as NULL, never as a query error"
+    assert "COALESCE(TRY_CAST(`trip_date` AS DATE)" in where_sql and " BETWEEN " in where_sql, "a string that is not a date reads as NULL, never as a query error"
 
 
 def test_a_date_filter_over_a_forecast_table_reads_the_forecast_rows_it_shows(tmp_path):

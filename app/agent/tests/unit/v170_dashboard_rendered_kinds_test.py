@@ -91,8 +91,8 @@ def test_no_dashboard_definition_shows_a_made_up_date_in_a_default_a_parameter_o
 def test_a_part_dataset_keeps_every_row_for_all_and_for_an_open_ended_range(agent_ns, tmp_path):
     _page_, _doc_, parts = _dated(agent_ns, tmp_path)
     sql = "".join(parts["queryLines"])
-    assert ("(:filter_0 IS NULL OR ((:filter_0.min IS NULL OR CAST(`as_of_date` AS DATE) >= :filter_0.min) AND "
-            "(:filter_0.max IS NULL OR CAST(`as_of_date` AS DATE) <= :filter_0.max)))") in sql
+    assert ("(:filter_0 IS NULL OR ((:filter_0.min IS NULL OR TRY_CAST(`as_of_date` AS DATE) >= :filter_0.min) AND "
+            "(:filter_0.max IS NULL OR TRY_CAST(`as_of_date` AS DATE) <= :filter_0.max)))") in sql
     assert "BETWEEN :filter_" not in sql, "BETWEEN a date and no date drops every row, which a range with one end left open sends"
 
 
@@ -101,8 +101,8 @@ def test_the_dataset_check_binds_a_range_with_no_default_as_all_and_a_chosen_ran
     _page_, _doc_, parts = _dated(agent_ns, tmp_path)
     bound = check(parts)
     assert ":filter_" not in bound
-    assert ("(CAST(NULL AS STRUCT<min: DATE, max: DATE>) IS NULL OR ((CAST(NULL AS DATE) IS NULL OR CAST(`as_of_date` AS DATE) >= "
-            "CAST(NULL AS DATE)) AND (CAST(NULL AS DATE) IS NULL OR CAST(`as_of_date` AS DATE) <= CAST(NULL AS DATE))))") in bound
+    assert ("(CAST(NULL AS STRUCT<min: DATE, max: DATE>) IS NULL OR ((CAST(NULL AS DATE) IS NULL OR TRY_CAST(`as_of_date` AS DATE) >= "
+            "CAST(NULL AS DATE)) AND (CAST(NULL AS DATE) IS NULL OR TRY_CAST(`as_of_date` AS DATE) <= CAST(NULL AS DATE))))") in bound
     stored = dict(parts, parameters=[dict(p, defaultSelection={}) if p["complexType"] == "RANGE" else p for p in parts["parameters"]])
     assert check(stored) == bound, "Lakeview stores a range with no default as an empty selection"
     chosen = dict(parts, parameters=[dict(p, defaultSelection={"range": {"dataType": "DATE", "min": {"value": "2026-08-01"},
@@ -110,7 +110,7 @@ def test_the_dataset_check_binds_a_range_with_no_default_as_all_and_a_chosen_ran
                                      if p["keyword"] == "filter_0" else p for p in parts["parameters"]])
     picked = check(chosen)
     assert ("(named_struct('min', DATE'2026-08-01', 'max', DATE'2026-09-30') IS NULL OR ((DATE'2026-08-01' IS NULL OR "
-            "CAST(`as_of_date` AS DATE) >= DATE'2026-08-01') AND (DATE'2026-09-30' IS NULL OR CAST(`as_of_date` AS DATE) <= "
+            "TRY_CAST(`as_of_date` AS DATE) >= DATE'2026-08-01') AND (DATE'2026-09-30' IS NULL OR TRY_CAST(`as_of_date` AS DATE) <= "
             "DATE'2026-09-30')))") in picked
     assert picked.count("CAST(NULL AS STRUCT<min: DATE, max: DATE>)") == bound.count("CAST(NULL AS STRUCT<min: DATE, max: DATE>)") - 1
 

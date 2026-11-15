@@ -19,12 +19,12 @@ PAGE = {"id": "n05_u01", "datasets": [{"name": "records", "sql": "SELECT as_of_d
 
 def test_a_kpi_reads_only_rows_not_dated_after_today():
     sql, _params = shell_sql.kpi_query(PAGE, "total", {})
-    assert "WHERE `as_of_date` IS NULL OR `as_of_date` <= current_date" in sql
+    assert "WHERE `as_of_date` IS NULL OR COALESCE(TRY_CAST(`as_of_date` AS DATE), " in sql and "`as_of_date` <= current_date" not in sql
 
 
 def test_a_chart_reads_only_rows_not_dated_after_today():
     sql, _params = shell_sql.chart_query(PAGE, "trend", {})
-    assert "WHERE `as_of_date` IS NULL OR `as_of_date` <= current_date" in sql
+    assert "WHERE `as_of_date` IS NULL OR COALESCE(TRY_CAST(`as_of_date` AS DATE), " in sql and "`as_of_date` <= current_date" not in sql
 
 
 def test_a_page_without_a_date_filter_is_read_as_before():
@@ -40,7 +40,7 @@ def test_the_left_out_line_counts_rows_dated_after_today_in_words():
 
 def test_the_left_out_query_counts_future_rows_for_any_kpi_with_a_date():
     sql, _params = shell_sql.money_left_out(PAGE, PAGE["kpis"][0], {})
-    assert "AS future" in sql and "`as_of_date` > current_date()" in sql
+    assert "AS future" in sql and "COALESCE(TRY_CAST(`as_of_date` AS DATE)" in sql and "> current_date()" in sql
 
 
 def test_a_KPI_with_no_money_rule_says_only_what_it_left_out():

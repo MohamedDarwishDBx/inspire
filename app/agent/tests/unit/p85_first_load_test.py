@@ -13,7 +13,7 @@ def _page_with(range_=RUN_DATE):
 
 
 def _bounds_sql(sql_log):
-    return [sql for sql, _params, _limit in sql_log if "MIN(TRY_CAST(" in sql]
+    return [sql for sql, _params, _limit in sql_log if "MIN(COALESCE(TRY_CAST(" in sql]
 
 
 def test_the_publish_stores_the_iso_bounds_of_each_date_filter_and_no_others(agent_ns):
