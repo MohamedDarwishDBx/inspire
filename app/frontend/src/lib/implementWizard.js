@@ -1006,11 +1006,29 @@ export function countedFor(readiness, scope) {
   return readiness && !readiness.skipped && JSON.stringify(readiness.scope) === JSON.stringify(scope) ? readiness : null;
 }
 
-export function tooFewRowsText(readiness) {
-  const rows = Number(readiness?.row_count);
+// A forecast counts periods (distinct dates), the same count the build's data check makes; other kinds count rows.
+export function dataMinimumShortfall(readiness) {
+  if (readiness?.skipped) return null;
+  const forecast = readiness?.period_count != null;
+  const have = Number(forecast ? readiness.period_count : readiness?.row_count);
   const minimum = Number(readiness?.minimum_rows);
-  if (readiness?.skipped || !(rows > 0) || !(minimum > rows)) return '';
-  return `Only ${rows.toLocaleString('en-US')} rows are in this scope, fewer than the ${minimum.toLocaleString('en-US')} this use case needs; you can still go on.`;
+  if (!(minimum > 0) || !(have < minimum)) return null;
+  return { have, minimum, forecast };
+}
+
+export function tooFewRowsText(readiness) {
+  const short = dataMinimumShortfall(readiness);
+  if (!short || !(short.have > 0)) return '';
+  const { have, minimum, forecast } = short;
+  const what = forecast ? `${have.toLocaleString('en-US')} distinct dates` : `${have.toLocaleString('en-US')} rows`;
+  const way = forecast ? 'pick a coarser period (weekly or monthly) or use a table with more history' : 'use a source with more rows';
+  return `The data cannot meet the minimum this use case needs: it has ${what}, and at least ${minimum.toLocaleString('en-US')} are needed. Build is blocked. To go on, ${way}.`;
+}
+
+// The build is refused while the data has some rows but fewer than the minimum (the same count the build's check makes). Zero rows is
+// not refused here: the build treats an empty source as no data yet and lets Genie build the full method, as it always has.
+export function dataMinimumBlocks(readiness) {
+  return Boolean(dataMinimumShortfall(readiness)?.have > 0);
 }
 
 export function scopeNarrowing(scope) {
@@ -2952,6 +2970,7 @@ export function protectionChoices(stop) {
 export const APP_READ_ACTION = 'Let Inspire read these tables';
 
 export const SOURCE_REFUSED_REASON = 'The App cannot read its sources yet, so the build cannot start. Grant access first, then build.';
+export const SOURCE_BUILT_IN_REFUSED_REASON = 'The App cannot read its sources yet, so the build cannot start. Copy the samples tables above into a schema you own, then build.';
 
 export const ACCESS_CHECKING = 'Checking access';
 export const ACCESS_UNKNOWN = 'Could not check access';

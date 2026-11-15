@@ -56,6 +56,7 @@ import {
   readinessText,
   countedFor,
   tooFewRowsText,
+  dataMinimumBlocks,
   columnsReadOf,
   filterTablesOutside,
   withoutTableFilters,
@@ -89,6 +90,7 @@ import {
   lostTablesText,
   missingSourcePick,
   SOURCE_REFUSED_REASON,
+  SOURCE_BUILT_IN_REFUSED_REASON,
   ACCESS_CHECKING,
   ACCESS_UNKNOWN,
   accessVerdictOf,
@@ -908,7 +910,7 @@ export default function ImplementWizard({
   };
 
   useEffect(() => {
-    if (mode !== 'mvp' || !narrowed || scopeCounted || !shows('first_run') || !scopeNow.table) return undefined;
+    if (mode !== 'mvp' || !(narrowed || scopeNow.window?.column) || scopeCounted || !shows('first_run') || !scopeNow.table) return undefined;
     let live = true;
     countScope(scopeNow).then((got) => { if (live) setReadiness(got); }).catch(() => {});
     return () => { live = false; };
@@ -1408,7 +1410,8 @@ export default function ImplementWizard({
   const unchanged = lastStep && accessVerdict === 'ok' && Boolean(plan?.unchanged);
   const sourceRefused = accessVerdict === 'refused';
   const sourceAccessRefused = sourceRefused && !preflight?.checks?.sources?.missing;
-  const implementBlocked = busy || checksBusy || !placeSettled || schemaJob?.state === 'running' || schemaJob?.state === 'failed' || rebuildNeedsChoice(plan, rebuildAsIs) || sourceRefused
+  const refusedFooterText = appUnreadable?.builtin?.length ? SOURCE_BUILT_IN_REFUSED_REASON : SOURCE_REFUSED_REASON;
+  const implementBlocked = busy || checksBusy || !placeSettled || dataMinimumBlocks(readCounted) || schemaJob?.state === 'running' || schemaJob?.state === 'failed' || rebuildNeedsChoice(plan, rebuildAsIs) || sourceRefused
     || (!ownErrors.length && (!preflight || !checkEntries.every(([, c]) => c.ok) || (lastStep && (!plan || Boolean(planError)))))
     || (lastStep && accessVerdict !== 'ok' && accessVerdict !== 'refused');
   const palette = (look?.palette_colors || []).find((p) => p.id === spec.outputs.app_look.palette) || null;
@@ -1524,9 +1527,9 @@ export default function ImplementWizard({
           </section>
         )}
 
-        {(appUnreadable || appGrant) && <AppReadAccess offer={appUnreadable} result={appGrant} busy={granting} onGrant={grantAppRead} />}
+        {(appUnreadable || appGrant) && <AppReadAccess offer={appUnreadable?.builtin?.length ? null : appUnreadable} result={appGrant} busy={granting} onGrant={grantAppRead} />}
 
-        {builtInRefused && (
+        {appUnreadable?.builtin?.length > 0 && (
           <SamplesCopyOffer names={appUnreadable.builtin.join(', ')} target={copyTo} onTarget={setCopyTarget} canCopy={validCopyTarget(copyTo)}
             copying={copying} error={copyError} onCopy={copySamples} copyLabel="Copy it now" />
         )}
@@ -2334,7 +2337,7 @@ export default function ImplementWizard({
               </p>
             )}
             {mode === 'mvp' && stepIndex > 0 && !lastStep && sourceAccessRefused && (
-              <p data-source-refused="" className="text-[11px] text-warning-fg">{SOURCE_REFUSED_REASON}</p>
+              <p data-source-refused="" className="text-[11px] text-warning-fg">{refusedFooterText}</p>
             )}
             {mode === 'mvp' && stepIndex > 0 && !lastStep && !sourceAccessRefused && (
               <button type="button" data-build-now="" disabled={implementBlocked || steps.some((x) => stepErrors(x.id, spec, extras, mode).length > 0)} onClick={submit}
@@ -2362,7 +2365,7 @@ export default function ImplementWizard({
                 {busy ? 'Starting…' : 'Generate notebook'}
               </button>
             ) : sourceAccessRefused ? (
-              <p data-source-refused="" className="text-[11px] text-warning-fg">{SOURCE_REFUSED_REASON}</p>
+              <p data-source-refused="" className="text-[11px] text-warning-fg">{refusedFooterText}</p>
             ) : (
               <button
                 type="button"
