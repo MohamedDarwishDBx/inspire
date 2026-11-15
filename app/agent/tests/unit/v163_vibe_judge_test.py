@@ -70,7 +70,7 @@ def _checks(agent_ns, asset, text, splits, verdicts, artifact, before, reported=
 
 @pytest.mark.parametrize("verdict,reason", [
     ({"status": "done", "evidence": LIVE_QUOTE, "where": ""},
-     "the check gave no words of the built App page n01_u01 that show this ask"),
+     "the check gave no words of the built App page Costliest loss reasons and fixes that show this ask"),
     ({"status": "done", "evidence": "Priority tier", "where": "filters"},
      "it was added to the page filter bar, not to the Fix plan table"),
     ({"status": "done", "evidence": "Channel", "where": "filters"}, "it was added to the page filter bar, not to the Fix plan table"),
@@ -82,7 +82,7 @@ def test_the_live_case_a_page_filter_added_for_a_table_ask_is_not_done(agent_ns,
     found, judged = _checks(agent_ns, PAGE, VIBE, {VIBE: SPLIT}, [verdict], V2, V1)
     assert [c["status"] for c in found] == ["missing", "missing"], found
     assert found[0]["evidence"].startswith(reason), found[0]
-    assert found[1]["evidence"] == "the built Fix plan table on the App page n01_u01 never shows the words 'Act Now'"
+    assert found[1]["evidence"] == "the built Fix plan table on the App page Costliest loss reasons and fixes never shows the words 'Act Now'"  # REQ-237: by title
     assert len(judged) == 1 and SQL not in judged[0][1] and "act_now_row" not in judged[0][1]
 
 
@@ -95,7 +95,7 @@ def test_the_live_case_names_its_table_in_its_words_so_a_split_without_where_sti
                             "evidence": "it was added to the page filter bar, not to the Fix plan table"}, \
             "the ask's own words name the Fix plan table, so the page filter bar is another element"
         assert found[1]["status"] == "missing" and found[1]["evidence"] == \
-            "the built Fix plan table on the App page n01_u01 never shows the words 'Act Now'", \
+            "the built Fix plan table on the App page Costliest loss reasons and fixes never shows the words 'Act Now'", \
             "the tiers in the page filter bar are not on the table the ask names"
 
 
@@ -181,8 +181,8 @@ def test_an_ask_the_builder_could_not_do_is_never_a_silent_done(agent_ns):
     found, _judged = _checks(agent_ns, PAGE, "s", asks, [{"status": "done", "evidence": "column filter: priority tier", "where": "records"}],
                              V3, V2, ["Add a slider on the loss: the App shell has no slider filter"])
     assert found == [{"ask": "Add a slider on the loss", "status": "missing", "evidence": "the App shell has no slider filter"}]
-    assert agent_ns["implement_vibes_warnings"](PAGE, found) == [
-        "App page n01_u01 vibe not done: Add a slider on the loss: the App shell has no slider filter"]
+    assert agent_ns["implement_vibes_warnings"](PAGE, found, 0, None, {PAGE: "Costliest loss reasons and fixes"}) == [
+        "App page Costliest loss reasons and fixes vibe not done: Add a slider on the loss: the App shell has no slider filter"]
 
 
 def test_the_split_marks_keep_asks_and_the_element_an_ask_names(agent_ns):
@@ -247,7 +247,7 @@ def test_the_live_case_ends_the_version_with_vibe_not_done(agent_ns, tmp_path):
         "the held list is the checklist's, which names the output and the page on it"
     page = final["asset_status"][PAGE]
     assert [c["status"] for c in page["vibes_checks"]] == ["missing", "missing"] and page["state"] == "ready_with_warnings"
-    missed = (f"{ALL_COLUMNS}: no table on the built App page n01_u01 has a column filter on all; "
+    missed = (f"{ALL_COLUMNS}: no table on the built App page Costliest loss reasons and fixes has a column filter on all; "
               "the Fix plan table has no column filter on rank, entity_label, priority_tier, channel, value_at_stake")
     assert missed in final["status_message"] and final["status_message"].count(missed) == 1, \
         "the held message names each unmet ask once, in the reason, and never again as a vibe warning"
@@ -382,7 +382,7 @@ def test_one_judge_call_per_round_judges_every_part_on_what_a_person_sees_now_an
     assert found["checks"][PAGE] == [
         {"ask": ALL_COLUMNS, "status": "missing", "evidence": "it was added to the page filter bar, not to the Fix plan table",
          "where": TABLE},
-        {"ask": ACT_NOW, "status": "missing", "evidence": "the built Fix plan table on the App page n01_u01 never shows the words 'Act Now'",
+        {"ask": ACT_NOW, "status": "missing", "evidence": "the built Fix plan table on the App page Costliest loss reasons and fixes never shows the words 'Act Now'",
          "where": TABLE, "checks": [{"name": "text: Act Now", "passed": False}]}], \
         "each check records the element its ask points to"
     assert found["checks"]["genie_space"] == [{"ask": GENIE_ASK, "status": "done", "evidence": STORES}]

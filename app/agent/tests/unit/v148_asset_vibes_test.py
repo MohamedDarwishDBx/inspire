@@ -274,7 +274,7 @@ def test_every_built_output_and_part_gets_its_own_record_and_only_a_missed_ask_w
     assert "dashboard:old_chart" not in status_of, "a chart the new build no longer has leaves the list"
     assert (status_of["dashboard"]["state"], status_of["app"]["state"]) == ("ready", "ready"), "a part's miss never flags its parent"
     assert status_of["dashboard"]["title"] == "N01-U01 Predict churn" and status_of["app"]["title"] == "churn-desk"
-    assert ("Dashboard (widget by_region): Make it a horizontal bar chart: the built Customers by region bar chart on the dashboard chart "
+    assert ("Dashboard (chart Customers by region): Make it a horizontal bar chart: the built Customers by region bar chart on the dashboard chart "
             "Customers by region has no horizontal_bar chart") in inst.updates[-1]["status_message"] or any(
         "Customers by region has no horizontal_bar chart" in str(e.get("evidence")) for e in status_of["checklist"]), \
         "the unmet ask is listed in the checklist and the published sentence, with its output and widget"
@@ -617,3 +617,37 @@ def test_the_app_names_the_business_and_links_each_page_to_its_alert(agent_ns):
     assert agent_ns["IMPLEMENT_BUILD_ORDER"].index("alert") < agent_ns["IMPLEMENT_BUILD_ORDER"].index("app"), \
         "the alert is built first, so the App links this version's alert"
     assert set(agent_ns["IMPLEMENT_BUILD_ORDER"]) == set(agent_ns["IMPLEMENT_OUTPUTS"])
+
+
+def test_every_person_facing_label_names_a_part_by_title_or_kind_and_never_by_its_id(agent_ns):
+    # REQ-237 / D-NAMES, §3e sweep: every person-facing producer that names an App page or a chart, over a fixture whose ids are
+    # by_region and n01_u01. No raw id may come out. The Genie-facing form (titles=None) keeps the id by design, and is asserted to.
+    status = {"app:page:n01_u01": {"state": "ready", "title": "Churn desk"},
+              "dashboard:by_region": {"state": "ready", "title": "Customers by region"},
+              "dashboard:untitled_one": {"state": "ready"}}
+    titles = agent_ns["implement_asset_titles"](status)
+    assert titles == {"app:page:n01_u01": "Churn desk", "dashboard:by_region": "Customers by region", "dashboard:untitled_one": ""}
+    page, chart = "app:page:n01_u01", "dashboard:by_region"
+    ask = {"ask": "Show the region", "reason": "it asks for a chart"}
+    rendered = {
+        "heading": [agent_ns["implement_asset_heading"](a, None, titles) for a in (page, chart)],
+        "person_label": [agent_ns["implement_person_label"](a, None, titles) for a in (page, chart, "dashboard:untitled_one")],
+        "targets": list(agent_ns["implement_vibe_targets"](status, {"dashboard": True, "app": True}).values()),
+        "sent_lines": agent_ns["implement_vibe_sent_lines"]({page: "Keep the filter"}, [dict(ask, asset=chart)], False, None, titles),
+        "fallback_line": [agent_ns["implement_vibe_fallback_line"](dict(ask, asset=chart), titles)],
+        "undo": list(agent_ns["implement_undo_routes"]({chart: ["Make it a line chart"], page: ["Drop the filter"]}, None, titles).values()),
+        "apply_errors": agent_ns["implement_apply_vibe_routes"]({"outputs": {}, "data": {}, "retry_outputs": []},
+                                                                {chart: "v" * 2001}, None, titles)[2],
+        "missed": [agent_ns["implement_vibes_missed_text"]({chart: [{"ask": "Show it", "evidence": "no bar"}],
+                                                            page: [{"ask": "Keep it", "evidence": "no filter"}]}, None, titles)],
+        "warnings": agent_ns["implement_vibes_warnings"](page, [{"ask": "Keep it", "status": "missing", "evidence": "no filter"}], 0, None, titles),
+        "unmet": [agent_ns["implement_unmet_published_text"]([{"part": chart, "requirement": "Show it", "evidence": "no bar"}], 3, True, titles)],
+        "where": [agent_ns["implement_checklist_where"](chart, "", (), titles), agent_ns["implement_checklist_where"](page, "", [{"id": "n01_u01", "title": "Churn desk"}], titles)],
+    }
+    for name, values in rendered.items():
+        for value in values:
+            assert "by_region" not in str(value) and "n01_u01" not in str(value), (name, value)
+    assert any("Customers by region" in str(v) for v in rendered["sent_lines"] + rendered["undo"] + rendered["missed"])
+    assert any("Churn desk" in str(v) for v in rendered["warnings"] + rendered["where"] + rendered["heading"])
+    # The Genie-facing form keeps the ids, by design (titles=None is the machine path).
+    assert "by_region" in agent_ns["implement_vibes_missed_text"]({chart: [{"ask": "Show it", "evidence": "no bar"}]}, None)

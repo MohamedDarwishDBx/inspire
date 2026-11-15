@@ -168,7 +168,7 @@ def _carried(agent_ns, judged, artifact=PAGE, checked=None):
     prompts = _judge(inst, {ask: [_ask(ask)]}, [judged])
     context = {"uc_id": "N01-U01", "key": (5150, "N01-U01", 4), "spec": {"outputs": {"app": True, f"{ASSET}_vibes": ask}, "data": {}},
                "asset_status": {"app": {"state": "ready", "spec_version": 2, "snapshot": True},
-                                ASSET: {"state": "ready", "spec_version": 2, "vibes_split": {"text": ask, "asks": [_ask(ask)]},
+                                ASSET: {"state": "ready", "spec_version": 2, "title": "Loss desk", "vibes_split": {"text": ask, "asks": [_ask(ask)]},
                                         "vibes_checks": [{"ask": ask, "status": "done", "evidence": "Fix plan"}]}},
                "vibes_split": {}, **({"vibes_checked": checked} if checked else {})}
     return inst, context, prompts, ask
@@ -176,7 +176,8 @@ def _carried(agent_ns, judged, artifact=PAGE, checked=None):
 
 def test_a_carried_ask_on_an_output_this_version_did_not_build_is_checked_again_on_its_saved_copy(agent_ns):
     inst, context, prompts, ask = _carried(agent_ns, {"status": "missing", "evidence": "the page shows no table"})
-    assert inst._implement_recheck_vibes(context, []) == [f"App page n01_u01 vibe not done: {ask}: the page shows no table"]
+    # REQ-237 / D-NAMES: the person line names the page by its title, never its id (the judge prompt keeps the id for Genie).
+    assert inst._implement_recheck_vibes(context, []) == [f"App page Loss desk vibe not done: {ask}: the page shows no table"]
     assert context["asset_status"][ASSET]["vibes_checks"] == [{"ask": ask, "status": "missing", "evidence": "the page shows no table"}]
     [(_kind, prompt, _schema)] = [p for p in prompts if p[0] == "judge"]
     assert f"1. {ask} [asked in an earlier version]" in prompt and "version before" not in prompt
@@ -253,7 +254,7 @@ def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks
     assert final[ASSET]["spec_version"] == 3 and [c["status"] for c in final[ASSET]["vibes_checks"]] == ["done", "done"]
     assert any(kind == "judge" and "App page n01_u01" in prompt and "[asked in an earlier version]" in prompt for kind, prompt in seen)
     assert [(e["requirement"], e["part"], e["where"]) for e in final["checklist"]] == [
-        ("Make it a horizontal bar chart", "dashboard", "widget by_region"), ("Keep the biggest regions first", "dashboard", "widget by_region"),
+        ("Make it a horizontal bar chart", "dashboard", "chart Customers by region"), ("Keep the biggest regions first", "dashboard", "chart Customers by region"),
         ("Keep the region filter", "app", "page Loss desk"), ("Add a count of customers at risk", "app", "page Loss desk")]  # REQ-237 / D-NAMES: person copy names the page by its title
     assert final["checklist_summary"]["total"] == 4 and [e["status"] for e in final["checklist"][2:]] == ["met", "met"]
 
