@@ -8,7 +8,7 @@ import { BUILD_IT, assertOneBadgeOnDefault, choicesShown, closeBrowser, goToMeas
 test.after(closeBrowser);
 
 const ME = { me: { userName: OWNER, displayName: 'Owner' } };
-const WITH_APP = ['1. What to deliver', '2. Data & results', '3. Data groups', '4. First run', '5. Measure', '6. Where it lives', '7. Who uses the App and storage', '8. App look', '9. Review & build'];
+const WITH_APP = ['1. What to deliver', '2. Data & results', '3. Data groups', '4. First run', '5. Measure', '6. Where it lives', '7. Review & build'];
 const NO_APP = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Review & build'];
 const next = (page) => page.getByRole('button', { name: 'Next' }).click();
 const builtLine = (page) => page.locator('[data-built-sentence]').innerText();
@@ -132,7 +132,8 @@ test('with the App picked the wizard reads Data, Data groups, First run, Results
     assert.equal(await page.getByRole('region', { name: 'App access' }).count(), 0, 'and access on Who uses the App (must-exclude)');
     await onePerQuestion(page, 'App pages');
     await shot(page, '08-app-pages', false);
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await onePerQuestion(page, 'App look');
     await goToStep(page, 'First run');
     await openFolded(page, 'Keep it fresh');

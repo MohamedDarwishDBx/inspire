@@ -57,7 +57,8 @@ async function toDelivery(page) {
 async function throughApp(page, access = /^Internal data/) {
   await toAppAccess(page);
   await page.getByRole('radio', { name: access }).check();
-  await goToStep(page, 'App look');
+  await goToStep(page, 'Where it lives');
+  await openFolded(page, 'App look');
 }
 const advanced = (page, what = 'data settings') => page.getByRole('button', { name: new RegExp(`^(Change|Close) ${what}$`) });
 const footerErrors = (page) => page.locator('[role="alert"] p').allTextContents();
@@ -73,7 +74,7 @@ function submittedSpec(made) {
 test('the wizard opens on Use case with no MVP or notebook choice, Deliver ticks the App and Genie Agent, drops the App step while the App is unticked, and All Good, Build it Now launches one run', async () => {
   const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' } });
   const { page, made } = ui;
-  const withApp = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Who uses the App and storage', '7. App look', '8. Review & build'];
+  const withApp = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Review & build'];
   try {
     await goToStep(page, 'Data');
     await stepsAre(page, withApp);
@@ -125,7 +126,8 @@ test('the wizard opens on Use case with no MVP or notebook choice, Deliver ticks
     await page.getByText("'inspire-hub-acme' is free").waitFor();
     await goToStep(page, 'App access');
     await page.getByRole('radio', { name: /^Internal data/ }).check();
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     assert.equal(await page.locator('[data-build-now]').count(), 1, 'the build now choice shows on Data & results, the footer build waits for Summary');
     await implementWhenReady(page);
     await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
@@ -1700,7 +1702,8 @@ test('Edit of a version whose swapped table is gone goes back to the use case\'s
     assert.doesNotMatch(await row.getAttribute('class'), /border-error/);
     await toDelivery(page);
     await toAppAccess(page);
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await implementWhenReady(page);
     await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
     assert.deepEqual(submittedSpec(made).data.tables, {});
@@ -1724,7 +1727,8 @@ test('Edit of a version whose swapped primary table and own table are both gone 
     await page.getByLabel('Table to use for main.s.orders', { exact: true }).waitFor();
     await toDelivery(page);
     await toAppAccess(page);
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await toSummary(page);
     const named = 'the preview cannot run because these source tables are missing or not readable: main.s.orders_old (the primary table, not found). '
       + 'Open Edit, Data step, to swap main.s.orders_old for a table with the same role, because the primary table can be swapped, not removed';
@@ -1749,7 +1753,8 @@ test('Edit of a version whose swapped secondary table and own table are both gon
     await page.getByLabel('Table to use for main.s.returns', { exact: true }).waitFor();
     await toDelivery(page);
     await toAppAccess(page);
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await toSummary(page);
     const start = page.getByRole('button', { name: 'All Good, Build it Now', exact: true });
     await page.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'All Good, Build it Now' && !b.disabled), null, { timeout: 15000 });
@@ -1857,7 +1862,7 @@ test('a use case with no MVP offers to start one, reads no result table, and the
     await goToStep(never.page, 'Data');
     assert.equal(await never.page.locator('[data-wizard-header] h2').innerText(), HARNESS_USE_CASE.Name);
     const header = never.page.locator('[data-wizard-header]');
-    for (const label of ['First run', 'Measure', 'Where it lives', 'Who uses the App and storage', 'App look']) {
+    for (const label of ['First run', 'Measure', 'Where it lives', ]) {
       if (label !== 'Data') await goToStep(never.page, label);
       assert.equal(await header.getByRole('heading', { level: 2 }).innerText(), HARNESS_USE_CASE.Name, label);
       assert.doesNotMatch(await header.innerText(), /\bID\b|N01-U01/, `${label}: the header shows no use case id (must-exclude)`);
@@ -1954,7 +1959,8 @@ test('Edit after notebook edits asks on Summary whether to overwrite them, and o
     await goToStep(fresh.page, 'App access');
     assert.equal(await fresh.page.getByRole('radio', { name: /^Internal data/ }).isChecked(), true,
       'an App built before the access choice existed shows the service principal it signs in with');
-    await goToStep(fresh.page, 'App look');
+    await goToStep(fresh.page, 'Where it lives');
+    await openFolded(fresh.page, 'App look');
     await toSummary(fresh.page);
     const note = fresh.page.getByRole('note', { name: 'Nothing to build' });
     await note.waitFor();
@@ -1963,7 +1969,8 @@ test('Edit after notebook edits asks on Summary whether to overwrite them, and o
     assert.equal(await fresh.page.getByRole('alert').count(), 0, 'an unchanged edit is a note, never an error');
     assert.equal(await fresh.page.getByText(/^\d{3}:/).count(), 0, 'no HTTP status code reaches the screen');
     const lookStep = async () => {
-      await goToStep(fresh.page, 'App look');
+      await goToStep(fresh.page, 'Where it lives');
+      await openFolded(fresh.page, 'App look');
       await fresh.page.getByRole('region', { name: 'App look' }).getByRole('tab', { name: 'Palette', exact: true }).click();
       return fresh.page.getByRole('region', { name: 'App look' }).getByRole('group', { name: 'Light or dark' });
     };
@@ -2008,7 +2015,7 @@ test('with a Genie Code route, the wizard walks the MVP steps and no note shows'
   const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' } });
   try {
     await goToStep(ui.page, 'Data');
-    await stepsAre(ui.page, ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Who uses the App and storage', '7. App look', '8. Review & build']);
+    await stepsAre(ui.page, ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Review & build']);
     assert.equal(await ui.page.getByRole('note', { name: GENIE_CODE_OFF_TITLE }).count(), 0);
   } finally {
     await ui.close();

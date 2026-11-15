@@ -20,7 +20,6 @@ import {
   GENIE_CODE_OFF_TITLE,
   genieCodeOff,
   wizardSteps,
-  APP_STEP,
   APP_STORAGE_LABEL,
   PANEL_SECTIONS,
   contextSettings,
@@ -1143,7 +1142,7 @@ export default function ImplementWizard({
   }, [columnsByTable, spec]);
 
   useEffect(() => {
-    const wanted = stepId === 'data' || (spec.outputs.app && (stepId === 'delivery' || stepId === 'where' || stepId === 'app'));
+    const wanted = stepId === 'data' || (spec.outputs.app && (stepId === 'delivery' || stepId === 'where'));
     if (!wanted || warehouses !== null || warehousesError) return undefined;
     let cancelled = false;
     apiFetch('/api/warehouses')
@@ -1373,7 +1372,7 @@ export default function ImplementWizard({
   const freshness = freshnessOf(spec.schedule);
   const checkStepOf = (k) => {
     if (PLACE_CHECKS.includes(k)) return 'where';
-    if (ACCESS_CHECKS.includes(k)) return insideInspire(spec) || joinsApp(spec) ? 'where' : APP_STEP.id;
+    if (ACCESS_CHECKS.includes(k)) return 'where';
     return CHOOSE_CHECKS.includes(k) || TILE_CHECK_KEYS.includes(k) ? 'delivery' : SUMMARY_STEP.id;
   };
   const checkStepLabel = (k) => steps.find((s) => s.id === checkStepOf(k))?.label || SUMMARY_STEP.label;
@@ -2131,7 +2130,8 @@ export default function ImplementWizard({
             onPage={(id, on) => setSpec((prev) => withAppPage(prev, id, on))} />
         )}
 
-        {shows('app_look') && (
+        {foldLine('app_look', 'App look', lookText({ ...APP_LOOK_DEFAULT, ...(spec.outputs.app_look || {}) }))}
+        {shows('app_look') && isOpenSection('app_look') && (
           <AppLookStep
             spec={spec}
             look={look}

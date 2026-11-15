@@ -6,7 +6,7 @@ test.after(closeBrowser);
 
 const OWNER = ['owner', 'example.com'].join('@');
 const ME = { me: { userName: OWNER, displayName: 'Owner' } };
-const STEPS = ['What to deliver', 'Data & results', 'First run', 'Measure', 'Where it lives', 'Who uses the App and storage', 'App look', 'Review & build'];
+const STEPS = ['What to deliver', 'Data & results', 'First run', 'Measure', 'Where it lives', 'Review & build'];
 const stepLabels = async (page) => (await page.locator('[data-wizard-header] ol li').allTextContents()).map((l) => l.replace(/^\d+\. /, '').trim());
 const viewports = [{ width: 1280, height: 800 }, { width: 1440, height: 900 }];
 const snap = async (page, name) => {
@@ -25,13 +25,13 @@ test('the step count reads the same total on every step for a fixed scope', asyn
     const count = async () => (await page.locator('.sr-only', { hasText: /^Step \d+ of \d+$/ }).first().textContent()).trim();
     const totals = [];
     totals.push(await count());
-    for (const step of ['Data & results', 'Measure', 'Where it lives', 'Who uses the App and storage', 'Review & build', 'What to deliver']) {
+    for (const step of ['Data & results', 'Measure', 'Where it lives', 'Review & build', 'What to deliver']) {
       await goToStep(page, step);
       totals.push(await count());
     }
     const all = new Set(totals.map((t) => t.split(' of ')[1]));
     assert.equal(all.size, 1, `the total never changes: ${totals.join(' | ')}`);
-    assert.match(totals[0], /^Step 1 of 8$/, 'What to deliver is step 1 of 8 with the App on');
+    assert.match(totals[0], /^Step 1 of 6$/, 'What to deliver is step 1 of 6 with the App on: the App panels are one step (REQ-002)');
   } finally {
     await ui.close();
   }
@@ -75,13 +75,16 @@ test('What to deliver is the first step, Data and results is one page, and Where
     await snap(page, 'restructure-where');
 
     await goToStep(page, 'Who uses the App');
+    await openFolded(page, 'Who sees which rows');
     await page.getByRole('region', { name: 'App access' }).waitFor();
     await openFolded(page, 'What people can do');
     await page.getByRole('region', { name: 'App features' }).waitFor();
     assert.equal(await page.getByRole('region', { name: 'App pages' }).count(), 0, 'Who uses the App no longer holds the pages');
     await snap(page, 'restructure-who');
 
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+
+    await openFolded(page, 'App look');
     await page.getByRole('region', { name: 'App look' }).waitFor();
     await snap(page, 'restructure-look');
 

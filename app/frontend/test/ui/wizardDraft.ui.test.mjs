@@ -8,7 +8,7 @@ test.after(closeBrowser);
 
 const ME = { me: { userName: OWNER, displayName: 'Owner' } };
 const STATE = { ...ME, useCase: { ...HARNESS_USE_CASE, genie_instruction: GROUPING_INSTRUCTION } };
-const WITH_APP = ['1. What to deliver', '2. Data & results', '3. Data groups', '4. First run', '5. Measure', '6. Where it lives', '7. Who uses the App and storage', '8. App look', '9. Review & build'];
+const WITH_APP = ['1. What to deliver', '2. Data & results', '3. Data groups', '4. First run', '5. Measure', '6. Where it lives', '7. Review & build'];
 const drafts = (page) => page.evaluate((prefix) => Object.keys(localStorage).filter((k) => k.startsWith(prefix)), WIZARD_DRAFT_PREFIX);
 const draftNote = (page) => page.locator('[data-wizard-draft]');
 const checked = (page, selector) => page.locator(selector).evaluateAll((all) => all.filter((i) => i.checked).map((i) => i.value));
@@ -44,13 +44,20 @@ const PICKS = {
     pick: async (page) => { await page.locator('[data-output="dashboard"] input').setChecked(true); return 'on'; },
     read: async (page) => [(await page.locator('[data-output="dashboard"] input').isChecked()) ? 'on' : 'off'],
   },
-  'Who uses the App and storage': {
-    pick: (page) => pickOther(page, 'app-access'),
-    read: (page) => checked(page, 'input[type="radio"][name="app-access"]'),
-  },
-  'App look': {
-    pick: (page) => pickOther(page, 'app-style'),
-    read: (page) => checked(page, 'input[type="radio"][name="app-style"]'),
+  // Where it lives holds the App access and the App look now (REQ-002): one pick, both values in order.
+  'Where it lives': {
+    pick: async (page) => {
+      await openFolded(page, 'Who sees which rows');
+      const access = await pickOther(page, 'app-access');
+      await openFolded(page, 'App look');
+      return [access, await pickOther(page, 'app-style')];
+    },
+    read: async (page) => {
+      await openFolded(page, 'Who sees which rows');
+      const access = await checked(page, 'input[type="radio"][name="app-access"]');
+      await openFolded(page, 'App look');
+      return [...access, ...await checked(page, 'input[type="radio"][name="app-style"]')];
+    },
   },
   'Review & build': {
     pick: async (page) => { await page.getByRole('region', { name: 'Vibes' }).locator('textarea').first().fill('keep the draft words'); return 'keep the draft words'; },
@@ -96,8 +103,8 @@ test('a person\u2019s own picks on every step survive a reload, the wizard reope
     const inserts = made.sqlCalls.filter((c) => String(c.sql).includes('INSERT INTO') && (c.parameters || []).some((p) => p.name === 'spec'));
     const spec = JSON.parse(inserts.at(-1).parameters.find((p) => p.name === 'spec').value);
     assert.equal(spec.outputs.dashboard, true, 'the build sends the restored Deliver pick');
-    assert.equal(spec.outputs.app_access, kept['Who uses the App and storage']);
-    assert.equal(spec.outputs.app_look.style, kept['App look']);
+    assert.equal(spec.outputs.app_access, kept['Where it lives'][0]);
+    assert.equal(spec.outputs.app_look.style, kept['Where it lives'][1]);
     assert.deepEqual([spec.config.widgets.group_by, spec.config.widgets.run_scope], [kept['Data groups'], 'all'], 'and the restored Data groups and First run picks');
     assert.equal(spec.schedule.cron, '0 0 6 ? * MON', 'and the restored Weekly');
     assert.match(JSON.stringify(spec), /keep the draft words/, 'and the restored Vibes words');
