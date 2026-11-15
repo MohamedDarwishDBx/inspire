@@ -72,8 +72,8 @@ def test_a_pareto_is_bars_largest_first_with_a_running_share_line_drawn_from_the
     assert [(p["keyword"], p["complexType"]) for p in parts["parameters"]] == [("filter_0", "RANGE"), ("filter_1", "MULTI"),
                                                                               ("filter_2", "MULTI")]
     assert ":filter_3" not in sql, "the region filter covers only the decision list, so the pareto never reads it"
-    assert ("(:filter_0 IS NULL OR ((:filter_0.min IS NULL OR CAST(`as_of_date` AS DATE) >= :filter_0.min) AND "
-            "(:filter_0.max IS NULL OR CAST(`as_of_date` AS DATE) <= :filter_0.max)))") in sql, \
+    assert ("(:filter_0 IS NULL OR ((:filter_0.min IS NULL OR TRY_CAST(`as_of_date` AS DATE) >= :filter_0.min) AND "
+            "(:filter_0.max IS NULL OR TRY_CAST(`as_of_date` AS DATE) <= :filter_0.max)))") in sql, \
         "a viewer who picks All sends no range, and every row stays"
     assert "(:filter_1 IS NULL OR size(:filter_1) = 0 OR array_contains(:filter_1, CAST(`category` AS STRING)))" in sql, \
         "a viewer who picks All sends no list, and every row stays"
@@ -97,8 +97,8 @@ def test_the_dashboard_runs_every_part_dataset_with_its_filters_at_their_default
     parts = parts[1:]
     bound = agent_ns["implement_dashboard_check_sql"](parts[0])
     assert bound in ran and ":filter_" not in bound
-    assert ("(CAST(NULL AS STRUCT<min: DATE, max: DATE>) IS NULL OR ((CAST(NULL AS DATE) IS NULL OR CAST(`as_of_date` AS DATE) >= "
-            "CAST(NULL AS DATE)) AND (CAST(NULL AS DATE) IS NULL OR CAST(`as_of_date` AS DATE) <= CAST(NULL AS DATE))))") in bound
+    assert ("(CAST(NULL AS STRUCT<min: DATE, max: DATE>) IS NULL OR ((CAST(NULL AS DATE) IS NULL OR TRY_CAST(`as_of_date` AS DATE) >= "
+            "CAST(NULL AS DATE)) AND (CAST(NULL AS DATE) IS NULL OR TRY_CAST(`as_of_date` AS DATE) <= CAST(NULL AS DATE))))") in bound
     assert ("(CAST(array() AS ARRAY<STRING>) IS NULL OR size(CAST(array() AS ARRAY<STRING>)) = 0 OR "
             "array_contains(CAST(array() AS ARRAY<STRING>), CAST(`category` AS STRING)))") in bound
     stored = dict(parts[0], parameters=[dict(p, defaultSelection={"values": {"dataType": "STRING"}}) if p["complexType"] == "MULTI" else p

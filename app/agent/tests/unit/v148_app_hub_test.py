@@ -106,6 +106,7 @@ class SqliteWorkspace:
         self.lock = threading.Lock()
         self.db = sqlite3.connect(":memory:", check_same_thread=False)
         self.db.create_function("UNIX_MICROS", 1, lambda value: len(str(value)))
+        self.db.create_function("TRY_TO_DATE", 2, lambda text, text_format: None)  # ISO fixtures read through TRY_CAST; formats are checked on Postgres
         for name, rows in ({"loss_desk_out": ROWS} if tables is None else tables).items():
             self.db.execute(f'CREATE TABLE "{name}" ({", ".join(chr(34) + c + chr(34) for c in COLUMNS)})')
             self.db.executemany(f'INSERT INTO "{name}" VALUES ({", ".join("?" for _ in COLUMNS)})', [tuple(r[c] for c in COLUMNS) for r in rows])
