@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import BodyPortal from './BodyPortal';
 import PaneResizer from './PaneResizer';
 import { DRAWER_WIDTH, loadPaneWidth, paneWidth, savePaneWidth } from '../lib/paneWidth';
+import { useModal } from './useModal';
 
 const WIDE = '(min-width: 768px)';
 
@@ -22,6 +23,8 @@ const KEEP_OPEN = '[aria-modal="true"], [role="menu"], [role="listbox"], [data-r
 
 export default function DrawerShell({ label, closeLabel, focusKey = null, focusOnOpen = true, onClose, title, actions = null, below = null, footer = null, center = false, side = false, dock = null, bodyRef = null, bodyProps = {}, children, ...rest }) {
   const panelRef = useRef(null);
+  // A modal drawer (not side) traps Tab while it is open; its Escape stays in the handler below.
+  useModal(panelRef, onClose, { enabled: !side, escape: false });
   const wide = useWide();
   const docked = Boolean(side && dock && wide);
   const openerRef = useRef(null);
