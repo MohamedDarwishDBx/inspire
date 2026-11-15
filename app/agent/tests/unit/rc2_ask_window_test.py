@@ -74,4 +74,5 @@ def test_fresh_data_must_exclude_the_window_note_and_keeps_the_question(tmp_path
     s.now = lambda: dt.datetime(2026, 11, 15, tzinfo=dt.timezone.utc)
     turn = ask(s, LIVE_QUESTION, view={"filters": {}}, visible=[])
     sent = [entry[1] for entry in ws.genie if len(entry) == 3]
-    assert sent == [LIVE_QUESTION] and "Counted over" not in turn["answer"]
+    # 219a7ffbe (REQ-269, REQ-330): every Genie answer now ends with its counted line, so only the window note is excluded here.
+    assert sent == [LIVE_QUESTION] and "of data, to" not in turn["answer"]
