@@ -560,6 +560,8 @@ export const undoBatchOf = (row, person) => (String(person || '').trim() && row?
 
 export const UNDO_THEIRS = 'Only the person who made this change or an owner of this use case can undo it.';
 
+/** REQ-223: one word for undoing a change. The trigger and its confirm button both read this, so they never disagree. */
+export const undoWordOf = (meta) => meta?.undo || 'Reopen';
 export const UNDO_CLOSE = 'Undo puts back every record this change touched, as they were before it, and keeps both versions in their history.';
 
 export const isClosed = (row) => CLOSED_STATUSES.includes(row?._inspire_status || row?.action_status);

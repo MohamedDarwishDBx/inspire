@@ -31,7 +31,7 @@ import { recordName, recordSentenceName,
   aiValue, askQuestions, changeBadge, doneText, dueText, explainContext, heldBack, heldText, impactText, initials, isOverdue, keptText, leftText, matchOf,
   missingSince, NOT_IN_RUN, notInRunText, overdueFirst, pageText, recordCurrency, recordKeyOf, recordRef, recordView, recordsText, savingText, statusClass,
   statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf,
-  isStaleRecord, closedText, closedBatchOf, undoBatchOf, UNDO_CLOSE, isClosed, skippedText, READ_ONLY, READ_ONLY_KEPT, READ_ONLY_THEIRS,
+  isStaleRecord, closedText, closedBatchOf, undoBatchOf, undoWordOf, UNDO_CLOSE, isClosed, skippedText, READ_ONLY, READ_ONLY_KEPT, READ_ONLY_THEIRS,
   CLOSED_PICK, ACCEPTED, acceptable, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
 } from './records.js';
 import { SectionHelp } from './SectionHelp.jsx';
@@ -475,12 +475,12 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
               );
             })()}
             {undoBatch && !work && !undoAsk && (
-              <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{meta?.undo || 'Reopen'}</button>
+              <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{undoWordOf(meta)}</button>
             )}
             {undoBatch && undoAsk && (
               <div className="note note--flat undo-ask" role="group" aria-label="Undo this change">
                 <span>{UNDO_CLOSE}</span>
-                <SaveButton write="drawer:undo" className="btn btn--pri" onClick={async () => { if (await acts.undo(undoBatch, 'drawer:undo')) setUndoAsk(false); }}>Undo it</SaveButton>
+                <SaveButton write="drawer:undo" className="btn btn--pri" onClick={async () => { if (await acts.undo(undoBatch, 'drawer:undo')) setUndoAsk(false); }}>{undoWordOf(meta)}</SaveButton>
                 <button type="button" className="btn" onClick={() => setUndoAsk(false)}>Keep it</button>
               </div>
             )}

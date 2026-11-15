@@ -1,5 +1,5 @@
-// REQ-223: Unmerge in the record panel, then Undo it, must send records/undo for the merge batch
-// and reload the Work list.
+// REQ-223: a reversible decision names its undo with one word. The trigger and its confirm button read the
+// same label, and confirming sends records/undo for the merge batch and reloads the Work list.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -35,24 +35,26 @@ async function openMerged(info) {
   const history = ({ json }) => json(200, { record_key: ROWS[0].record_key, fields: FIELDS, versions: [CURRENT],
     current: { ...CURRENT, ...CLOSED, action_status: 'Done', record_key: ROWS[0].record_key }, deleted: false, truncated: false });
   const undo = ({ route, json, seen }) => { seen.undo = route.request().postDataJSON(); return json(200, UNDO_OUT); };
-  const opened = await openApp(browser, served.base, info, { routes: { records, 'records/history': history, 'records/undo': undo } });
-  await goRail(opened.page, 'work');
-  await opened.page.locator('.card--table tbody tr .cell-t').first().waitFor({ timeout: 20000 });
-  return opened;
+  return openApp(browser, served.base, info, { routes: { records, 'records/history': history, 'records/undo': undo } });
 }
 
-test('Unmerge in the record panel confirms, sends records/undo for the merge batch, and reloads the list', async () => {
+test('Unmerge in the record panel: the confirm button repeats the trigger word and sends records/undo, then reloads', async () => {
   const { page, context, seen } = await openMerged(appInfo({ ...DECIDE }, 1, { ...TABLE }, 'examples/entity_matching.json'));
   try {
+    await goRail(page, 'work');
+    await page.locator('.card--table tbody tr .cell-t').first().waitFor({ timeout: 20000 });
     await page.locator('.cell-t').first().click();
-    const undoButton = page.locator('dialog[open] footer [data-undo-close]');
-    await undoButton.waitFor({ timeout: 15000 });
+    const trigger = page.locator('dialog[open] footer [data-undo-close]');
+    await trigger.waitFor({ timeout: 15000 });
+    const word = (await trigger.innerText()).trim();
+    assert.equal(word, 'Unmerge');
+    await trigger.click();
+    const confirm = page.locator('.undo-ask').getByRole('button', { name: word, exact: true });
+    await confirm.waitFor({ timeout: 5000 });
     const before = seen.records.length;
-    await undoButton.click();
-    await page.locator('.undo-ask').getByRole('button', { name: 'Undo it' }).click();
-    await page.waitForFunction(() => document.querySelector('.toast, [role="status"]') !== null, null, { timeout: 15000 }).catch(() => {});
+    await confirm.click();
     await page.waitForTimeout(1500);
-    assert.ok(seen.undo, 'Unmerge then Undo it must send records/undo');
+    assert.ok(seen.undo, 'confirming must send records/undo');
     assert.equal(seen.undo.batch_id, BATCH);
     assert.ok(seen.records.length > before, 'the Work list must reload after the undo');
   } finally {
