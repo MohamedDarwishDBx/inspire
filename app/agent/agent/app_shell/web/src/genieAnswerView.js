@@ -11,3 +11,12 @@ export function answerColumns(answer) {
 
 // The steps a finished answer keeps in its Details disclosure, never in the answer text.
 export const STEPS_SUMMARY = 'What Genie did';
+
+// What the panel shows while an answer runs: the Genie question is asked in words, never as the relay text the step log keeps.
+export function progressLabel(step) {
+  const text = String(step || '').trim();
+  if (text.startsWith(ASKED_GENIE)) return ASKING_GENIE;
+  return text || 'Reading your question';
+}
+export const ASKED_GENIE = 'Asked Genie:';
+export const ASKING_GENIE = 'Asking Genie';

@@ -5,7 +5,7 @@ import { POLL_MS, latestRunText, stepText } from './freshness.js';
 import WaitingForAccess from './WaitingForAccess.jsx';
 import { reducedMotion } from './theme.js';
 import { integer } from './format.js';
-import { answerColumns } from './genieAnswerView.js';
+import { answerColumns, progressLabel } from './genieAnswerView.js';
 import DataTable from './DataTable.jsx';
 import Markdown from './Markdown.jsx';
 import { BUSY_TITLE, explainBody } from './explain.js';
@@ -504,7 +504,7 @@ export default function GeniePanel({ app, genie, page, pages, onPick, onClose, t
         ) : (
           <div key={m.n} className="msg msg--genie">
             <span className="msg-av"><GenieMark size={14} /></span>
-            {m.state === 'running' && <div className="msg-b"><AgentSteps steps={m.steps} /><span className="g-step"><span className="dots"><i /><i /><i /></span>{m.step}…</span><Pace since={m.n} /></div>}
+            {m.state === 'running' && <div className="msg-b"><span className="g-step"><span className="dots"><i /><i /><i /></span>{progressLabel(m.step)}…</span><Pace since={m.n} /></div>}
             {m.state === 'failed' && <div className="msg-b">{m.waiting ? <WaitingForAccess waiting={m.waiting} compact /> : m.calm ? <PlainNote text={m.error} className="note" role="status" data-calm /> : <PlainNote text={m.error} className="g-err" onRetry={genie.canRetry?.(genie.key, m.n) ? () => genie.retry(genie.key, m.n) : null} />}</div>}
             {m.state === 'done' && <Answer message={m} url={info.url} onTick={tick} genie={genie} />}
             {m.state === 'done' && !m.agent && recordOf(thread, m) && home && app.options?.decisions && pageDecides(home) && (

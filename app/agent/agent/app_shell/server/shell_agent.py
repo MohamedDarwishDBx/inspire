@@ -118,7 +118,7 @@ The context's data_through is the latest date in the data, not the run date: say
 To mark records done, not an issue, snoozed, assigned or reopened, call propose_action: it never changes anything by itself, it shows the person a confirmation card that lists every affected record, and only their click saves it. Never say a change is saved. When the person says fix this, or asks what to do about records, call offer_actions: it shows buttons on those records, and their click prepares the change for confirmation; do not also list the buttons in text.
 A change_view change lasts until the page reloads: never say it stays, is remembered or becomes the default. When the person wants to keep it, tell them to choose Save this view under Saved views.
 A record marked not an issue needs the person's reason; ask for it when they gave none. A snooze needs a date.
-Relative windows such as last 30 days or this month count back from data_through, the page's as-of date, never from today when the two differ. Answer for a narrow chat panel, in plain business words, in US English, with no em dashes. {brief} Use one small markdown table, with a header row, a separator row and at most {table_rows} rows, for any answer that lists {row_table_min} or more rows and for comparing several items on the same measures; never write those rows as bullets. Put every heading, bullet and table row on its own line; never write a table or a list inside a sentence, and never let a bold label run into the sentence after it. Every number comes from the context or a tool result. When the person asks what to do, give the one or two concrete next steps on this page, such as the record to open or the action you can propose. Name what you looked at in a few words. Never call a number sample-based or sampled: say what it counted, the whole table or the first-run sample."""
+Relative windows such as last 30 days or this month count back from data_through, the page's as-of date, never from today when the two differ. Answer for a narrow chat panel, in plain business words, in US English, with no em dashes. {brief} Use one small markdown table, with a header row, a separator row and at most {table_rows} rows, for any answer that lists {row_table_min} or more rows and for comparing several items on the same measures; never write those rows as bullets. Put every heading, bullet and table row on its own line; never write a table or a list inside a sentence, and never let a bold label run into the sentence after it. Every number comes from the context or a tool result. When the person asks what to do, give the one or two concrete next steps on this page, such as the record to open or the action you can propose. Name what you looked at in a few words."""
 FINAL_NOTE = "Answer now from what you have, without calling a tool."
 
 DRAFT_ROWS = 10
@@ -563,6 +563,14 @@ def run_scope(sql) -> str:
     return current or run or ALL_ROWS
 
 
+def named_in_question(split: dict, question) -> bool:
+    """A split runs only by a filter the person named: one of its label or id words is in the question. A split chosen by the model
+    for a dimension the question never names (asked by payment method, split by franchise) is refused, with the choices the page has."""
+    said = set(WORD.findall(str(question or "").casefold().replace("'", "")))
+    named = {w for text in (split.get("label"), split.get("id")) for w in WORD.findall(str(text or "").casefold()) if len(w) > 3}
+    return bool(named & said)
+
+
 def sql_scope(sql) -> str:
     return run_scope(sql)
 
@@ -810,17 +818,40 @@ def table_cells(line: str) -> list:
     return [cell.strip() for cell in line.strip().strip("|").split("|")]
 
 
+def norm_cell(value) -> str:
+    return re.sub(r"[^a-z0-9.]+", "", str(value or "").lower().replace("_", ""))
+
+
+def duplicates_rows(head: str, body: list, genie: list) -> bool:
+    """A model table that shows the Genie answer again. It duplicates when its header names the Genie columns, or when it has as many
+    columns as the Genie answer and the same first-column keys (a value misaligned under the wrong header). A pivot has other columns
+    (its headers are values), so it does not match and is kept."""
+    head_cells = [norm_cell(c) for c in table_cells(head)]
+    body_keys = {norm_cell(table_cells(row)[0]) for row in body if table_cells(row)}
+    for g in genie:
+        rows = [r for r in (g.get("rows") or []) if isinstance(r, dict)]
+        names = [c.get("name") for c in (g.get("columns") or []) if isinstance(c, dict) and c.get("name")] or (list(rows[0]) if rows else [])
+        if not names or not rows:
+            continue
+        if head_cells and set(head_cells) <= {norm_cell(n) for n in names}:
+            return True
+        if len(head_cells) == len(names) and body_keys and body_keys == {norm_cell(r.get(names[0])) for r in rows}:
+            return True
+    return False
+
+
 def drop_tables(text: str, genie=None) -> str:
-    """The answer's tables that the App would show twice or misaligned. A Genie answer with rows already shows those rows as its own
-    table, with the Genie column names, so a table written into the text from them is dropped. A table whose body rows do not have
-    as many cells as its header is never shown, because its headers would not match its values."""
-    shown = any(len((g or {}).get("rows") or []) for g in genie or [])
+    """The answer's tables that the App would show twice or misaligned. A table whose body rows do not have as many cells as its header is
+    never shown. A table that repeats the Genie rows (duplicates_rows) is dropped, because the Genie rows are already its one table. Any
+    other consistent table, such as a pivot the model built from the rows, is kept."""
     lines, found = markdown_tables(text)
     out, at = [], 0
     for start, end, head, body in found:
         out += lines[at:start]
         at = end
-        if shown or any(len(table_cells(row)) != len(table_cells(head)) for row in body):
+        if any(len(table_cells(row)) != len(table_cells(head)) for row in body):
+            continue
+        if genie and duplicates_rows(head, body, genie):
             continue
         out += lines[start:end]
     return "\n".join(out + lines[at:])
@@ -834,6 +865,24 @@ def read_sample(genie=None) -> bool:
     return any(sql_scope((g or {}).get("sql")) != ALL_ROWS for g in genie or [])
 
 
+FROM_TABLE = re.compile(r"\bfrom\s+([`\w.]+)", re.I)
+
+
+def counted_line(genie: list) -> str:
+    """One trailing line saying what the latest Genie count covered: the first-run sample it really read (its record count), or the whole table."""
+    if not genie:
+        return ""
+    last = genie[-1] or {}
+    scope = last.get("scope") or {}
+    if read_sample([last]) and scope.get("scope") not in (None, "", "all"):
+        records = scope.get("records")
+        return (f"Counted over the first-run sample of {shell_sql.shown_number(int(records))} records."
+                if isinstance(records, int) and records > 0 else "Counted over the first-run sample.")
+    named = FROM_TABLE.search(str(last.get("sql") or ""))
+    label = plain_name(named.group(1).replace("`", "")) if named else ""
+    return f"Counted over the whole {label} table." if label else "Counted over the whole table."
+
+
 def finish_text(text, question: str = "", key_numbers=None, genie=None, rows: int = 0, listed=None, nouns=None) -> str:
     text = drop_tables(text, genie)
     if not read_sample(genie):
@@ -844,7 +893,9 @@ def finish_text(text, question: str = "", key_numbers=None, genie=None, rows: in
     clashes, notes = number_scopes(shaped, question, key_numbers or [], genie or [])
     if not clashes and not notes and listed is not None:
         notes = [n for n in [listing_note(shaped, listed, key_numbers, nouns or DEFAULT_NOUNS)] if n]
-    return with_scopes(shaped, clashes, notes) if shaped else shaped
+    answer = with_scopes(shaped, clashes, notes) if shaped else shaped
+    line = counted_line(genie or []) if answer else ""
+    return f"{answer}\n\n{line}" if line else answer
 
 
 INJECTION = re.compile(r"\b(?:ignore|disregard|forget|override|bypass)\b[^.?!]{0,40}\b(?:your|previous|prior|above|earlier|all|these|those|system)\b"
@@ -2009,7 +2060,9 @@ class Agent:
             self.sleep(GENIE_POLL_S)
         if message.get("state") == "failed":
             return {"error": message.get("error") or "Genie could not answer"}
-        job.setdefault("genie", []).append({"question": question, "sql": message.get("sql") or "", "rows": (message.get("rows") or [])[:GENIE_ROWS]})
+        scope = self.shell.genie_scope(ws, turn.who, page)
+        job.setdefault("genie", []).append({"question": question, "sql": message.get("sql") or "", "rows": (message.get("rows") or [])[:GENIE_ROWS],
+                                            "columns": message.get("columns") or [], "scope": scope})
         turn.genie = {"conversation_id": turn.conversation_id, "message_id": started.get("message_id"), "sql": message.get("sql") or "",
                       "columns": message.get("columns") or [], "rows": (message.get("rows") or [])[:GENIE_ROWS],
                       "truncated": bool(message.get("truncated"))}
@@ -2027,7 +2080,7 @@ class Agent:
             return {"unsupported": "money is off for this App, so it has no money answer"}
         values = self.view_values(page, job["view"])
         split = shell_sql.split_filter_named(page, kpi["dataset"], args.get("filter"))
-        if split is None:
+        if split is None or not named_in_question(split, job.get("question")):
             return {"unsupported": shell_sql.split_choices_text(page, kpi["dataset"])}
         by = split["id"]
         sql, params = shell_sql.kpi_split_query(page, kpi["id"], by, values, SPLIT_ROWS)

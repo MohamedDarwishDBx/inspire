@@ -4638,14 +4638,28 @@ class Shell:
             question = explain_question(hub_title(self.settings), page, kind, title, context, brief, own or "")
         return dict(self.genie_send(headers, page, question, data.get("conversation_id")), question=question)
 
+    def genie_scope(self, ws, who, page: dict) -> dict:
+        """The page's first-run scope facts (scope, records, text) from its latest run, or {} when the page keeps no run scope."""
+        if not shell_sql.page_scopes(page):
+            return {}
+        try:
+            row = self.page_state(ws, who, page)["row"]
+        except (QueryError, HttpError):
+            return {}
+        return shell_sql.summary_scope(row) or {}
+
     def genie_message(self, headers: dict, query: dict) -> dict:
-        space = self.genie_space(self.genie_page(query.get("page")))
+        page = self.genie_page(query.get("page"))
+        space = self.genie_space(page)
         conversation, message = genie_ids(query)
-        ws, _who = self.workspace(headers)
+        ws, who = self.workspace(headers)
         out = ws.genie_message(space, conversation, message, row_limit=GENIE_PREVIEW_ROWS)
         if out.get("state") == "done" and out.get("text"):
             rows = out.get("rows") or []
-            out = dict(out, text=shell_agent.finish_text(out["text"], genie=[{"sql": out.get("sql") or "", "rows": rows}], rows=len(rows)))
+            scope = self.genie_scope(ws, who, page)
+            out = dict(out, text=shell_agent.finish_text(out["text"], genie=[{"sql": out.get("sql") or "", "rows": rows, "scope": scope,
+                                                                             "columns": out.get("columns") or []}],
+                                                         rows=len(rows)))
         return out
 
     def genie_feedback(self, headers: dict, data: dict) -> dict:

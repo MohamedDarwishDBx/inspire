@@ -65,8 +65,9 @@ def test_the_chat_answer_and_the_genie_answer_share_one_shaping_step(tmp_path):
     chat = ask(s, "Which profile source creates the most duplicates?")["answer"]
     s, _ws, _made = agent_shell(tmp_path / "genie", ws=ThreeRows(text=answer))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
-    # REQ-330: the Genie rows are the one table, so the Genie text keeps the prose and drops the table the model wrote into it.
-    assert status == 200 and msg["text"] == PROFILES and chat.startswith(PROFILES), (msg["text"], chat)
+    # The Genie path and the chat path shape the same text; the Genie path adds only its one counted line (REQ-269). The pivot-like table
+    # has other columns from the Genie rows, so it is the model's own table and stays.
+    assert status == 200 and msg["text"] == f"{chat}\n\nCounted over the whole pairs table.", (msg["text"], chat)
 
 
 def test_a_chat_answer_with_bullets_beside_a_table_is_shaped_to_the_lead_and_one_scope_line(tmp_path):

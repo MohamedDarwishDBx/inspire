@@ -71,18 +71,50 @@ def test_the_steps_never_open_the_answer_text(tmp_path):
 
 def test_a_whole_table_count_is_never_labelled_sample_based():
     text = "Mobile App leads on 2026-10-15 with 3,156 transactions (sample-based)."
-    out = shell_agent.finish_text(text, "Split by channel?", genie=[{"sql": "SELECT channel, COUNT(*) FROM t GROUP BY channel", "rows": []}])
+    out = shell_agent.finish_text(text, "Split by channel?", genie=[{"sql": "SELECT channel, COUNT(*) FROM sales_transactions GROUP BY channel",
+                                                                    "rows": [], "scope": {"scope": "records", "records": 1000}}])
     assert "sample" not in out.casefold(), out
-    assert out == "Mobile App leads on 2026-10-15 with 3,156 transactions."
+    assert out == "Mobile App leads on 2026-10-15 with 3,156 transactions.\n\nCounted over the whole sales transactions table."
 
 
 def test_a_sample_label_stays_only_when_the_count_read_a_run_scoped_slice():
     text = "Mobile App leads with 1,000 transactions (sample-based)."
-    sampled = [{"sql": f"SELECT COUNT(*) FROM t WHERE {shell_sql.RUN_COLUMN} = '{shell_sql.RUN_LATEST}'", "rows": []}]
+    scope = {"scope": "records", "records": 1000}
+    sampled = [{"sql": f"SELECT COUNT(*) FROM t WHERE {shell_sql.RUN_COLUMN} = '{shell_sql.RUN_LATEST}'", "rows": [], "scope": scope}]
     assert shell_agent.read_sample(sampled) is True
-    assert shell_agent.finish_text(text, "Q?", genie=sampled) == text, "a count that really read the sample keeps its label"
+    assert shell_agent.finish_text(text, "Q?", genie=sampled) == (
+        "Mobile App leads with 1,000 transactions (sample-based).\n\nCounted over the first-run sample of 1,000 records."), "a count that read the sample keeps its label and names it"
     assert shell_agent.read_sample([{"sql": "SELECT COUNT(*) FROM t", "rows": []}]) is False
 
 
-def test_the_model_is_told_never_to_call_a_number_sample_based():
-    assert "Never call a number sample-based or sampled" in shell_agent.SYSTEM
+def test_the_model_is_no_longer_told_the_sample_rule_because_the_code_gates_the_label():
+    assert "sample-based" not in shell_agent.SYSTEM and "sampled" not in shell_agent.SYSTEM
+
+
+GENIE_COLUMNS = COLUMNS  # the recorded four-column shape
+GENIE_ROWS_2 = ROWS
+
+
+def test_a_model_pivot_that_is_not_the_genie_rows_is_kept():
+    pivot = "Gap by month.\n\n| Product | Jan | Feb |\n|---|---|---|\n| Product A | -4 | -11 |\n| Product B | -2 | -3 |"
+    genie = [{"sql": "SELECT 1", "rows": GENIE_ROWS_2, "columns": GENIE_COLUMNS}]
+    assert shell_agent.drop_tables(pivot, genie) == pivot, "a pivot with other columns is the model's own table and stays"
+
+
+def test_a_model_table_that_repeats_the_genie_rows_under_wrong_headers_is_dropped():
+    misaligned = "Gaps.\n\n| Product | Franchise | Peer median | Gap |\n|---|---|---|---|\n| Product A | $3.00 | $18.38 | -$15.38 |\n| Product B | $3.00 | $17.45 | -$5.03 |"
+    genie = [{"sql": "SELECT 1", "rows": GENIE_ROWS_2, "columns": GENIE_COLUMNS}]
+    assert shell_agent.drop_tables(misaligned, genie) == "Gaps.\n"
+
+
+def test_a_model_table_whose_header_names_the_genie_columns_is_dropped():
+    named = "Gaps.\n\n| product_name | franchise_revenue_per_sale | peer_median_revenue_per_sale | gap_to_peer_median |\n|---|---|---|---|\n| Product A | 3 | 18.38 | -15.38 |"
+    genie = [{"sql": "SELECT 1", "rows": GENIE_ROWS_2, "columns": GENIE_COLUMNS}]
+    assert shell_agent.drop_tables(named, genie) == "Gaps.\n"
+
+
+def test_a_split_must_name_a_filter_the_question_names():
+    franchise = {"id": "franchise", "label": "Franchise"}
+    assert shell_agent.named_in_question(franchise, "Which payment method has the most flagged records?") is False, "never split by franchise when the question asks by payment method"
+    assert shell_agent.named_in_question(franchise, "Split the flagged records by franchise") is True
+    assert shell_agent.named_in_question({"id": "payment_method", "label": "Payment method"}, "Which payment method has the most?") is True
