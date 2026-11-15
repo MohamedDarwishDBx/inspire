@@ -21,13 +21,14 @@ function newestInput(path) {
   return readdirSync(path).reduce((newest, name) => Math.max(newest, newestInput(join(path, name))), kind.mtimeMs);
 }
 
-export function staleReason(web = WEB) {
+// The shared inputs sit beside web/'s app folder: app/shared for app/agent/agent/app_shell/web. A web outside the repo has none.
+export function staleReason(web = WEB, shared = resolve(web, '..', '..', '..', '..', 'shared')) {
   const outputs = DIST_OUTPUTS.map((name) => join(web, 'dist', name));
   const missing = DIST_OUTPUTS.filter((name, i) => !existsSync(outputs[i]));
   if (missing.length) return `dist has no ${missing.join(' and no ')}`;
   const built = Math.min(...outputs.map((file) => lstatSync(file).mtimeMs));
   const changed = [...WEB_INPUTS.filter((name) => newestInput(join(web, name)) > built),
-    ...SHARED_INPUTS.filter((name) => newestInput(join(SHARED_DIR, name)) > built).map((name) => `shared/${name}`)];
+    ...SHARED_INPUTS.filter((name) => newestInput(join(shared, name)) > built).map((name) => `shared/${name}`)];
   return changed.length ? `${changed.join(', ')} changed after dist was built` : '';
 }
 
