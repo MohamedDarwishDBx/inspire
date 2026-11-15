@@ -156,7 +156,8 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
   const closed = isClosed(row);
   const batch = closed ? undoBatchOf(row, app?.user?.email) : '';
   // REQ-285: the kind's undo word (Unmerge) names only a row that carries its choice; a status-only bulk change says Reopen.
-  const undo = undoWordOf(rowChoiceId(row) ? page.records : {}, true);
+  const chosen = !!rowChoiceId(row);
+  const undo = undoWordOf(chosen ? page.records : {}, !chosen);
   return (
     <li className="choice-row" data-choice-row={key}>
       <div className="choice-main">
