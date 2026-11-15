@@ -95,7 +95,7 @@ Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed
 - REQ-313 | RC2 | BUILDING | (Amr) "This request for Access is very cool, anytime user wanted to run a row filter, an enhanced discovery, etc on any catalog, just show user the dialog with 
 - REQ-318 | RC2 | BUILDING | (W2-A, rc7 1dc9051e1, run 2) the name re-ask (DATA_FILTER_LABEL_RENAME_PROMPT / DataFilterLabel_Reask) answer is not parsed: 2 junk rows, response_type raw, no 
 
-### Metrics, measure and value at stake (14)
+### Metrics, measure and money at stake (14)
 
 - REQ-013 | RC2 | DEV | How to measure, set a target, how it is calculated: all in Settings
 - REQ-024 | RC2 | DEV (dev 87546a08; was LOCAL (E a0868819 + E3 rebasing)) | Value aggregation: value at stake and saved on each use case card (highlighted)
@@ -152,7 +152,7 @@ Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed
 - REQ-311 | RC2 | INT2 | (Amr) "check Request for Access databricks feature if you can invoke it on behalf of the user ... show the dialog telling him Request for permission (if the API
 - REQ-315 | RC2 | BUILDING | (W2-J) Request access is hidden on a table refusal because the table owner is an id, not an email destination; catalog and schema owners are email destinations
 
-### Apps, pages and layout (76)
+### Apps, pages and layout (78)
 
 - REQ-008 | RC2 | REOPENED (WF2: bulk done merged 22) -> REQ-285 P83 | Work page: row-level and bulk actions (clear my queue, mark all as done)
 - REQ-014 | RC2 | DEV (dev 87546a08; was LOCAL (v15/rc7-A1 fe5acd7d)) | Tour explains everything on the page (actions, side panel, choices); user knows exactly what to do
@@ -230,6 +230,8 @@ Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed
 - REQ-307 | RC2 | BUILDING | (full Python suite on int2 2500f3565) 75 failures of 14,657: run_summary(page) signature x46 (P87 r3), metadata-only guard x11 + v178 x5 (new one-value reads), 
 - REQ-309 | RC2 | BUILDING | (Amr) "I have a demo tomorrow at 6AM, You must get me the final RC with agentic fully tested by then, including every REQ, and comment, fixed every bug"
 - REQ-312 | RC2 | INT2 | (coordinator, S1 hand-back) the notebook now fails at import without the prompts asset, and app/backend/lib/appPaths.js APP_FILES ships app_shell.b64 but not ap
+- REQ-339 | RC2 | BUILDING | (Amr) "unistall all is broken, this is crtitical and must go into the customer RC" (rehearsal App, session ...775675653 N02-U01): InspireAssetError: The Inspire
+- REQ-340 | RC2 | BUILDING | (Amr) "CRITICAL: I must also be able to track the customer deployed assets from logfood centralized_system_tables using the dashboard <logfood dashboard> ENSURE
 
 ### Build runs and Genie agent (35)
 
@@ -309,7 +311,7 @@ Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed
 - REQ-298 | RC2 | INT2 | (coordinator) notebook is 5,979,808 bytes on int2 eb6c9e708, 20 KB under the 6,000,000 cap; the next lanes can push it over
 - REQ-314 | RC2 | BUILDING | (W2-J, rc7 1dc9051e1) Load groups on a denied table: /api/inspire/implement/group-counts returns 500 (the dialog opens, but the route fails)
 
-Hand-off totals: 270 rows (40 HANDOFF, 230 RC2 not DONE).
+Hand-off totals: 272 rows (40 HANDOFF, 232 RC2 not DONE).
 
 ## Ledger
 
@@ -708,3 +710,9 @@ Rows from the working copy, in the order they were recorded. The second block is
 | REQ-333 | 11-15 21:25 | (coordinator) Python full suite on int2 0c7bca5b7: 94 failed / 14750 passed in 44 files (v143 vibes 10, v162 one vibe box 8, v142_look 8, v218_mvp_gates 7, v142_merge 7, ...); most are D-LABEL209 "App" -> "Agentic App" label pins, some real (v295 shell import, v218 gates, v170 notes) | BUILDING | R26 | coordinator, bug | Python full suite green on the final head | not in RC2 scope |
 | D-INLINE | 11-15 21:35 | (coordinator, REQ-313 in the chat) an access problem inside an Agentic App / Genie answer shows the same WaitingForAccess component in its compact inline form (Request access first, SQL under Advanced), not a full-screen modal over the chat | DECISION |  | coordinator | one access component everywhere; no modal covers the chat | not in RC2 scope |
 | REQ-334 | 11-15 21:30 | (coordinator, live installs j1/j2) the installer asked for the App user scope unity-catalog (F5 a320a7afa); the workspace refused it, so a fresh install would put Inspire without user authorization (no catalogs, no runs); existing scratch Apps kept their old scopes | INT2 | 56628777b (scope removed; RFA falls back to copyable SQL; installer 118 + backend 32 tests) live pending the final install | coordinator, bug (critical for the customer install) | a fresh install grants every user scope; the install log has no 'installed without user authorization' | not in RC2 scope |
+| REQ-335 | 11-15 22:05 | (coordinator, backend suite bc560db90) noCompanyNames: D1's ledger publisher held real customer names in its pattern and the published ledger named a company from a quoted ask | INT2 | 3808ec163 (names in a private file outside the repo via INSPIRE_LEDGER_PRIVATE_NAMES; leak gate plants made-up names; ledger republished; gate 30/30, noCompanyNames 6/6) | coordinator, bug | no company name in any repo file; names stay masked | not in RC2 scope |
+| REQ-336 | 11-15 22:05 | (coordinator) the unpushed commits d0a9010fe..9236567df on rc2/int2 history still carry the customer names in the first publisher version and test; pushing rc2/int would publish them in history | OPEN | (decide at release: rewrite those 3 docs commits before push, or squash the release branch) | coordinator, release risk | the pushed history holds no customer name: `git log -p origin/rc2/int -- app/scripts app/agent/tests/unit/ledger_leak_gate_test.py` greps clean | not in RC2 scope |
+| REQ-337 | 11-15 22:05 | (W3, rc7 fbdb909e1) REQ-318 live: the name re-ask still gets an answer that is not a JSON list (80 chars, 2 attempts); F8's retry and honest logging work ([NAME-LENGTH] and [DATA-FILTER-LABEL FIRED] fire, 1 name set directly) but the re-ask prompt/answer format is still broken | BUILDING | F13 | coordinator (W3 walk), bug | the re-ask answer parses into names on a live run; no "not a JSON list" warning | not in RC2 scope |
+| REQ-338 | 11-15 22:22 | (coordinator) suites on int2 bc560db90: frontend 11 failures (access.ui x2, buildStart, catalogPicker, drawerFocus, grantThenCheckAgain, implementFeedback, implementTower, implementTrustNow, userAppReads, wizardFold), shell 1 (words: running Genie answer time), backend 2 (implementWizard Full MVP step checks with app_experience; permissionWhyText REQ-300 warehouse 'ask your workspace admin') | BUILDING | R27 | coordinator, bug | 4 suites green on the final head | not in RC2 scope |
+| REQ-339 | 11-15 22:41 | (Amr) "unistall all is broken, this is crtitical and must go into the customer RC" (rehearsal App, session ...775675653 N02-U01): InspireAssetError: The Inspire assets file /Workspace/Shared/inspire-ai/assets/v1.5.3/notebook/app_shell.b64 is from another Inspire build than this notebook | BUILDING | F14 (root cause: installer ASSETS_ROOT = ASSETS_PARENT/<version> at inspire_setup.py:883, shared by every install of a version; the rc7 21:24 install of a newer v1.5.3 build replaced the rehearsal App's assets) | Amr | Uninstall all works on the final install; a notebook always reads the assets of its own build, so a second install of the same version can never break the first | RC2 |
+| REQ-340 | 11-15 22:46 | (Amr) "CRITICAL: I must also be able to track the customer deployed assets from logfood centralized_system_tables using the dashboard <logfood dashboard> ENSURE that the tags for use case name has the use case full name, not N01_U01, encode use case like predict_customer_churn, and allow to calculate the DBUS for app, jobs, tagged dwh ids, etc, this must go into customer" | BUILDING | F15 | Amr | every asset Inspire deploys (jobs and their runs, Apps, serverless compute, SQL warehouse queries where taggable, Lakebase, Genie, dashboards, alerts) carries the Inspire tags; the use case tag value is the encoded full name (predict_customer_churn), the id stays in its own tag; billing usage rows can be summed per use case for App, job and warehouse DBUs | RC2 |
