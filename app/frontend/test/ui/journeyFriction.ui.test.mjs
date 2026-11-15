@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUILD_IT, closeBrowser, goToStep, openUi, toSummary } from './uiSupport.mjs';
+import { closeBrowser, goToStep, openUi, startMvp, toSummary } from './uiSupport.mjs';
 
 // REQ-322: the Agentic App and its Genie Agent start ticked together, the App card says what the Genie Agent does, and the person can untick it.
 // REQ-323: a submitted build shows on the Build page at once, before the history read returns it.
@@ -44,20 +44,17 @@ test('the Agentic App and its Genie Agent start ticked, the App card says what t
 });
 
 test('the Build page shows a submitted build as queued at once, before the history read returns it (REQ-323)', async () => {
-  const ui = await openUi('implement', { me: { userName: OWNER, displayName: 'Owner' }, columns: DATED });
+  const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' }, columns: DATED });
   const { page } = ui;
   try {
-    await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
-    // Every history read from now on waits 4 s, so the new build can show at once only through the placeholder written at submit.
+    // Every history read waits 4 s, and the wizard hands over to a fresh Build page after submit: the queued build shows only through the store.
     await page.route(/\/api\/inspire\/implement\/history/, async (route) => {
       await sleep(4000);
       await route.continue();
     });
-    await page.locator('[data-build-custom]').first().click();
-    await page.locator('[data-wizard-body]').waitFor();
-    await toSummary(page);
-    await page.getByRole('button', { name: BUILD_IT, exact: true }).click();
+    await startMvp(page);
     await page.waitForFunction(() => !document.querySelector('[data-wizard-body]'), null, { timeout: 20000 });
+    await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
     await page.getByRole('region', { name: 'Build summary' }).getByText(/building now/).waitFor({ timeout: 2000 });
   } finally {
     await ui.close();

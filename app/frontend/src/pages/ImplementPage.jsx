@@ -365,7 +365,8 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
   const [listError, setListError] = useState('');
   const [buildNotes, setBuildNotes] = useState([]);
   const [buildDetails, setBuildDetails] = useState([]);
-  const [rail, setRail] = useState(NO_RAIL);
+  // REQ-323: a build submitted before this page mounted (the wizard hands over to it) still shows as queued.
+  const [rail, setRail] = useState(() => ({ ...NO_RAIL, latest: withPendingBuilds([]) }));
   const [railError, setRailError] = useState('');
   const [query, setQuery] = useState('');
   const [assetFilters, setAssetFilters] = useState(() => (filter ? assetFiltersFrom(filter.asset) : loadAssetFilters()));
@@ -376,9 +377,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
   const [refreshKey, setRefreshKey] = useState(0);
   const [listVersion, setListVersion] = useState(0);
   const lastNotebookRun = useRef(null);
-  // REQ-323: a build submitted from this page shows at once as queued. The history read can take minutes to return the new row, so the
-  // placeholder stays until the read has it. Reads are applied in the order they were sent, so an older read never overwrites a newer one.
-  const pendingBuilds = useRef(new Map());
+  // REQ-323: reads are applied in the order they were sent, so an older read never overwrites a newer one.
   const railSeq = useRef({ sent: 0, applied: 0 });
   const [progress, setProgress] = useState({});
   const reportProgress = useCallback((id, value) => setProgress((prev) => (
@@ -419,7 +418,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     const prev = lastNotebookRun.current;
     lastNotebookRun.current = run;
     if (notebookRunEnded(prev, run)) setListVersion((n) => n + 1);
-    const latest = withPendingBuilds(data.latest || [], pendingBuilds.current, Date.now());
+    const latest = withPendingBuilds(data.latest || []);
     setRail({ latest, notebook_run: run, notebook_run_error: data.notebook_run_error || '' });
     setRailError('');
   }, [apiFetch, qBase]);
@@ -513,12 +512,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     if (data?.use_case_id) select(data.use_case_id);
     setRefreshKey((n) => n + 1);
     if (data?.mode === 'notebook') setListVersion((n) => n + 1);
-    if (data?.use_case_id && data?.mode !== 'notebook') {
-      const id = String(data.use_case_id);
-      const before = String((rail.latest || []).find((row) => String(row?.use_case_id ?? '') === id)?.spec_version ?? '');
-      pendingBuilds.current.set(id, { at: Date.now(), name: String(data.use_case_name || ''), before });
-      setRail((prev) => ({ ...prev, latest: withPendingBuilds(prev.latest || [], pendingBuilds.current, Date.now()) }));
-    }
+    if (data?.use_case_id && data?.mode !== 'notebook') setRail((prev) => ({ ...prev, latest: withPendingBuilds(prev.latest || []) }));
     loadRail().catch((e) => setRailError(e.message));
   };
   const [progressDock, setProgressDock] = useState(null);

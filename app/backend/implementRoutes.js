@@ -707,13 +707,11 @@ function registerImplementRoutes(app, deps) {
         const live = I.liveBuiltRow(rows);
         return Object.assign(rows[0], { live_version: live ? live.spec_version : null, live_spec_json: live ? live.spec_json : null });
       });
-      // REQ-323: the per-row reads run at most HISTORY_ROW_CONCURRENCY at a time, so one session cannot flood the warehouse or the Jobs API.
+      // REQ-323: the Jobs API reads run at most HISTORY_ROW_CONCURRENCY at a time; the run summary is one warehouse statement for all rows.
       const [notebook] = await Promise.all([
         latestGenieNotebookRun(fetchJsonFor(req), sid).then((run) => ({ run, error: '' }), (err) => ({ run: null, error: err.message })),
-        mapLimit(latest, HISTORY_ROW_CONCURRENCY, async (row) => {
-          row.stalled = await stalledOf(req, row);
-          await latestRunOf(req, warehouseId, row, versionsByUc[row.use_case_id]);
-        }),
+        mapLimit(latest, HISTORY_ROW_CONCURRENCY, async (row) => { row.stalled = await stalledOf(req, row); }),
+        latestRunsOf(req, warehouseId, latest, (id) => versionsByUc[id]),
       ]);
       res.json({ history, latest, notebook_run: notebook.run, notebook_run_error: notebook.error });
     } catch (err) {
@@ -1319,15 +1317,17 @@ function registerImplementRoutes(app, deps) {
     }
   });
 
-  async function latestRunOf(req, warehouseId, row, history) {
-    if (!row) return;
-    row.older_build = I.olderBuildNote(history, buildStamp());
-    const summary = I.runSummaryTable(row);
-    if (!summary) return;
+  // REQ-323: the latest run of every row in one warehouse statement (I.latestRunsStatement), not one per use case.
+  async function latestRunsOf(req, warehouseId, rows, historyOf) {
+    for (const row of rows) if (row) row.older_build = I.olderBuildNote(historyOf(row.use_case_id), buildStamp());
+    const withRuns = rows.filter((row) => row && I.runSummaryTable(row));
+    if (!withRuns.length) return;
+    const entries = withRuns.map((row) => ({ summaryTable: I.runSummaryTable(row), useCaseId: row.use_case_id }));
     try {
-      row.latest_run = I.latestRunFrom(await sqlRows(req.dbHost, req.dbToken, warehouseId, I.latestRunStatement(summary, row.use_case_id)));
+      const byUseCase = I.latestRunsFrom(await sqlRows(req.dbHost, req.dbToken, warehouseId, I.latestRunsStatement(entries)));
+      for (const row of withRuns) row.latest_run = byUseCase.get(String(row.use_case_id)) || I.latestRunFrom([]);
     } catch (err) {
-      if (isMissingTableError(err) || I.isMissingColumnError(err)) row.latest_run = I.latestRunFrom([]);
+      if (isMissingTableError(err) || I.isMissingColumnError(err)) for (const row of withRuns) row.latest_run = I.latestRunFrom([]);
     }
   }
 
@@ -1709,7 +1709,7 @@ function registerImplementRoutes(app, deps) {
       jobId ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/list?job_id=${jobId}&limit=10`) : null,
       stalledOf(req, history[0]),
       held == null && !appUpdate ? null : personOf(req),
-      latestRunOf(req, warehouseId, history[0], history),
+      latestRunsOf(req, warehouseId, [history[0]], () => history),
       builtBy ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
     ]);
     if (history[0]) {

@@ -15,7 +15,7 @@ import TabStrip, { tabPanel } from '../components/TabStrip';
 import AppSample, { paletteVars, pv } from '../components/AppSample';
 import { generationFolder, sharedFolderWarning } from '../lib/workspaceLinks';
 import { catalogRow } from '../lib/useCaseFacets';
-import { insideMoveNote } from '../lib/implementControl';
+import { insideMoveNote, markBuildPending } from '../lib/implementControl';
 import {
   GENIE_CODE_OFF_TITLE,
   genieCodeOff,
@@ -1278,6 +1278,7 @@ export default function ImplementWizard({
         rebuild_as_is: rebuildAsIs,
       }, { signal }), { label: 'The build' });
       clearWizardDraft(draftKey);
+      if (data?.use_case_id) markBuildPending(data.use_case_id, { name: sent.use_case_name, version: data.spec_version });
       onImplemented(data);
     } catch (e) {
       setErrors([e.message]);
