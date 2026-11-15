@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { answerLabel, cellText } from '../src/format.js';
-import { STEPS_SUMMARY, answerColumns } from '../src/genieAnswerView.js';
+import { STEPS_SUMMARY, answerColumns, progressLabel } from '../src/genieAnswerView.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 const read = (name) => readFileSync(join(SRC, name), 'utf8');
@@ -54,4 +54,14 @@ test('a finished answer shows its steps under Details, after the answer text, an
 
 test('the answer table is built only from the Genie columns, not from text written by the model', () => {
   assert.doesNotMatch(read('Genie.jsx'), /function answerColumns/, 'one shared answerColumns, in genieAnswerView.js');
+});
+
+// REQ-330 follow-up: while an answer runs, the panel says it is asking Genie, never the relay text the step log keeps.
+test('while Genie is asked the panel shows Asking Genie, never the relay text', () => {
+  assert.equal(progressLabel('Asked Genie: For franchises 3000039, what is the gap by product?'), 'Asking Genie');
+  assert.equal(progressLabel('Read record 3000039'), 'Read record 3000039');
+  assert.equal(progressLabel(''), 'Reading your question');
+  const genie = read('Genie.jsx');
+  assert.match(genie, /\{progressLabel\(m\.step\)\}/, 'the running line reads progressLabel');
+  assert.doesNotMatch(genie, /m\.state === 'running' && <div className="msg-b"><AgentSteps/, 'the running panel no longer lists the relay steps');
 });

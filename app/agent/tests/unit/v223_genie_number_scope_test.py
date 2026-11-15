@@ -46,35 +46,35 @@ def test_a_genie_count_that_disagrees_with_the_page_kpi_shows_the_page_value_and
     turn, ws = turn_for(tmp_path, script, ws_class=GenieCounts, counted=95)
     assert ws.genie, "Genie was asked"
     assert turn["answer"] == (f"The page shows Items on the list 120 for {ITEMS_SCOPE}; Genie counted 95 across all rows."
-                              "\n\nGenie found 95 items on the list.")
+                              "\n\nGenie found 95 items on the list.\n\nCounted over the whole items table.")
 
 
 def test_a_genie_count_that_agrees_with_the_page_is_no_clash_and_only_gets_its_scope(tmp_path):
     script = [tool_call("ask_genie", {"question": "How many items are on the list?"}), said("Genie found 120 items on the list.")]
     turn, _ws = turn_for(tmp_path, script, ws_class=GenieCounts, counted=120)
-    assert turn["answer"] == f"Genie found 120 items on the list.\n\nItems on the list 120 counts {ITEMS_SCOPE}."
+    assert turn["answer"] == f"Genie found 120 items on the list.\n\nItems on the list 120 counts {ITEMS_SCOPE}.\n\nCounted over the whole items table."
 
 
 def test_a_genie_number_about_another_subject_raises_no_clash_and_no_note_when_it_counts_all_rows(tmp_path):
     script = [tool_call("ask_genie", {"question": "Which region lost the most?"}), said("East lost the most: 95.")]
     turn, _ws = turn_for(tmp_path, script, question="Which region loses the most?", ws_class=GenieCounts, counted=95)
-    assert turn["answer"] == "East lost the most: 95."
+    assert turn["answer"] == "East lost the most: 95.\n\nCounted over the whole items table."
 
 
 def test_a_genie_number_the_answer_does_not_state_gets_nothing_attached(tmp_path):
     script = [tool_call("ask_genie", {"question": "Which region lost the most?"}), said("East lost the most.")]
     turn, _ws = turn_for(tmp_path, script, question="Which region loses the most?", ws_class=GenieCounts, counted=95)
-    assert turn["answer"] == "East lost the most."
+    assert turn["answer"] == "East lost the most.\n\nCounted over the whole items table."
 
 
 def test_a_genie_agent_answer_passed_through_gets_no_note_when_it_counts_all_rows(tmp_path):
     s, _ws, _made = agent_shell(tmp_path, ws=GenieCounts(95))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
-    assert status == 200 and msg["text"] == "There are 95 items."
+    assert status == 200 and msg["text"] == "There are 95 items.\n\nCounted over the whole items table."
     (tmp_path / "rows").mkdir()
     s, _ws, _made = agent_shell(tmp_path / "rows", ws=AgentWorkspace(genie_text="East lost the most: 120."))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
-    assert status == 200 and msg["text"] == "East lost the most: 120.", "a result of rows, not one number, gets no count line"
+    assert status == 200 and msg["text"] == "East lost the most: 120.\n\nCounted over the whole t table.", "a result of rows, not one number, gets no count line"
 
 
 def test_an_answer_without_a_page_number_gets_nothing_attached(tmp_path):

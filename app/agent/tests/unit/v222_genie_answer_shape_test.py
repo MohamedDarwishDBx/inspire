@@ -165,7 +165,7 @@ def test_an_answer_within_the_cap_is_never_rewritten(tmp_path):
 def test_a_genie_agent_answer_passed_through_is_shaped_too(tmp_path):
     s, _ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(genie_text=ROW_ANSWER))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
-    assert status == 200 and msg["text"] == shell_agent.shape_answer(ROW_ANSWER) and len(bullets(msg["text"])) == 3
+    assert status == 200 and msg["text"] == shell_agent.shape_answer(ROW_ANSWER) + "\n\nCounted over the whole t table." and len(bullets(msg["text"])) == 3
     assert msg["sql"] and msg["rows"] == [{"region": "East"}]
 
 
