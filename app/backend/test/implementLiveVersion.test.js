@@ -89,6 +89,18 @@ test('without a kept App the publish listing and App update use the newest built
   assert.equal(I.runPages(plain)[0].app_name, 'app-v3');
 });
 
+test('D-LIVE2: with no finished build yet, the newest build own App is the one shown; a finished build still wins over a newer running one', () => {
+  const I = require('../lib/inspireImplement');
+  const running = { session_id: 's1', use_case_id: 'UC1', spec_version: 1, status: 'building_outputs', app_name: 'app-v1', app_url: 'https://v1.example.test',
+    updated_at: '2026-11-15T08:00:00Z', spec_json: { use_case_name: 'Fraud', outputs: { app: true } }, asset_status: { app: { state: 'building', spec_version: 1 } } };
+  assert.deepEqual(I.liveAppOf([running]), { name: 'app-v1', url: 'https://v1.example.test', version: 1 }, 'a first build still running shows its App');
+  const noName = { ...running, app_name: '', app_url: '' };
+  assert.equal(I.liveAppOf([noName]), null, 'a newest build with no App name has no live App');
+  const done = { ...running, status: 'ready', asset_status: { app: { state: 'ready', spec_version: 1 } } };
+  const newerRunning = { ...running, spec_version: 2, app_name: 'app-v2', app_url: 'https://v2.example.test' };
+  assert.deepEqual(I.liveAppOf([done, newerRunning]), { name: 'app-v1', url: 'https://v1.example.test', version: 1 }, 'a finished build is live over a newer running one');
+});
+
 // REQ-241 (D-LIVE), carried-state class: carriedAssets is the NEWEST build's outputs (side App), liveCarriedAssets is the App that serves people (kept v6).
 // Live-App sites (route App status and merge checks, control targets, alert targets, merge registry, settings target) read liveCarriedAssets.
 test('live-App sites read the kept live App, the newest-build helper reads the side App (carried-state class)', () => {
