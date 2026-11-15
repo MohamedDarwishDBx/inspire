@@ -480,8 +480,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
 
   const scope = useMemo(() => pickedScope(selectedCatalogs, selectedSchemas, selectedTables, wholeCatalogs),
     [selectedCatalogs, selectedSchemas, selectedTables, wholeCatalogs]);
-  const scopeTables = useMemo(() => pickedTableNames(tableScopes, { catalogs: wholeCatalogs, schemas: selectedSchemas, tables: selectedTables }),
-    [tableScopes, wholeCatalogs, selectedSchemas, selectedTables]);
+  const scopeTables = useMemo(() => pickedTableNames(tableScopes, scope), [tableScopes, scope]);
   const scopeText = scopeSummary(scope);
 
   useEffect(() => {
@@ -770,7 +769,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     finalParams['12_documents_languages'] = formatDocumentLanguages(launchDocLanguages(params));
     // Always auto-generate session ID
     finalParams['14_session_id'] = newSessionId();
-    const tableScopeText = launchTableScopeText(tableScopes, { catalogs: wholeCatalogs, schemas: selectedSchemas, tables: selectedTables },
+    const tableScopeText = launchTableScopeText(tableScopes, scope,
       dataFilterLabel.on ? (dataFilterLabel.text ?? groupLabelOf(filterValuesOf(tableScopes, scopeTables))) : '');
     if (tableScopeText) finalParams['17_table_scope'] = tableScopeText;
 
@@ -1730,7 +1729,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 {showDataFilters && (
                   <div className="px-4 pb-4 pt-1 border-t border-border">
                     <DataFilters
-                      picks={{ catalogs: wholeCatalogs, schemas: selectedSchemas, tables: selectedTables }}
+                      scope={scope}
                       scopes={tableScopes}
                       onScopes={setTableScopes}
                       label={dataFilterLabel}
