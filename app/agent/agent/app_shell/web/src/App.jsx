@@ -276,7 +276,7 @@ function Shell({ app, onRefreshSiblings }) {
     try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode keeps the choice for this visit */ }
   };
   const ask = (q) => { openGenie(); genie.ask(q); };
-  const explain = (request) => { openGenie(); genie.explain(request); };
+  const explain = (request) => { if (!request.inPlace) openGenie(); return genie.explain(request); };
   const setPageState = (id) => (next) => setStates((s) => ({ ...s, [id]: next }));
   const setPageLook = (id) => (change) => setLooks((l) => ({ ...l, [id]: change(l[id] || EMPTY_LOOK) }));
   const themeKey = `${palette}:${theme}:${app.style}`;

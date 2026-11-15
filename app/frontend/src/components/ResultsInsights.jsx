@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, Eye, ListOrdered, Lock, MessageSquareText } from 'lucide-react';
 import {
-  FEEDBACK_EMPTY_TEXT, FEEDBACK_OFF_TEXT, KPI_TRACKING_NOT_MEASURED, dataAccessSummary, excludedFeedbackText, feedbackLabel,
-  formatBaseline, trackedKpiNote, trackedKpiValue,
+  FEEDBACK_EMPTY_TEXT, FEEDBACK_OFF_TEXT, KPI_TRACKING_NOT_MEASURED, dataAccessSummary, discoverPermissionsOf, excludedFeedbackText,
+  feedbackLabel, formatBaseline, trackedKpiNote, trackedKpiValue,
 } from '../lib/v130UseCase';
+import { raisePermissions } from '../lib/permissionBus';
 import { scoreText } from '../lib/reviewFigures';
 import { plural } from '../lib/plural';
 import DataGrid from './DataGrid';
@@ -119,6 +120,11 @@ function InsightCard({ icon, title, summary, children }) {
 }
 
 export function DataAccessBadge({ results }) {
+  // REQ-131, REQ-260: the grants a Discover run could not get open in Permission Required (once per grant list)
+  const grants = discoverPermissionsOf(results);
+  useEffect(() => {
+    if (grants.length) raisePermissions(grants);
+  }, [results]);
   const access = dataAccessSummary(results);
   if (!access) return null;
   if (!access.dataRead) {

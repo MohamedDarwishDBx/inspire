@@ -36,8 +36,8 @@ test('the rule is the decision-list definition the page holds, and no line when 
 });
 
 test('the checked-row line shows the count the run wrote, and no line when the count is missing or not a whole number', () => {
-  assert.equal(checkedNote({ charts: ['by_category'], rows_checked: 3333 }), '3,333 rows checked');
-  assert.equal(checkedNote({ rows_checked: 0 }), '0 rows checked');
+  assert.equal(checkedNote({ charts: ['by_category'], rows_checked: 3333 }), 'This run checked 3,333 records and found nothing to act on');
+  assert.equal(checkedNote({ rows_checked: 0 }), '', 'a run that checked no record says nothing about checking');
   assert.equal(checkedNote({ rows_checked: null }), '');
   assert.equal(checkedNote({ charts: ['by_category'] }), '');
   assert.equal(checkedNote({ rows_checked: '3333' }), '', 'a count sent as text is not shown');

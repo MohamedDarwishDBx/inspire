@@ -74,15 +74,22 @@ test('a build whose App cannot read its data ends as action needed; a person who
     const card = page.getByRole('region', { name: 'The App cannot read part of its data' });
     await card.waitFor();
     assert.match(await card.innerText(), /cannot read 2 tables, so its pages show no data from them yet/, 'the card counts the tables; their names sit under Details');
-    assert.deepEqual(await card.locator('[data-app-reads-choice]').evaluateAll((els) => els.map((e) => e.dataset.appReadsChoice)), ['copy', 'check']);
+    // REQ-082: one primary action that fits the person's rights (here: See the grant), and Check again as the quiet secondary
+    assert.equal(await card.locator('[data-app-reads-primary]').getAttribute('data-app-reads-primary'), 'copy');
+    assert.equal(await card.locator('button[data-app-reads-primary]').count(), 1, 'one primary action on the card');
+    assert.equal(await card.locator('[data-app-reads-choice="check"]').count(), 1);
     assert.equal(await card.getByRole('button', { name: 'Grant access with my permissions' }).count(), 0, 'no grant button when the live verdict says it cannot grant');
-    await card.getByRole('button', { name: 'Copy the grant SQL to send to your data owner' }).waitFor();
+    await card.locator('[data-app-reads-primary="copy"]').waitFor();
     assert.equal(await page.getByText(APP_READS_LABEL, { exact: true }).count() > 0, true, 'the build reads as action needed, not plain Done');
     assert.equal(await page.locator('[data-app-reads]').getByText(/^Done$/).count(), 0);
 
-    await card.getByRole('button', { name: 'Copy the grant SQL to send to your data owner' }).click();
-    await card.getByText('The grant SQL is copied.', { exact: false }).first().waitFor();
-    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), [CATALOG, SCHEMA, SELECT, METADATA, SELECT_RETURNS, METADATA_RETURNS].map((g) => `${g};`).join('\n'));
+    // REQ-131, REQ-260: the grant commands open in Permission Required; no clipboard copy path for GRANT SQL
+    await card.locator('[data-app-reads-primary="copy"]').click();
+    const copy = page.locator('[data-permission-dialog] [data-permission-statements]');
+    await copy.waitFor({ timeout: 15000 });
+    assert.equal((await copy.innerText()).split('\n').map((l) => l.replace(/;$/, '')).sort().join('\n'),
+      [CATALOG, SCHEMA, SELECT, METADATA, SELECT_RETURNS, METADATA_RETURNS].sort().join('\n'));
+    await page.keyboard.press('Escape'); // the dialog is modal: close it before the card's own buttons
 
     w.grants.length = 0;
     await card.getByRole('button', { name: 'Check again' }).click();

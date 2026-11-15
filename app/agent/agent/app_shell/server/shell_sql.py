@@ -938,6 +938,11 @@ def spec_problems(page: dict, stored=None) -> list:
             problems.append(f"{where} reads dataset {kpi.get('dataset')}, which the page does not define")
         shape = expression_problems(where, kpi.get("expression"))
         problems += shape
+        if kpi.get("open_work") is not None and not isinstance(kpi.get("open_work"), bool):
+            problems.append(f"{where} open_work must be true or false")
+        elif kpi.get("open_work") and not shape and not (kpi_counts_result_rows(page, kpi) and keeps_record_key(page, kpi.get("dataset"))):
+            problems.append(f"{where} is marked open_work, so it must be a plain count of the result table "
+                            f"(COUNT(*), COUNT(col) or COUNT(DISTINCT col)) over a dataset that reads it and keeps record_key")
         problems += _format_problems(where, kpi)
         if kpi.get("good", "neutral") not in GOODS:
             problems.append(f"{where} good must be up, down or neutral")
@@ -2770,9 +2775,10 @@ def left_out_text(rows) -> dict:
 SCOPE_COUNT_FORMATS = ("number", "integer")
 
 
-def scope_counts_query(page: dict, names) -> tuple:
-    """One read of the App's result table under the one scope: open, held back, done or closed, and could not be checked.
-    Every count KPI on a page with the quality flag states these numbers, so no count is read as the open work count alone."""
+def scope_counts_query(page: dict, names, today: str) -> tuple:
+    """One read of the App's result table under the one scope: open, snoozed, held back, done or closed, and could not be checked.
+    Every count KPI on a page with the quality flag states these numbers, so no count is read as the open work count alone.
+    The open and snoozed cells split the same open-status rows on the snooze date, exactly as the Work list does."""
     if "data_quality_flag" not in names:
         return None
     params = _Params()
@@ -2783,9 +2789,12 @@ def scope_counts_query(page: dict, names) -> tuple:
               else params.add(statuses["unset"]))
     opened = ", ".join(params.add(str(v)) for v in statuses["open"])
     closed = ", ".join(params.add(str(v)) for v in statuses["closed"])
+    snooze = f"CAST(`{SNOOZE_COLUMN}` AS DATE)" if SNOOZE_COLUMN in names else "CAST(NULL AS DATE)"
+    awake = not_snoozed_sql(snooze, params.add(today, "DATE"))
     scope = " AND ".join(c for c in (use_case_scope(page, params), "`is_current`", "`change_source` <> 'delete'") if c)
-    text = (f"SELECT COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened})) AS open_, COUNT_IF({ok} AND {held}) AS held_, "
-            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({closed})) AS closed_, COUNT_IF(NOT {ok}) AS unchecked "
+    text = (f"SELECT COUNT_IF({shell_facts.open_work_sql(names, params.add(today, 'DATE'))}) AS open_, COUNT_IF({ok} AND {held}) AS held_, "
+            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({closed})) AS closed_, COUNT_IF(NOT {ok}) AS unchecked, "
+            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened}) AND NOT {awake}) AS snoozed_ "
             f"FROM {table_name(page['result_table'])} WHERE {scope}")
     return f"{text} LIMIT 1", params.items
 
@@ -2805,11 +2814,31 @@ def kpi_counts_result_rows(page: dict, kpi: dict) -> bool:
     return table_name(page["result_table"]) in sql or page["result_table"] in sql
 
 
+OPEN_NAMES = re.compile(r"\b(open|waiting|to decide|need action|to fix|outstanding)\b", re.I)
+
+
+def keeps_record_key(page: dict, dataset: str) -> bool:
+    """True when the dataset carries record_key: named in its SQL, or passed through by SELECT * over a source."""
+    sql = _dataset_sql(page).get(dataset, "")
+    return "record_key" in sql or re.match(r"\s*SELECT\s+\*", sql, re.I) is not None
+
+
+def kpi_open_work(page: dict, kpi: dict) -> bool:
+    """Whether a KPI counts open work and so reads the one open-work scope. An explicit open_work flag decides. Without one, a plain
+    count of the decision records that names open work in its id or label does (the page-spec default)."""
+    if isinstance(kpi.get("open_work"), bool):
+        return kpi["open_work"]
+    if kpi.get("open_work") is not None or not OPEN_NAMES.search(f"{kpi.get('id') or ''} {kpi.get('label') or ''}"):
+        return False
+    return kpi_counts_result_rows(page, kpi) and keeps_record_key(page, kpi.get("dataset"))
+
+
 def scope_counts_text(rows) -> str:
     row = (rows or [{}])[0]
-    open_, held, closed, unchecked = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked"))
-    checked = open_ + held + closed
-    return (f"Scope: {checked} checked records, {open_} open, {held} held back, {closed} done or closed. "
+    open_, held, closed, unchecked, snoozed = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked", "snoozed_"))
+    checked = open_ + held + closed + snoozed
+    later = f" {snoozed} snoozed until a later date." if snoozed else ""
+    return (f"Scope: {checked} checked records, {open_} open, {held} held back, {closed} done or closed.{later} "
             f"{unchecked} could not be checked and are never open work.")
 
 
@@ -2938,6 +2967,33 @@ def money_off(page: dict) -> bool:
     return money.get("off") is True
 
 
+def money_label_problems(page: dict) -> list:
+    """The money rule names the value-at-stake card: a currency card that reads value_at_stake carries the money rule's words, never a
+    name a notebook invented (REQ-293)."""
+    problems = []
+    if not isinstance(page.get("money"), dict) or money_off(page):
+        return problems
+    sqls = _dataset_sql(page)
+    for kpi in page.get("kpis") or []:
+        if kpi.get("format") != "currency" or not kpi.get("dataset"):
+            continue
+        reads = f"{sqls.get(kpi['dataset'], '')} {kpi.get('expression') or ''}".lower()
+        label = " ".join(str(kpi.get("label") or "").split())
+        if "value_at_stake" in reads and "value at stake" not in label.lower():
+            problems.append(f"the {label or 'unnamed'} card reads value_at_stake, so its label must be the money rule's 'Value at stake', "
+                            f"not {label!r}")
+    for chart in page.get("charts") or []:
+        for series in chart.get("y") or []:
+            if not isinstance(series, dict) or series.get("format") != "currency" or not series.get("label"):
+                continue
+            reads = f"{sqls.get(chart.get('dataset'), '')} {series.get('expression') or ''}".lower()
+            label = " ".join(str(series.get("label")).split())
+            if "value_at_stake" in reads and "value at stake" not in label.lower():
+                problems.append(f"the {label} series of the {chart.get('id') or 'unnamed'} chart reads value_at_stake, so its label must be "
+                                f"the money rule's 'Value at stake', not {label!r}")
+    return problems
+
+
 def money_page_problems(page: dict) -> list:
     """The money rule against the page's own datasets: a rate table needs a dated dataset, and the statuses and the
     losses rule must reach the dataset SQL, not be ignored."""
@@ -2956,7 +3012,7 @@ def money_page_problems(page: dict) -> list:
                 problems.append(f"the {name} dataset ignores the status {status!r}; its SQL must keep rows whose status is {status!r}")
         if money.get("rule", "losses") == "losses" and "greatest(" not in sql.lower():
             problems.append(f"the {name} dataset does not count losses only; its SQL must net each loss at zero, as GREATEST(-effect, 0)")
-    return problems
+    return problems + money_label_problems(page)
 
 
 def money_check_queries(page: dict) -> list:
@@ -3041,11 +3097,18 @@ def genie_money_query(page: dict, kpi: dict) -> tuple:
     return money_expression(page, dataset, kpi["expression"]), money_source(page, dataset, _dataset(page, dataset)), quote(by) if by else ""
 
 
-def kpi_query(page: dict, ident: str, values: dict, previous: str = None) -> tuple:
+# The columns a result table has when the App built it (SCHEMA); used when a caller does not pass the table's real columns.
+RESULT_COLUMNS = frozenset({"is_current", "change_source", "action_status", "held_back", "data_quality_flag", SNOOZE_COLUMN})
+
+
+def kpi_query(page: dict, ident: str, values: dict, previous: str = None, names=None) -> tuple:
     kpi = _item(page, "kpis", ident)
     money = kpi.get("format") == "currency"
     dataset = _dataset(page, kpi["dataset"])
     sql, params = (money_source(page, kpi["dataset"], dataset) if money else future_source(page, kpi["dataset"], dataset)), _Params()
+    if kpi_open_work(page, kpi):  # a count of open work keeps the rows whose record is open in the result table, never raw rows
+        open_records = f"SELECT `record_key` FROM {table_name(page['result_table'])} WHERE {shell_facts.open_work_sql(names or RESULT_COLUMNS, 'current_date')}"
+        sql = f"SELECT * FROM ({sql}) AS o WHERE o.`record_key` IN ({open_records})"
     expression = money_expression(page, kpi["dataset"], kpi["expression"]) if money else kpi["expression"]
     where = _where(page, kpi["dataset"], values, params)
     by = money_currency_column(page, kpi)
@@ -3092,22 +3155,40 @@ def kpi_rows_query(page: dict, ident: str, values: dict) -> tuple:
     return f"SELECT COUNT(*) AS n FROM ({sql}) AS d{where} LIMIT 1", params.items
 
 
-def kpi_empty_text(page: dict, through: str = "") -> dict:
+def zero_run_checked(summary) -> int | None:
+    """REQ-297: the records the latest run checked when it found nothing to act on (no Act now and no Review record), else None: no
+    summary, a count that is missing, a flagged record, or a run that checked no record."""
+    if not summary:
+        return None
+    flagged = [as_number(summary.get("act_now_records")), as_number(summary.get("review_records"))]
+    records = as_number(summary.get("records"))
+    if None in flagged or records is None or sum(flagged) or records < 1:
+        return None
+    return int(records)
+
+
+def kpi_empty_text(page: dict, through: str = "", checked=None) -> dict:
     """Why a KPI with no rows behind it has no number, in plain words, in every App language: {language code: text}. The words are the
-    tour registry's per-language `reasons` in kinds.json. On a forecast page the reason is the forecast's start."""
-    if plan_contract(page) == "forecast":
+    tour registry's per-language `reasons` in kinds.json. On a forecast page the reason is the forecast's start. When the latest run checked
+    records and found nothing (checked, REQ-297), the reason says what the run did."""
+    if checked is not None:
+        key, through = "run_found_nothing", shown_number(checked)
+    elif plan_contract(page) == "forecast":
         key = "forecast_not_yet" if through else "forecast_no_date"
     else:
         key = "no_rows_dated" if through else "no_rows"
     languages = (kinds_registry().get("tour") or {}).get("languages") or {}
-    return {str(lang.get("code")): str(lang["reasons"][key]).replace("{through}", through)
+    return {str(lang.get("code")): str(lang["reasons"][key]).replace("{through}", through).replace("{checked}", through)
             for lang in languages.values() if isinstance(lang, dict) and isinstance(lang.get("reasons"), dict) and key in lang["reasons"]}
 
 
-def kpi_missing(page: dict, shown: dict, rows: int, through: str = "") -> dict:
-    """A zero or missing KPI value with no rows behind it shows no number and says why. A zero with rows behind it is a measured zero."""
+def kpi_missing(page: dict, shown: dict, rows: int, through: str = "", checked=None) -> dict:
+    """A zero or missing KPI value with no rows behind it says why. REQ-297: when the latest run checked records and found nothing to act
+    on, the KPI is a measured zero with that reason, never a blank number. Otherwise a zero with no rows behind it shows no number."""
     if not kpi_needs_rows_check(shown) or rows:
         return shown
+    if checked is not None:
+        return dict(shown, now=0, empty=kpi_empty_text(page, checked=checked))
     return dict(shown, now=None, empty=kpi_empty_text(page, through))
 
 def split_filters(page: dict, dataset: str) -> list:
@@ -3509,8 +3590,8 @@ def default_values(page: dict, bounds: dict) -> dict:
     return values
 
 
-def page_queries(page: dict, values: dict, tables=None, previous=None, types=None, sorts=None, searches=None) -> list:
-    out = [("kpi", k["id"]) + kpi_query(page, k["id"], values, (previous or {}).get(k["dataset"])) for k in page.get("kpis") or []]
+def page_queries(page: dict, values: dict, tables=None, previous=None, types=None, sorts=None, searches=None, names=None) -> list:
+    out = [("kpi", k["id"]) + kpi_query(page, k["id"], values, (previous or {}).get(k["dataset"]), names) for k in page.get("kpis") or []]
     out += [("chart", c["id"]) + chart_query(page, c["id"], values) for c in page.get("charts") or []]
     out += [("table", t["id"]) + table_query(page, t["id"], values, (tables or {}).get(t["id"]), (types or {}).get(t["id"]),
                                              (sorts or {}).get(t["id"]), (searches or {}).get(t["id"], "")) for t in page.get("tables") or []]
@@ -3719,9 +3800,15 @@ def checked_sql(alias: str = "c") -> str:
     return f"COALESCE({alias}.`_inspire_ok`, FALSE)"
 
 
+def not_snoozed_sql(snooze: str, today: str) -> str:
+    """Open work waits for its snooze date: no snooze, or the snooze date is today or earlier. The Work list, the scope line and
+    the Work tab count all read this one expression, so a snoozed row is counted in none of them until it wakes."""
+    return f"({snooze} IS NULL OR {snooze} <= {today})"
+
+
 def window_conditions(bounds: dict, params, held: bool, today: str, alias: str = "c", checked: bool = False) -> list:
     a = f"{alias}."
-    out = [f"COALESCE({a}`_inspire_status`, '{NEW}') IN ({shell_facts.sql_list(OPEN_STATUSES)})", f"({a}`_inspire_snooze` IS NULL OR {a}`_inspire_snooze` <= {today})"]
+    out = [f"COALESCE({a}`_inspire_status`, '{NEW}') IN ({shell_facts.sql_list(OPEN_STATUSES)})", not_snoozed_sql(f"{a}`_inspire_snooze`", today)]
     if held:
         out.append(f"NOT COALESCE({a}`_inspire_held`, FALSE)")
     if checked:
@@ -6373,15 +6460,27 @@ def trends_query(page: dict, names: set, now: datetime.datetime, since: datetime
 
 
 
+UNIT_MAX = 24
+ESTIMATE_TAG = re.compile(r"\[\s*estimate\b|\(\s*estimate\b", re.IGNORECASE)
+
+
+def plain_unit(text) -> str:
+    """REQ-306: a unit is a short plain word. An estimate tag, a bracket, a dotted table path or a sentence is never a unit."""
+    text = " ".join(str(text or "").split())
+    if not text or len(text) > UNIT_MAX or ESTIMATE_TAG.search(text) or re.search(r"[\[\]():.=_]", text):
+        return ""
+    return text
+
+
 def impact_of(summary) -> dict:
     s = summary or {}
     kind = str(s.get("impact_kind") or "").strip().lower()
     currency = " ".join(str(s.get("currency") or "").split())
     if kind not in IMPACT_KINDS:
-        return {"kind": "money", "unit": currency} if not currency or currency in MONEY_CODES else {"kind": "number", "unit": currency}
+        return {"kind": "money", "unit": currency} if not currency or currency in MONEY_CODES else {"kind": "number", "unit": plain_unit(currency)}
     if kind == "money":
         return {"kind": kind, "unit": currency if currency in MONEY_CODES else ""}
-    return {"kind": kind, "unit": " ".join(str(s.get("impact_unit") or "").split())}
+    return {"kind": kind, "unit": plain_unit(s.get("impact_unit"))}
 
 
 def impact_unit(summary) -> str:
@@ -6410,6 +6509,14 @@ def stake_measure(item) -> bool:
     """A chart measure that counts what is at stake: a currency measure, or one the App labels with its own stake words
     (stake_label, such as 'Amount at stake' when Genie wrote the format as a plain number). A tested-records count is not one."""
     return item.get("format") == "currency" or str(item.get("label") or "").strip().lower().endswith(" at stake")
+
+
+def exception_measure(item) -> bool:
+    """A chart measure that counts what the rule flagged: a stake measure, or a count the App labels Exceptions (REQ-290: an
+    Exceptions count is the rule's own output, so the flat-chart check reads it when no run summary is readable). A tested-records
+    count, such as 'Exceptions tested', is not one."""
+    words = str(item.get("label") or "").strip().lower().split()
+    return stake_measure(item) or (bool(words) and words[0] in ("exception", "exceptions") and "tested" not in words)
 
 
 def _digest_money(amount: str, currency: str, kept: bool) -> str:
@@ -7190,10 +7297,17 @@ def choice_problems(page: dict, stored=None) -> list:
     return problems
 
 
+def default_choice(choice: dict) -> bool:
+    """REQ-285: only a default choice (its id, label and status are the status's own) stands in for its status. A custom choice, such as the
+    Merge choice of an entity-matching page, is named only when a person picked it, so a status change never reads as that choice."""
+    return any(choice.get("id") == d["id"] and choice.get("label") == d["label"] and choice.get("status") == d["status"] for d in DEFAULT_CHOICES)
+
+
 def status_text(page: dict, values: dict) -> str:
     status = (values or {}).get("action_status") or NEW
     choices = [c for c in status_choices(page) if c.get("status") == status]
-    found = next((c for c in choices if c.get("id") == (values or {}).get(CHOICE_COLUMN)), choices[0] if len(choices) == 1 else None)
+    lone = choices[0] if len(choices) == 1 and default_choice(choices[0]) else None
+    found = next((c for c in choices if c.get("id") == (values or {}).get(CHOICE_COLUMN)), lone)
     return str((found or {}).get("label") or shell_facts.status_label(status))
 
 
@@ -7218,7 +7332,7 @@ def choice_sql(choices, names, alias: str = "") -> str:
                             f"ESCAPE '{LIKE_ESCAPE}') THEN {sql_text(c['id'])}")
         if said:
             parts.append(f"CASE {' '.join(said)} END")
-    alone = [c for c in picked if sum(1 for o in picked if o["status"] == c["status"]) == 1]
+    alone = [c for c in picked if sum(1 for o in picked if o["status"] == c["status"]) == 1 and default_choice(c)]
     if alone:
         parts.append("CASE " + " ".join(f"WHEN {status} = {sql_text(c['status'])} THEN {sql_text(c['id'])}" for c in alone) + " END")
     return parts[0] if len(parts) == 1 else f"COALESCE({', '.join(parts)})"
@@ -7246,7 +7360,67 @@ def part_table_problems(page: dict, section: str) -> list:
                             f"add {', '.join(gone)}")
         if page.get("result_table") and not reads_table(sqls.get(table.get("dataset")), companion):
             problems.append(f"table {table.get('id')} in {section} reads {companion}; point its dataset at that table")
+        produced = projected_columns(sqls.get(table.get("dataset")))
+        lost = [c for c in PART_COLUMNS[section] if produced is not None and c not in produced]
+        if lost:
+            problems.append(f"table {table.get('id')} in {section} shows {', '.join(lost)}, which its dataset {table.get('dataset')} does not "
+                            f"select; select {', '.join(lost)} from {companion} under those names, or alias the column to that name")
     return problems
+
+
+_SELECT_LIST_END = re.compile(r"\bFROM\b", re.I)
+
+
+def _top_level_items(text: str) -> list:
+    """The comma-separated items of a select list, with commas inside parentheses, quotes and backticks kept whole."""
+    items, depth, quote, start = [], 0, "", 0
+    for i, ch in enumerate(text):
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"`":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            items.append(text[start:i])
+            start = i + 1
+    items.append(text[start:])
+    return [item.strip() for item in items if item.strip()]
+
+
+def projected_columns(sql):
+    """The names the top-level select list of one dataset returns, lower-cased: each item's alias, else its last identifier. None when the
+    names cannot be read (a star, a union, a WITH clause, or no plain SELECT ... FROM), so a check never flags what it cannot see."""
+    text = clean_sql(sql)
+    if not re.match(r"SELECT\b", text, re.I) or re.search(r"\bUNION\b", text, re.I):
+        return None
+    body = text[len("SELECT"):]
+    end = None
+    depth = 0
+    for match in re.finditer(r"[()]|\bFROM\b", body, re.I):
+        if match.group(0) == "(":
+            depth += 1
+        elif match.group(0) == ")":
+            depth -= 1
+        elif depth == 0:
+            end = match.start()
+            break
+    select_list = body[:end] if end is not None else body
+    select_list = re.sub(r"^\s*(DISTINCT\s+)?", "", select_list, flags=re.I)
+    names = set()
+    for item in _top_level_items(select_list):
+        if item == "*" or item.endswith(".*"):
+            return None
+        alias = re.search(r"\bAS\s+`?([A-Za-z_][A-Za-z0-9_]*)`?\s*$", item, re.I)
+        if alias:
+            names.add(alias.group(1).lower())
+            continue
+        last = re.search(r"(?:^|[\s.])`?([A-Za-z_][A-Za-z0-9_]*)`?\s*$", item)
+        if last and not re.search(r"[()]\s*$", item):
+            names.add(last.group(1).lower())
+    return names
 
 
 def segments_problems(page: dict) -> list:

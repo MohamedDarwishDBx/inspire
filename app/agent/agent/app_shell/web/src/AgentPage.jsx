@@ -140,7 +140,7 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
       </section>
 
       <form className="agp-ask" role="search" aria-label="Ask the agent" onSubmit={(e) => { e.preventDefault(); ask(text); }}>
-        <input type="text" value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask about this use case, or tell me what to do"
+        <input type="text" dir="auto" value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask about this use case, or tell me what to do"
           aria-label="Ask the agent" disabled={busy} />
         <button type="submit" className="btn btn--pri" disabled={busy || !text.trim()}>Ask</button>
       </form>

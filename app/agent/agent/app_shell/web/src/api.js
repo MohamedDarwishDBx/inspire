@@ -116,7 +116,8 @@ export const withDemoDecisions = (page, list, filters = {}) => {
   if (!list || !Array.isArray(list.rows) || !keys.length) return list;
   const listed = new Map(list.rows.map((r) => [String(r.record_key), r]));
   const moved = keys.filter((k) => (listed.has(k) ? !CLOSED_STATUSES.includes(listed.get(k)._inspire_status) : !filtered(filters))).length;
-  const summary = list.summary && moved ? { ...list.summary, open: Math.max(0, (list.summary.open ?? 0) - moved), done: (list.summary.done ?? 0) + moved } : list.summary;
+  const summary = list.summary && moved ? { ...list.summary, ...(list.summary.open == null ? {} : { open: Math.max(0, list.summary.open - moved) }),
+    done: (list.summary.done ?? 0) + moved } : list.summary;  // open is absent when the list was not counted by status
   return { ...list, ...(summary ? { summary } : {}), demo_moved: moved, rows: list.rows.map((r) => (decided[String(r.record_key)] ? { ...r, ...decided[String(r.record_key)] } : r)) };
 };
 export const getRecords = async (body) => withDemoDecisions(body?.page, await json('POST', 'records', body), body?.filters);
@@ -125,8 +126,12 @@ export const getListed = (body, plain = null) => getRecords(body).then((data) =>
     ? getRecords(plain).then((data) => { if (data?.actions) throw e; return { data, unwindowed: true }; })
     : Promise.reject(e)));
 export const requestId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+// The server reads an action id only where the values cannot say what the write is. Update, Done and Snooze are read from their
+// values (shell_actions.action_for_values), so their body keeps the shape every version reads; any other id is sent.
+const VALUE_NAMED_ACTIONS = ['update', 'done', 'snooze'];
 export const actRecords = async (body) => {
   const sent = { request_id: requestId(), ...body };
+  if (VALUE_NAMED_ACTIONS.includes(sent.action)) delete sent.action;
   try {
     return await json('POST', 'records/act', sent);
   } catch (err) {

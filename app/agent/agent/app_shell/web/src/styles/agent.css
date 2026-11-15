@@ -31,7 +31,7 @@
 .agp-ticket{border:1px solid var(--line-strong);border-radius:12px;padding:12px 14px;background:var(--card);display:flex;flex-direction:column;gap:6px}
 .agp-ticket header{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
 .agp-ticket p{margin:0}
-.agp-link{background:none;border:0;padding:0;color:inherit;font:inherit;font-weight:600;text-align:left;cursor:pointer;text-decoration:underline}
+.agp-link{background:none;border:0;padding:0;color:inherit;font:inherit;font-weight:600;text-align:start;cursor:pointer;text-decoration:underline}
 .agp-stake{white-space:nowrap}
 .agp-why{font-size:13px}
 .agp-carousel{display:flex;flex-direction:column;gap:6px}
@@ -48,7 +48,7 @@
 .agp-card small{color:var(--muted)}
 .agp-table{overflow-x:auto}
 .agp-table table{border-collapse:collapse;width:100%;font-size:13px}
-.agp-table th,.agp-table td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+.agp-table th,.agp-table td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:start;vertical-align:top}
 .agp-colpick{border:0;padding:0;margin:0 0 6px;display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted)}
 .agp-kpi{border:1px solid var(--line-strong);border-radius:12px;padding:12px 14px;background:var(--card);display:flex;flex-direction:column;gap:2px}
 .agp-kpi b{font-size:22px}

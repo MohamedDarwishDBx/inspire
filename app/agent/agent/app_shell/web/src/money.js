@@ -1,4 +1,4 @@
-import { addCounts, countOf, grouped, isAmount, isMoney, kindOf, largestFirst, numberOf, stakeWords, unitOf, wholeMoney } from './format.js';
+import { addCounts, countOf, grouped, isAmount, isMoney, kindOf, largestFirst, numberOf, plainUnit, stakeWords, unitOf, wholeMoney } from './format.js';
 
 const TRIM = { minimumFractionDigits: 0, maximumFractionDigits: 2 };
 const SHOWN = 4;
@@ -7,7 +7,7 @@ export function amountText(value, kind, currency) {
   if (!isAmount(value)) return '';
   if (kind === 'percent') return `${(numberOf(value) * 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`;
   const text = grouped(countOf(value), TRIM);
-  return kind === 'money' && currency ? `${text} ${currency}` : text;
+  return kind === 'money' && plainUnit(currency) ? `${text} ${plainUnit(currency)}` : text;
 }
 
 export const assumptionLabel = (name) => {

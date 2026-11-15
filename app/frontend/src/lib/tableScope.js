@@ -148,8 +148,9 @@ export function filterValuesOf(scopes, pickedTables = []) {
   return [...new Set(values)];
 }
 
-// The tables a run reads through its picks: the tables picked one by one, plus every scoped table that sits under a
-// picked schema or catalog. A scope on a table from a schema pick is keyed catalog.schema.table like any other.
+// The tables a run reads, from the picked scope (pickedScope in catalogList.js: the catalogs and schemas read whole, and the
+// tables read one by one). Every scoped table under a schema or catalog read whole is included; a schema that has a picked table
+// under it is not read whole, so its other scoped tables are left out. Keyed catalog.schema.table like any other.
 export function pickedTableNames(scopes, { catalogs = [], schemas = [], tables = [] } = {}) {
   const names = [...tables];
   const seen = new Set(names.map(scopeKeyOf));

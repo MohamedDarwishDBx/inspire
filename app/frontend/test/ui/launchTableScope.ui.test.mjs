@@ -595,3 +595,86 @@ test('at 1024 px and up the table list and the grid sit side by side at equal wi
     await ui.close();
   }
 });
+
+// REQ-305 (Amr, 14:00 test): Data Filters lists ONLY the tables the Launch picks read, the same pickedScope the run reads.
+// Picking a schema or catalog does not list every table under it when a table under it is picked, or when the run does not read it whole.
+const RETURNS = 'main.s.returns';
+const TWO_TABLES = { ...STATE, tables: { 'main.s': ['orders', 'returns'] } };
+const VIEWPORTS = [{ width: 1440, height: 900 }, { width: 1280, height: 800 }];
+const listedTables = (page) => page.locator('[data-scope-table]').evaluateAll((els) => els.map((el) => el.getAttribute('data-scope-table')));
+
+// Waits until no node of the tree is still listing, then reads the table leaves, so a table that arrives late cannot be missed.
+async function settledTables(page) {
+  await until(async () => (await page.getByText(/^Listing the /).count()) === 0, 'the tree finished listing', 15000);
+  await idle(page);
+  return listedTables(page);
+}
+
+async function pickThenOpenDataFilters(page, pick) {
+  await page.getByPlaceholder(BUSINESS).fill('Acme');
+  await pick(page);
+  await idle(page);
+  await page.getByRole('button', { name: /Advanced Settings/ }).click();
+  await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
+}
+
+test('REQ-305 a table picked under its schema, with the catalog picked: Data Filters lists that one table, not the other tables of the schema', async () => {
+  const ui = await openUi('launch', TWO_TABLES);
+  const { page } = ui;
+  try {
+    await pickThenOpenDataFilters(page, async (p) => {
+      await p.locator('button[title="main"]').click();
+      await p.locator('button[title="s"]').click();
+      await p.locator('button[title="orders"]').click();
+    });
+    for (const size of VIEWPORTS) {
+      await page.setViewportSize(size);
+      await leafOf(page).waitFor({ timeout: 15000 });
+      assert.deepEqual(await settledTables(page), [ORDERS], `${size.width}x${size.height}: the tree lists only the picked table`);
+    }
+  } finally {
+    await ui.close();
+  }
+});
+
+test('REQ-305 a schema picked whole: Data Filters lists every table of that schema, at 1440x900 and 1280x800', async () => {
+  const ui = await openUi('launch', TWO_TABLES);
+  const { page } = ui;
+  try {
+    await pickThenOpenDataFilters(page, async (p) => {
+      await p.locator('button[title="main"]').click();
+      await p.locator('button[title="s"]').click();
+    });
+    const schema = page.locator('[data-schema-group="main.s"] > [role="treeitem"]');
+    await schema.waitFor({ timeout: 15000 });
+    await schema.click();
+    for (const size of VIEWPORTS) {
+      await page.setViewportSize(size);
+      await leafOf(page).waitFor({ timeout: 15000 });
+      assert.deepEqual(await settledTables(page), [ORDERS, RETURNS], `${size.width}x${size.height}: the schema is read whole, so its tables are listed`);
+    }
+  } finally {
+    await ui.close();
+  }
+});
+
+test('REQ-305 a catalog picked whole with nothing under it: Data Filters lists every table of every schema in it, at 1440x900 and 1280x800', async () => {
+  const ui = await openUi('launch', TWO_TABLES);
+  const { page } = ui;
+  try {
+    await pickThenOpenDataFilters(page, async (p) => { await p.locator('button[title="main"]').click(); });
+    const catalog = page.locator('[data-catalog-group="main"] > [role="treeitem"]');
+    await catalog.waitFor({ timeout: 15000 });
+    await catalog.click();
+    const schema = page.locator('[data-schema-group="main.s"] > [role="treeitem"]');
+    await schema.waitFor({ timeout: 15000 });
+    await schema.click();
+    for (const size of VIEWPORTS) {
+      await page.setViewportSize(size);
+      await leafOf(page).waitFor({ timeout: 15000 });
+      assert.deepEqual(await settledTables(page), [ORDERS, RETURNS], `${size.width}x${size.height}: a whole catalog is read whole, so its tables are listed`);
+    }
+  } finally {
+    await ui.close();
+  }
+});

@@ -7,9 +7,9 @@ import {
   FIRST_RUN_GROUPS_FIND_FROM, FIRST_RUN_GROUPS_MAX_SHOWN, FIRST_RUN_GROUPS_READING, FIRST_RUN_KEEPS, FIRST_RUN_SAVE_LABEL, GROUP_ALL, GROUP_BY, GROUP_KIND_WORDS, GROUPING_COMBINE,
   GROUPING_DEEP_MARK, GROUPING_DEEP_PICKED, GROUPING_PLAIN, GROUPING_SAVE_LABEL, RUN_SCOPE, RUN_SCOPE_UNRECORDED, RUN_SCOPES, SCOPE_DAYS,
   SCOPE_GROUPS, SCOPE_LABELS, SCOPE_RECORDS, deepGrouping, firstRunChoiceOf, firstRunGroupsPick, groupingCombineNote, firstRunChoices, firstRunCoversText, groupByColumns, groupingChoices, groupingExampleText,
-  groupingGroupsOf, groupingMovesUpText, groupingNothingText, groupingOverLimitText, groupingProfiled, groupingReasonText, groupsPickedByRunText, isFirstRunSetting, isGroupingSetting, isScopeSetting,
+  groupingGroupsOf, groupingMovesUpText, groupingNothingText, groupingOf, groupingOneValueText, groupingOverLimitText, groupingProfiled, groupingReasonText, peerEntityText, groupsPickedByRunText, isFirstRunSetting, isGroupingSetting, isScopeSetting,
   isolated, profileHeldText, sameGrouping, scopeChanges, scopeGroupKey, scopeGroupText, scopeGroupsColumn, scopeGroupsOf, scopeGroupsValue, scopeProblems, scopeValues,
-  suggestedGroups, withScopeDefaults, FIRST_RUN_LABEL, GROUPING_FIND, GROUPING_MORE, groupingCount, groupingCountText, groupingLead, topShown, groupingDefaultNote,
+  suggestedGroups, withScopeDefaults, FIRST_RUN_LABEL, GROUPING_FIND, GROUPING_GLOBAL_LABEL, GROUPING_MORE, groupingCount, groupingCountText, groupingLead, topShown, groupingDefaultNote,
 } from '../lib/runScope';
 import { bestFirstRun, bestGrouping, isBest } from '../lib/recommended';
 import Recommended from './Recommended';
@@ -101,6 +101,7 @@ function GroupingPart({ values, onChange, profile, read = null, settings, editab
   const best = choices.length > 1 ? bestGrouping(profile, choices) : null;
   const lead = groupingLead(profile, choices, current, read);
   const overLimit = groupingOverLimitText(lead, profile);
+  const oneValue = groupingOneValueText(groupingOf(profile, current, choices), profile);
   const nothing = groupingNothingText(profile, choices);
   const [cards, setCards] = useState({ open: false, find: '' });
   const [combine, setCombine] = useState({ open: false, find: '' });
@@ -117,8 +118,16 @@ function GroupingPart({ values, onChange, profile, read = null, settings, editab
         <p data-grouping-lead="" className="text-[12px] text-text-primary">
           <strong>{lead.label}</strong> splits the data into <strong>{groupingCountText(lead.groups)}</strong>. Inspire models each group on its own.
           {overLimit && <span role="alert" data-grouping-over-limit="" className="block text-warning-fg">{overLimit}</span>}
+          {oneValue && (
+            <span role="alert" data-grouping-one-value="" className="block text-warning-fg">
+              {oneValue}{' '}
+              <button type="button" data-grouping-whole="" disabled={!editable} onClick={() => onChange(GROUP_BY, GROUP_ALL)}
+                className="underline font-medium disabled:no-underline">{GROUPING_GLOBAL_LABEL}</button>
+            </span>
+          )}
         </p>
       ) : reason && <p data-grouping-reason="" className="text-[12px] text-text-primary">{reason}</p>}
+      {peerEntityText(profile) && <p data-grouping-peer-entity="" className={NOTE}>{peerEntityText(profile)}</p>}
       {groupingDefaultNote(profile) && <p data-grouping-default-note="" className={NOTE}>{groupingDefaultNote(profile)}</p>}
       {(profile?.refusals || []).map((reason) => <p key={reason} data-scope-refusal="" role="note" className={NOTE}>{reason}</p>)}
       <details data-grouping-more="" className={NOTE}>

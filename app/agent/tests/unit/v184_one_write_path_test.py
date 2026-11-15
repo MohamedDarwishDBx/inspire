@@ -84,12 +84,16 @@ def test_an_explicit_action_whose_values_name_another_action_is_refused_not_sile
         raise AssertionError("a done write must not carry an owner change")
 
 
-def test_the_contract_fixture_names_the_action_of_every_write_shape():
+def test_the_contract_fixture_writes_are_named_by_their_values():
+    """The rc2 usability contract carries no action field (int2's contract is the shape every version reads). The server names each
+    of its writes from its values, so the action of every contract write is the one its values name."""
     import json
     fixture = json.load(open(os.path.join(os.path.dirname(__file__), "..", "fixtures", "app_usability_contract.json"), encoding="utf-8"))
     expected = {"act_keys": "update", "act_match": "done", "snooze": "snooze", "act_reviewed": "done"}
     for name, action in expected.items():
-        assert fixture[name]["request"]["body"]["action"] == action, name
+        body = fixture[name]["request"]["body"]
+        assert "action" not in body or body["action"] == action, name
+        assert shell_actions.action_for_values(body.get("values")) == action, name
 
 
 def test_an_old_body_without_an_action_is_still_accepted_and_named_from_its_values():

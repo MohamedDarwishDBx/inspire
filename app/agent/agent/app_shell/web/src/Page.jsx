@@ -193,7 +193,7 @@ export default function Page({ app, page, meta, state, onState, look = EMPTY_LOO
   const notify = () => { go('alerts'); setCompose(true); };
   const alertLink = hubPage && !!alert && !app.alerting?.on && !app.alerting?.reason;
   const explain = genieOn(app, page.id) && onExplain
-    ? (kind, title, context) => onExplain({ kind, page: page.id, title,
+    ? (kind, title, context, opts) => onExplain({ kind, page: page.id, title, inPlace: !!opts?.inPlace,
       context: kind === 'chart' ? { ...context, filters: [filterWords(meta?.filters, state), context.filters].filter(Boolean).join('; ') } : context })
     : null;
   const fix = work ? (opts) => {
@@ -248,7 +248,7 @@ export default function Page({ app, page, meta, state, onState, look = EMPTY_LOO
       columnMeta={meta?.columns?.list} columnValues={columnValuesIn(state, null, aliases)}
       onColumn={(column, value) => onState(setColumnValueIn(state, null, column, value, aliases))} onClearColumns={() => onState(clearColumnValuesIn(state, null, aliases))}
       onClearFilters={() => onState(clearColumnValues({ ...clearSelections(state), ai: {} }, null))} seeChanged={seeChanged} onShowRuns={showRuns}
-      onOpen={setOpened} {...extra} /></Suspense>
+      onOpen={setOpened} runChecked={data?.zero_state?.rows_checked ?? null} {...extra} /></Suspense>
   ) : null);
   const hubCharts = (bars) => chartCards(trendChart ? [trendChart] : [], [{ key: 'by_reason', item: { id: 'by_reason' }, span: 1, node: bars }], true);
   const review = reviewItem(page, app);

@@ -70,7 +70,8 @@ function userWorkspace() {
 }
 
 const viewerRowTexts = (page) => page.locator('[data-viewer-row]').allInnerTexts();
-const listed = async (page) => (await page.locator('[data-permission-statements=""]').innerText()).split('\n').map((s) => s.replace(/;$/, '').trim()).filter(Boolean);
+// REQ-300: each grantee has its own statement block, so the statements of every block are read.
+const listed = async (page) => (await page.locator('[data-permission-statements=""]').allInnerTexts()).join('\n').split('\n').map((s) => s.replace(/;$/, '').trim()).filter(Boolean);
 const dialogOpen = (page) => page.locator('[data-permission-dialog=""]').count().then((n) => n > 0);
 
 test('a user-authorization Build lists the viewer the scope view refuses, with its exact SQL, and a repeat check opens nothing new (REQ-150)', async () => {
@@ -83,7 +84,7 @@ test('a user-authorization Build lists the viewer the scope view refuses, with i
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     // Both people who may open the App still need grants: bob all four; the owner holds MANAGE, which covers READ METADATA, so three.
-    assert.deepEqual(await viewerRowTexts(page), [`${BOB}: needs USE CATALOG, USE SCHEMA, SELECT, READ METADATA on ${VIEW}`, `${ME}: needs USE CATALOG, USE SCHEMA, SELECT on ${VIEW}`]);
+    assert.deepEqual(await viewerRowTexts(page), [`Ask your admin to grant ${BOB} access to ${VIEW}`, `Ask your admin to grant ${ME} access to ${VIEW}`]);
     assert.deepEqual((await listed(page)).sort(), [...grantsTo(BOB), ...grantsTo(ME).slice(0, 3)].sort(), 'the dialog lists the exact SQL each viewer still needs');
     await dialog.getByRole('button', { name: 'Close' }).click();
     await page.getByRole('region', { name: CARD }).waitFor({ timeout: 15000 });
@@ -107,7 +108,7 @@ test('a user-authorization Build lists the viewer the scope view refuses, with i
     await page.locator('[data-permission-dialog=""]').waitFor({ timeout: 15000 });
     assert.deepEqual((await listed(page)).sort(), [...grantsTo(ALICE), SELECT_BOB].sort(), 'the check lists the new viewer and bob, still refused');
     // The owner's grants already landed on the first grant, so the owner has no row now.
-    assert.deepEqual((await viewerRowTexts(page)).sort(), [`${ALICE}: needs USE CATALOG, USE SCHEMA, SELECT, READ METADATA on ${VIEW}`, `${BOB}: needs SELECT on ${VIEW}`].sort(), 'a row per viewer still refused');
+    assert.deepEqual((await viewerRowTexts(page)).sort(), [`Ask your admin to grant ${ALICE} access to ${VIEW}`, `Ask your admin to grant ${BOB} access to ${VIEW}`].sort(), 'a row per viewer still refused');
     await page.locator('[data-permission-dialog=""]').getByRole('button', { name: 'Close' }).click();
 
     await page.getByRole('region', { name: CARD }).getByRole('button', { name: 'Grant access with my permissions' }).click();
@@ -116,7 +117,7 @@ test('a user-authorization Build lists the viewer the scope view refuses, with i
     assert.ok(!after.includes(SELECT_ALICE), 'alice grant ran, so her SQL is no longer listed');
     assert.deepEqual(after, [SELECT_BOB], 'bob, refused, is still listed with his SQL');
     // The owner's and alice's rows clear once their grants land; bob's row stays and now needs only SELECT.
-    assert.deepEqual(await viewerRowTexts(page), [`${BOB}: needs SELECT on ${VIEW}`], 'only the viewer still refused keeps a row');
+    assert.deepEqual(await viewerRowTexts(page), [`Ask your admin to grant ${BOB} access to ${VIEW}`], 'only the viewer still refused keeps a row');
     assert.ok(w.grants.includes(SELECT_ALICE), 'the grant for the newly shared viewer ran with the person token');
     assert.deepEqual(ui.pageErrors, []);
   } finally {

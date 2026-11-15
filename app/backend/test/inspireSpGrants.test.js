@@ -39,9 +39,14 @@ test('closing grep: every SCIM principal query in the backend is a reviewed site
     if (/scim\/v2\/(ServicePrincipals|Users|Groups)\b/.test(text)) files.add(path.relative(backend, file));
     assert.ok(!text.includes('displayName co "${DEFAULT_APP_NAME}"'), `${path.relative(backend, file)} looks Inspire up by display name`);
   }
-  assert.deepEqual([...files].sort(), ['implementRoutes.js'], 'the only principal search is the sharing picker, which takes typed text');
+  // REQ-301: the owner check reads each audience email's identity id with one Users lookup by userName (sourceAccess.js identityIdsOf).
+  // It never filters by display name and never queries service principals, so Inspire is still never found by its name.
+  assert.deepEqual([...files].sort(), ['implementRoutes.js', 'lib/sourceAccess.js'], 'the principal searches are the sharing picker (typed text) and the owner identity lookup by email (REQ-301)');
   const picker = fs.readFileSync(path.join(backend, 'implementRoutes.js'), 'utf8');
   assert.ok(!/ServicePrincipals/.test(picker), 'the sharing picker never queries service principals');
+  const access = fs.readFileSync(path.join(backend, 'lib', 'sourceAccess.js'), 'utf8');
+  assert.ok(!/ServicePrincipals/.test(access), 'the owner identity lookup never queries service principals');
+  assert.ok(access.includes('scim/v2/Users?filter=') && access.includes('userName eq'), 'the owner identity lookup is a Users lookup by userName');
 });
 
 test('the notebook looks a service principal up only by applicationId, never by display name', () => {

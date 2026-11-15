@@ -391,6 +391,18 @@ export function groupingLead(profile, choices = groupingChoices(profile), groupB
   return { label: lead.label, groups: groupingCount(lead, profile) ?? (isMap(read) ? groupingCount(lead, read) : null) };
 }
 
+export function groupingOneValueColumns(picked, profile) {
+  const shown = Array.isArray(profile?.columns) ? profile.columns.filter(isMap) : [];
+  const columns = Array.isArray(picked?.columns) ? picked.columns : [];
+  return columns.filter((name) => finite(shown.find((c) => text(c.name).toLowerCase() === String(name).toLowerCase())?.distinct) === 1);
+}
+
+export function groupingOneValueText(picked, profile) {
+  const held = groupingOneValueColumns(picked, profile);
+  if (!held.length) return '';
+  return `${held.map((name) => `${name} has one value in this data, so it makes one group`).join('. ')}. Pick ${GROUPING_GLOBAL_LABEL} or another column.`;
+}
+
 export function groupingOverLimitText(lead, profile) {
   const max = finite(profile?.group_max);
   if (!lead || lead.groups == null || max == null || lead.groups <= max) return '';
@@ -410,6 +422,12 @@ export const GROUPING_NAMED_DEFAULT = 'Inspire picked this default because the u
 
 export function groupingDefaultNote(profile) {
   return isMap(profile) && profile.recommended_by === 'use_case' ? GROUPING_NAMED_DEFAULT : '';
+}
+
+// REQ-293: a peer comparison's entity key is what each record compares, so it cannot also be the group.
+export function peerEntityText(profile) {
+  const [entity] = Array.isArray(profile?.peer_entity) ? profile.peer_entity.map(text).filter(Boolean) : [];
+  return entity ? `${entity} is what each record compares, so it cannot also be the group.` : '';
 }
 
 export function groupingReasonText(profile) {

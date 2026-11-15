@@ -103,7 +103,7 @@ def test_the_rebuild_targets_add_the_notebook_and_every_built_part_of_a_ticked_o
     assert agent_ns["implement_vibe_targets"](status, outputs) == {
         "genie_space": "Genie Agent", "dashboard": "Dashboard (Churn board)", "notebook": NOTEBOOK,
         "ai_reasoning": "AI reasoning (Why each row is flagged, what to do, and how sure)",
-        "dashboard:by_region": "dashboard chart by_region (Customers by region)"}
+        "dashboard:by_region": "dashboard chart Customers by region"}
 
 
 def test_the_route_prompt_says_what_is_built_lists_the_notebook_and_names_the_unticked_outputs(agent_ns):
@@ -257,7 +257,7 @@ def test_a_notebook_ask_on_a_rebuild_lands_in_the_notebook_vibes_and_reruns_the_
     prompt = _route_prompt(seen)
     assert "The parts Inspire built for this use case, or builds in this version, by id:" in prompt
     assert (f"- genie_space: Genie Agent (Churn agent)\n- dashboard: Dashboard (Churn board)\n- app: App\n- notebook: {NOTEBOOK}\n"
-            "- dashboard:by_region: dashboard chart by_region (Customers by region)\n") in prompt
+            "- dashboard:by_region: dashboard chart Customers by region\n") in prompt
     assert "dashboard:old" not in prompt, "a part that did not build is not a target"
     plan = next(update for update in inst.updates if "change_classes" in update)
     assert plan["change_classes"] == "data,vibe"

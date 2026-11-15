@@ -100,7 +100,8 @@ const BACKEND_LOG = /\b(console\.|logger\.|log\(|log_print)/;
 const BACKEND_SRC = path.join(APP, 'backend');
 const backendFiles = () => fs.readdirSync(BACKEND_SRC, { withFileTypes: true }).flatMap((entry) => {
   const full = path.join(BACKEND_SRC, entry.name);
-  if (entry.isDirectory()) return entry.name === 'node_modules' || entry.name === 'test' ? [] : backendFiles.dirOf(full);
+  // build/ is generated, git-ignored output (backend/.gitignore): the source it bundles is what the gate reads
+  if (entry.isDirectory()) return entry.name === 'node_modules' || entry.name === 'test' || entry.name === 'build' ? [] : backendFiles.dirOf(full);
   return /\.js$/.test(entry.name) ? [full] : [];
 });
 backendFiles.dirOf = (dir) => sources(dir).filter((file) => !file.includes(`${path.sep}test${path.sep}`) && !file.includes('node_modules'));

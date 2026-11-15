@@ -56,7 +56,7 @@ class DataWorkspace(FakeWorkspace):
         self.listed = LISTED if listed is None else listed
         self.rows = [{"record_key": "k1", "entity_label": "Item 1"}] if rows is None else rows
         self.total, self.inserted, self.current = total, inserted, current or []
-        self.impact = impact or {"open_n": 0, "done_n": 0, "resolved_n": 0}
+        self.impact = impact or {"done_n": 0, "resolved_n": 0}
         self.left, self.owners, self.options, self.fail = left, list(owners), options, fail or {}
         self.clock, self.slow, self.barrier = clock, slow, barrier
 
@@ -75,7 +75,7 @@ class DataWorkspace(FakeWorkspace):
             rows = [dict(r, action_batch=getattr(self, "batch", None)) if r.get("action_batch") == THIS_BATCH else r for r in self.current]
             return {"columns": [], "rows": rows, "truncated": False}
         for marker, name, value in (("AS total FROM (SELECT 1 FROM f LIMIT", "total", lambda: [{"total": self.total}]),
-                                    ("AS open_n", "impact", lambda: [self.impact]),
+                                    ("AS done_n", "impact", lambda: [self.impact]),
                                     ("AS left_n", "left", lambda: [{"left_n": self.left}]),
                                     ("`action_owner` AS v", "owners", lambda: [{"v": v} for v in self.owners]),
                                     (" OFFSET ", "rows", lambda: self.rows)):
@@ -615,23 +615,22 @@ def test_the_list_carries_owner_status_and_version_and_my_actions_filters_in_sql
 
 
 def test_the_impact_line_counts_from_the_latest_version_of_each_record(tmp_path):
-    s, ws, _made = shell(tmp_path, ws=DataWorkspace(impact={"open_n": 14, "done_n": 9, "resolved_n": 6}, left=12))
+    s, ws, _made = shell(tmp_path, ws=DataWorkspace(impact={"done_n": 9, "resolved_n": 6}, left=12))
     status, out = records(s)
-    assert status == 200 and {k: out["summary"][k] for k in ("open", "done", "resolved", "left")} == {
-        "open": 14, "done": 9, "resolved": 6, "left": 12}
-    (sql, params), = ws.queries("AS open_n")
+    # Open is not an impact figure any more: it comes from the Work tab's one scope (status counts), so it is absent here.
+    assert status == 200 and {k: out["summary"][k] for k in ("done", "resolved", "left")} == {"done": 9, "resolved": 6, "left": 12}
+    assert "open" not in out["summary"]
+    (sql, params), = ws.queries("AS done_n")
     assert params == []
     assert sql == shell_facts.action_counts_sql("`main`.`pricing`.`loss_desk_out`"), \
         "the live count and the count a run keeps are one definition"
-    assert ("COALESCE(SUM(CASE WHEN a.`change_source` <> 'delete' AND a.`is_current` AND a.`action_status` IN ('New', 'In progress') "
-            "THEN 1 ELSE 0 END), 0) AS open_n") in sql
     assert ("COALESCE(SUM(CASE WHEN a.`change_source` <> 'delete' AND a.`action_status` = 'Done' AND (NOT a.`is_current` OR "
             "a.`action_outcome` = 'Resolved') THEN 1 ELSE 0 END), 0) AS resolved_n") in sql
     assert "QUALIFY ROW_NUMBER() OVER (PARTITION BY `record_key` ORDER BY `valid_from` DESC) = 1) AS a" in sql
     (tmp_path / "off").mkdir()
     s, ws, _made = shell(tmp_path / "off", settings=SETTINGS)
     status, out = records(s)
-    assert status == 200 and out["actions"] is False and ws.queries("AS open_n") == [] and out["summary"] == {"left": 0, "kept": 0}
+    assert status == 200 and out["actions"] is False and ws.queries("AS done_n") == [] and out["summary"] == {"left": 0, "kept": 0}
 
 
 def test_change_badges_compare_the_latest_run_with_the_previous_one_in_sql(tmp_path):

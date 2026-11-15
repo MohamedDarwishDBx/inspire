@@ -44,7 +44,13 @@ export function grantListKey(permissions) {
 // It never gates a build: the submit does not depend on the dialog being open or closed.
 export function grantAsk(p) {
   if (p?.optional) return 'Optional: pages load faster once your admin runs this.';
-  return `Ask your admin to grant this permission${p?.principal ? ` to ${p.principal}` : ''}:`;
+  return p?.principal ? `For ${p.principal}` : 'For your admin';
+}
+
+// REQ-300: Copy carries only the GRANT statements, each ending with a semicolon, across every grantee. A reason or a non-grant step never
+// goes into the copy.
+export function copyText(permissions) {
+  return (permissions || []).flatMap((p) => (p?.statements || []).map((s) => (String(s).endsWith(';') ? s : `${s};`))).join('\n');
 }
 
 // One host shows the dialog. A host mounted later takes over, so two mounted hosts never stack two dialogs for one raise.

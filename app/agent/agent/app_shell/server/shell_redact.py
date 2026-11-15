@@ -173,6 +173,8 @@ def _redact_in_text(value: str, text: str, index=None) -> bool:
 def _redact_known(value: str, known: str, segments) -> bool:
     if "\n" in value:
         return _redact_in_text(value, known)
+    if ", " in value and all(_redact_known(part, known, segments) for part in value.split(", ")):
+        return True
     return any(_redact_in_text(value, part, index) for part, index in segments)
 
 

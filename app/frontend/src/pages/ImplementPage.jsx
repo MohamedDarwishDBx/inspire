@@ -12,7 +12,7 @@ import {
   vibesProblems, OPEN_ALL_SETTINGS, VIBE_FEATURES_LABEL, CHANGE_CHOICES_LABEL, DATA_STOP_HINT, dataStopped, shownStatusMessage,
   swapParts,
   failureChoices, stoppedChoices, genieNotebookRequest, FAILURE_CHOICES_HEADING, FAILURE_ROUNDS_HEADING, TERMINAL_STOP_HINT, TERMINAL_NEEDS_CHANGE,
-  unreliableHold, olderBuildNote, UNRELIABLE_REBUILD_NOTE, isAppUpdate, APP_UPDATED_TEXT, appReadsOf, appObjectsOf, appReadsChoices, appReadsText, appReadsOwners, viewerRows, tableRows, APP_READS_HEADING, APP_READS_CLEARED, protectionStopOf, protectionChoices, abacGrantText, grantGapPermissions, grantFailurePermissions, liveSourceNow, liveProtection, liveReads,
+  unreliableHold, olderBuildNote, appReadsName, UNRELIABLE_REBUILD_NOTE, isAppUpdate, APP_UPDATED_TEXT, appReadsOf, appObjectsOf, appReadsChoices, appReadsText, appReadsOwners, viewerRows, tableRows, APP_READS_HEADING, APP_READS_CLEARED, protectionStopOf, protectionChoices, abacGrantText, grantGapPermissions, grantFailurePermissions, liveSourceNow, liveProtection, liveReads,
 } from '../lib/implementWizard';
 import { makeApiFetch, makeApiPostJson } from '../lib/apiClient';
 import { buildUseCaseList } from '../lib/useCaseList';
@@ -40,7 +40,7 @@ import { Counter, CounterDivider, IconChip, PANEL_CLASS, SectionTitle } from '..
 import { catalogRow } from '../lib/useCaseFacets';
 import { fieldOf } from '../lib/useCaseFields';
 import {
-  ASSET_TILES, CONTROL_REFRESH_MS, REBUILD_NOTHING, appUpdateChanges, assetFilterCounts, assetGroups, assetUninstall, buildSummary, checksSummary, collectAsk,
+  ASSET_TILES, CONTROL_REFRESH_MS, REBUILD_NOTHING, appUpdateChanges, assetFilterCounts, assetGroups, assetUninstall, buildSummary, buildSummaryLines, checksSummary, collectAsk,
   assetFiltersFrom, collectRemoval, collectedScope, controlRows, controlTiles, deliveredOutputs, dropCollected, filterByAssets, filterByMvp, heldVersion,
   keptVersions, loadAssetFilters, saveAssetFilters,
   loadCollectedVibes, missingAsks, notDoneLines, rebuildSpec, rebuildingText, rephrasedAsk, removeChanges, removeKeptChanges, rollbackChanges, rollingBackText,
@@ -71,7 +71,6 @@ import { buildFilterText } from '../lib/reviewFigures';
 import ValueEstimateLine from '../components/ValueEstimateLine';
 import { useValueRead } from '../lib/useValueLedger';
 import { BuildNextStep } from '../components/BuildNext';
-import PermissionRequired from '../components/PermissionRequired';
 import { grantListKey, raisePermissions } from '../lib/permissionBus';
 
 const OUTPUT_ICONS = { notebook: NotebookPen, dashboard: LayoutDashboard, genie_space: GenieLogo, app: AppWindow, alert: BellRing };
@@ -139,11 +138,7 @@ function SummaryBanner({ summary }) {
   } else if (summary.mvps) {
     mark = summary.failed || summary.held || summary.unmet ? { icon: AlertTriangle, tone: 'warning' } : { icon: CheckCircle2, tone: 'success' };
     title = `${shown(summary.ready)} of ${plural(summary.mvps, 'MVP')} ready`;
-    const open = [
-      summary.failed ? `${summary.failed} failed or stopped. Open one to see why.` : '',
-      summary.held ? `${summary.held} not published, because a vibe was not met. Open one to rephrase, try again or publish anyway.` : '',
-      summary.unmet ? `${summary.unmet} built, but a vibe ask was not met, so it waits for the next build. Open one to see why.` : '',
-    ].filter(Boolean);
+    const open = buildSummaryLines(summary);
     line = open.length ? open.join(' ') : 'Every MVP of this session has finished building.';
   }
   return (
@@ -165,10 +160,16 @@ function SummaryBanner({ summary }) {
           <Counter value={building.length} label="Building" tone="red" />
           <CounterDivider />
           <Counter value={summary.ready} label="Ready" tone="success" />
-          {summary.held > 0 && (
+          {summary.vibeHeld > 0 && (
             <>
               <CounterDivider />
-              <Counter value={summary.held} label="Vibes not met" tone="warning" />
+              <Counter value={summary.vibeHeld} label="Vibes not met" tone="warning" />
+            </>
+          )}
+          {summary.untrusted > 0 && (
+            <>
+              <CounterDivider />
+              <Counter value={summary.untrusted} label="Results not trusted" tone="warning" />
             </>
           )}
           {summary.failed > 0 && (
@@ -962,7 +963,6 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   const [readsResult, setReadsResult] = useState(null);
   // A user-authorization App: the people who may open it and the scope views they cannot read yet (from the last check or grant).
   const [viewerReads, setViewerReads] = useState(null);
-  const [permissionDialog, setPermissionDialog] = useState(null);
   const [readsBusy, setReadsBusy] = useState('');
   const [protectionCopy, setProtectionCopy] = useState('');
   const [protectionFailed, setProtectionFailed] = useState([]);
@@ -1448,13 +1448,9 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     }
   };
   const pickReads = async (choice) => {
+    // REQ-131, REQ-260: the owner's grant commands open in Permission Required; there is no separate copy path for GRANT SQL
     if (choice.id !== 'copy') return runReads(choice.id);
-    try {
-      await navigator.clipboard.writeText(choice.sql);
-      setReadsResult((was) => ({ ...(was && !was.error ? was : { tables: readsLeft.tables }), version: latest?.spec_version, action: 'copy', copied: true }));
-    } catch (e) {
-      setReadsResult((was) => ({ ...(was && !was.error ? was : { tables: readsLeft.tables }), version: latest?.spec_version, action: 'copy', copyError: e.message }));
-    }
+    raisePermissions(choice.permissions || [], {}, { explicit: true });
   };
   const autoReads = useRef({});
   const autoViewerChecks = useRef({});
@@ -1473,6 +1469,11 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     autoReads.current[key] = true;
     runReads('grant');
   }, [reads, readOnly, latest?.session_id, latest?.spec_version]);
+  // REQ-131, REQ-260: the grants a failed build's lost tables need open in Permission Required (the build status carries them)
+  const lostPermissions = latest?.status === 'failed' ? latest?.asset_status?.data?.permissions : null;
+  useEffect(() => {
+    if (lostPermissions?.length) raisePermissions(lostPermissions);
+  }, [lostPermissions]);
   const readsCard = readsLeft && (
     <section aria-label={readsLeft.tables.length ? APP_READS_HEADING : APP_READS_CLEARED} data-app-reads="" className="rounded-lg border border-warning/30 bg-warning-bg px-3.5 py-3 text-[12px] space-y-2.5">
       <div className="flex items-start gap-2.5">
@@ -1480,21 +1481,16 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
         <div className="min-w-0 space-y-1 text-warning-fg">
           <p className="text-[13px] font-semibold">{readsLeft.tables.length ? APP_READS_HEADING : APP_READS_CLEARED}</p>
           {readsLeft.tables.length > 0 && !readsLeft.viewers && <p>{appReadsText(readsLeft, latest?.app_name || '')}</p>}
+          {readsLeft.tables.length > 0 && <p>{`Ask ${appReadsOwners(readsLeft)} to grant access. The exact commands are in Permission Required.`}</p>}
           {readsLeft.tables.length > 0 && readsLeft.viewers && (
             <ul aria-label="Viewers who still need access" data-viewer-rows="" className="list-disc ps-5 space-y-0.5">
-              {viewerRows(readsLeft).map((r) => <li key={`${r.viewer}|${r.table}`} data-viewer-row={r.viewer}>{`${r.viewer}: needs ${r.needs.join(', ')} on ${r.table}`}</li>)}
+              {viewerRows(readsLeft).map((r) => <li key={`${r.viewer}|${r.table}`} data-viewer-row={r.viewer}>{`Ask your admin to grant ${r.viewer} access to ${appReadsName(r.table)}`}</li>)}
             </ul>
           )}
           {readsLeft.tables.length > 0 && !readsLeft.viewers && (
             <ul aria-label="Tables the App cannot read" data-table-rows="" className="list-disc ps-5 space-y-0.5">
-              {tableRows(readsLeft).map((r) => <li key={r.table} data-table-row={r.table}>{`${r.table}: needs ${r.needs.join(', ')}`}</li>)}
+              {tableRows(readsLeft).map((r) => <li key={r.table} data-table-row={r.table}>{appReadsName(r.table)}</li>)}
             </ul>
-          )}
-          {(readsResult?.permissions?.length > 0 || mustActPermissions.length > 0) && (
-            <button type="button" data-see-grant="" onClick={() => setPermissionDialog({ permissions: readsResult?.permissions?.length ? readsResult.permissions : mustActPermissions })}
-              className="inline-flex h-7 items-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-semibold text-text-primary hover:bg-bg-subtle">
-              See the grant
-            </button>
           )}
         </div>
       </div>
@@ -1517,10 +1513,24 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
         <button type="button" data-app-publish="" onClick={rerun} disabled={rerunBusy}
           className="rounded-md border border-warning/40 px-2.5 py-1 text-[12px] font-medium text-warning-fg hover:bg-warning-bg/70 disabled:opacity-60">Publish now</button>
       )}
-      {readsLeft.tables.length > 0 && (
-        <ChoiceList heading={FAILURE_CHOICES_HEADING} choices={appReadsChoices(readsLeft).filter((c) => c.id !== 'grant' || readsLeft.canGrant === true)} mark="data-app-reads-choice" tone="text-warning-fg"
-          disabled={readsBusy !== ''} busy={readsBusy} onPick={pickReads} />
-      )}
+      {readsLeft.tables.length > 0 && (() => {
+        // REQ-082: one primary action that fits the person's rights (Grant access, else See the grant in Permission Required); Check again stays quiet.
+        const choices = appReadsChoices(readsLeft);
+        const primary = choices.find((c) => c.id === (readsLeft.canGrant === true ? 'grant' : 'copy'));
+        const check = choices.find((c) => c.id === 'check');
+        return (
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" data-app-reads-primary={primary.id} disabled={readsBusy !== ''} onClick={() => pickReads(primary)}
+              className="inline-flex h-8 items-center justify-center gap-1.5 px-3 rounded-lg whitespace-nowrap text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle disabled:opacity-50">
+              {readsBusy === primary.id ? <Loader2 size={12} className="animate-spin" /> : null} {primary.label}
+            </button>
+            <button type="button" data-app-reads-choice={check.id} disabled={readsBusy !== ''} onClick={() => pickReads(check)}
+              className="text-xs text-text-secondary underline underline-offset-2 hover:text-text-primary disabled:opacity-50">
+              {check.label}
+            </button>
+          </div>
+        );
+      })()}
     </section>
   );
 
@@ -1959,7 +1969,6 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
           error={rebuildError || error} built={builtOn} choices={choices} previous={previous} blocked={rebuildBlocked}
           onPrevious={setPrevious} onAdd={addFeature} onDrop={dropAsk} onRemoveAsk={removeAsk} onRebuild={rebuild} onOpenSettings={onEdit ? openSettings : null} onClose={closeFeatures} />
       )}
-      {permissionDialog && <PermissionRequired permissions={permissionDialog.permissions} onClose={() => setPermissionDialog(null)} />}
     </div>
     </>
   );

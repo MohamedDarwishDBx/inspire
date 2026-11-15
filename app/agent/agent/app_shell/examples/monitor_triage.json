@@ -79,7 +79,8 @@
       "dataset": "records",
       "expression": "COUNT(*)",
       "format": "integer",
-      "good": "down"
+      "good": "down",
+      "open_work": true
     },
     {
       "id": "exposure",

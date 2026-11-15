@@ -40,6 +40,7 @@ import {
   useCaseSchemaTags as schemaTagsOf,
   ownSchemaFallbackNote,
   ownSchemaGrantPermission,
+  ownSchemaPickPermission,
   defaultSpecFromUseCase,
   specFromLatest,
   tablesOf,
@@ -1700,7 +1701,14 @@ export default function ImplementWizard({
               place={resultPlace}
               note={placeNote}
               outputCheck={outputCheck}
-              onChange={(parts) => { setSpec((prev) => withResultTable(prev, parts)); setOutputCheck(null); }}
+              onChange={(parts) => {
+                setSpec((prev) => withResultTable(prev, parts));
+                setOutputCheck(null);
+                // REQ-131, REQ-260: picking Its own schema raises its CREATE SCHEMA grant; the wizard does not raise it on load
+                const picked = resultPlaceOf([parts.catalog, parts.schema, parts.table].filter(Boolean).join('.'), ownTable, inspireTable);
+                const grant = ownSchemaPickPermission(picked, ownSchema);
+                if (grant) raisePermissions([grant]);
+              }}
               best={best.result}
               blocks={placeBlocks}
             >

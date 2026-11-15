@@ -113,8 +113,9 @@ def test_a_revoke_refused_on_permission_is_one_clear_line_and_the_app_is_still_d
     sql = [_schema_grant(obj, plain, p) for p in ("SELECT", "MODIFY")]
     outcome = inst._implement_delete_output("app", "churn-desk", KEY, grants=_record(sql))
     assert ("DELETE", "/api/2.0/apps/churn-desk") in inst.calls and outcome["refused"] is False and outcome["state"] == "deleted"
-    assert outcome["warnings"] == [f"App: REVOKE MODIFY ON SCHEMA {obj} FROM `sp-7` failed, so the App's service principal may still use "
-                                   f"the schema {obj}: [PERMISSION_DENIED] User does not have MANAGE on Schema 'main._inspire_x'."]
+    # REQ-260: no SQL in the App's warning; the sentence names the access it could not take back
+    assert outcome["warnings"] == [f"App: removing the App's access to the schema {obj} failed, so its service principal may still use it: "
+                                   f"[PERMISSION_DENIED] User does not have MANAGE on Schema 'main._inspire_x'."]
     warned = [line for level, line in inst.logger.lines if level == "warning" and "GRANTS" in line]
     assert len(warned) == 1 and warned[0].startswith("[IMPLEMENT-DELETE-GRANTS FIRED] N01-U01: the App churn-desk is deleted, but")
     assert outcome["grants_left"] == {"service_principal": {"name": "sp-7", "sql": [sql[1]], "genie": []}}, \

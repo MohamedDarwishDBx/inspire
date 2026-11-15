@@ -79,7 +79,7 @@ export function ActionRow({ keys, actions, ctx }) {
                   {spec.options.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : (
-                <input type={spec.type} value={input[f] || ''} onChange={(e) => setInput({ ...input, [f]: e.target.value })} />
+                <input type={spec.type} dir="auto" value={input[f] || ''} onChange={(e) => setInput({ ...input, [f]: e.target.value })} />
               )}</label>
             );
           })}

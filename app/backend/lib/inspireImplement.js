@@ -1,6 +1,7 @@
 const { appShellCatalog } = require('./appShell');
 const { IMPLEMENT_RUN_AS_PARAM, IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
 const { parseExactJson } = require('./exactJson');
+const { permissionRequired } = require('./permissions');
 const { moneyRuleProblems, moneyRuleClean } = require('./moneyRule');
 const { int64Id } = require('./int64Id');
 const { plural } = require('./plural');
@@ -3132,11 +3133,13 @@ function accessPlan(name, rows, principal = '', options = {}) {
   }));
   const me = str((list.find((r) => str(r.me).trim()) || {}).me).trim();
   const holders = new Set([IMPLEMENT_ALL_USERS, ...(who ? [who.toLowerCase()] : [])]);
+  // REQ-301: the person is also known by her identity id (SCIM): Unity Catalog reports an owner by that id, not by the email.
+  const ownIds = new Set([who, ...(options.aliases || [])].map((v) => str(v).trim().toLowerCase()).filter(Boolean));
   const tableExists = facts.some((f) => f.level === 'table' && f.privilege === 'OWNER');
   const createsSchema = options.createsSchema === true && schemaNotCreated(list);
   const plan = { grants: [], gaps: [], me };
   for (const [privilege, level, levels] of needs) {
-    const owns = !!who && facts.some((f) => f.level === level && f.privilege === 'OWNER' && f.principal.toLowerCase() === who.toLowerCase());
+    const owns = !!who && facts.some((f) => f.level === level && f.privilege === 'OWNER' && ownIds.has(f.principal.toLowerCase()));
     const covers = [privilege, 'ALL PRIVILEGES', ...(IMPLEMENT_PRIVILEGE_COVERS[privilege] || [])];
     const granted = facts.some((f) => levels.includes(f.level) && covers.includes(f.privilege)
       && holders.has(f.principal.toLowerCase()));
@@ -3383,7 +3386,7 @@ function appUnreadableMessage(offer, job = 'build') {
   const head = `${words.who} cannot read ${count}: ${words.runs} as the App service principal ${app}, and you can read `
     + `${one ? 'this table' : 'these tables'} but the App cannot`;
   if (!offer.grants.length) return `${head}, and Inspire finds no missing grant to name: ask your data owner why the App cannot read ${one ? 'it' : 'them'}`;
-  return `${head}. ${offer.can_grant ? words.grant : 'Ask your data owner to run'}: ${offer.grants.join('; ')}`;
+  return `${head}. ${offer.can_grant ? words.grant : 'Ask your data owner to run the commands'}: the exact commands are in Permission Required`;
 }
 
 const APP_READ_GRANT = /^GRANT (USE CATALOG|USE SCHEMA|SELECT|READ METADATA) ON (CATALOG|SCHEMA|TABLE) (`[^`]+`(?:\.`[^`]+`){0,2}) TO `([^`]+)`$/;
@@ -3404,12 +3407,16 @@ function appReadsRecord(history) {
     if (!name || name.includes('`')) return null;
     const reason = str(app.reasons_view).trim();
     const sources = persisted(app.sources_read).filter((s) => !views.includes(s));
-    const objects = [...new Set([...views, ...(reason && !resultTableNameError(reason) ? [reason] : []), ...sources])];
     // views: the App-owned views a user-authorization App's audience may be granted; sources: the source tables it reads directly,
     // which are never granted to a person or group (the rebuild message covers them).
-    return { row, app: '', app_name: name, mode: str(app.access_mode) === 'user' ? 'user' : 'sp', objects: true,
-      views: [...new Set([...views, ...(reason && !resultTableNameError(reason) ? [reason] : [])])], sources,
-      tables: objects.map((table) => ({ table, owner: '', grants: [] })) };
+    // REQ-301: a user-authorization App's audience is granted its own objects only. A source table it reads directly is never a grant to
+    // list or copy, so it sits in `sources` for the rebuild sentence. A service-principal App's live grants include its sources.
+    const own = [...new Set([...views, ...(reason && !resultTableNameError(reason) ? [reason] : [])])];
+    const mode = str(app.access_mode) === 'user' ? 'user' : 'sp';
+    const granted = mode === 'user' ? own : [...new Set([...own, ...sources])];
+    return { row, app: '', app_name: name, mode, objects: true,
+      views: own, sources,
+      tables: granted.map((table) => ({ table, owner: '', grants: [] })) };
   }
   const unread = app && isPlainObject(app.unread) ? app.unread : null;
   const id = str(unread && unread.app).trim();
@@ -3467,12 +3474,12 @@ function appAudience(acl) {
 }
 
 // What each principal still needs on each App object, checked live. Service-principal and user-authorization Apps share this path.
-function appReadsLeftFor(record, principals, rows) {
+function appReadsLeftFor(record, principals, rows, aliasesOf = {}) {
   return record.tables.map((t, i) => {
     const grants = [];
     const owners = [];
     for (const principal of principals) {
-      const plan = accessPlan(t.table, rows[i], principal, { needs: IMPLEMENT_SOURCE_NEEDS });
+      const plan = accessPlan(t.table, rows[i], principal, { needs: IMPLEMENT_SOURCE_NEEDS, aliases: aliasesOf[principal] || [] });
       const order = (g) => IMPLEMENT_SOURCE_NEEDS.findIndex(([privilege]) => privilege === g.privilege);
       for (const need of [...plan.grants, ...plan.gaps].sort((a, b) => order(a) - order(b))) {
         const sql = grantSql(need, principal);
@@ -3740,6 +3747,12 @@ function useCaseSchemaOwner(held, { inspireDatabase, useCaseId, sessionId }) {
   return sameUseCase && sameLineage ? 'ours' : 'foreign';
 }
 
+// REQ-131, REQ-260: the CREATE SCHEMA grant the own-schema fallback needs. The route carries it as the Permission Required entry; the prose names the dialog.
+function ownSchemaPermission(catalog, me) {
+  return permissionRequired({ statements: [`GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO \`${me}\``], // PERMISSION_DIALOG
+    principal: me, why: `Inspire cannot create the use case schema in ${catalog} with your sign-in.` });
+}
+
 function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessName, rows = null, unchecked = '' }) {
   const candidates = useCaseSchemaCandidates(inspireDatabase, useCaseId, sessionId, businessName);
   const own = candidates[0];
@@ -3770,7 +3783,8 @@ function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessNam
   const why = unchecked
     ? `Inspire could not check whether you can create schemas in ${base.catalog} (${unchecked}), so this use case's tables go to the Inspire database schema; pick Its own schema to try.`
     : ownSchemaFallbackNote(base.catalog, facts.me);
-  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: [note, why].filter(Boolean).join(' ') };
+  const permission = facts.me ? ownSchemaPermission(base.catalog, facts.me) : null;
+  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: [note, why].filter(Boolean).join(' '), permission };
 }
 
 function useCaseSchemaTagsSql(catalog, schema, tags) {
@@ -3947,7 +3961,17 @@ function implementJobName(useCaseId, useCaseName, specVersion) {
   return ['Inspire AI - MVP', [String(useCaseId ?? '').trim(), name].filter(Boolean).join(' '), `v${Number(specVersion) || 1}`].filter(Boolean).join(' - ');
 }
 
+// WH (rc7 Build): a group reads as "People in <group> open the App ...", one person as their own name. A principal with an "@" is a person.
+function opensAppSentence(principal, appName = '') {
+  const p = str(principal).trim();
+  const app = appName ? ` ${appName}` : '';
+  return /@/.test(p)
+    ? `${p} opens the App${app} and reads its data with their own access, so they need these grants.`
+    : `People in ${p} open the App${app} and read its data with their own access, so they need these grants.`;
+}
+
 module.exports = {
+  opensAppSentence,
   tableTypeStatement,
   implementJobName,
   IMPLEMENT_RUN_STARTED_MESSAGE,

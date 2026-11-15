@@ -52,6 +52,7 @@ USER_OFF = ("alerts",)
 OFF_WHEN_UNSET = ("alerts",)
 USER_OFF_PROBLEMS = {"alerts": "an App where each viewer sees only their own data cannot send alerts"}
 TOUR = "tour"
+DEFAULT_RANGE = shell_facts.DEFAULT_RANGE
 TOUR_KPI = "kpi"
 TOUR_FALLBACK = "English"
 TOUR_PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
@@ -313,6 +314,16 @@ SKIPPED = ("SKIPPED", "EXCLUDED", "DISABLED", "MAXIMUM_CONCURRENT_RUNS_REACHED",
 TRIGGERS = {"PERIODIC": "scheduled", "ONE_TIME": "manual", "RETRY": "retry", "RUN_JOB_TASK": "another job",
             "FILE_ARRIVAL": "file arrival", "TABLE": "table update", "CONTINUOUS": "continuous", "CONTINUOUS_RESTART": "continuous"}
 UTC = datetime.timezone.utc
+
+
+def stored_bounds(page: dict) -> dict:
+    """The date bounds the publish stored for each date filter, shaped like a bounds read so the first load can use them without a scan.
+    {} unless every date filter of the page has a stored low and high."""
+    dated = [f["id"] for f in page.get("filters") or [] if f.get("type") == "date_range"]
+    stored = page.get(DEFAULT_RANGE) or {}
+    if not dated or not all(isinstance(stored.get(i), dict) and stored[i].get("low") and stored[i].get("high") for i in dated):
+        return {}
+    return {("filter", i): {"rows": [{"low": stored[i]["low"], "high": stored[i]["high"]}]} for i in dated}
 
 
 class Probe:
@@ -1932,6 +1943,7 @@ class Shell:
             else:
                 self.pages = [shell_pg.served_page(p, self.backend) for p in self.pages]
         self.by_id = {p["id"]: p for p in self.pages}
+        self.fresh_bounds = {}
         self.cache = Cache(clock=clock)
         self.stamps, self.reads, self.stamp_lock, self.inflight = {}, collections.OrderedDict(), threading.Lock(), {}
         self.lookups, self.owners, self.stamp_pool = {}, {}, ThreadPoolExecutor(max_workers=STAMP_WORKERS)
@@ -2830,7 +2842,10 @@ class Shell:
         ws, who = self.session(headers, probe)
         page = self.live_grouping(ws, who, page)
         self.warm_open(ws, who, page)
-        jobs = self.bounds_jobs(ws, who, page)
+        known = self.known_bounds(page)
+        jobs = {} if known else self.bounds_jobs(ws, who, page)
+        if known:
+            self.prefetch(lambda: self.refresh_bounds(ws, who, page))
         chosen = len(jobs)
         for f in page.get("filters") or []:
             if f["type"] != "date_range":
@@ -2844,6 +2859,7 @@ class Shell:
         if len(jobs) > chosen:
             self.after_list(page)
         done, errors = self._parallel(jobs, probe)
+        done.update(known)
         self.bounds_apart(ws, who, page, done, errors, probe)
         out = []
         for f in page.get("filters") or []:
@@ -2905,13 +2921,29 @@ class Shell:
         self.bounds_apart(ws, who, page, done, errors, probe)
         return done, errors
 
+    def known_bounds(self, page: dict) -> dict:
+        """The date bounds the first load uses: the last background refresh, else the range the publish stored. {} when neither exists,
+        so the caller scans the table as before."""
+        return self.fresh_bounds.get(page["id"]) or stored_bounds(page)
+
+    def refresh_bounds(self, ws, who, page: dict) -> None:
+        done, errors = self.bounds(ws, who, page)
+        dated = [f["id"] for f in page.get("filters") or [] if f.get("type") == "date_range"]
+        if not errors and all(("filter", i) in done for i in dated):
+            self.fresh_bounds[page["id"]] = {("filter", i): done[("filter", i)] for i in dated}
+
     def defaults(self, headers: dict, ident) -> dict:
         page = self.page(ident)
         ws, who = self.workspace(headers)
         self.open_list(page)
         try:
             self.warm_open(ws, who, page)
-            done, errors = self.bounds(ws, who, page)
+            known = self.known_bounds(page)
+            if known:
+                done, errors = dict(known), {}
+                self.prefetch(lambda: self.refresh_bounds(ws, who, page))
+            else:
+                done, errors = self.bounds(ws, who, page)
         except BaseException:
             self.listed(page)
             raise
@@ -2974,8 +3006,12 @@ class Shell:
             previous, failed = self.previous_datasets(ws, who, page), {}
         except (QueryError, HttpError) as error:
             previous, failed = {}, {key: getattr(error, "message", None) or str(error) for key in compared}
+        try:
+            names = {f["name"] for f in self.table_fields(ws, who, page)} if page.get("result_table") and self.lakebase is None else set()
+        except (QueryError, HttpError):
+            names = set()  # an unreadable table keeps its own error on the KPI, with no scope line
         jobs, sqls = {}, {}
-        for kind, item_id, sql, params in shell_sql.page_queries(page, values or {}, tables, previous, types, sorts, searches):
+        for kind, item_id, sql, params in shell_sql.page_queries(page, values or {}, tables, previous, types, sorts, searches, names):
             sqls[(kind, item_id)] = sql
             if (kind, item_id) not in failed:
                 limit = shell_sql.CAPS["kpi_rows" if kind == "kpi" else "table_rows" if kind == "table" else "chart_rows"]
@@ -2986,11 +3022,7 @@ class Shell:
                 jobs[("left", kpi["id"])] = (lambda s=left[0], p=left[1]: self.run(ws, who, s, p, 1))
         if page.get(shell_sql.RUN_SCOPES) and page.get("result_table"):
             jobs[("scope", "runs")] = lambda: self.summary_rows(ws, who, shell_sql.summary_query(page, 2), 2)
-        try:
-            names = {f["name"] for f in self.table_fields(ws, who, page)} if page.get("result_table") and self.lakebase is None else set()
-        except (QueryError, HttpError):
-            names = set()  # an unreadable table keeps its own error on the KPI, with no scope line
-        counted = shell_sql.scope_counts_query(page, names) if names else None
+        counted = shell_sql.scope_counts_query(page, names, shell_sql.window_bounds("all", self.now())["today"]) if names else None
         if counted:
             jobs[("scope", "counts")] = (lambda s=counted[0], p=counted[1]: self.run(ws, who, s, p, 1))
         done, errors = self._parallel(jobs, probe)
@@ -3016,14 +3048,16 @@ class Shell:
         for kpi in page.get("kpis") or []:
             if basis and kpi.get("format") == "currency":
                 out["kpis"].setdefault(kpi["id"], {})["basis"] = basis
-        through = None
+        through, checked = None, False
         for kpi in page.get("kpis") or []:
             shown = out["kpis"].get(kpi["id"])
             if ("kpi", kpi["id"]) in errors or not shell_sql.kpi_needs_rows_check(shown):
                 continue
             through = self.data_through_date(ws, who, page) if through is None else through
+            # REQ-297: a run that checked records and wrote no result row says so; read the run summary once, only when a KPI needs it
+            checked = shell_sql.zero_run_checked(self.run_summary(ws, who, page)) if checked is False else checked
             seen = self.run(ws, who, *shell_sql.kpi_rows_query(page, kpi["id"], values or {}), 1)["rows"]
-            out["kpis"][kpi["id"]] = shell_sql.kpi_missing(page, shown, int((seen or [{}])[0].get("n") or 0), through)
+            out["kpis"][kpi["id"]] = shell_sql.kpi_missing(page, shown, int((seen or [{}])[0].get("n") or 0), through, checked)
         if counts is not None:
             line = {"text": shell_sql.scope_counts_text(counts["rows"])}
             for kpi in page.get("kpis") or []:
@@ -3173,7 +3207,7 @@ class Shell:
         first = lambda name: ((done.get(("list", name)) or {}).get("rows") or [{}])[0]
         summary = {}
         if ("list", "impact") in done:
-            summary.update(open=int(first("impact").get("open_n") or 0), done=int(first("impact").get("done_n") or 0),
+            summary.update(done=int(first("impact").get("done_n") or 0),
                            resolved=int(first("impact").get("resolved_n") or 0))
         if ("list", "left") in done:
             summary["left"] = int(first("left").get("left_n") or 0)
@@ -3188,6 +3222,10 @@ class Shell:
         ai = {"columns": {name: shell_sql.ai_alias(name) for name in context["ai"]},
               "categories": [{"name": name, "options": sorted(counted.get(name, []), key=lambda o: (-o["n"], str(o["value"])))}
                              for name in context["categories"]], "picked": request["ai"], "counted": request["ai_counts"]}
+        statuses = shell_sql.status_counts_of(done[("list", "statuses")].get("rows"), shell_sql.status_choices(page)) if counting and (
+            "list", "statuses") in done else None
+        if statuses is not None:  # the Actions line's Open figure is the Work tab's Open count: one predicate, one number
+            summary = dict(summary, open=statuses["open"])
         rows = done[("list", "rows")]["rows"]
         total, more = (int(first("total").get("total") or 0), False) if whole and facts else shell_sql.counted_total(first("total"))
         missed = floor is not None and floor["on"] == "d" and any(r.get("_inspire_key") is None for r in rows)
@@ -3209,8 +3247,7 @@ class Shell:
                 "window": {"window": window["window"], "limit": window.get("limit"), "shown": shown, "more": total - shown,
                            "today": window["today"]} if window else None,
                 "as_of_us": self.as_of_us(served_by(done), read_at),
-                **({"status_counts": shell_sql.status_counts_of(done[("list", "statuses")].get("rows"), shell_sql.status_choices(page))
-                    if ("list", "statuses") in done else None} if counting else {}),
+                **({"status_counts": statuses} if counting else {}),
                 **({"treatments": [{"segment": r.get("s"), "treatment": r.get("v"), "n": int(r.get("n") or 0)}
                                    for r in done[("list", "treatments")].get("rows") or []] if ("list", "treatments") in done else None}
                    if request["treatments"] else {})}
@@ -3990,17 +4027,22 @@ class Shell:
                              f"table's key for one record, in the {shell_sql.RECORDS_DATASET} dataset"))
         return problems
 
-    def flagged_records(self, ws, who, page: dict):
-        """The run's own count of the records its rule flagged (Act now plus Review) across the whole scope, read from the run summary
-        row the App already writes (summary_query). None when the page has no result table, no run has written a summary, or the
-        counts are missing, so the caller falls back to the chart measures."""
+    def run_summary(self, ws, who, page: dict):
+        """The latest run summary row the App already writes (summary_query), or None when the page has no result table or no run has
+        written one. The one reader of the summary: the flagged count and the zero-result reason (REQ-297) both read it."""
         if not page.get("result_table"):
             return None
         sql, params = shell_sql.summary_query(page)
         try:
-            row = (self.run(ws, who, sql, params, 1).get("rows") or [None])[0]
+            return (self.run(ws, who, sql, params, 1).get("rows") or [None])[0]
         except (HttpError, QueryError, ValueError):
             return None
+
+    def flagged_records(self, ws, who, page: dict):
+        """The run's own count of the records its rule flagged (Act now plus Review) across the whole scope, read from the run summary
+        row the App already writes (summary_query). None when the page has no result table, no run has written a summary, or the
+        counts are missing, so the caller falls back to the chart measures."""
+        row = self.run_summary(ws, who, page)
         if not row:
             return None
         flagged = [count_of(row.get("act_now_records")), count_of(row.get("review_records"))]
@@ -4008,15 +4050,15 @@ class Shell:
 
     def rule_finds_nothing(self, page: dict, chart: dict, ws, who=None, every_measure: bool = False) -> bool:
         """True when the rule has no exception in the whole scope (no filter applied). The check (every_measure=False) decides from the
-        rule's own output: the records the run flagged. Without a run summary it falls back to the chart's stake measures only
-        (shell_sql.stake_measure), so a tested-records count never reads as an exception. The zero-state panel (every_measure=True)
-        keeps the strict reading: every measure must be zero, so 'none found' never sits over records that were tested."""
+        rule's own output: the records the run flagged. Without a run summary it falls back to the chart's exception measures
+        (shell_sql.exception_measure: stake and Exceptions counts), so a tested-records count never reads as an exception. The zero-state
+        panel (every_measure=True) keeps the strict reading: every measure must be zero, so 'none found' never sits over records that were tested."""
         measures = list(enumerate(chart.get("y") or []))
         if not every_measure:
             flagged = self.flagged_records(ws, who, page)
             if flagged is not None:
                 return flagged == 0
-            checked = [i for i, y in measures if shell_sql.stake_measure(y)]
+            checked = [i for i, y in measures if shell_sql.exception_measure(y)]
             if not checked:
                 return False
         else:

@@ -1,10 +1,12 @@
+import datetime
 import json
 import math
 import re
 
+DEFAULT_RANGE = "default_range"
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 TABLE_PART = re.compile(r"^[^`.\x00-\x1f]{1,255}$")
-FACTS_VERSION = 5
+FACTS_VERSION = 6
 FACTS_COLUMN = "run_facts"
 ACTED_SUFFIX = "_acted"
 RUN_LOG_SUFFIX = "_run_log"
@@ -524,15 +526,36 @@ def acted_source(acted: str, columns: list) -> str:
             f"a.`valid_from`) UNION ALL SELECT {plain} FROM q)")
 
 
+SNOOZE_NAME = "snooze_until"
+
+
+def open_work_sql(names, today: str, alias: str = "") -> str:
+    """The one open-work predicate: the current, not deleted row, in an open status, flagged ok, not held back, and not snoozed
+    past today. Each part applies only when the result table has its column. The scope line, the KPIs marked open_work and
+    the Actions line read this expression; the Work list applies the same rule to its own CTE columns (window_conditions)."""
+    p = f"{alias}." if alias else ""
+    parts = [f"{p}`is_current`", f"{p}`change_source` <> 'delete'"]
+    if "action_status" in names:
+        parts.append(f"COALESCE({p}`action_status`, '{NEW}') IN ({sql_list(OPEN_STATUSES)})")
+    if DATA_QUALITY_FLAG in names:
+        parts.append(f"COALESCE(({flagged_ok_sql(names, alias=alias)}), FALSE)")
+    if "held_back" in names:
+        parts.append(f"NOT COALESCE({p}`held_back`, FALSE)")
+    if SNOOZE_NAME in names:
+        parts.append(f"({p}`{SNOOZE_NAME}` IS NULL OR CAST({p}`{SNOOZE_NAME}` AS DATE) <= {today})")
+    return " AND ".join(parts)
+
+
 def action_cells(alias: str) -> dict:
+    """Done and resolved cells per record. Open work is not counted here: it is open_work_sql, read live, because a snooze
+    wakes on a date and an incremental fact never sees that change."""
     live = f"{alias}.`change_source` <> 'delete'"
     done = f"{live} AND {alias}.`action_status` = '{DONE}'"
-    return {"open_n": f"CASE WHEN {live} AND {alias}.`is_current` AND {alias}.`action_status` IN ({sql_list(OPEN_STATUSES)}) THEN 1 ELSE 0 END",
-            "done_n": f"CASE WHEN {done} THEN 1 ELSE 0 END",
+    return {"done_n": f"CASE WHEN {done} THEN 1 ELSE 0 END",
             "resolved_n": f"CASE WHEN {done} AND (NOT {alias}.`is_current` OR {alias}.`action_outcome` = '{RESOLVED}') THEN 1 ELSE 0 END"}
 
 
-ACTION_NUMBERS = ("open_n", "done_n", "resolved_n")
+ACTION_NUMBERS = ("done_n", "resolved_n")
 
 
 def action_counts_sql(source: str) -> str:
@@ -1112,6 +1135,19 @@ def money_joined(page: dict, dataset: str, sql: str) -> str:
                 f"AND CAST(c.{quote(scope['period'])} AS DATE) = r.rate_date")
     return sql
 
+def window_anchor(page: dict, dataset: str, column: str) -> str:
+    """The date a money window counts back from. A page that stores its default range at publish (P85) counts from the data's own
+    last date, so a historical as-of never shows an empty window; never later than today. A page with no stored range counts from today."""
+    ident = next((f.get("id") for f in page.get("filters") or [] if f.get("type") == "date_range"
+                  and (f.get("columns") or {}).get(dataset) == column), "")
+    high = ((page.get(DEFAULT_RANGE) or {}).get(ident) or {}).get("high") if ident else None
+    try:
+        last = datetime.date.fromisoformat(str(high)[:10]) if high else None
+    except ValueError:
+        last = None
+    return f"LEAST(current_date(), DATE '{last.isoformat()}')" if last else "current_date()"
+
+
 def money_source(page: dict, dataset: str, sql: str) -> str:
     """Rows a money total may add: a dated row in a period that has closed, in the window the rule sets, converted when the rule converts,
     and one row per group when the rule counts each group once."""
@@ -1127,8 +1163,9 @@ def money_source(page: dict, dataset: str, sql: str) -> str:
     column, grain = quote(scope["period"]), scope["grain"]
     closed = f"{column} < date_trunc('{grain}', current_date())"
     if scope["window"]:
-        lookback = (f"date_sub(date_trunc('week', current_date()), {7 * scope['window']})" if grain == "week"
-                    else f"add_months(date_trunc('{grain}', current_date()), -{scope['window'] * MONTHS_PER_PERIOD[grain]})")
+        anchor = window_anchor(page, dataset, scope["period"])
+        lookback = (f"date_sub(date_trunc('week', {anchor}), {7 * scope['window']})" if grain == "week"
+                    else f"add_months(date_trunc('{grain}', {anchor}), -{scope['window'] * MONTHS_PER_PERIOD[grain]})")
         closed += f" AND {column} >= {lookback}"
     return f"SELECT * FROM ({inner}) AS m WHERE {column} IS NOT NULL AND {closed}"
 

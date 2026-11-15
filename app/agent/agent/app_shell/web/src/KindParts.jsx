@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { getRecords } from './api.js';
 import { cellText, formatValue, integer, isKeyColumn, numberOf } from './format.js';
-import { IN_PROGRESS, NEW, UNDO_CLOSE, isClosed, undoWordOf, statusKind, actError, canDecide, choiceLabel, choiceValues, listAsOf, matchOf, noDecisionText, pageDecides, recordKeyOf, statusChoices, undoBatchOf } from './records.js';
+import { IN_PROGRESS, NEW, UNDO_CLOSE, isClosed, undoWordOf, statusKind, actError, canDecide, choiceLabel, choiceValues, listAsOf, matchOf, noDecisionText, pageDecides, recordKeyOf, rowChoiceId, statusChoices, undoBatchOf } from './records.js';
 import { QueueBulk, useActs } from './Work.jsx';
 const RecordPanel = lazy(() => import('./Records.jsx').then((m) => ({ default: m.RecordPanel })));
 import { useList } from './Layouts.jsx';
@@ -155,6 +155,9 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
   const key = String(recordKeyOf(row));
   const closed = isClosed(row);
   const batch = closed ? undoBatchOf(row, app?.user?.email) : '';
+  // REQ-285: the kind's undo word (Unmerge) names only a row that carries its choice; a status-only bulk change says Reopen.
+  const chosen = !!rowChoiceId(row);
+  const undo = undoWordOf(chosen ? page.records : {}, !chosen);
   return (
     <li className="choice-row" data-choice-row={key}>
       <div className="choice-main">
@@ -166,7 +169,7 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
       </div>
       <div className="choice-act" role="group" aria-label={`Decide ${row[page.records?.label] ?? key}`}>
         {closed && <span className="choice-done" data-decided><Icon name="check" size={13} />{decidedText(row, statusChoices(page))}</span>}
-        {batch && !undoing && <button type="button" className="link" data-unmerge onClick={() => setUndoing(true)}><Icon name="undo" size={13} />{undoWordOf(page.records)}</button>}
+        {batch && !undoing && <button type="button" className="link" data-unmerge onClick={() => setUndoing(true)}><Icon name="undo" size={13} />{undo}</button>}
         {!closed && canAct && choices.map((c) => (
           <SaveButton key={c.id} write={`choice:${key}:${c.id}`} className={`btn btn--sm ${suggested?.id === c.id ? 'btn--pri' : ''}`} data-choice={c.id}
             onClick={() => (statusKind(c.status) === 'dismissed' ? setSkipping(c) : onChoose(row, c))}>
@@ -180,7 +183,7 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
       {undoing && (
         <div className="choice-why" role="group" aria-label="Undo this decision">
           <span>{UNDO_CLOSE}</span>
-          <SaveButton write={`undo:${key}`} className="btn btn--sm btn--pri" onClick={async () => { if (await onUndo(batch, `undo:${key}`)) setUndoing(false); }}>{undoWordOf(page.records)}</SaveButton>
+          <SaveButton write={`undo:${key}`} className="btn btn--sm btn--pri" onClick={async () => { if (await onUndo(batch, `undo:${key}`)) setUndoing(false); }}>{undo}</SaveButton>
           <button type="button" className="link" onClick={() => setUndoing(false)}>Keep it</button>
         </div>
       )}
@@ -481,7 +484,7 @@ export function ClusterBar({ page, app, name, items, decide, can }) {
   const choice = (page.choices || []).find((c) => c.id === group.choice);
   const open = items.filter((r) => !isClosed(r) && r._inspire_version);
   const batches = [...new Set(items.map((r) => undoBatchOf(r, app?.user?.email)))];
-  const undoable = items.every(isClosed) && batches.length === 1 && batches[0] ? batches[0] : '';
+  const undoable = items.every(isClosed) && items.every((r) => rowChoiceId(r) === group.choice) && batches.length === 1 && batches[0] ? batches[0] : '';
   const merge = () => decide.run(`group:${name}`, { record_keys: open.map((r) => String(recordKeyOf(r))),
     seen: Object.fromEntries(open.map((r) => [String(recordKeyOf(r)), String(r._inspire_version)])) },
   choiceValues(choice, '', page.choices), `${choice.label}: ${open.length} records in ${name}`).then((out) => out && setAsking(''));

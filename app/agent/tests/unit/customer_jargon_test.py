@@ -41,14 +41,12 @@ def _call_name(node):
     return getattr(func, "id", ""), ""
 
 
-def customer_strings(source):
-    """(line, text) for every string literal that reaches a customer-visible sink and has a space and is not SQL."""
-    out = []
+def copy_roots(source):
+    """The expressions that reach a customer-visible sink (the same selection for literal and run-time text)."""
+    roots = []
 
     def collect(node):
-        for sub in ast.walk(node):
-            if isinstance(sub, ast.Constant) and isinstance(sub.value, str) and re.search(r"\s", sub.value) and not SQL.search(sub.value):
-                out.append((sub.lineno, sub.value))
+        roots.append(node)
 
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.FunctionDef) and RETURNED_TEXT_FUNCS.search(node.name) and "prompt" not in node.name.lower() and node.name not in LLM_TEXT_FUNCS:
@@ -75,7 +73,38 @@ def customer_strings(source):
             collect(node.value)
         elif isinstance(node, ast.Raise) and node.exc is not None:
             collect(node.exc)
+    return roots
+
+
+# REQ-131, REQ-260: a GRANT statement reaches a person only through the Permission Required dialog. A producer whose statement the
+# dialog copies marks its own line PERMISSION_DIALOG (the same marker the frontend gate reads from the shared fixture).
+DIALOG_MARKER = SPEC["dialog_marker"]
+GRANT_TERM_IDS = {t["id"] for t in SPEC["terms"] if t.get("dialog_exempt")}
+
+
+def customer_strings(source):
+    """(line, text) for every string literal that reaches a customer-visible sink and has a space and is not SQL."""
+    out = []
+    for root in copy_roots(source):
+        for sub in ast.walk(root):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str) and re.search(r"\s", sub.value) and not SQL.search(sub.value):
+                out.append((sub.lineno, sub.value))
     return sorted(set(out))
+
+
+GRANT_NAME = re.compile(r"(?<![a-z])(grants?|statements?|grant_\w+|\w+_grants?|\w+_statements?)(?![a-z])", re.I)
+
+
+def dynamic_grant_lines(source):
+    """Lines where copy interpolates a value that is a GRANT statement (a name built from grant or statement), off the dialog marker."""
+    lines = source.splitlines()
+    hits = []
+    for root in copy_roots(source):
+        for sub in ast.walk(root):
+            if isinstance(sub, ast.FormattedValue) and GRANT_NAME.search(ast.unparse(sub.value)):
+                if DIALOG_MARKER not in lines[sub.lineno - 1]:
+                    hits.append(sub.lineno)
+    return sorted(set(hits))
 
 
 def customer_form(text):
@@ -97,10 +126,36 @@ def test_positive_controls_catch_the_rc7_strings():
 
 
 def test_no_customer_string_in_the_notebook_carries_an_internal_term():
-    hits = [f"cell {index} line {line} [{term}] {text.strip()[:140]}"
-            for source, index in _code_cells() for line, text in customer_strings(source)
-            for term in internal_hits(customer_form(text))]
+    hits = []
+    for source, index in _code_cells():
+        lines = source.splitlines()
+        for line, text in customer_strings(source):
+            on_dialog = DIALOG_MARKER in lines[line - 1]
+            for term in internal_hits(customer_form(text)):
+                if term in GRANT_TERM_IDS and on_dialog:
+                    continue
+                hits.append(f"cell {index} line {line} [{term}] {text.strip()[:140]}")
     assert hits == []
+
+
+def test_grant_sql_is_never_built_into_copy_off_the_dialog():
+    """REQ-260: copy that interpolates a GRANT statement fails unless that line is the Permission Required producer."""
+    hits = [f"cell {index} line {line}" for source, index in _code_cells() for line in dynamic_grant_lines(source)]
+    assert hits == []
+
+
+def test_grant_gate_must_exclude_and_must_keep_controls():
+    prose = 'def status_line(cmd):\n    return f"ask your owner to run {cmd}"\n'
+    dialog = 'def status_line(cmd):\n    return f"Ask your owner to grant it: {cmd}"  # PERMISSION_DIALOG\n'
+    grant_in_text = 'def status_text():\n    return "Ask your owner to run GRANT USE CATALOG ON CATALOG main TO x"\n'
+    statement_builder = 'def statement_for(name):\n    return f"GRANT USE CATALOG ON CATALOG {name} TO x"  # PERMISSION_DIALOG\n'
+    assert dynamic_grant_lines('def status_line(grant):\n    return f"ask your owner to run {grant}"\n') == [2], "a run-time GRANT in copy fails (must-exclude)"
+    assert dynamic_grant_lines('def status_line(grantee):\n    return f"{grantee} can manage the folder"\n') == [], "a grantee name is not a GRANT (must-keep)"
+    assert dynamic_grant_lines(dialog.replace("{cmd}", "{grant_cmd}")) == [], "a marked dialog producer passes (must-keep)"
+    assert dynamic_grant_lines(prose.replace("{cmd}", "{statement}")) == [2], "a run-time statement in copy fails (must-exclude)"
+    assert [t for _, t in customer_strings(grant_in_text)] and any(
+        "GRANT" in t for _, t in customer_strings(grant_in_text)), "a literal GRANT in copy is seen by the scan"
+    assert dynamic_grant_lines(statement_builder) == [], "a statement builder outside copy is not copy"
 
 
 @pytest.fixture
