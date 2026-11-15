@@ -204,7 +204,9 @@ test('a table column with no top filter of its label narrows only that table, an
     assert.equal(await segments.locator('tbody tr td').first().innerText(), 'Beta');
     assert.equal(await worst.locator('tbody tr').count(), 6, 'the other table keeps every row');
     assert.equal(seen.pages.at(-1).filters.category, undefined, 'a column with no top filter never moves the top bar');
-    assert.ok(seen.records.every((b) => !('column_filters' in b)), 'a table filter never reaches the decision list');
+    // REQ-224 D-SCOPE2 (ce9b6de90): What to do now sends its own action_status Open filter, so the list's requests may carry column_filters;
+    // the table's segment filter must still never reach them.
+    assert.ok(seen.records.every((b) => !('segment' in (b.column_filters || {}))), 'a table filter never reaches the decision list');
     assert.deepEqual(linkOf(page), { c: { t: { segments: { segment: ['Beta'] } } } });
     assert.deepEqual(seen.errors, []);
   } finally {
