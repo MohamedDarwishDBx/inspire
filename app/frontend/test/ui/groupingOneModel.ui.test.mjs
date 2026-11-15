@@ -9,8 +9,8 @@ import { closeBrowser, nextUntil, profileAt, onStep, openUi } from './uiSupport.
 test.after(closeBrowser);
 
 const ME = { userName: OWNER, displayName: 'Owner' };
-const ONE_MODEL_REASON = 'Inspire fits one model across all of main.sales.orders for Segmentation, so the whole data is one group. Splitting it into groups '
-  + 'would need one registered model per group, and Inspire registers one model per use case, so choosing columns is refused when the use case is built.';
+// REQ-266: the Data groups step says plainly that the whole data is one group (no refusal wording).
+const ONE_MODEL_REASON = 'Inspire fits one model across all of main.sales.orders for Segmentation, so the whole data is one group.';
 const ONE_MODEL_PROFILE = { ...PROFILE, one_model: true, qualifies: false, recommended: [], recommended_by: '', columns: [], group_column: null,
   group_list: [], group_sizes: [], group_count: 0, suggested_groups: [], example: null, reason: ONE_MODEL_REASON };
 
@@ -26,8 +26,8 @@ test('REQ-193: a Segmentation use case offers only the whole data on Data groups
     await grouping.getByRole('heading', { name: GROUPING_TITLE }).waitFor();
     assert.deepEqual(await grouping.locator('[data-grouping-choice]').evaluateAll((rows) => rows.map((r) => r.dataset.groupingChoice)), ['all'],
       'only the whole data is offered for a one-model kind');
-    assert.equal(await grouping.locator('[data-grouping-nothing]').textContent(), `${ONE_MODEL_REASON} There is nothing else to pick here.`,
-      'one plain sentence says why, and nothing else is offered');
+    assert.equal(await grouping.locator('[data-grouping-nothing]').textContent(), ONE_MODEL_REASON,
+      'one plain sentence says the whole data is one group, and nothing else is offered');
     assert.equal(await grouping.locator('[data-grouping-why]').textContent(), GROUPING_PLAIN);
   } finally {
     await page.close?.();

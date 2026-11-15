@@ -340,7 +340,7 @@ function useSegmentCounts(page, ids, ready, nonce) {
         const treated = treatedBySegment(probe.treatments);
         const unread = !!probe.errors?.treatments;
         return Promise.all(ids.map((id) => getRecords({ ...view, page: page.id, filters: { [filter]: [id] }, offset: 0, limit: 1 })
-          .then((data) => [id, { waiting: data.total ?? 0, asOf: listAsOf(data), actions: !!data.actions, view, treated: treated[id] || [], unread }])
+          .then((data) => [id, { waiting: data.total ?? null, asOf: listAsOf(data), actions: !!data.actions, view, treated: treated[id] || [], unread }])
           .catch((e) => [id, { error: e.message }])));
       })
       .catch((e) => ids.map((id) => [id, { error: e.message }]))

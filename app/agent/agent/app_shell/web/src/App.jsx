@@ -8,7 +8,7 @@ import { NoAccessScope, PlainNote, RetryProvider, ToastProvider, useToast } from
 import Page from './Page.jsx';
 import WaitingForAccess from './WaitingForAccess.jsx';
 import { isQueue, pageSections } from './Layouts.jsx';
-import { pageMode, performanceOn, sectionTitle } from './modes.js';
+import { hasPlan, pageMode, performanceOn, sectionTitle } from './modes.js';
 import ModeView from './ModeView.jsx';
 import AgentPage from './AgentPage.jsx';
 import { inboxOn } from './inbox.js';
@@ -34,7 +34,7 @@ const THEME_KEY = 'inspire-app-theme';
 const GENIE_CLOSED = 'inspire-genie-closed';
 const genieClosedThisSession = () => { try { return window.sessionStorage.getItem(GENIE_CLOSED) === '1'; } catch { return false; } };
 const rememberGenie = (open) => { try { window.sessionStorage.setItem(GENIE_CLOSED, open ? '0' : '1'); } catch { /* private mode opens it on every load */ } };
-const RAIL_ICONS = { dashboard: 'grid', inbox: 'bell', work: 'check', performance: 'trend', runs: 'history', alerts: 'bell', impact: 'trend', settings: 'sliders', agent: 'send' };
+const RAIL_ICONS = { dashboard: 'grid', inbox: 'bell', work: 'check', plan: 'trend', performance: 'trend', runs: 'history', alerts: 'bell', impact: 'trend', settings: 'sliders', agent: 'send' };
 
 function initials(user) {
   const source = user?.name || user?.email || '';
@@ -90,7 +90,7 @@ function railOf(app, page) {
   const inbox = inboxOn(app, page);
   const sections = agentOn(app) ? ['agent', ...pageSections(app, page)] : pageSections(app, page);
   const all = inbox ? [sections[0], 'inbox', ...sections.slice(1)] : sections;
-  const at = (sections.includes('work') ? 2 : 1) + (inbox ? 1 : 0);
+  const at = 1 + (sections.includes('work') ? 1 : 0) + (sections.includes('plan') ? 1 : 0) + (inbox ? 1 : 0);
   return [...all.slice(0, at), ...(performanceOn(app) ? ['performance'] : []), ...all.slice(at)];
 }
 
@@ -178,7 +178,7 @@ function Shell({ app, onRefreshSiblings }) {
   const [helping, setHelping] = useState(null);
   const admin = route === ADMIN_ROUTE;
   const page = pages.find((p) => p.id === route) || (admin ? pages.find((p) => p.id === prefs.last) || pages[0] : null);
-  const section = admin ? '' : (link.section === 'performance' && !performanceOn(app) ? 'dashboard' : link.section);
+  const section = admin ? '' : (link.section === 'performance' && !performanceOn(app)) || (link.section === 'plan' && !(page && hasPlan(page))) ? 'dashboard' : link.section;
   const sectionsHere = page ? railOf(app, page) : [];
   const inboxOff = railCounts.page === page?.id && railCounts.inboxOff;
   const rail = sectionsHere.filter((s) => !(s === 'alerts' && sectionsHere.includes('runs')) && !(s === 'inbox' && inboxOff));
@@ -335,7 +335,8 @@ function Shell({ app, onRefreshSiblings }) {
               </GenieScope.Provider>
             )}
             {!admin && page && section === 'agent' && <AgentPage key={page.id} app={app} page={page} onRecord={openRecord} themeKey={themeKey} />}
-            {!admin && page && section !== 'performance' && section !== 'agent' && (
+            {!admin && page && section === 'plan' && <ModeView key={page.id} mode={mode.id} part="Plan" app={app} page={page} />}
+            {!admin && page && section !== 'performance' && section !== 'agent' && section !== 'plan' && (
               <Page key={page.id} app={app} page={page} meta={metas[page.id]} state={states[page.id]} onState={setPageState(page.id)} look={looks[page.id] || EMPTY_LOOK}
                 onLook={setPageLook(page.id)} themeKey={themeKey} onAsk={ask} onExplain={explain} genieBusy={genie.busy} hubEntry={hub?.pages?.[page.id]}
                 summary={summaries[page.id]} view={view} onView={setView} genie={genie} section={section} tab={link.tab} focus={link.focus} chrome={chrome}

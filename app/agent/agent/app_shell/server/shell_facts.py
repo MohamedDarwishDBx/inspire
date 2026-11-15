@@ -143,7 +143,9 @@ def fanning_datasets(page, names) -> dict:
 
 
 def companion(table: str, suffix: str) -> str:
-    return ".".join(p.strip() for p in str(table).split(".")) + suffix
+    """The companion table of a result table: its own name plus the suffix, as the notebook writes it and the App reads it. The one
+    naming rule for the writer, the layout and the App fit check, and every page read (REQ-264)."""
+    return ".".join(p.strip().strip("`") for p in str(table or "").split(".")) + suffix
 
 
 def acted_condition(names) -> str:
@@ -1176,3 +1178,67 @@ def run_rows_source(source: str, date_column: str) -> str:
     page = {"datasets": [{"name": RUN_ROWS_DATASET, "sql": source}],
             "filters": [{"id": "as_of", "type": "date_range", "columns": {RUN_ROWS_DATASET: date_column}}]}
     return future_source(page, RUN_ROWS_DATASET, source)
+
+
+def page_spot(title) -> str:
+    # REQ-237: the one wording for an App page in person copy: its title, never its internal id. A page with no title says so in plain words.
+    name = " ".join(str(title or "").split())
+    return f"page {name}" if name else "the App page"
+
+
+def page_label(page: dict) -> str:
+    return page_spot((page or {}).get("title"))
+
+
+ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
+
+
+def _ordinal(index: int) -> str:
+    return ORDINALS[index] if index < len(ORDINALS) else f"{index + 1}th"
+
+
+def _person_names(items, noun: str, untitled_phrase: str) -> dict:
+    # REQ-237: one naming rule for App pages and charts in person copy. A title names the item; a title that two items share, or
+    # no title at all, is told apart by position among its siblings ('the second Overview page'), never by its internal id.
+    titles = [" ".join(str((item or {}).get("title") or "").split()) for item in items]
+    untitled = [j for j, title in enumerate(titles) if not title]
+    names = {}
+    for index, (item, title) in enumerate(zip(items, titles)):
+        siblings = [j for j, other in enumerate(titles) if other == title]
+        if title and len(siblings) == 1:
+            spot = f"{noun} {title}"
+        elif title:
+            spot = f"the {_ordinal(siblings.index(index))} {title} {noun}"
+        elif len(untitled) == 1:
+            spot = untitled_phrase
+        else:
+            spot = f"the {_ordinal(untitled.index(index))} {noun}"
+        names[str(item.get("id"))] = spot
+    return names
+
+
+def page_names(pages) -> dict:
+    """Person name of each App page, keyed by its id (the check keeps the id for matching)."""
+    return _person_names(list(pages or []), "page", "the App page")
+
+
+def chart_names(page) -> dict:
+    """Person name of each chart on one App page, keyed by the chart id."""
+    return _person_names(list((page or {}).get("charts") or []), "chart", "one chart")
+
+
+def plain_chart_text(text, page) -> str:
+    for ident, spot in chart_names(page).items():
+        text = re.sub(rf"chart {re.escape(ident)}(?!\w)", lambda found, spot=spot: spot, text)
+    return text
+
+
+def plain_check_text(text, pages) -> str:
+    """Person copy of text that names App pages and their charts by id: each chart of a named page, then each page, by its name."""
+    pages = list(pages or [])
+    for page in pages:
+        if re.search(rf"page {re.escape(str(page.get('id')))}(?!\w)", text):
+            text = plain_chart_text(text, page)
+    for ident, spot in page_names(pages).items():
+        text = re.sub(rf"page {re.escape(ident)}(?!\w)", lambda found, spot=spot: spot, text)
+    return text

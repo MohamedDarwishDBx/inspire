@@ -258,20 +258,25 @@ def test_a_preview_still_running_at_twice_the_budget_is_canceled_and_fails_with_
     assert fake.waits == [agent_ns["IMPLEMENT_PREVIEW_WAIT_S"]]
     assert fake.cancels == [("POST", "/api/2.2/jobs/runs/cancel", {"run_id": 5})]
     assert outcome["status"] == "failed" and outcome["overran"] is True
-    assert outcome["error"] == ("the preview run 5 was still running after 40 minutes, twice the 20-minute preview budget, so "
-                                "Inspire canceled it")
+    assert outcome["error"] == ("Stopped by Inspire because the preview run 5 was still running after 40 minutes, twice the "
+                                "20-minute preview budget")
     ended = [e for e in inst.emitted if e["step_name"] == "Preview run" and e["status"] != "started"]
     assert ended[0]["status"] == "ended_error" and ended[0]["message"] == outcome["error"]
 
 
-def test_a_preview_whose_cancel_fails_or_whose_state_cannot_be_read_says_so(agent_ns):
+def test_a_preview_whose_cancel_fails_says_so_with_the_refusal(agent_ns):
     outcome, fake, _inst = _overrun_preview(agent_ns, {"status": "RUNNING"}, cancel_error=RuntimeError("RESOURCE_CONFLICT"))
-    assert outcome["error"] == ("the preview run 5 was still running after 40 minutes, twice the 20-minute preview budget, and "
-                                "Inspire could not cancel it: RESOURCE_CONFLICT")
-    outcome, fake, _inst = _overrun_preview(agent_ns, {"status": "RUNNING", "note": "run state unreadable: 503"})
-    assert outcome == {"status": "failed", "error": "Inspire could not read the state of the preview run 5 (run state unreadable: "
-                                                    "503), so it canceled the run", "job_url": "u"}
     assert fake.cancels == [("POST", "/api/2.2/jobs/runs/cancel", {"run_id": 5})]
+    assert outcome["error"] == ("Inspire could not stop the preview run 5, which was still running after 40 minutes: "
+                                "RESOURCE_CONFLICT")
+
+
+def test_a_preview_whose_state_cannot_be_read_is_never_cancelled_and_says_so(agent_ns):
+    outcome, fake, _inst = _overrun_preview(agent_ns, {"status": "RUNNING", "note": "run state unreadable: 503"})
+    assert fake.cancels == [], "an unreadable run is never cancelled"
+    assert outcome == {"status": "failed", "error": "Inspire could not read the state of the preview run 5 (run state unreadable: "
+                                                    "503), so it did not stop the run. The run may still be running: check it in "
+                                                    "Databricks.", "job_url": "u"}
 
 
 def _gated(ns, previews, checks_seq, refill=True, rounds=3, fills=None, reasons=None, workspace=None, runner_results=None):

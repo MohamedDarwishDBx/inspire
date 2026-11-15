@@ -16,6 +16,8 @@ import {
 export { allowedRule, allowedText, widgetProblems, widgetSetProblems, widgetValueProblem };
 
 export const START_MVP_LABEL = 'Start Use Case MVP with Genie';
+// REQ-273: an MVP whose publish failed (or is not published) opens the wizard again with its last choices, without uninstalling.
+export const CHANGE_CHOICES_LABEL = 'Change choices and build again';
 export const VIBE_FEATURES_LABEL = 'Vibe/Add/Remove Features';
 export const OPEN_ALL_SETTINGS = 'Open all settings';
 
@@ -38,10 +40,14 @@ export const BUILD_NOW_LABEL = 'Build with these choices';
 export const CHANGE_LABEL = 'Change';
 
 const DELIVERY_STEP = { id: 'delivery', label: DELIVERY_LABEL, sections: ['use_it', 'app_owners', 'alert'], advanced: ['app_owners', 'alert'], panels: ['delivery'] };
-const WHERE_STEP = { id: 'where', label: WHERE_LABEL, sections: ['app_place', 'app_pages'], advanced: [], panels: ['app_place', 'app_pages'] };
+// Where it lives holds every App panel (REQ-002): where, pages, who uses it, what people can do, storage and look.
+export const APP_PANELS = ['app_place', 'app_pages', 'app_access', 'app_features', 'app_storage', 'app_look'];
+const WHERE_STEP = { id: 'where', label: WHERE_LABEL, sections: APP_PANELS, advanced: [], panels: APP_PANELS };
 const DATA_STEP = { id: 'data', label: DATA_RESULTS_LABEL, sections: ['use_case', 'data', 'configure', 'results'], advanced: ['data', 'configure', 'results'], panels: ['data', 'results'] };
 export const GROUPING_STEP = { id: 'grouping', label: 'Data groups', sections: ['grouping'], advanced: [], panels: ['grouping'] };
-export const MEASURE_STEP = { id: 'stake', label: MEASURE_LABEL, sections: ['kpi', 'holdout'], advanced: [], panels: ['stake'] };
+// REQ-265: Gains only needs a sign, which is its own Measure screen; a Gains rule with no sign stops the build with this line.
+export const GAINS_SIGN_NEEDED = 'Gains only needs a sign: name the column whose positive values are gains, or the status value that marks a gain.';
+export const MEASURE_STEP = { id: 'stake', label: MEASURE_LABEL, sections: ['money', 'kpi', 'holdout'], advanced: [], panels: ['stake'] };
 // Measure impact is two decisions, one per screen: the target KPI, then the hold-back (on or off, and its share).
 export const MEASURE_IMPACT_PARTS = ['kpi', 'holdout'];
 // The link key for the whole impact screen (old links and the Measure impact rows open its first decision).
@@ -59,10 +65,7 @@ export function withMoneyRule(spec, money) {
 }
 export const IMPLEMENT_STEPS = [DELIVERY_STEP, DATA_STEP];
 
-export const APP_PANELS = ['app_place', 'app_pages', 'app_access', 'app_features', 'app_storage', 'app_look'];
 export const APP_STORAGE_LABEL = 'Page storage';
-export const APP_STEP = { id: 'app', label: 'Who uses the App and storage', sections: ['app_access', 'app_features', 'app_storage'], advanced: [], panels: ['app_access', 'app_features', 'app_storage'] };
-export const APP_LOOK_STEP = { id: 'app_look', label: 'App look', sections: ['app_look'], advanced: [], panels: ['app_look'] };
 export const WIZARD_STEPS_MAX = 10;
 
 export const SUMMARY_STEP = { id: 'summary', label: 'Review & build', sections: ['vibes'], advanced: [], panels: ['summary', 'vibes'] };
@@ -82,11 +85,11 @@ export const NOTEBOOK_STEPS = [
 
 const STEP_ALIASES = {
   use_case: DATA_STEP.id, choose: DATA_STEP.id, review: SUMMARY_STEP.id, measure: MEASURE_STEP.id, vibes: SUMMARY_STEP.id,
-  settings: SUMMARY_STEP.id, app_place: WHERE_STEP.id, app_access: APP_STEP.id, app_features: APP_STEP.id, app_storage: APP_STEP.id, app_look: APP_LOOK_STEP.id,
+  settings: SUMMARY_STEP.id, app_place: WHERE_STEP.id, app_access: WHERE_STEP.id, app_features: WHERE_STEP.id, app_storage: WHERE_STEP.id, app_look: WHERE_STEP.id, app: WHERE_STEP.id,
   results: DATA_STEP.id, app_pages: WHERE_STEP.id, [MEASURE_IMPACT_PART]: MEASURE_STEP.id, fresh: FIRST_RUN_STEP.id, schedule: FIRST_RUN_STEP.id, run: FIRST_RUN_STEP.id,
 };
 export const opensOnImpact = (focus) => IMPACT_FOCUS.includes(focus?.step);
-const STEP_FALLBACKS = { [GROUPING_STEP.id]: DATA_STEP.id, [WHERE_STEP.id]: DELIVERY_STEP.id, [APP_LOOK_STEP.id]: APP_STEP.id, [APP_STEP.id]: WHERE_STEP.id };
+const STEP_FALLBACKS = { [GROUPING_STEP.id]: DATA_STEP.id, [WHERE_STEP.id]: DELIVERY_STEP.id };
 
 function heldStepOf(steps, id) {
   let want = id;
@@ -108,15 +111,14 @@ export function wizardSteps(mode, spec = null, scope = NO_SCOPE_STEPS) {
     const app = Boolean(spec?.outputs?.app);
     const joined = joinsApp(spec);
     const where = app ? [{ ...WHERE_STEP, sections: joined ? ['app_place'] : WHERE_STEP.sections, panels: joined ? ['app_place'] : WHERE_STEP.panels }] : [];
-    const appSteps = app && !joined ? [APP_STEP, APP_LOOK_STEP] : [];
     return [DELIVERY_STEP, DATA_STEP, ...(scope?.grouping ? [GROUPING_STEP] : []), firstRunStepOf(scope), MEASURE_STEP,
-      ...where, ...appSteps, SUMMARY_STEP];
+      ...where, SUMMARY_STEP];
   }
   if (mode === 'notebook') return NOTEBOOK_STEPS;
   throw new Error(`unknown implement mode '${mode}'`);
 }
 
-export const BUILD_STEP_IDS = [DELIVERY_STEP.id, WHERE_STEP.id, APP_STEP.id, APP_LOOK_STEP.id, SUMMARY_STEP.id];
+export const BUILD_STEP_IDS = [DELIVERY_STEP.id, WHERE_STEP.id, SUMMARY_STEP.id];
 
 export const APP_PLACEMENTS = [
   { id: 'domain', label: 'One App per business domain', blurb: 'Use cases of the same domain share one App, so the people of that domain find them in one place.' },
@@ -510,12 +512,35 @@ export function builtVersion(history) {
 
 export const APP_UPDATED_TEXT = 'App updated to the current Inspire App code';
 
-export function liveAppVersion(history) {
+// REQ-241: under keep-previous the previous App keeps its name and serves people; the newest build's App is a side App at a new name.
+// That previous App is listed in kept.assets with output 'app'. Its version is the live App version.
+export function keptAppEntry(row) {
+  const listed = row?.asset_status?.kept?.assets;
+  const found = Array.isArray(listed) ? listed.find((a) => a?.output === 'app' && Number.isInteger(Number(a.version)) && Number(a.version) > 0) : null;
+  return found || null;
+}
+
+function liveRowOf(history) {
   const rows = [...(history || [])].sort((a, b) => (b?.spec_version || 0) - (a?.spec_version || 0));
-  const live = rows.find((r) => r?.spec_version === builtVersion(rows));
+  return rows.find((r) => r?.spec_version === builtVersion(rows)) || null;
+}
+
+// The one rule for the App's live version (REQ-241; the backend and the Build page both read it from here).
+export function liveAppVersion(history) {
+  const live = liveRowOf(history);
+  const kept = keptAppEntry(live);
+  if (kept) return Number(kept.version);
   const entry = live?.asset_status?.app;
   if (!entry || typeof entry !== 'object' || !IMPLEMENT_DONE_STATUSES.includes(String(entry.state))) return null;
   const version = Number(entry.spec_version ?? live.spec_version);
+  return Number.isInteger(version) && version > 0 ? version : null;
+}
+
+// The side App of a keep-previous build: the newest build's App, not live until it is published as live (REQ-241).
+export function sideAppVersion(history) {
+  const live = liveRowOf(history);
+  if (!keptAppEntry(live)) return null;
+  const version = Number(live.asset_status?.app?.spec_version ?? live.spec_version);
   return Number.isInteger(version) && version > 0 ? version : null;
 }
 
@@ -524,6 +549,22 @@ export function isAppUpdate(history, row) {
   if (asked == null) return false;
   const before = (history || []).filter((r) => (r?.spec_version || 0) < (row.spec_version || 0));
   return Number(asked) === liveAppVersion(before);
+}
+
+// REQ-241: the version a vibe's keep/remove choice names as live: the App's live version when a keep-previous build left a side App,
+// else the newest built version (the same rule as the Build page's Live line).
+export function liveVersionForVibes(history) {
+  return liveAppVersion(history) ?? builtVersion(history);
+}
+
+// REQ-241: the Build page's version lines. 'Live' is the version that serves the live App name; 'Side App' is the newest build's App until it is published as live.
+export function appVersionLines(history) {
+  const live = liveAppVersion(history);
+  const side = sideAppVersion(history);
+  return {
+    live: live != null ? `Live: v${live}` : '',
+    side: side != null ? `Side App: v${side} (not live yet)` : '',
+  };
 }
 
 export function vibePreviousChoices(live, next, inPlace = false) {
@@ -838,6 +879,15 @@ export function pickedTable(spec, original, value) {
   return { spec: { ...spec, data: { ...spec.data, tables: { ...spec.data.tables, [original]: value } } }, notice: null };
 }
 
+// REQ-240: a replacement that is already a source table would give the use case two reads of one table, and two rows with the same key.
+// The pick is refused with a plain notice, so the source list keeps one row per table.
+export function duplicateSourceNotice(sourceTables, original, chosen, value) {
+  if (!value || value === REMOVE_TABLE) return '';
+  const low = (t) => String(t || '').toLowerCase();
+  const taken = (sourceTables || []).some((t) => low(t) === low(value) && low(t) !== low(chosen || original));
+  return taken ? `${value} is already a source table, so it cannot replace ${original}.` : '';
+}
+
 export function clearedText(cleared) {
   const parts = [];
   if (cleared?.roles?.length) parts.push(`its column roles (${cleared.roles.map((r) => r.replace('_', ' ')).join(', ')})`);
@@ -969,11 +1019,38 @@ export function countedFor(readiness, scope) {
   return readiness && !readiness.skipped && JSON.stringify(readiness.scope) === JSON.stringify(scope) ? readiness : null;
 }
 
-export function tooFewRowsText(readiness) {
-  const rows = Number(readiness?.row_count);
+// A forecast counts periods (distinct dates), the same count the build's data check makes; other kinds count rows.
+export function dataMinimumShortfall(readiness) {
+  if (readiness?.skipped) return null;
+  const forecast = readiness?.period_count != null;
+  const have = Number(forecast ? readiness.period_count : readiness?.row_count);
   const minimum = Number(readiness?.minimum_rows);
-  if (readiness?.skipped || !(rows > 0) || !(minimum > rows)) return '';
-  return `Only ${rows.toLocaleString('en-US')} rows are in this scope, fewer than the ${minimum.toLocaleString('en-US')} this use case needs; you can still go on.`;
+  if (!(minimum > 0) || !(have < minimum)) return null;
+  return { have, minimum, forecast };
+}
+
+// The build-step refusal (REQ-255): the same words whether or not the scope is on screen. Shown beside the refused build.
+export function dataMinimumRefusalText(readiness) {
+  const short = dataMinimumShortfall(readiness);
+  if (!short || !(short.have > 0)) return '';
+  const { have, minimum, forecast } = short;
+  const what = forecast ? `${have.toLocaleString('en-US')} distinct dates` : `${have.toLocaleString('en-US')} rows`;
+  const way = forecast ? 'pick a coarser period (weekly or monthly) or use a table with more history' : 'use a source with more rows';
+  return `The data cannot meet the minimum this use case needs: it has ${what}, and at least ${minimum.toLocaleString('en-US')} are needed. Build is blocked. To go on, ${way}.`;
+}
+
+// The scope note on the steps before the build: one plain sentence that never blocks (the build's refusal is dataMinimumRefusalText, shown on the last step).
+export function tooFewRowsText(readiness) {
+  const short = dataMinimumShortfall(readiness);
+  if (!short || !(short.have > 0)) return '';
+  const what = short.forecast ? `${short.have.toLocaleString('en-US')} distinct dates` : `${short.have.toLocaleString('en-US')} rows`;
+  return `Only ${what} are in this scope, fewer than the ${short.minimum.toLocaleString('en-US')} this use case needs; you can still go on.`;
+}
+
+// The build is refused while the data has some rows but fewer than the minimum (the same count the build's check makes). Zero rows is
+// not refused here: the build treats an empty source as no data yet and lets Genie build the full method, as it always has.
+export function dataMinimumBlocks(readiness) {
+  return Boolean(dataMinimumShortfall(readiness)?.have > 0);
 }
 
 export function scopeNarrowing(scope) {
@@ -1145,7 +1222,18 @@ export function useCaseSchemaTags({ sessionId, useCaseId, businessName, inspireD
 export function ownSchemaFallbackNote(catalog, me = '') {
   const who = String(me || '').trim() ? `\`${String(me).trim()}\`` : 'you';
   return `You cannot create schemas in ${catalog}, so this use case's tables go to the Inspire database schema. For a schema of its own, `
-    + `ask your data owner to run GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO ${who}, then pick Its own schema again.`;
+    + `ask your data owner to give ${who} CREATE SCHEMA on ${catalog}, then pick Its own schema again. The exact command is in Permission Required.`;
+}
+
+// REQ-131, REQ-260: the GRANT that lets the person create the use case schema goes to the Permission Required dialog, never into prose.
+export function ownSchemaGrantPermission(catalog, me = '') {
+  const who = String(me || '').trim();
+  return {
+    statements: [`GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO ${who ? `\`${who}\`` : '<you>'}`], // PERMISSION_DIALOG
+    instructions: [],
+    principal: who || 'you',
+    why: `Inspire cannot create the use case schema in ${catalog} with your sign-in.`,
+  };
 }
 
 export function ownSchemaHolderText(holder = {}, { useCaseId = '', inspireDatabase = '' } = {}) {
@@ -1288,6 +1376,9 @@ export function specFromLatest(latest, fallback, assets = {}) {
   for (const key of ['app_look', 'app_options', 'merge']) {
     outputs[key] = { ...fallback.outputs[key], ...(saved[key] && typeof saved[key] === 'object' && !Array.isArray(saved[key]) ? saved[key] : {}) };
   }
+  // A stored App with no experience key is the classic (ui) App, as the backend reads it: the new-build default must not reach it.
+  const savedOptions = saved.app_options && typeof saved.app_options === 'object' && !Array.isArray(saved.app_options) ? saved.app_options : {};
+  if (!Object.prototype.hasOwnProperty.call(savedOptions, 'experience')) outputs.app_options = { ...outputs.app_options, experience: 'ui' };
   if (!Array.isArray(outputs.app_owners)) outputs.app_owners = fallback.outputs.app_owners;
   if (!APP_ACCESS_CHOICES.some((c) => c.id === saved.app_access)) outputs.app_access = saved.app && assets?.app ? 'sp' : APP_ACCESS_DEFAULT;
   if (saved.app && assets?.app && !Object.prototype.hasOwnProperty.call(saved, 'app_backend')) outputs.app_backend = 'delta';
@@ -1836,6 +1927,7 @@ export function dataFilterProblems(spec) {
 
 export function sectionErrors(section, spec, extras = {}) {
   const errors = [];
+  if (section === 'money' && spec.money && spec.money.off !== true && spec.money.rule === 'gains' && !spec.money.sign) errors.push(GAINS_SIGN_NEEDED);
   if (section === 'use_case') {
     if (!spec.use_case.goal) errors.push('write the goal sentence');
     if (!spec.use_case.decision_owner) errors.push('name the decision owner');
@@ -1975,7 +2067,8 @@ export function withResultTable(spec, { catalog, schema, table }) {
 export const OFF_IN_WORKSPACE = { app: 'Apps are turned off in this workspace.', genie_space: 'Genie Agents are turned off in this workspace.',
   alert: 'Alerts are turned off in this workspace.' };
 export const OFF_DETAILS = 'A workspace admin turns this feature on in the workspace settings.';
-const ACCESS_PLACES = [['the catalog', /\bon catalog\b/i], ['the schema', /\bon schema\b/i], ['the table', /\bon table\b/i], ['the SQL warehouse', /\bwarehouse\b/i]];
+// the place a grant is missing on, in the grant SQL ("ON CATALOG") or in plain words ("on the catalog", REQ-260)
+const ACCESS_PLACES = [['the catalog', /\bon (?:the )?catalog\b/i], ['the schema', /\bon (?:the )?schema\b/i], ['the table', /\bon (?:the )?table\b/i], ['the SQL warehouse', /\bwarehouse\b/i]];
 
 export function needsAccess(detail = '') {
   const places = ACCESS_PLACES.filter(([, re]) => re.test(String(detail || ''))).map(([place]) => place);
@@ -2595,9 +2688,9 @@ export function pickedSummary(spec, sourceTables = [], more = {}) {
     ...(app ? [row('app', 'where', 'App', joined ? `Joins ${outputs.merge.app}`
       : [placement?.label, outputs.app_name].filter(Boolean).join(': ') || 'not placed yet')] : []),
     ...(app && !joined ? [
-      row('app_access', 'app', 'App access', APP_ACCESS_CHOICES.find((c) => c.id === outputs.app_access)?.label || 'not picked yet'),
+      row('app_access', 'where', 'App access', APP_ACCESS_CHOICES.find((c) => c.id === outputs.app_access)?.label || 'not picked yet'),
       row('app_features', 'where', 'App features', APP_OPTIONS.filter((o) => outputs.app_options?.[o.id] && appOptionShown(spec, o.id)).map((o) => o.label).join(', ') || 'none'),
-      row('app_look', 'app_look', 'App look', lookText({ ...APP_LOOK_DEFAULT, ...(outputs.app_look || {}) })),
+      row('app_look', 'where', 'App look', lookText({ ...APP_LOOK_DEFAULT, ...(outputs.app_look || {}) })),
     ] : []),
   ];
 }
@@ -2915,6 +3008,7 @@ export function protectionChoices(stop) {
 export const APP_READ_ACTION = 'Let Inspire read these tables';
 
 export const SOURCE_REFUSED_REASON = 'The App cannot read its sources yet, so the build cannot start. Grant access first, then build.';
+export const SOURCE_BUILT_IN_REFUSED_REASON = 'The App cannot read its sources yet, so the build cannot start. Copy the samples tables above into a schema you own, then build.';
 
 export const ACCESS_CHECKING = 'Checking access';
 export const ACCESS_UNKNOWN = 'Could not check access';
@@ -2985,6 +3079,11 @@ export function lostTablesAction(missing) {
   if (!primary) return 'swap each for a table with the same role or remove it';
   const rest = (missing || []).length > 1 ? ', and swap or remove the others' : '';
   return `swap ${primary.table} for a table with the same role, because the primary table can be swapped, not removed${rest}`;
+}
+
+// REQ-240: a blocked preview offers the Data step's own table picker, the same step the summary's Change link opens.
+export function missingSourcePick(missing) {
+  return (missing || []).length ? { label: 'Choose a replacement table', step: 'data' } : null;
 }
 
 export function lostTablesText(missing) {

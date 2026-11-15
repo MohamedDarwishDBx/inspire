@@ -50,10 +50,11 @@ test('an unknown part shows the whole editor rather than an empty one', () => {
 const renderWith = (value) => bundle.renderToStaticMarkup(bundle.createElement(bundle.MoneyRuleEditor, { part: null, value, sample: null, table: '', columns: [], api: {} }));
 const gainsInput = (html) => html.match(/<input[^>]*data-money-rule-kind="gains"[^>]*>/)[0];
 
-test('Gains only is disabled, and says why, while no sign is set', () => {
+// REQ-265 (decided): Gains only can be chosen; its sign is the screen after the movement screen, which says a sign is needed.
+test('Gains only is chosen freely, and its sign screen says a sign is needed while no sign is set', () => {
   const html = renderWith({ currency: 'convert', base: 'USD', rates: { USD: 1 }, rule: 'gains' });
-  assert.ok(gainsInput(html).includes('disabled=""'), 'the Gains only choice is disabled');
-  assert.ok(html.includes('data-money-sign-needed'), 'the editor says a sign is needed');
+  assert.ok(!gainsInput(html).includes('disabled=""'), 'the Gains only choice is enabled (the sign is the next screen)');
+  assert.ok(html.includes('data-money-sign-needed'), 'the sign screen says a sign is needed');
 });
 
 test('Gains only is enabled once a status sign is set, and the explanation goes', () => {

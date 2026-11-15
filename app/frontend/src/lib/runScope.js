@@ -280,6 +280,8 @@ export const GROUPING_DEEP_MARK = 'Suggested by discovery';
 export const GROUPING_DEEP_PICKED = 'Discovery picked this grouping. It becomes your choice when you pick it or another one.';
 
 export function deepGrouping(profile) {
+  // A use case that fits one model (one_model) is built on the whole data, so no suggested column is its default or a choice.
+  if (profile?.one_model === true) return [];
   const columns = Array.isArray(profile?.deep_suggestion?.columns) ? profile.deep_suggestion.columns : [];
   return groupByColumns(columns.map(text).filter(Boolean).join(', '));
 }
@@ -319,11 +321,12 @@ export function withGroupingDefault(values, profile, raw = '') {
 }
 
 export function groupingChoices(profile, settingChoices = []) {
-  const recommended = (Array.isArray(profile?.recommended) ? profile.recommended : []).map(text).filter(Boolean);
-  const columns = (Array.isArray(profile?.columns) ? profile.columns : []).filter(isMap);
+  const oneModel = profile?.one_model === true;
+  const recommended = oneModel ? [] : (Array.isArray(profile?.recommended) ? profile.recommended : []).map(text).filter(Boolean);
+  const columns = oneModel ? [] : (Array.isArray(profile?.columns) ? profile.columns : []).filter(isMap);
   const shown = columns.map((c) => text(c.name)).filter(Boolean);
   const joinOf = new Map(columns.filter((c) => isMap(c.join)).map((c) => [text(c.name), c.join]));
-  const extra = recommended.length || shown.length || profile?.one_model ? [] : (settingChoices || []).map(text).filter((c) => c && ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
+  const extra = recommended.length || shown.length || oneModel ? [] : (settingChoices || []).map(text).filter((c) => c && ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
   const known = [...new Set([...recommended, ...shown, ...extra])];
   const withJoin = (choice) => {
     const via = choice.columns.filter((c) => joinOf.has(c)).map((c) => `${c} joins on ${text(joinOf.get(c).key)} = ${text(joinOf.get(c).ref_column)}`);
@@ -417,7 +420,9 @@ export function groupingNothingText(profile, choices) {
   if (!isMap(profile) || (Array.isArray(choices) ? choices : []).length > 1) return '';
   if (profileRecords(profile) === 0) return `${text(profile.table) || 'The main table'} holds no records yet, so there is nothing to split and nothing to pick here.`;
   const reason = groupingReasonText(profile) || 'No column splits the data into fair groups, so Inspire models the whole data as one group.';
-  return `${/[.!?]$/.test(reason) ? reason : `${reason}.`} There is nothing else to pick here.`;
+  const sentence = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+  // A one-model use case says plainly that the whole data is one group; this step never carries a refusal or "nothing else to pick".
+  return profile.one_model === true ? sentence : `${sentence} There is nothing else to pick here.`;
 }
 
 export function groupingExampleText(profile) {

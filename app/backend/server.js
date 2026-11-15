@@ -22,7 +22,7 @@ const { triggerDemoDataPipeline } = require('./lib/demoDataPipeline');
 const { unreachableMessage } = require('./lib/unreachable');
 const { resolveInspireAppServicePrincipalId } = require('./lib/inspireSpGrants');
 const {
-  INSPIRE_AGENT_VERSION,
+  inspireReleaseLabel,
   inspireJobEnvironments,
   inspireJobTags,
   inspireTaskCompute,
@@ -62,7 +62,7 @@ const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('.
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
 const PM_ERROR = require('./lib/permissionError');
 const { apiRefusalText, logApiBody } = require('./lib/apiRefusal');
-const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
+const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
 const { keepLongInteger, parseExactJson } = require('./lib/exactJson');
 const { int64Id, isInt64Id, jsonWithInt64Ids } = require('./lib/int64Id');
 const { dataFiltersOf, scopesOfSessions } = require('./lib/dataFilters');
@@ -946,6 +946,21 @@ async function startingSessions(req, inspireDatabase, warehouseId, listed) {
   }
 }
 
+// The record write has a bound: a warehouse that never leaves PENDING must not hold the launch open (executeSql has no deadline of its own).
+const LAUNCH_RECORD_MS = 60000;
+
+// Whether the ledger holds a row for the run: true or false when it could read, null when it could not say.
+async function launchRecordedFor(host, token, runId) {
+  const stmt = L.runLauncherStatement(L.launchTableName(DEFAULT_INSPIRE_DB), runId);
+  if (!stmt || !DEFAULT_WAREHOUSE_ID) return null;
+  try {
+    const got = await executeSql(host, token, DEFAULT_WAREHOUSE_ID, stmt.sql, stmt.parameters, { signal: AbortSignal.timeout(LAUNCH_RECORD_MS) });
+    return (got?.result?.data_array || []).length > 0;
+  } catch (err) {
+    return isMissingTableError(err) ? false : null;
+  }
+}
+
 async function recordLaunch(host, token, record) {
   const table = L.launchTableName(DEFAULT_INSPIRE_DB);
   if (!table || !DEFAULT_WAREHOUSE_ID) {
@@ -957,11 +972,14 @@ async function recordLaunch(host, token, record) {
       launchTableReady = true;
     }
     const insert = L.launchInsertStatement(table, record);
-    await executeSql(host, token, DEFAULT_WAREHOUSE_ID, insert.sql, insert.parameters);
+    await executeSql(host, token, DEFAULT_WAREHOUSE_ID, insert.sql, insert.parameters, { signal: AbortSignal.timeout(LAUNCH_RECORD_MS) });
     return { recorded: true };
   } catch (err) {
     console.warn(`launch record write failed for run ${record.runId}: ${err.message}`);
-    return { recorded: false, failed: true, note: `Inspire could not record who launched this run (${err.message}), so only App managers can cancel it` };
+    // An answer the warehouse gave (a refused or failed statement) means the insert did not land. Only a write whose answer was lost
+    // (the bound fired and the statement was cancelled, or the network dropped) may have landed.
+    const ambiguous = err.code === 'SQL_CANCELLED' || /^Cannot reach/.test(String(err.message || ''));
+    return { recorded: false, failed: true, ambiguous, note: `Inspire could not record who launched this run (${err.message}), so only App managers can cancel it` };
   }
 }
 
@@ -973,6 +991,10 @@ async function recordLaunchOrStop(host, token, record) {
   if (launch.recorded || !launch.failed) return launch;
   launch = await recordLaunch(host, token, record);
   if (launch.recorded || !launch.failed) return launch;
+  // Only a write whose answer was lost may have landed (see recordLaunch). Then the ledger decides: a row, or a lookup that cannot answer, keeps the run.
+  if (launch.ambiguous && (await launchRecordedFor(host, token, record.runId)) !== false) {
+    return { ...launch, warning: `Inspire started run ${record.runId} but could not confirm its record, so it did not stop the run. Cancel it from the App managers if it is not wanted` };
+  }
   const stopped = await dbFetch(host, token, '/api/2.1/jobs/runs/cancel', {
     method: 'POST',
     body: jsonWithInt64Ids({ run_id: record.runId }, ['run_id']),
@@ -1521,7 +1543,7 @@ app.get('/api/health', async (req, res) => {
   const platformAuth = hasDatabricksPlatformAuth();
   res.json({
     status: 'ok',
-    agentVersion: INSPIRE_AGENT_VERSION,
+    agentVersion: inspireReleaseLabel(),
     host: host ? host.replace(/https?:\/\//, '').split('.')[0] + '...' : 'not configured',
     hostFull: host || 'NOT SET',
     hostConfigured: !!host,
@@ -1606,7 +1628,7 @@ app.get('/api/defaults', (req, res) => {
   // Local dev / App: skip Setup Wizard when server has platform auth + host + warehouse + tracking DB.
   const envSkipsSetupWizard = !!(platformAuth && fullHost && DEFAULT_WAREHOUSE_ID && DEFAULT_INSPIRE_DB);
   res.json({
-    agentVersion: INSPIRE_AGENT_VERSION,
+    agentVersion: inspireReleaseLabel(),
     databricksHost: fullHost || '',
     warehouseId: DEFAULT_WAREHOUSE_ID,
     inspireDatabase: DEFAULT_INSPIRE_DB,
@@ -2483,6 +2505,8 @@ app.post('/api/inspire/samples/copy', requireToken, async (req, res) => {
     if (!picked.length) throw Object.assign(new Error('Pick samples tables to copy'), { statusCode: 400 });
     const { tables, more } = await scopeTables(dbFetch, req.dbHost, person, picked);
     if (more) throw Object.assign(new Error(`The samples you picked hold more tables than one copy can take (${tables.length} read). Pick fewer tables or schemas`), { statusCode: 409 });
+    const refused = tables.map(sampleCopyRefusal).find(Boolean);
+    if (refused) throw Object.assign(new Error(refused), { statusCode: 409 });
     const copies = [];
     const failed = [];
     let schemaTried = false;

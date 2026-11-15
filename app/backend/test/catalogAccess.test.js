@@ -473,3 +473,21 @@ test('an output table the App cannot read blocks nothing when every real source 
     assert.doesNotMatch(preflight.data.checks.sources.detail, /churn_out/);
   });
 });
+
+// REQ-268 sweep (same class as REQ-267): grant-access runs as the person, but the saved involved tables and the build record are the App's
+// own tracking tables. They are read as the App, so a person who cannot read those tables still gets the grant answer.
+const TRACKING_TABLE_DENIED = (table) => `[INSUFFICIENT_PERMISSIONS] Insufficient privileges:\nPrincipal 'analyst@example.com' does not have SELECT on Table 'main.inspire.${table}'. SQLSTATE: 42501`;
+
+test('grant-access for a use case reads its involved tables and build record as the App, never with the person token that cannot read them (REQ-268 sweep)', async () => {
+  const grants = [];
+  const { overrides } = split(PERSON_OWNS, { onGrant: (sql, token) => grants.push([sql, token]) });
+  const denied = { [PERSON_TOKEN]: { __inspire_usecases: TRACKING_TABLE_DENIED('__inspire_usecases'), __inspire_implement: TRACKING_TABLE_DENIED('__inspire_implement') } };
+  const asPerson = { ...overrides, dbToken: PERSON_TOKEN, tokenKind: 'person', appToken: APP_TOKEN, sqlDeniedFor: denied };
+  await withApp(asPerson, async (url, made) => {
+    const got = await call(url, `/api/inspire/implement/grant-access?${Q}&kind=source_tables`, { method: 'POST', body: { tables: ['main.s.orders'] } });
+    assert.equal(got.status, 200, JSON.stringify(got.data));
+    assert.ok(grants.length > 0, 'the grant runs with the person token');
+    const reads = made.sqlCalls.filter((c) => /__inspire_(usecases|implement)/.test(String(c.sql)));
+    assert.ok(reads.length > 0 && reads.every((c) => c.token === APP_TOKEN), 'the tracking tables are read as the App');
+  });
+});

@@ -808,6 +808,7 @@ def build_runtime_context(env):
               f"{SCHEMA_MODE_CATALOG_NOTE}. Files go under {folders['APPS_PARENT'].rsplit('/', 1)[0]}.")
 
     release_version = str(env["manifest"]["version"])
+    release_tag = str(env["manifest"].get("tag") or release_version)
     source_zip = (env.get("files") or {}).get(APP_ZIP, "")
     if not source_zip:
         raise FileNotFoundError(f"The Inspire {release_version} release holds no {APP_ZIP}. Download the release again.")
@@ -865,6 +866,7 @@ def build_runtime_context(env):
         "SP_NAME": sp_name,
         "USER_GROUPS": [str(getattr(g, "display", "") or "") for g in (getattr(current_user, "groups", None) or [])],
         "RELEASE_VERSION": release_version,
+        "RELEASE_TAG": release_tag,
         "SOURCE_ZIP": source_zip,
         "SCHEMA_MODE": bool(schema_pair),
         "RUN_AS_PERSON": run_as,
@@ -1186,8 +1188,9 @@ def step_create_app_and_find_sp(ctx):
     print(f"SPs before deploy: {len(sp_before)}")
 
     app_yaml_path = f"{source_folder}/app.yaml"
+    release_env = {"INSPIRE_RELEASE_TAG": ctx["RELEASE_TAG"]} if ctx.get("RELEASE_TAG") else {}
     wanted_yaml = write_app_yaml_deploy(app_yaml_path, inspire_db, warehouse_id, notebook_path, sp_name, ctx.get("ASSETS_PATH"),
-                                        ctx.get("TEST_TAG"), ctx.get("APP_EXTRA_ENV"))
+                                        ctx.get("TEST_TAG"), {**(ctx.get("APP_EXTRA_ENV") or {}), **release_env} or None)
     print("app.yaml: ✅")
 
     app_url = ""

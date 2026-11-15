@@ -1,6 +1,6 @@
 const express = require('express');
 const { registerImplementRoutes } = require('../../implementRoutes');
-const { IMPLEMENT_COLUMNS } = require('../../lib/inspireImplement');
+const { IMPLEMENT_COLUMNS, sampleCopyTable } = require('../../lib/inspireImplement');
 const { noPersonTokenBody } = require('../../lib/routePolicy');
 const { sqlCancelledError } = require('../../lib/sqlStatements');
 const { withServicePrincipal } = require('./appRecord');
@@ -67,6 +67,8 @@ function makeApp(overrides = {}, { mount } = {}) {
       if (options && options.signal && options.signal.aborted) throw sqlCancelledError(null);
       sqlCalls.push({ sql, parameters, token, warehouse, options });
       for (const [needle, message] of Object.entries(state.sqlErrors || {})) if (sql.includes(needle)) throw new Error(message);
+      // sqlDeniedFor: { [token]: { [needle]: message } } refuses a read made with that token only (REQ-267: the person cannot read the App's table).
+      for (const [needle, message] of Object.entries((state.sqlDeniedFor || {})[token] || {})) if (sql.includes(needle)) throw new Error(message);
       for (const [needle, out] of Object.entries(state.statements || {})) {
         if (sql.includes(needle)) return typeof out === 'function' ? out(sql, parameters, token) : out;
       }
@@ -362,7 +364,7 @@ function makeApp(overrides = {}, { mount } = {}) {
   });
   app.post('/api/inspire/samples/copy', (req, res) => {
     sampleCopies.push(req.body);
-    const [status, data] = state.sampleCopyAnswer || [200, { destination: String((req.body || {}).destination || ''), copies: (req.body.entries || []).map((source) => ({ source, copy: `${req.body.destination}.${source.split('.')[2]}` })), failed: [] }];
+    const [status, data] = state.sampleCopyAnswer || [200, { destination: String((req.body || {}).destination || ''), copies: (req.body.entries || []).map((source) => ({ source, copy: `${req.body.destination}.${sampleCopyTable(source)}` })), failed: [] }];
     res.status(status).json(data);
   });
   app.get('/api/inspire/feedback', (_req, res) => res.json(state.feedback || { available: false, latest: [], message: '' }));

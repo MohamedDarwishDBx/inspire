@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STUDIO_STATE, built } from './implementFixtures.js';
-import { closeBrowser, expandBuild, onStep, openAsset, openUi, goToStep } from './uiSupport.mjs';
+import { closeBrowser, expandBuild, goToStep, onStep, openAsset, openFolded, openUi } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -45,7 +45,8 @@ test('App look turns the trend chart off with one line when the input tables car
     const { page } = ui;
     await goToStep(page, 'What to build');
     await goToStep(page, 'App access');
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     const look = page.getByRole('region', { name: 'App look' });
     await look.getByRole('tablist', { name: 'App look sections' }).getByRole('tab', { name: 'Charts', exact: true }).click();
     return { ui, look };

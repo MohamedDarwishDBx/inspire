@@ -10,9 +10,9 @@ SHARE = ({"act_now_share": "0.05"}, {"act_now_share": "0.1"})
 CARRIED = {"notebook_path": "/Workspace/nb", "job_id": 7, "dashboard_id": "d1", "genie_space_id": "g1", "app_name": "churn-desk",
            "last_preview_run_id": 99}
 LEAD = "Only the owners of this use case can change its settings: the person who asked for v1 and the App owners it names"
-REFUSED = f"{LEAD}, and {OTHER}, who asked for v2, is not one of them, so Inspire applied nothing of v2 and v1 stays live"
+REFUSED = f"{LEAD}, and {OTHER}, who asked for v2, is not one of them, so Inspire applied nothing of v2, and the version you have now stays as it is"
 UNNAMED = (f"{LEAD}, and this run does not name who asked for it, so Inspire cannot check that they are one of them; it applied nothing "
-           "of v2 and v1 stays live. Submit the change again from the Inspire App, which records who asks")
+           "of v2, and the version you have now stays as it is. Submit the change again from the Inspire App, which records who asks")
 NOTE = "Raised for the Q4 retention push"
 NAMES = [entry["name"] for entry in BUILT]
 
@@ -173,7 +173,7 @@ def test_the_refusal_names_the_use_case_with_or_without_an_app_and_lists_every_s
     refusal = agent_ns["implement_settings_refusal"]
     live = {"spec_version": 3, "created_by": "Lee.Chan@x.co", "spec_json": {"outputs": {"app": False, "app_owners": [APP_OWNER]}}}
     told = ("Only the owners of this use case can change its settings: the person who asked for v3 and the App owners it names, and "
-            f"{OTHER}, who asked for v4, is not one of them, so Inspire applied nothing of v4 and v3 stays live")
+            f"{OTHER}, who asked for v4, is not one of them, so Inspire applied nothing of v4, and the version you have now stays as it is")
     assert refusal(live, OTHER, 4) == told
     assert refusal(dict(live, spec_json={"outputs": {"app": True, "app_owners": [APP_OWNER]}}), OTHER, 4) == told
     assert refusal(live, " lee.chan@X.CO", 4) == "" and refusal(live, APP_OWNER.upper(), 4) == ""

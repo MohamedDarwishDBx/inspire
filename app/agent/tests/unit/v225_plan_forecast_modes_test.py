@@ -38,9 +38,9 @@ PID1, PID2 = "a" * 32, "b" * 32
 
 class PlanWorkspace(DataWorkspace):
     def __init__(self, plans=None, series=None, point=None, accuracy=None, lift=None, lines=None, constraints=None, missing=False,
-                 refuse=False, **kw):
+                 refuse=False, actuals=None, **kw):
         super().__init__(**kw)
-        self.plans, self.series, self.point = list(plans or []), series or [], point
+        self.plans, self.series, self.point, self.actuals = list(plans or []), series or [], point, actuals or []
         self.accuracy, self.lift, self.lines, self.constraints = accuracy, lift, lines or [], constraints or []
         self.missing, self.refuse, self.tick = missing, refuse, 0
 
@@ -68,7 +68,7 @@ class PlanWorkspace(DataWorkspace):
         for marker, rows in (("WITH o AS", lambda: [self.lift] if self.lift else []), ("__constraints", lambda: self.constraints),
                              ("WITH g AS", lambda: self.series), ("SELECT s.`forecast` FROM", lambda: self.point or []),
                              ("AS `abs_error`", lambda: [self.accuracy] if self.accuracy else []),
-                             ("AS d LIMIT 2000", lambda: self.lines)):
+                             ("AS d LIMIT 2000", lambda: self.lines), ("ORDER BY s.`period` DESC", lambda: self.actuals)):
             if marker in sql:
                 return {"columns": [], "rows": rows(), "truncated": False}
         return super().answer(sql, params)
@@ -250,7 +250,7 @@ def test_plan_routes_need_decisions_on_and_a_plan_or_forecast_page(tmp_path):
     (tmp_path / "f").mkdir()
     s, _ws, _made = forecast_shell(tmp_path / "f")
     status, out = call(s, "GET", "plans/performance", query={"page": "n01_u05"}, headers=EDITOR)
-    assert status == 404 and "no plan" in out["error"]
+    assert status == 200 and out["version"] is None and out["empty"] == shell_sql.FORECAST_PLAN_EMPTY
 
 
 def test_a_missing_plans_table_says_rebuild_on_reads_and_refuses_writes(tmp_path):
@@ -309,6 +309,29 @@ def test_plan_performance_compares_the_published_version_with_the_actuals_and_co
     assert (first["line_key"], first["state"], first["gap"], first["label"]) == ("K3", "off", -40.0, "Line C")
     k2 = next(l for l in out["lines"] if l["line_key"] == "K2")
     assert k2["overridden"] is True and k2["planned"] == 40.0 and k2["state"] == "on" and k2["reason"] == "Short of steel"
+
+
+def test_forecast_plan_compares_each_past_forecast_with_its_actual_and_says_when_actuals_arrive(tmp_path):
+    actuals = [{"series_id": "S1", "period": "2026-10", "forecast": 100.0, "actual": 100.5},
+               {"series_id": "S2", "period": "2026-10", "forecast": 50.0, "actual": 30.0}]
+    s, ws, _made = forecast_shell(tmp_path, ws=PlanWorkspace(actuals=actuals))
+    status, out = call(s, "GET", "plans/performance", query={"page": "n01_u05"}, headers=EDITOR)
+    assert status == 200, out
+    assert out["forecast"] is True and out["empty"] == "" and out["missing"] == "" and out["version"]["label"] == "Model forecast"
+    assert (out["counted"], out["on_plan"], out["off_plan"], out["unknown"]) == (2, 1, 1, 0)
+    assert out["value_realized"] is None and out["has_value"] is False
+    assert [(l["label"], l["state"], l["planned"], l["actual"], l["gap"]) for l in out["lines"]] == [
+        ("S2 for 2026-10", "off", 50.0, 30.0, -20.0), ("S1 for 2026-10", "on", 100.0, 100.5, pytest.approx(0.5))]
+    (sql, _params), = ws.queries("ORDER BY s.`period` DESC")
+    assert "NOT COALESCE(s.`is_future`, false)" in sql and "s.`actual` IS NOT NULL" in sql and "__series` AS s" in sql
+    assert ws.queries("AS d LIMIT 2000") == []
+
+
+def test_forecast_plan_with_no_past_actuals_says_actuals_arrive_after_the_first_cycle(tmp_path):
+    s, _ws, _made = forecast_shell(tmp_path, ws=PlanWorkspace(actuals=[]))
+    status, out = call(s, "GET", "plans/performance", query={"page": "n01_u05"}, headers=EDITOR)
+    assert status == 200 and out["version"] is None and out["lines"] == [] and out["counted"] == 0
+    assert out["empty"] == "Actuals arrive after the first cycle, so there is nothing to compare with the forecast yet."
 
 
 def test_plan_performance_says_no_plan_until_a_version_is_approved(tmp_path):

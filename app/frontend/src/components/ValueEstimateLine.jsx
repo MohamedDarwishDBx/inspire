@@ -16,7 +16,7 @@ function RuleEstimateLine({ estimate, className, onSetRule }) {
   if (estimate.status === 'set_rule') {
     return (
       <p data-value-estimate="set-rule" className={base}>
-        Set a money rule to see its value.
+        Set a money rule to see the value at stake.
         {onSetRule && <button type="button" className="lnk ms-2" onClick={onSetRule} data-value-set-rule="">Set rule</button>}
       </p>
     );

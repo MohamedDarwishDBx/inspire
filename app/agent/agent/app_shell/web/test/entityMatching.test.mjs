@@ -311,3 +311,84 @@ test('entity matching group: Merge group writes one batch for a cluster, keeps e
   assert.deepEqual(seen.errors.filter((e) => !/Failed to load resource/.test(e)), []);
 });
 
+
+test('entity matching: a merged pair on the Merge tab names its undo on its own row, asks first, and puts the batch back', async () => {
+  const state = { rows: freshRows() };
+  const h = listing(state);
+  const base = kindRoutes(CASE.data(), state.rows, [], PAGE);
+  const { page, context, seen } = await open({ ...base, records: h.records, 'records/act': h.act, 'records/undo': h.undo });
+  await page.locator('[data-choice-row="K1"] [data-choice="merge"]').click();
+  await idle(page);
+  await goRail(page, 'work');
+  await idle(page);
+  await page.evaluate(() => { location.hash = `${location.hash.split('?')[0]}?tab=merge`; });
+  await page.locator('[data-row-undo]').waitFor();
+  await idle(page);
+  assert.equal(await page.locator('[data-row-undo]').count(), 1, 'the merged pair offers its undo on the Merge tab row');
+  assert.equal((await page.locator('[data-row-undo]').innerText()).trim(), 'Unmerge', 'the row names the kind\'s undo word');
+  assert.equal(await page.locator('tbody tr [data-row-undo]').count(), 1, 'the undo sits on the merged record\'s own row');
+  await page.locator('[data-row-undo]').click();
+  await page.locator('[role="group"][aria-label^="Unmerge "]').first().waitFor();
+  assert.equal(h.undos.length, 0, 'nothing is undone before the person confirms');
+  await page.locator('[role="group"][aria-label^="Unmerge "] button', { hasText: 'Unmerge' }).first().click();
+  await idle(page);
+  await page.waitForTimeout(300);
+  assert.deepEqual(h.undos.map((u) => u.batch_id), [batchId(1)], 'the merge batch is undone once');
+  await context.close();
+  assert.deepEqual(seen.errors.filter((e) => !/Failed to load resource/.test(e)), []);
+});
+
+test('entity matching: the record panel clears a single record\'s owner and says so', async () => {
+  const state = { rows: freshRows().map((r, i) => (i === 0 ? { ...r, action_owner: 'ana@example.com', _inspire_owner: 'ana@example.com' } : r)) };
+  const h = listing(state);
+  const base = kindRoutes(CASE.data(), state.rows, [], PAGE);
+  const history = ({ route, json }) => {
+    const key = String(route.request().postDataJSON()?.record_key ?? state.rows[0].record_key);
+    const row = state.rows.find((r) => String(r.record_key) === key) || state.rows[0];
+    return json(200, { record_key: key, fields: [], versions: [row], current: { ...row, valid_from_us: row._inspire_version }, deleted: false, truncated: false });
+  };
+  const { page, context, seen } = await open({ ...base, records: h.records, 'records/act': h.act, 'records/history': history });
+  await goRail(page, 'work');
+  await idle(page);
+  await page.locator('table tbody tr button.cell-t').first().click();
+  const give = page.locator('select[aria-label="Give to someone"]');
+  await give.waitFor();
+  await give.selectOption({ label: 'Clear the owner' });
+  await idle(page);
+  await page.waitForTimeout(300);
+  assert.equal(h.acts.length, 1, 'the owner clear is one write');
+  assert.equal(h.acts[0].values.action_owner, '', 'the write clears the owner of that one record');
+  assert.deepEqual(h.acts[0].record_keys, [String(state.rows[0].record_key)]);
+  await context.close();
+  assert.deepEqual(seen.errors.filter((e) => !/Failed to load resource/.test(e)), []);
+});
+
+test('entity matching: an accepted suggestion undoes on its own row with the word Undo, and puts the record back with no status', async () => {
+  const state = { rows: freshRows() };
+  const h = listing(state);
+  const base = kindRoutes(CASE.data(), state.rows, [], PAGE);
+  const { page, context, seen } = await open({ ...base, records: h.records, 'records/act': h.act });
+  await goRail(page, 'work');
+  await idle(page);
+  const first = page.locator('table tbody tr', { has: page.locator('[data-accept]') }).first();
+  await first.locator('[data-accept]').click();
+  await idle(page);
+  await page.waitForTimeout(300);
+  assert.equal(h.acts.length, 1, 'the accept is one write');
+  assert.equal(h.acts[0].values.action_status, 'In progress', 'accept writes Needs review');
+  const undo = page.locator('[data-row-undo-accept]');
+  assert.equal(await undo.count(), 1, 'the accepted record offers its undo on its row');
+  assert.equal((await undo.innerText()).trim(), 'Undo', 'the row says Undo');
+  await undo.click();
+  const confirm = page.locator('[role="group"][aria-label^="Undo "]').first();
+  await confirm.waitFor();
+  assert.equal(h.acts.length, 1, 'nothing is written before the person confirms');
+  await confirm.getByRole('button', { name: 'Undo', exact: true }).click();
+  await idle(page);
+  await page.waitForTimeout(300);
+  assert.equal(h.acts.length, 2, 'the undo is one more write');
+  assert.equal(h.acts[1].values.action_status, 'New', 'the record goes back to no status');
+  assert.deepEqual(h.acts[1].record_keys, h.acts[0].record_keys);
+  await context.close();
+  assert.deepEqual(seen.errors.filter((e) => !/Failed to load resource/.test(e)), []);
+});

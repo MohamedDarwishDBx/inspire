@@ -268,6 +268,18 @@ function registerImplementRoutes(app, deps) {
     return implementRows(host, token, warehouseId, table, (existing) => I.implementHistoryStatement(table, sid, useCaseId || null, existing));
   }
 
+  // The build record is the App's own tracking table, so it is read as the App, as the Build page's status and history read it. The
+  // Check runs on load for every person: a person who cannot read that table gets a plain reason, never a 500 (REQ-267).
+  async function appRecordOf(req, warehouseId, catalog, schema, sid, useCaseId) {
+    try {
+      return await loadHistory(req.dbHost, await appTokenOf(req), warehouseId, catalog, schema, sid, useCaseId);
+    } catch (err) {
+      if (!I.isReadDenied(err && err.message)) throw err;
+      throw I.badRequest('Inspire cannot read the build record of this use case, so it cannot tell what the App still needs. '
+        + 'Ask your workspace admin to give the Inspire App SELECT on its tracking table, then click Try again.', 403);
+    }
+  }
+
   async function loadMergeTargets(req, warehouseId, catalog, schema, sid, useCaseId, only = null) {
     const table = I.implementTableName(catalog, schema);
     const [rows, hubRows] = await Promise.all([
@@ -307,11 +319,13 @@ function registerImplementRoutes(app, deps) {
     const sid = sessionIdOf(req);
     const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
     if (asked && asked.use_case_id !== useCaseId) throw I.badRequest(`the spec is for use case ${asked.use_case_id || '(none)'}, not ${useCaseId}`, 400);
-    const involved = await useCasesTables(req, warehouseId, catalog, schema, sid, [useCaseId]);
+    // The saved involved tables and the build record are the App's own tracking tables: read as the App (REQ-268 sweep, as REQ-267).
+    const appToken = await appTokenOf(req);
+    const involved = await useCasesTables(req, warehouseId, catalog, schema, sid, [useCaseId], appToken);
     if (!involved.length) throw I.badRequest(`Inspire has no source tables saved for use case ${useCaseId}, so it grants none.`, 409);
     let spec = asked;
     if (!spec) {
-      const history = await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId);
+      const history = await loadHistory(req.dbHost, appToken, warehouseId, catalog, schema, sid, useCaseId);
       const latest = [...(history || [])].sort((a, b) => (Number(b.spec_version) || 0) - (Number(a.spec_version) || 0))[0];
       spec = (latest && latest.spec_json) || {};
     }
@@ -321,9 +335,9 @@ function registerImplementRoutes(app, deps) {
     if (outside.length) throw I.badRequest(`these tables are not source tables of use case ${useCaseId}, so Inspire grants none of them: ${outside.join(', ')}`, 400);
   }
 
-  async function useCasesTables(req, warehouseId, catalog, schema, sid, useCaseIds) {
+  async function useCasesTables(req, warehouseId, catalog, schema, sid, useCaseIds, token = req.dbToken) {
     const table = `\`${catalog}\`.\`${schema}\`.\`__inspire_usecases\``;
-    const rows = await sqlRows(req.dbHost, req.dbToken, warehouseId, I.useCaseTablesStatement(table, sid, useCaseIds));
+    const rows = await sqlRows(req.dbHost, token, warehouseId, I.useCaseTablesStatement(table, sid, useCaseIds));
     return I.uniqueTables(rows.flatMap((row) => I.useCaseTables(row)));
   }
 
@@ -607,7 +621,7 @@ function registerImplementRoutes(app, deps) {
       const ownSchema = latest ? null : await useCaseSchemaOf(req, warehouseId, `${catalog}.${schema}`, sid, useCaseId, session.business_name);
       const { missing, app_unreadable: appUnreadable } = await sourceVerdict(req, warehouseId, useCase, latest, q(req, 'result_table') || ownSchema?.table || '');
       const widgets = I.implementWidgets(history, useCase.genie_instruction || useCase.generate_genie_code_instruction || '');
-      const assets = I.carriedAssets(history);
+      const assets = I.liveCarriedAssets(history);
       const goneAssets = await goneMergeAssets(req, assets);
       const family = I.executionFamily(useCase.code_structure_mandate);
       res.json({
@@ -684,7 +698,7 @@ function registerImplementRoutes(app, deps) {
       const versionsByUc = {};
       for (const row of history) (versionsByUc[row.use_case_id] || (versionsByUc[row.use_case_id] = [])).push(row);
       const latest = Object.values(versionsByUc).map((rows) => {
-        const live = I.previousBuilt(rows);
+        const live = I.liveBuiltRow(rows);
         return Object.assign(rows[0], { live_version: live ? live.spec_version : null, live_spec_json: live ? live.spec_json : null });
       });
       const [notebook] = await Promise.all([
@@ -898,10 +912,14 @@ function registerImplementRoutes(app, deps) {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
       await refuseMetricView(req, warehouseId, table, { unknownType: true });
+      const window = req.body?.window || {};
+      // A forecast (family E) is measured in periods, so its date column is counted too; the wizard's refusal reads period_count.
+      const periodColumn = I.analysisFamilyOf(req.body?.technique) === 'E' ? String(window.column || '').trim() : '';
       const statement = I.readinessStatement(table, {
         columns: req.body?.columns || [],
         filters: req.body?.filters || [],
-        window: req.body?.window || {},
+        window,
+        periodColumn,
       });
       const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
       res.json({ skipped: false, ...I.readinessFromRow(rows[0] || {}, statement.columns), minimum_rows: I.analysisMinimumRows(req.body?.technique) });
@@ -1218,7 +1236,7 @@ function registerImplementRoutes(app, deps) {
       const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
       const action = String((req.body && req.body.action) ?? 'check');
       if (!['check', 'grant'].includes(action)) throw I.badRequest('action must be check or grant');
-      const record = I.appReadsRecord(await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId));
+      const record = I.appReadsRecord(await appRecordOf(req, warehouseId, catalog, schema, sid, useCaseId));
       if (!record) return res.json({ state: 'readable', tables: [], ran: [], failed: [], text: I.appReadsText([], '') });
       const { left, ran, failed, principals, app } = await appReads(req, warehouseId, record, action === 'grant');
       const was = record.tables.map((t) => `${t.table}:${t.owner}:${t.grants.join(';')}`).join('|');
@@ -1297,13 +1315,27 @@ function registerImplementRoutes(app, deps) {
     }
   }
 
+  // REQ-231: who pressed Stop on this run, from the control log. A read that fails is no record, so the run reads as outside Inspire.
+  async function stoppedByOf(req, row, runId) {
+    const { catalog, schema } = dbOf(req, splitInspireDatabase);
+    try {
+      const select = C.controlLogSelect(C.controlLogTableName(catalog, schema), { sessionId: sessionIdOf(req), useCaseId: row.use_case_id, limit: 200 });
+      return C.stoppedByRecord(await sqlRows(req.dbHost, req.dbToken, warehouseOf(req), select), { runId, jobId: row.job_id });
+    } catch (err) {
+      console.warn(`implement stop record read failed: ${err.message}`);
+      return null;
+    }
+  }
+
   async function stalledOf(req, row) {
     if (!row || (!I.IMPLEMENT_ACTIVE_STATUSES.includes(row.status) && !I.implementEndedRecord(row))) return null;
     const runId = String(row.implement_run_id ?? '');
     const got = /^\d{1,19}$/.test(runId)
       ? await jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${runId}`).catch(() => null)
       : null;
-    const stalled = I.implementStalled(row, got && got.ok ? got.data : null);
+    const runState = got && got.ok && got.data && got.data.state ? got.data.state : {};
+    const stopper = String(runState.result_state || '') === 'CANCELED' ? await stoppedByOf(req, row, runId) : null;
+    const stalled = I.implementStalled(row, got && got.ok ? got.data : null, Date.now(), stopper);
     const { catalog, schema } = dbOf(req, splitInspireDatabase);
     const ended = I.implementRunEndedStatement(I.implementTableName(catalog, schema), { session_id: sessionIdOf(req), ...row }, stalled);
     if (!ended) return stalled;
@@ -1327,7 +1359,8 @@ function registerImplementRoutes(app, deps) {
       ? await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, draftId) : [];
     const legacyAccess = I.legacyAppAccess(history);
     const impact = I.implementNotebookImpact(I.implementCarried(history).status);
-    const { spec: asked, errors } = I.validateImplementSpec(raw, { legacyAccess, impact });
+    const live = I.previousBuilt(history);
+    const { spec: asked, errors } = I.validateImplementSpec(raw, { legacyAccess, impact, appExperience: live ? I.appExperienceOf(live.spec_json) : null });
     if (errors.length) throw I.badRequest(errors.join('; '));
     return { sid, warehouseId, inspire_database, catalog, schema, raw, history, legacyAccess, asked };
   }
@@ -1398,7 +1431,7 @@ function registerImplementRoutes(app, deps) {
     if (widgetIssues.length) throw I.badRequest(`widget values are out of range: ${widgetIssues.join('; ')}`);
     if (I.IMPLEMENT_MERGE_OUTPUTS.some((name) => spec.outputs.merge[name])) {
       const targets = await loadMergeTargets(req, warehouseId, catalog, schema, sid, useCaseId, spec.outputs.merge);
-      const mergeIssues = I.mergeProblems(spec, targets, I.carriedAssets(history));
+      const mergeIssues = I.mergeProblems(spec, targets, I.liveCarriedAssets(history));
       if (mergeIssues.length) throw I.badRequest(mergeIssues.join('; '));
     }
     if (spec?.money?.rate_table) await refuseTableTypes(req, warehouseId, [spec.money.rate_table.table], { unknownType: true });
@@ -1649,7 +1682,7 @@ function registerImplementRoutes(app, deps) {
         feed = I.genieFeed(text, useCaseId, history[0] && history[0].created_at);
       }
     }
-    const appName = I.carriedAssets(history).app;
+    const appName = I.liveCarriedAssets(history).app;
     const jobId = int64Id((history.find((r) => r.job_id) || {}).job_id);
     const held = history[0] && history[0].status === I.IMPLEMENT_VIBE_NOT_MET ? history[0].spec_version : null;
     const appUpdate = history[0] ? I.appShellUpdate(history, buildStamp()) : null;
@@ -1783,7 +1816,7 @@ function registerImplementRoutes(app, deps) {
     const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
     const [history, person] = await Promise.all([loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId), personOf(req)]);
     const table = String(history[0]?.spec_json?.config?.result_table || '').trim();
-    const appTable = FB.appFeedbackTable({ database: `${catalog}.${schema}`, appName: history[0]?.app_name, useCaseId });
+    const appTable = FB.appFeedbackTable({ database: `${catalog}.${schema}`, appName: I.liveAppOf(history)?.name, useCaseId });
     const before = I.previousBuilt(history);
     const refused = before ? I.implementSettingsOwnerRefusal(before, person.username) : { status: 409, message: I.IMPLEMENT_SETTINGS_NOT_BUILT };
     return { sid, warehouseId, catalog, schema, useCaseId, history, person, table, appTable, before, refused };
@@ -1966,7 +1999,7 @@ function registerImplementRoutes(app, deps) {
       const { history, target, refusal, useCase } = await settingsContext(req);
       if (refusal) return res.status(refusal[0]).json({ error: refusal[1] });
       // REQ-193: a family C use case fits one model, so a column Grouping is refused on save, before the App is asked.
-      const oneModel = sent.name === GR.GROUP_BY && GR.fitsOneModel(useCase && useCase.analytics_technique);
+      const oneModel = sent.name === GR.GROUP_BY && GR.fitsOneModel(useCase && useCase.analytics_technique, useCase && useCase.use_case_kind);
       const refused = oneModel ? GR.oneModelProblem(sent.value, true) : '';
       if (refused) return res.status(400).json({ error: refused });
       const body = { page: target.page, ...Object.fromEntries(keys.filter((key) => sent[key] !== undefined).map((key) => [key, sent[key]])) };
@@ -2055,13 +2088,21 @@ function registerImplementRoutes(app, deps) {
     if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
     const asked = String(req.body?.base || '').trim().toUpperCase();
     try {
-      const warehouseId = warehouseOf(req);
-      const scopes = await launchScopesOf(req, warehouseId);
-      const made = GP.currencySpreadSql(req.body?.table, req.body?.currency_column, scopes);
-      if (!made || (asked && !/^[A-Z]{3}$/.test(asked))) throw I.badRequest('Name the use case table and its currency column, and the reporting currency as a three-letter code such as USD.');
-      const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.CURRENCY_SPREAD_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
-      const currencies = sqlResultToObjects(found).map((r) => ({ code: String(r.currency ?? '').trim().toUpperCase(), records: Number(r.records) }));
-      const capped = currencies.length >= GP.CURRENCY_SPREAD_ROWS;
+      // A table with no currency column is read for the one code its value is written in (REQ-103): no table read, the codes come from the request.
+      const byColumn = String(req.body?.currency_column || '').trim() !== '';
+      const codes = byColumn ? [] : (Array.isArray(req.body?.codes) ? req.body.codes : []).map((c) => String(c ?? '').trim().toUpperCase()).filter((c) => /^[A-Z]{3}$/.test(c));
+      if (!byColumn && !codes.length) throw I.badRequest('Name the currency the value is written in, as a three-letter code such as USD.');
+      if (asked && !/^[A-Z]{3}$/.test(asked)) throw I.badRequest('Name the reporting currency as a three-letter code such as USD.');
+      const warehouseId = byColumn ? warehouseOf(req) : '';
+      let currencies = codes.map((code) => ({ code, records: null }));
+      if (byColumn) {
+        const scopes = await launchScopesOf(req, warehouseId);
+        const made = GP.currencySpreadSql(req.body?.table, req.body?.currency_column, scopes);
+        if (!made) throw I.badRequest('Name the use case table and its currency column, and the reporting currency as a three-letter code such as USD.');
+        const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.CURRENCY_SPREAD_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
+        currencies = sqlResultToObjects(found).map((r) => ({ code: String(r.currency ?? '').trim().toUpperCase(), records: Number(r.records) }));
+      }
+      const capped = byColumn && currencies.length >= GP.CURRENCY_SPREAD_ROWS;
       const base = asked || (currencies[0] ? currencies[0].code : 'USD');
       const rates = await FX.currencyRates({ base, codes: currencies.map((c) => c.code) });
       return res.json({ ...rates, currencies, capped });
@@ -2198,7 +2239,7 @@ function registerImplementRoutes(app, deps) {
         const valuesQuery = picked.length ? GP.statement(launchScopes, (ctx) => GP.valuesSql(scan, picked, profiledJoined, ctx), scan.parameters) : null;
         const values = valuesQuery ? await rows(valuesQuery.sql, valuesQuery.parameters, GP.PROFILE_VALUE_ROWS) : [];
         const deep = GP.deepSuggestionOf(useCase);
-        const draft = (paths) => GP.profileView({ table, technique: useCase.analytics_technique, columns, candidates, stats, sample, values, paths,
+        const draft = (paths) => GP.profileView({ table, technique: useCase.analytics_technique, kind: useCase.use_case_kind, columns, candidates, stats, sample, values, paths,
           time, days, joined: profiledJoined, deep: deep ? deep.columns : [], groupBy, readAt: new Date().toISOString(), subject: text });
         const pick = GP.moneySampleColumns(columns);
         const example = pick ? await rows(GP.moneySampleSql(scan, pick), scan.parameters, GP.MONEY_SAMPLE_ROWS) : [];
@@ -2415,11 +2456,21 @@ function registerImplementRoutes(app, deps) {
       await executeSql(req.dbHost, req.dbToken, ctx.warehouseId, C.controlLogCreateSql(ctx.logTable));
       missingControlLogs.delete(ctx.logTable);
       const ownerError = await alignControlLogOwner(req, ctx);
+      const person = await personOf(req);
+      if (C.isRunStop(asset, action)) {
+        // REQ-231: the person is recorded before the run is cancelled. If the record cannot be written, nothing is cancelled.
+        if (!String(person.username || '').trim()) throw I.badRequest(`Inspire did not ${phrase}: Inspire cannot tell who is stopping it`, 409);
+        const recorded = C.controlLogInsert(ctx.logTable, { sessionId: ctx.sid, useCaseId: ctx.useCaseId, asset, assetId: id, action, result: 'requested', message: `${label} requested by ${person.username} from the Build page`, actedBy: person.username });
+        try {
+          await executeSql(req.dbHost, req.dbToken, ctx.warehouseId, recorded.sql, recorded.parameters);
+        } catch (e) {
+          throw I.badRequest(`Inspire did not ${phrase}: it could not record who stopped it in ${C.CONTROL_LOG_TABLE} (${e.message})`, 502);
+        }
+      }
       const got = await jsonOf(dbFetch, req.dbHost, req.dbToken, request.path,
         { method: request.method, ...(request.body ? { body: jsonWithInt64Ids(request.body, request.int64 || []) } : {}) });
       const failure = got.ok ? '' : String((got.data && (got.data.message || got.data.error || got.data.raw)) || `HTTP ${got.status}`);
       const message = got.ok ? `${label}: done` : `${label} failed: ${failure}`;
-      const person = await personOf(req);
       const insert = C.controlLogInsert(ctx.logTable, {
         sessionId: ctx.sid, useCaseId: ctx.useCaseId, asset, assetId: id, action, result: got.ok ? 'done' : 'failed', message, actedBy: person.username,
       });

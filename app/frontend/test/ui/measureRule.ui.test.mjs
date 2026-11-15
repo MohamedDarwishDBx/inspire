@@ -253,19 +253,21 @@ test('an older Describe it proposal that answers late does not replace the newer
   }
 });
 
-test('Gains only is disabled with its reason until a sign is named, and a status sign enables it', async () => {
+test('Gains only is chosen on its movement screen; its sign is the next screen, and a status sign completes the rule (REQ-265 decided: one decision per screen)', async () => {
   const ui = await openMeasure();
   const { page } = ui;
   try {
     await onMoneyPart(page, 'direction');
-    assert.equal(await page.locator('[data-money-rule-kind="gains"]').isDisabled(), true);
+    assert.equal(await page.locator('[data-money-rule-kind="gains"]').isDisabled(), false, 'Gains only can be chosen; the sign is asked on the next screen');
+    assert.equal(await page.locator('[data-measure-sign]').count(), 0, 'the sign question is not on the movement screen (must-exclude)');
+    await page.locator('[data-money-rule-kind="gains"]').check();
+    await page.locator('[data-money-next]').click();
+    await onMoneyPart(page, 'sign');
     assert.match(await page.locator('[data-money-sign-needed]').innerText(), /Gains only needs a sign/);
     await page.locator('[data-money-sign-kind="status"]').check();
     await page.locator('[data-money-sign-status-column]').fill('currency');
     await page.locator('[data-money-sign-value]').fill('gain');
-    await page.waitForFunction(() => !document.querySelector('[data-money-rule-kind="gains"]')?.disabled, null, { timeout: 15000 });
-    assert.equal(await page.locator('[data-money-sign-needed]').count(), 0);
-    await page.locator('[data-money-rule-kind="gains"]').check();
+    await page.waitForFunction(() => !document.querySelector('[data-money-sign-needed]'), null, { timeout: 15000 });
     await page.waitForFunction(() => /Only gains count/.test(document.querySelector('[data-money-sentence]')?.textContent || ''), null, { timeout: 15000 });
   } finally {
     await page.context().close();

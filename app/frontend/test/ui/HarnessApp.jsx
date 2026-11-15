@@ -23,11 +23,13 @@ import { HARNESS_USE_CASE, HARNESS_SETTINGS, HARNESS_SESSION_ID } from './implem
 const AUTH = { token: 'tok', databricksHost: 'https://workspace.example.com' };
 const SETTINGS = { ...HARNESS_SETTINGS, ...AUTH };
 
+// run="bare": Monitor opened with no session and no run, as the App shows it on /#/monitor with nothing open (FW1 D5).
 function MonitorHarness({ run }) {
-  const [runId, setRunId] = useState(run === 'none' ? null : '777');
+  const bare = run === 'bare';
+  const [runId, setRunId] = useState(run === 'none' || bare ? null : '777');
   return (
     <ThemeProvider>
-      <MonitorPage key={runId ?? ''} settings={SETTINGS} update={() => {}} sessionId={HARNESS_SESSION_ID} runId={runId} onComplete={() => {}}
+      <MonitorPage key={runId ?? ''} settings={SETTINGS} update={() => {}} sessionId={bare ? null : HARNESS_SESSION_ID} runId={runId} onComplete={() => {}}
         onResultsSession={() => {}} onOpenImplement={() => {}} onRunAgain={(_sid, rid) => setRunId(String(rid))} />
     </ThemeProvider>
   );

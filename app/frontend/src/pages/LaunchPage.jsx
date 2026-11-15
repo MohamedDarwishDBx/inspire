@@ -44,7 +44,7 @@ import DataFilters from '../components/DataFilters';
 import { groupLabelOf } from '../lib/implementWizard';
 import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
 import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
-import { scopesFromObject, serializeTableScopes, filterValuesOf, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
+import { scopesFromObject, launchTableScopeText, filterValuesOf, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
 import { runBusiness } from '../lib/reviewFigures';
@@ -63,7 +63,7 @@ import { placeholderWords } from '../lib/placeholderWords';
 import { inspireScoreFromUc, nameOfUseCase } from '../lib/useCaseFields';
 import { counted } from '../lib/plural';
 import { catalogListNote, pickedScope, scopeSummary, typedCatalog } from '../lib/catalogList';
-import { SAMPLE_CATALOG, applySampleCopies, isSampleEntry, samplesTarget, validCopyTarget } from '../lib/samplesCopy';
+import { SAMPLE_CATALOG, applySampleCopies, isSampleEntry, samplesTarget, scopesAfterSampleCopies, validCopyTarget } from '../lib/samplesCopy';
 import { DISCOVERY_AI_ENHANCED, DISCOVERY_MODE_TEXT, DISCOVERY_BADGE, DISCOVERY_PRIVACY, DISCOVERY_RECOMMENDED, DISCOVERY_STANDARD, discoveryTypeOf } from '../lib/discoveryType';
 import PermissionRequired from '../components/PermissionRequired';
 import { withStartDeadline } from '../lib/startDeadline';
@@ -764,7 +764,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     finalParams['12_documents_languages'] = formatDocumentLanguages(launchDocLanguages(params));
     // Always auto-generate session ID
     finalParams['14_session_id'] = newSessionId();
-    const tableScopeText = serializeTableScopes(tableScopes, scopeTables,
+    const tableScopeText = launchTableScopeText(tableScopes, { catalogs: selectedCatalogs, schemas: selectedSchemas, tables: selectedTables },
       dataFilterLabel.on ? (dataFilterLabel.text ?? groupLabelOf(filterValuesOf(tableScopes, scopeTables))) : '');
     if (tableScopeText) finalParams['17_table_scope'] = tableScopeText;
 
@@ -825,6 +825,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       setSelectedCatalogs(picks.catalogs);
       setSelectedSchemas(picks.schemas);
       setSelectedTables(picks.tables);
+      setTableScopes(scopesAfterSampleCopies(tableScopes, copies));
       setSamplesChoice({ key: '', choice: '' });
       setSamplesCopied(copies.length ? `Copied ${copies.length} ${copies.length === 1 ? 'table' : 'tables'} into ${data.destination}. The run reads your copies.` : '');
       if (failed.length) setSamplesError(failed.map((f) => `Could not copy ${f.source}: ${f.reason}`).join('. '));

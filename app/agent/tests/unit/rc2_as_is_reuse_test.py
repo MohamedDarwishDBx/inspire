@@ -28,6 +28,8 @@ def _as_is_inst(agent_ns, tmp_path, *, ask_text=ASK, splits=None, prior=None, ve
     if prior is not None:
         inst._implement_snapshot = lambda key, name, version: {"artifact": _copy(prior), "spec_version": version}
     context["rebuild"] = _copy(rebuild) if rebuild else {}
+    # Every build context carries its result table (3c7f2bdd6 reads it for the as-is Genie Agent normalizer check).
+    context["result_table"] = "main.inspire.churn_out"
     return inst, context, deployed, deploy
 
 

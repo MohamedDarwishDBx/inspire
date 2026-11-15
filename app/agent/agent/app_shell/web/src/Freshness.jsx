@@ -33,7 +33,7 @@ export function RunBar({ active, label }) {
 
 export const startedText = (run) => `The run is ${run.state || 'starting'}; the page shows its progress at the top.`;
 
-export function useFreshness({ page, onRefreshed, onRun, onSeeChanged, showThrough = true }) {
+export function useFreshness({ page, onRefreshed, onRun, onSeeChanged, showThrough = true, builtAt = '' }) {
   const toast = useToast();
   const [fresh, setFresh] = useState(null);
   const [misses, setMisses] = useState(0);
@@ -91,7 +91,7 @@ export function useFreshness({ page, onRefreshed, onRun, onSeeChanged, showThrou
   });
 
   const busy = !!fresh?.active || asking;
-  return { fresh, now, busy, ask, load, showThrough, why: `fresh-why-${page.id}`, reason: !!fresh && !busy && !fresh.can_refresh && fresh.reason };
+  return { fresh, now, busy, ask, load, showThrough, builtAt, why: `fresh-why-${page.id}`, reason: !!fresh && !busy && !fresh.can_refresh && fresh.reason };
 }
 
 export function FreshBar({ freshness, children }) {
@@ -123,12 +123,12 @@ export function FreshBar({ freshness, children }) {
 }
 
 export function FreshDetail({ freshness }) {
-  const { fresh, now, load, why, reason, showThrough } = freshness;
+  const { fresh, now, load, why, reason, showThrough, builtAt } = freshness;
   if (!fresh) return null;
   const last = lastRunNote(fresh);
   const active = fresh.active;
   const until = active ? untilText(fresh, now) : '';
-  const text = active ? '' : bannerText(fresh, now, showThrough);
+  const text = active ? '' : bannerText(fresh, now, showThrough, builtAt);
   if (!active && !reason && !last && !text) return null;
   return (
     <div className="fresh-d" data-source={fresh.source}>

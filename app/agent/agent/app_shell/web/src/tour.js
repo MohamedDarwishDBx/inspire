@@ -39,6 +39,17 @@ export function pickTourLanguage(languages, wanted = []) {
   return shown[0];
 }
 
+// The text of a KPI reason (kpi.empty: {language code: text}) in the first language the browser asks for that the App carries.
+export function pickReason(byCode, wanted = []) {
+  if (!byCode || typeof byCode !== 'object') return '';
+  for (const tag of wanted || []) {
+    const lower = String(tag || '').toLowerCase();
+    const code = lower === 'no' ? 'nb' : lower.split('-')[0];
+    if (byCode[code]) return byCode[code];
+  }
+  return byCode.en || '';
+}
+
 export function tourSection(anchor, tour, queue) {
   if ((tour?.rail || []).includes(anchor)) return null;
   return queue && (tour?.records || []).includes(anchor) ? 'work' : 'dashboard';

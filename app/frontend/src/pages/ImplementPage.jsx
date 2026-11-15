@@ -7,8 +7,8 @@ import {
 import {
   statusChip, statusReason, statusDetails, nextSpecFrom, retryableOutputs, lostTables, lostTablesText, genieQuestions, appStatusRows, editedNotebook,
   runProfileText, runStopped, cancelledByUser, versionActive, historyStatus, implementGroups, notebookRunEnded, notebookStatus, START_MVP_LABEL, IMPLEMENT_ACTIVE_STATUSES, IMPLEMENT_UNINSTALLED,
-  vibesPreview, canBuildAgain, buildAgainChanges, buildAgainHint, resultTableMoveNote, IMPLEMENT_DONE_STATUSES, builtVersion, vibePreviousChoices,
-  vibesProblems, OPEN_ALL_SETTINGS, VIBE_FEATURES_LABEL, DATA_STOP_HINT, dataStopped, shownStatusMessage,
+  vibesPreview, canBuildAgain, buildAgainChanges, buildAgainHint, resultTableMoveNote, IMPLEMENT_DONE_STATUSES, builtVersion, vibePreviousChoices, liveVersionForVibes, appVersionLines,
+  vibesProblems, OPEN_ALL_SETTINGS, VIBE_FEATURES_LABEL, CHANGE_CHOICES_LABEL, DATA_STOP_HINT, dataStopped, shownStatusMessage,
   swapParts,
   failureChoices, stoppedChoices, genieNotebookRequest, FAILURE_CHOICES_HEADING, FAILURE_ROUNDS_HEADING, TERMINAL_STOP_HINT, TERMINAL_NEEDS_CHANGE,
   unreliableHold, olderBuildNote, UNRELIABLE_REBUILD_NOTE, isAppUpdate, APP_UPDATED_TEXT, appReadsOf, appObjectsOf, appReadsChoices, appReadsText, appReadsOwners, viewerRows, tableRows, APP_READS_HEADING, APP_READS_CLEARED, protectionStopOf, protectionChoices, abacGrantText, grantGapPermissions, grantFailurePermissions, liveSourceNow, liveProtection, liveReads,
@@ -693,7 +693,7 @@ function AssetVersions({ asset, locked, lockedReason, onRollback }) {
   const [confirming, setConfirming] = useState(null);
   const owner = asset.id === asset.output ? asset : asset.parent;
   const versions = owner?.versions || [];
-  if (!asset.live && !versions.length) return null;
+  if (!asset.live && !asset.side && !versions.length) return null;
   const rollback = async (version) => {
     setPending(version.version);
     const ok = await onRollback(owner.id, version);
@@ -715,6 +715,13 @@ function AssetVersions({ asset, locked, lockedReason, onRollback }) {
             {asset.live.at && <span className="text-text-secondary">· {formatWhen(asset.live.at, asset.live.at)}</span>}
             <span className="ms-auto"><AssetPill state={{ tone: 'success' }}>Live</AssetPill></span>
             <p className="w-full truncate text-text-secondary" title={asset.vibes || undefined}>{asset.vibes ? `“${vibesPreview(asset.vibes)}”` : 'no vibes'}</p>
+          </li>
+        )}
+        {asset.side && (
+          <li data-version={asset.side.version} data-side-version="" className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2.5">
+            <span className="font-semibold text-text-primary">Version {asset.side.version}</span>
+            {asset.side.at && <span className="text-text-secondary">· {formatWhen(asset.side.at, asset.side.at)}</span>}
+            <span className="ms-auto"><AssetPill state={{ tone: 'warning' }}>Side App (not live yet)</AssetPill></span>
           </li>
         )}
         {versions.map((version) => (
@@ -964,6 +971,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   const spec = latest?.spec_json || {};
   const widgets = Array.isArray(status?.rerun_widgets) ? status.rerun_widgets : [];
   const active = versionActive(latest, stalled);
+  // REQ-273: a built MVP whose latest build is not published (failed, stopped, held) gets Change choices and build again; a published MVP keeps its card.
+  const unpublished = built && !active && !IMPLEMENT_DONE_STATUSES.includes(String(latest?.status || ''));
   const missing = lostTables(latest, rerunError);
   const edited = latest?.status === 'failed' ? editedNotebook(latest) : null;
   const reason = missing.length || edited ? '' : statusReason(latest, stalled);
@@ -1139,7 +1148,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   const builtOn = builtVersion(history);
   const nextSpec = built && latest ? rebuildSpec(latest, vibes) : null;
   const choices = builtOn != null && String(nextSpec?.vibes ?? '').trim()
-    ? vibePreviousChoices(builtOn, (latest?.spec_version ?? 0) + 1, Boolean(nextSpec.outputs?.alert)) : [];
+    ? vibePreviousChoices(liveVersionForVibes(history), (latest?.spec_version ?? 0) + 1, Boolean(nextSpec.outputs?.alert)) : [];
+  const versionLines = appVersionLines(history);
   const buildAgain = canBuildAgain(latest, { edited, missing });
   const sendsAgain = buildAgain && !IMPLEMENT_DONE_STATUSES.includes(String(latest?.status || ''));
   const rebuildBlocked = !vibes.length && !sendsAgain ? REBUILD_NOTHING : '';
@@ -1632,6 +1642,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
               <span className="min-w-0">
                 <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-db-red-fg">History</span>
                 <span className="block text-[11px] text-text-secondary">{historyHint}</span>
+                {versionLines.live && <span className="block text-[11px] font-semibold text-text-primary" data-app-live>{versionLines.live}</span>}
+                {versionLines.side && <span className="block text-[11px] text-text-secondary" data-app-side>{versionLines.side}</span>}
               </span>
             </span>
             <ChevronDown size={14} className={`shrink-0 text-text-secondary transition-transform ${historyOpen ? 'rotate-180' : ''}`} aria-hidden />
@@ -1860,6 +1872,11 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
                 className={`${vibes.length ? PRIMARY_BUTTON : OUTLINE_BUTTON} ${vibes.length > 0 && !active ? 'edit-mvp-invite' : ''}`}>
                 <Pencil size={13} /> {vibeFeaturesLabel(vibes)}
               </button>
+              {unpublished && (
+                <button type="button" data-change-choices="" onClick={() => onEdit(null, live)} className={PRIMARY_BUTTON}>
+                  <Sparkles size={13} /> {CHANGE_CHOICES_LABEL}
+                </button>
+              )}
               <button type="button" disabled={active || submitBusy} title={active ? 'Wait for this run to finish' : undefined} onClick={() => setUninstalling(true)} className={DANGER_BUTTON}>
                 <Trash2 size={13} /> Uninstall all
               </button>

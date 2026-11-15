@@ -242,9 +242,10 @@ test('a version built before the access choice keeps its service principal when 
 
 test('an Edit that only states the service principal an older App already had is no change', () => {
   const legacy = { spec_version: 1, status: 'ready', spec_json: { ...BASE, outputs: { dashboard: true, genie_space: true, app: true, app_name: 'churn-desk', inspire_url: 'https://inspire.example.com' } } };
-  const same = check({ app_access: 'sp' }).spec;
+  // An Edit of an App with no experience key carries the classic (ui) experience the App already has (D-EXP).
+  const same = check({ app_access: 'sp' }, { appExperience: 'ui' }).spec;
   assert.equal(I.planSubmission([legacy], { ...same, based_on_version: 1 }).unchanged, true);
-  const plan = I.planSubmission([legacy], { ...check({ app_access: 'user' }).spec, based_on_version: 1 });
+  const plan = I.planSubmission([legacy], { ...check({ app_access: 'user' }, { appExperience: 'ui' }).spec, based_on_version: 1 });
   assert.deepEqual([plan.summary.classes, plan.summary.build, plan.summary.refresh], [['outputs'], ['dashboard', 'genie_space', 'app'], []]);
 });
 
@@ -527,7 +528,7 @@ test('a version saved while the App offered downloads is read without them, so E
   assert.deepEqual(I.parseImplementRow({ spec_json: JSON.stringify({ outputs: { dashboard: true } }) }).spec_json, { outputs: { dashboard: true } });
   assert.equal(I.parseImplementRow({ spec_json: null }).spec_json, null);
   const offRow = I.parseImplementRow({ ...old, spec_json: JSON.stringify(saved({ download: false, modify: false, replace_edits: false, decisions: true })) });
-  assert.equal(I.planSubmission([offRow], { ...check({}).spec, based_on_version: 1 }).unchanged, true, 'the same choices without the download are no change');
+  assert.equal(I.planSubmission([offRow], { ...check({}, { appExperience: 'ui' }).spec, based_on_version: 1 }).unchanged, true, 'the same choices without the download are no change');
 
   const { app, sqlCalls, jobs } = makeApp({ history: [old] });
   const srv = await listen(app);

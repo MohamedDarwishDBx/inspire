@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const I = require('../lib/inspireImplement');
+const IMPLEMENT_OPTIONS = { modify: false, replace_edits: false, decisions: true, alerts: false };
 
 const BASE = {
   use_case_id: 'N01-U01',
@@ -47,4 +48,21 @@ test('a rebuild keeps the experience the App already has, and the wizard choice 
   assert.equal(kept.spec.outputs.app_options.experience, 'both');
   const fresh = I.validateImplementSpec({ ...BASE, outputs: { ...BASE.outputs, app_options: { experience: 'ui' } } });
   assert.equal(fresh.spec.outputs.app_options.experience, 'ui');
+});
+
+// A stored build with no experience key is a classic App: validated as the build a rebuild starts from, it stays ui, so the
+// rebuild (ui) is not an experience change. Without a live App the same spec is a new build and starts agentic.
+test('a stored build with no experience key stays classic, so a rebuild of it does not change the App experience', () => {
+  const stored = I.validateImplementSpec(BASE, { appExperience: 'ui' }).spec;
+  assert.equal(stored.outputs.app_options.experience, 'ui');
+  assert.equal(I.validateImplementSpec(BASE).spec.outputs.app_options.experience, 'agentic');
+  const rebuild = I.validateImplementSpec({ ...BASE, based_on_version: 1 }).spec;
+  assert.equal(rebuild.outputs.app_options.experience, 'ui');
+  assert.ok(!I.classifyImplementChange({ outputs: stored.outputs }, { outputs: rebuild.outputs }).includes('outputs'));
+});
+
+test('changing the experience of an App is an outputs change', () => {
+  const app = (experience) => ({ outputs: { app: true, app_name: 'churn-desk', app_options: { ...IMPLEMENT_OPTIONS, experience } } });
+  assert.ok(I.classifyImplementChange(app('ui'), app('agentic')).includes('outputs'));
+  assert.ok(I.classifyImplementChange(app('ui'), app('both')).includes('outputs'));
 });

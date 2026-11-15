@@ -1,4 +1,5 @@
 import { change, changeParts, changeText, kpiText, storyPieces } from './format.js';
+import { pickReason } from './tour.js';
 import { moneyNoteLine } from './moneyRule.js';
 import { HUES } from './theme.js';
 import { Icon } from './icons.jsx';
@@ -22,6 +23,8 @@ function kpiContext(kpi, data, error, scope) {
   if (kpi.compare && data?.before != null) fields.Before = kpiValue(kpi, { now: data.before });
   if (d != null) fields.Change = `${changeText(d, kpi.words)} ${kpi.vs || ''}`.trim();
   if (scope?.text) fields.Scope = scope.text;
+  const why = pickReason(data?.empty, navigator.languages || [navigator.language]);
+  if (why) fields.Why = why;
   return { hint: kpi.caption || '', fields };
 }
 
@@ -69,7 +72,9 @@ export default function Kpis({ page, data, errors, loading, plan, scope, moneyNo
             {loading ? <Skeleton height={30} width="60%" /> : error ? <CardFailure text={error} size={12} onRetry={retry} /> : (
               <>
                 <div className="kpi-v">{kpiValue(kpi, data?.[kpi.id])}</div>
-                <Delta kpi={kpi} data={data?.[kpi.id]} scope={scope} />
+                {pickReason(data?.[kpi.id]?.empty, navigator.languages || [navigator.language])
+                  ? <div className="kpi-s" data-empty-reason="">{pickReason(data[kpi.id].empty, navigator.languages || [navigator.language])}</div>
+                  : <Delta kpi={kpi} data={data?.[kpi.id]} scope={scope} />}
                 {moneyNoteLine(data?.[kpi.id]) && <div className="kpi-s">{moneyNoteLine(data?.[kpi.id])}</div>}
               </>
             )}

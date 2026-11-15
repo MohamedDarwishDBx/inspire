@@ -1,11 +1,11 @@
 import {
   BUILT_ASSET_STATES, IMPLEMENT_DONE_STATUSES, IMPLEMENT_OUTPUTS, IMPLEMENT_UNINSTALLED, IMPLEMENT_VIBE_NOT_MET, assetLabel, builtVersion, heldAsks,
   holderNames, holdersText, holdoutText, joinWords, partAsks, partLabel, partOf, rebuildableOutputs, statusChip, versionActive, vibesKey, VIBE_NOT_MET_FIRST,
-  APP_INSIDE_PLACEMENT, VIBE_FEATURES_LABEL, VIBE_PREVIOUS_DEFAULT, insideInspire, isAppUpdate, mvpFilterMatches, nextSpecFrom, openVibeAsks, undeliveredOutputs, withCollectedVibes,
+  APP_INSIDE_PLACEMENT, VIBE_FEATURES_LABEL, VIBE_PREVIOUS_DEFAULT, insideInspire, isAppUpdate, liveAppVersion, mvpFilterMatches, sideAppVersion, nextSpecFrom, openVibeAsks, undeliveredOutputs, withCollectedVibes,
 } from './implementWizard.js';
 import { formatWhen } from './formatWhen.js';
 import { plural } from './plural.js';
-import { assetNotes, planActionText, planActions, rephrasableAsks } from './mvpProgress.js';
+import { assetNotes, OUTPUT_STEP, planActionText, planActions, rephrasableAsks } from './mvpProgress.js';
 import { rowImpact, stakeLabel, stakeWords } from './targetKpi.js';
 
 export const CONTROL_REFRESH_MS = 15000;
@@ -240,7 +240,7 @@ function plannedWork(plan, stages, building) {
   return (output) => {
     const act = acts.get(output.id);
     if (!act) return null;
-    const stage = (stages || []).find((s) => s.id === output.label) || null;
+    const stage = (stages || []).find((s) => s.id === OUTPUT_STEP[output.id]) || null;
     if (stage && !STAGE_PENDING.includes(stage.state)) return { settled: true };
     return { now: building.has(output.id), doing: planActionText(act).now };
   };
@@ -534,6 +534,10 @@ export function vibeCards(history, latest, stalled = null, notebookUrl = '', pla
   const updating = Boolean(active) && isAppUpdate(rows, latest);
   const at = (row) => String(row?.updated_at || row?.created_at || '');
   const liveAt = (version) => (version == null ? null : { version, at: at(rows.find((r) => r.spec_version === version)) });
+  // REQ-241 (D-LIVE): the App's live version is the one whose App serves the live App name; the newest build's App is the side App until published.
+  const liveApp = liveAppVersion(rows);
+  const sideApp = sideAppVersion(rows);
+  const sideAt = (version) => (version == null ? null : { version, at: at(rows.find((r) => r.spec_version === version)) });
   const urlOf = (output) => (output === 'notebook' ? String(notebookUrl || '') : String(base[OUTPUT_URLS[output]] || latest[OUTPUT_URLS[output]] || ''));
   const impact = rowImpact(base);
   const open = openVibeAsks(held ? latest : base);
@@ -546,7 +550,7 @@ export function vibeCards(history, latest, stalled = null, notebookUrl = '', pla
     const rollback = doing?.rollback ?? null;
     const asks = rollback ? 0 : Array.isArray(asking[id]) ? asking[id].length : askCount(fields.vibes);
     return {
-      id, output, name: '', versions: [], warnings: [], ...fields, gone, live: liveAt(version), url: urlOf(output), impact,
+      id, output, name: '', versions: [], warnings: [], ...fields, gone, live: liveAt(output === 'app' && liveApp != null ? liveApp : version), url: urlOf(output), impact,
       what, noun: ASSET_NOUNS[kind],
       checks, checkedOn, state: assetPill(entry, checks, Boolean(doing)),
       building: doing ? { step: BUILD_STEP[latest.status] ?? 1, asks, rollback, update: Boolean(rollback) && output === 'app' && updating, alone: false } : null,
@@ -567,16 +571,18 @@ export function vibeCards(history, latest, stalled = null, notebookUrl = '', pla
     : [card('notebook', 'notebook', notebookEntry, notebookVersion, { label: 'notebook', vibes: String(shown.spec_json?.data?.notes ?? '').trim(), rebuild: true })];
   return markAlone([...notebook, ...parts('notebook'), ...IMPLEMENT_OUTPUTS.filter((o) => chosen[o.id]).flatMap((o) => {
     const entry = base.asset_status?.[o.id];
-    const liveVersion = BUILT_ASSET_STATES.includes(entry?.state) ? (entry.spec_version ?? base.spec_version ?? null) : null;
+    const builtVersionOf = BUILT_ASSET_STATES.includes(entry?.state) ? (entry.spec_version ?? base.spec_version ?? null) : null;
+    const liveVersion = o.id === 'app' && liveApp != null ? liveApp : builtVersionOf;
     const versions = rows.filter((r) => {
       const saved = r.asset_status?.[o.id];
-      return saved?.snapshot === true && r.spec_version !== liveVersion && (saved.spec_version ?? r.spec_version) === r.spec_version;
+      return saved?.snapshot === true && r.spec_version !== liveVersion && (o.id !== 'app' || r.spec_version !== sideApp) && (saved.spec_version ?? r.spec_version) === r.spec_version;
     }).map((r) => ({
       version: r.spec_version, at: at(r), status: String(r.status || ''), vibes: savedVibes(r, o.id), checks: builtChecks(rows, r.spec_version, o.id).checks,
     }));
     const whole = card(o.id, o.id, entry, liveVersion, {
       label: o.label, blurb: o.blurb, vibes: String(chosen[vibesKey(o.id)] ?? '').trim(), rebuild: built.includes(o.id), versions,
       appFollows: o.id === 'genie_space' && (planned ? planned.repoint.includes('app') : built.includes('app')),
+      side: o.id === 'app' ? sideAt(sideApp) : null,
     });
     whole.warnings = whole.checks.length ? [] : vibeWarnings(base, o.id);
     return [whole, ...parts(o.id)];
@@ -763,8 +769,9 @@ export function controlActionText(entry) {
 
 const newestFirst = (history) => [...(history || [])].sort((a, b) => (b.spec_version || 0) - (a.spec_version || 0));
 
+// REQ-241: the live version is the one rule liveAppVersion holds (the backend uses it too). Without a live App it is the newest done build.
 export function liveVersion(history) {
-  return newestFirst(history).find((row) => DONE.includes(String(row?.status)))?.spec_version ?? null;
+  return liveAppVersion(history) ?? newestFirst(history).find((row) => DONE.includes(String(row?.status)))?.spec_version ?? null;
 }
 
 export function removeKeptChanges(version) {

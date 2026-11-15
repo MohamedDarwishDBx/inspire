@@ -71,3 +71,43 @@ test('a value typed on its decision survives moving to other decisions and back'
     await ui.close();
   }
 });
+
+test('Periods and statuses shows its two text boxes on screen with no collapsed wrapper, and takes a typed value (REQ-004)', async () => {
+  const ui = await openUi('wizard', ME);
+  const { page } = ui;
+  try {
+    await goToStep(page, 'Measure');
+    await page.locator('[data-money-next]').first().waitFor();
+    for (let i = 0; i < 3; i += 1) await page.locator('[data-money-next]').click();
+    assert.equal(await current(page, 'window'), true, 'Periods and statuses is the current decision');
+    const closed = page.locator('[data-money-window]');
+    await closed.waitFor();
+    assert.equal(await visible(page, '[data-money-window]'), true, 'the Closed periods box is on screen without a More options wrapper (REQ-004)');
+    assert.equal(await visible(page, '[data-money-statuses]'), true, 'the Statuses box is on screen without a More options wrapper (REQ-004)');
+    assert.equal(await page.locator('[data-money-more]').count(), 0, 'no collapsed More options wrapper hides the boxes (REQ-004, must-exclude)');
+    await closed.fill('2');
+    assert.equal(await closed.inputValue(), '2', 'the Closed periods box takes a typed value');
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});
+
+test('Measure method radios sit one per row, the radio beside its text (REQ-089)', async () => {
+  const ui = await openUi('wizard', ME);
+  const { page } = ui;
+  try {
+    await goToStep(page, 'Measure');
+    await page.locator('[data-money-method]').first().waitFor();
+    const row = await page.locator('[data-money-method]').first().evaluate((el) => {
+      const label = el.closest('label');
+      const box = label.getBoundingClientRect();
+      return { display: getComputedStyle(label).display, height: box.height };
+    });
+    assert.equal(row.display, 'flex', 'the radio label is a flex row, not the stacked grid of .money-rule label (REQ-089)');
+    assert.ok(row.height < 60, `the method label is one row tall, ${row.height}px`);
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});

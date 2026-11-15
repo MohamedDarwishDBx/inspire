@@ -106,8 +106,9 @@ BRIEF_CHARS = 3000
 CONFIDENCE_LEVELS = ("High", "Medium", "Low")
 LEVEL_ASK = "Give the reason for that level from the facts, and never give another level or a number for it."
 RECORD_STAKE = "value_at_stake"
-NO_ACCESS = re.compile(r"INSUFFICIENT_PERMISSIONS|PERMISSION_DENIED|permission denied|TABLE_OR_VIEW_NOT_FOUND|answered HTTP 403", re.I)
-WRITE_ROUTE_NAMES = {"records", "records/act", "records/undo", "records/draft", "settings/save", "settings/run", "plan/decide", "money/rule",
+NO_ACCESS = re.compile(r"INSUFFICIENT_PERMISSIONS|PERMISSION_DENIED|permission denied|TABLE_OR_VIEW_NOT_FOUND|answered HTTP 403|"
+                       r"access denied|not authori[sz]ed|does not have .{0,120}(?:privilege|permission)", re.I)
+WRITE_ROUTE_NAMES = {"records/act", "records/undo", "records/draft", "settings/save", "settings/run", "plan/decide", "money/rule",
                      "money/assumption", "scenario/save", "scenario/share", "scenario/choose", "plans/version", "feedback",
                      "agent/feedback", "genie/feedback", "forecast/override", "refresh"}
 
@@ -115,6 +116,8 @@ WRITE_ROUTE_NAMES = {"records", "records/act", "records/undo", "records/draft", 
 def is_write_route(method: str, name: str) -> bool:
     return method != "GET" and (name in WRITE_ROUTE_NAMES or name in WRITE_SOURCES or name in ALERT_ROUTES or name.startswith("scenario/"))
 
+
+page_label = shell_facts.page_label  # REQ-237: the App page as a person names it (its title, never its id)
 
 WAITING_FOR_ACCESS = "This App is waiting for access to its data. Your data owner needs to grant the App access; the exact grant is under Details."
 
@@ -372,9 +375,9 @@ def similar_keys(query: dict) -> list:
 def informational_text(page: dict) -> str:
     ident = shell_sql.page_layout(page)
     if shell_sql.layout_decides(ident):
-        return f"page {page.get('id')} has no decision list, so people record no decisions on it"
+        return f"{page_label(page)} has no decision list, so people record no decisions on it"
     label = (shell_sql.layouts().get(ident) or {}).get("label") or ident
-    return f"page {page.get('id')} is a {label.lower()} page: it shows information only, so people record no decisions on it"
+    return f"{page_label(page)} is a {label.lower()} page: it shows information only, so people record no decisions on it"
 
 
 def reviewed_text(count: int) -> str:
@@ -412,7 +415,7 @@ def treatment_of(page: dict, data: dict, values: dict):
         return None
     named = (page.get("segments") or {}).get("treatments") if isinstance(page.get("segments"), dict) else None
     if not named:
-        raise HttpError(400, f"page {page['id']} has no segment treatments, so an action on it names none")
+        raise HttpError(400, f"{page_label(page)} has no segment treatments, so an action on it names none")
     if treatment not in named:
         raise HttpError(400, f"treatment must be one of this page's segment treatments: {', '.join(named)}")
     if values.get("action_status") != shell_sql.IN_PROGRESS:
@@ -1937,6 +1940,7 @@ class Shell:
         self.state_pool = ThreadPoolExecutor(max_workers=STAMP_WORKERS)
         self.head_pool = ThreadPoolExecutor(max_workers=STAMP_WORKERS)
         self.factless, self.heads, self.early = set(), {}, {}
+        self.epoch = 0
         self.opening, self.opened = {}, threading.Condition()
         self.uncached = False
         self.enforced = self.backend.get("enforced") is True
@@ -2146,10 +2150,15 @@ class Shell:
             self.lakebase.close()
 
     def forget(self):
+        """A write (or a settings change) makes every state read before it stale. The epoch stops a lookup that started
+        before the write from caching its pre-write state after it (REQ-257 D5: that cached state held the list for 15 s)."""
         self.cache.clear()
         with self.stamp_lock:
+            self.epoch += 1
             self.stamps.clear()
             self.early.clear()
+            self.lookups.clear()
+            self.heads.clear()
 
     def read_tables(self, sql: str):
         with self.stamp_lock:
@@ -2220,9 +2229,12 @@ class Shell:
     def settle_state(self, ws, page: dict, key, running: Future) -> dict:
         with self.stamp_lock:
             head = self.heads.get(key) or Future()
+            epoch = self.epoch
         try:
             state = self.read_state(ws, page, head)
-            self.cache.put(key, state, STAMP_TTL_S)
+            with self.stamp_lock:
+                if epoch == self.epoch:
+                    self.cache.put(key, state, STAMP_TTL_S)
         except BaseException as error:
             if not head.done():
                 head.set_exception(error)
@@ -2230,8 +2242,10 @@ class Shell:
             raise
         finally:
             with self.stamp_lock:
-                self.lookups.pop(key, None)
-                self.heads.pop(key, None)
+                if self.lookups.get(key) is running:
+                    self.lookups.pop(key, None)
+                    if self.heads.get(key) is head:
+                        self.heads.pop(key, None)
         if not head.done():
             head.set_result((state["row"], state["error"]))
         running.set_result(state)
@@ -2283,7 +2297,7 @@ class Shell:
             for page in self.pages:
                 if page.get("result_table"):
                     result = shell_pg.uc_key(page["result_table"])
-                    if table in {result + suffix for suffix in shell_sql.INSPIRE_SUFFIXES}:
+                    if table in {shell_facts.companion(result, suffix) for suffix in shell_sql.INSPIRE_SUFFIXES}:
                         found.add(page["id"])
             self.owners[table] = found
         return found
@@ -2561,11 +2575,11 @@ class Shell:
             raise HttpError(404, f"no API route {method} /api/{path.strip('/')}")
         except HttpError as error:
             if error.status == 502 and NO_ACCESS.search(str(error.message)) and not is_write_route(method, route[1]):
-                return 200, waiting_for_access_body(str(error.message))
+                return 200, waiting_for_access_body(str(error.message), self.access_owners([str(error.message)]))
             return error.status, error_body(error.message, error.code, error.extra)
         except QueryError as error:
             if NO_ACCESS.search(str(error)) and not is_write_route(method, route[1]):
-                return 200, waiting_for_access_body(error)
+                return 200, waiting_for_access_body(error, self.access_owners([str(error)]))
             return 502, {"error": shell_sql.error_text(error)}
         except (ValueError, KeyError) as error:
             return 400, error_body(shell_sql.error_text(error), getattr(error, "code", ""))
@@ -2917,7 +2931,7 @@ class Shell:
         table = str(query["table"]) if query.get("table") is not None else None
         ident = str(column if column is not None else query.get("filter") or "")
         if column is None and not any(f.get("id") == ident and f.get("type") == "multi_select" for f in page.get("filters") or []):
-            raise HttpError(404, f"page {page['id']} has no choice filter {ident!r}")
+            raise HttpError(404, f"{page_label(page)} has no choice filter {ident!r}")
         text = str(query.get("q") or "").strip()
         if len(text) > shell_sql.CAPS["value_chars"]:
             raise HttpError(400, f"search for at most {shell_sql.CAPS['value_chars']} characters")
@@ -2925,14 +2939,14 @@ class Shell:
         try:
             dataset = None if column is None else shell_sql.column_dataset(page, table)
         except KeyError as error:
-            raise HttpError(404, f"page {page['id']}: {shell_sql.error_text(error)}") from error
+            raise HttpError(404, f"{page_label(page)}: {shell_sql.error_text(error)}") from error
         ws, who = self.workspace(headers)
         if column is not None:
             types = self.list_columns(ws, who, page, dataset)
             try:
                 shell_sql.column_filter(page, table, ident, "multi_select", types)
             except KeyError as error:
-                raise HttpError(404, f"page {page['id']}: {shell_sql.error_text(error)}") from error
+                raise HttpError(404, f"{page_label(page)}: {shell_sql.error_text(error)}") from error
         limit = shell_sql.CAPS["option_matches"]
         sql, params = (shell_sql.options_query(page, ident, text, limit) if column is None
                        else shell_sql.column_options_query(page, table, ident, text, limit, types))
@@ -2972,9 +2986,18 @@ class Shell:
                 jobs[("left", kpi["id"])] = (lambda s=left[0], p=left[1]: self.run(ws, who, s, p, 1))
         if page.get(shell_sql.RUN_SCOPES) and page.get("result_table"):
             jobs[("scope", "runs")] = lambda: self.summary_rows(ws, who, shell_sql.summary_query(page, 2), 2)
+        try:
+            names = {f["name"] for f in self.table_fields(ws, who, page)} if page.get("result_table") and self.lakebase is None else set()
+        except (QueryError, HttpError):
+            names = set()  # an unreadable table keeps its own error on the KPI, with no scope line
+        counted = shell_sql.scope_counts_query(page, names) if names else None
+        if counted:
+            jobs[("scope", "counts")] = (lambda s=counted[0], p=counted[1]: self.run(ws, who, s, p, 1))
         done, errors = self._parallel(jobs, probe)
         scoped = done.pop(("scope", "runs"), None)
         errors.pop(("scope", "runs"), None)
+        counts = done.pop(("scope", "counts"), None)
+        errors.pop(("scope", "counts"), None)
         errors.update(failed)
         out = {"kpis": {}, "charts": {}, "tables": {}, "errors": {}, "served": served_by(done), "catching_up": self.catching_up(),
                "scope": shell_sql.scope_view(scoped) if scoped is not None else None, "money_note": page.get("money_note") or ""}
@@ -2993,8 +3016,30 @@ class Shell:
         for kpi in page.get("kpis") or []:
             if basis and kpi.get("format") == "currency":
                 out["kpis"].setdefault(kpi["id"], {})["basis"] = basis
+        through = None
+        for kpi in page.get("kpis") or []:
+            shown = out["kpis"].get(kpi["id"])
+            if ("kpi", kpi["id"]) in errors or not shell_sql.kpi_needs_rows_check(shown):
+                continue
+            through = self.data_through_date(ws, who, page) if through is None else through
+            seen = self.run(ws, who, *shell_sql.kpi_rows_query(page, kpi["id"], values or {}), 1)["rows"]
+            out["kpis"][kpi["id"]] = shell_sql.kpi_missing(page, shown, int((seen or [{}])[0].get("n") or 0), through)
+        if counts is not None:
+            line = {"text": shell_sql.scope_counts_text(counts["rows"])}
+            for kpi in page.get("kpis") or []:
+                if shell_sql.kpi_counts_result_rows(page, kpi) and ("kpi", kpi["id"]) not in errors:
+                    out["kpis"].setdefault(kpi["id"], {})["left_out"] = line
         out["zero_state"] = self.zero_state(page, ws, who, out["charts"], rows_checked(scoped[0]) if scoped else None) if out["charts"] else None
         return out
+
+    def data_through_date(self, ws, who, page: dict) -> str:
+        # The newest date the page's date filter reads from its data: the date a KPI with no rows behind it is missing data after.
+        dated = next((f["id"] for f in page.get("filters") or [] if f.get("type") == "date_range"), None)
+        if dated is None:
+            return ""
+        done, _errors = self.bounds(ws, who, page)
+        rows = (done.get(("filter", dated)) or {}).get("rows") or []
+        return str((rows[0] if rows else {}).get("high") or "")[:10]
 
     def previous_datasets(self, ws, who, page: dict) -> dict:
         names = sorted({k["dataset"] for k in page.get("kpis") or [] if k.get("compare")})
@@ -3059,7 +3104,7 @@ class Shell:
 
     def list_records(self, headers: dict, page: dict, data: dict, probe=None) -> dict:
         if not page.get("records"):
-            raise HttpError(404, f"page {page['id']} has no decision list")
+            raise HttpError(404, f"{page_label(page)} has no decision list")
         values = data.get("filters") or {}
         problems = shell_sql.filter_values_problems(page, values) + shell_sql.list_values_problems(
             page, data.get(shell_sql.COLUMN_FILTERS), {"actions": True})
@@ -4681,7 +4726,7 @@ class Shell:
         page = self.page(data.get("page"))
         plan = page.get("plan")
         if not isinstance(plan, dict):
-            raise HttpError(404, f"page {page['id']} has no plan to decide")
+            raise HttpError(404, f"{page_label(page)} has no plan to decide")
         decisions, editable = self.decides(page), self.plan_editable(page)
         if not decisions and not editable:
             raise HttpError(403, self.undecided_text(page))
@@ -4697,7 +4742,7 @@ class Shell:
         version, ws = None, None
         if data.get("plan_id") is not None:
             if shell_sql.plan_contract(page) is None:
-                raise HttpError(400, f"page {page['id']} keeps no plan versions, so send no plan_id")
+                raise HttpError(400, f"{page_label(page)} keeps no plan versions, so send no plan_id")
             ws, _who = self.workspace(headers)
             version = self.open_version(ws, page, data.get("plan_id"))
         edited = None
@@ -4725,7 +4770,7 @@ class Shell:
         page = self.page(ident)
         found = shell_sql.plan_contract(page)
         if not page.get("result_table") or found is None or (contract and found != contract):
-            raise HttpError(404, f"page {page['id']} has no {contract or 'plan or forecast'} to work on")
+            raise HttpError(404, f"{page_label(page)} has no {contract or 'plan or forecast'} to work on")
         return page
 
     @staticmethod
@@ -4841,15 +4886,22 @@ class Shell:
         return self.plans_view(headers, page["id"])
 
     def plan_results(self, headers: dict, ident) -> dict:
-        page = self.planned_page(ident, "plan")
+        page = self.planned_page(ident)
+        if shell_sql.plan_contract(page) == "forecast":
+            return self.forecast_plan(headers, page)
         if not isinstance(page.get("plan"), dict):
-            raise HttpError(404, f"page {page['id']} has no plan to compare with its actuals")
+            raise HttpError(404, f"{page_label(page)} has no plan to compare with its actuals")
         ws, who = self.workspace(headers)
         rows, missing = self.plan_rows(ws, page)
         versions = shell_sql.plan_versions(rows)
         chosen = next((v for v in versions if v["status"] == "Published"), None) or next((v for v in versions if v["status"] == "Approved"), None)
         lines = self.run(ws, who, *shell_sql.plan_lines_query(page), shell_sql.PLAN_CAPS["lines"])["rows"] if chosen else []
         return dict(shell_sql.plan_performance(page["plan"], chosen, lines, (page.get("records") or {}).get("label")), missing=missing)
+
+    def forecast_plan(self, headers: dict, page: dict) -> dict:
+        ws, who = self.workspace(headers)
+        rows = self.run(ws, who, *shell_sql.forecast_actuals_query(page), shell_sql.PLAN_CAPS["series"])["rows"]
+        return shell_sql.forecast_plan(rows)
 
     def forecast_review(self, headers: dict, ident) -> dict:
         page = self.planned_page(ident, "forecast")
@@ -4904,7 +4956,7 @@ class Shell:
         page = self.page(data.get("page"))
         scenario = page.get("scenario")
         if not isinstance(scenario, dict):
-            raise HttpError(404, f"page {page['id']} has no scenario to evaluate")
+            raise HttpError(404, f"{page_label(page)} has no scenario to evaluate")
         ws, who = self.session(headers, probe)
         queries = shell_sql.scenario_queries(page)
         read, failed = self._parallel({name: (lambda q=q: self.run(ws, who, *q, shell_sql.CAPS["scenario_rows"]))
@@ -4930,7 +4982,7 @@ class Shell:
     def scenario_page(self, ident) -> dict:
         page = self.page(ident)
         if not isinstance(page.get("scenario"), dict):
-            raise HttpError(404, f"page {page['id']} has no scenario to save")
+            raise HttpError(404, f"{page_label(page)} has no scenario to save")
         if not page.get("result_table"):
             raise HttpError(409, "this page names no result table, so the App has nowhere to keep its scenarios")
         return page
@@ -5120,7 +5172,7 @@ class Shell:
 
     def list_context(self, ws, who, page: dict, delta: bool = False) -> tuple:
         if not page.get("records"):
-            raise HttpError(404, f"page {page['id']} has no decision list")
+            raise HttpError(404, f"{page_label(page)} has no decision list")
         columns, fields = self.list_columns(ws, who, page), self.table_fields(ws, who, page) if page.get("result_table") else None
         return self.context_of(ws, who, page, columns, fields, delta)[0], fields
 

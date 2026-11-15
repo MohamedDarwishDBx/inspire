@@ -14,14 +14,15 @@ import { tableContext } from './explain.js';
 import { KIND_PARTS, KindReady } from './KindLayouts.jsx';
 import { reducedMotion } from './theme.js';
 import { DEFAULT_PREFS, windowParams } from './prefs.js';
-import { DEFAULT_LAYOUT, hasWork, isLaidOut, isQueue, layoutOf } from './modes.js';
+import { DEFAULT_LAYOUT, hasPlan, hasWork, isLaidOut, isQueue, layoutOf } from './modes.js';
 
 const ScenarioPanel = lazy(() => import('./Scenario.jsx'));
 
 export { DEFAULT_LAYOUT, layoutOf, isLaidOut, isQueue };
 export const tabLabel = (page, fallback) => (isLaidOut(page) && page.layout?.tab_label) || fallback;
 export const impactOn = (app, page) => app?.screens?.impact !== false && (!!page?.history || !!page?.promised);
-export const pageSections = (app, page) => ['dashboard', ...(hasWork(page) ? ['work'] : []), ...(app?.screens?.runs !== false ? ['runs'] : []),
+export const pageSections = (app, page) => ['dashboard', ...(hasWork(page) ? ['work'] : []), ...(hasPlan(page) ? ['plan'] : []),
+  ...(app?.screens?.runs !== false ? ['runs'] : []),
   ...(app?.alerting?.on ? ['alerts'] : []), ...(impactOn(app, page) ? ['impact'] : []), 'settings'];
 export const decides = pageDecides;
 const PLAN_ROWS = 50;
@@ -94,7 +95,7 @@ export function TodoNow({ page, app, ready, nonce, shared, onRecords, filters = 
   return (
     <section className="todo card" aria-label="What to do now" data-section="todo" data-tour="todo">
       <header className="card-h"><div><h2>What to do now</h2>
-        {decided && list.data && waiting != null && !(planCard && planDecided) && <p data-todo-count>{all ? `${integer(waiting)} of ${integer(all)} waiting for you` : 'Nothing is waiting for you right now'}</p>}
+        {decided && list.data && waiting != null && !(planCard && planDecided) && <p data-todo-count>{all ? `${integer(waiting)} waiting for you${counted && summary?.done ? ` · ${integer(summary.done)} done` : ''}` : 'Nothing is waiting for you right now'}</p>}
         {decided && !list.data && !list.error && <Skeleton height={14} width="40%" />}
         {list.error && <PlainNote text={list.error} icon={<Icon name="info" size={12} />} className="tile-err" onRetry={retry} />}
       </div>

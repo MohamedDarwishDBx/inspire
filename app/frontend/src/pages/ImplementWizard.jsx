@@ -3,7 +3,7 @@ import { permanentPickProblem } from '../lib/pickProblem';
 import { withStartDeadline } from '../lib/startDeadline';
 import { nameOfUseCase } from '../lib/useCaseFields';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MONEY_PARTS } from '../lib/moneyParts.js';
+import { moneyPartsOf } from '../lib/moneyParts.js';
 import { defaultMoneyRule, moneySummaryOf } from '../lib/moneyDefaults.js';
 import { valueEstimateOf } from '../lib/v130UseCase.js';
 import { Check, Loader2, NotebookPen, X, ChevronLeft, ChevronRight, LayoutDashboard, Sparkles, AppWindow, Bell, Lock, UserRound, KeyRound } from 'lucide-react';
@@ -20,7 +20,6 @@ import {
   GENIE_CODE_OFF_TITLE,
   genieCodeOff,
   wizardSteps,
-  APP_STEP,
   APP_STORAGE_LABEL,
   PANEL_SECTIONS,
   contextSettings,
@@ -40,12 +39,14 @@ import {
   resultPlaceOf,
   useCaseSchemaTags as schemaTagsOf,
   ownSchemaFallbackNote,
+  ownSchemaGrantPermission,
   defaultSpecFromUseCase,
   specFromLatest,
   tablesOf,
   primaryTableOf,
   restoreTable,
   pickedTable,
+  duplicateSourceNotice,
   revertLostSwaps,
   revertedSwapsText,
   removalBlocker,
@@ -55,6 +56,8 @@ import {
   readinessText,
   countedFor,
   tooFewRowsText,
+  dataMinimumRefusalText,
+  dataMinimumBlocks,
   columnsReadOf,
   filterTablesOutside,
   withoutTableFilters,
@@ -86,7 +89,9 @@ import {
   MEASURE_IMPACT_PARTS, impactPartOf, impactPartSummary,
   stepIndexOf,
   lostTablesText,
+  missingSourcePick,
   SOURCE_REFUSED_REASON,
+  SOURCE_BUILT_IN_REFUSED_REASON,
   ACCESS_CHECKING,
   ACCESS_UNKNOWN,
   accessVerdictOf,
@@ -200,7 +205,7 @@ import {
   vibesProblem,
   vibePreviousProblem,
   vibePreviousChoices,
-  builtVersion,
+  builtVersion, liveVersionForVibes,
   VIBES_STEP_TITLE,
   VIBES_STEP_NOTE,
   vibesSkippedText,
@@ -262,6 +267,7 @@ import {
   nextStepAfter,
   APP_LOOK_DEFAULT,
 } from '../lib/implementWizard';
+import { raisePermissions } from '../lib/permissionBus';
 import {
   bestAppAccess, bestAppBackend, bestHeldApp, bestAppOption, bestAppPolicy, bestAppTarget, bestFreshness, bestHoldout, bestKpi, bestLook,
   bestOutput, bestReplaceEdits, isBest,
@@ -435,7 +441,7 @@ function CheckLine({ check, label }) {
   );
 }
 
-const MONEY_PART_LABEL = { method: 'How the value is measured', direction: 'Which movement counts', currency: 'Currency', window: 'Periods and statuses', off: 'Turn it off', kpi: 'Target KPI', holdout: 'Hold back' };
+const MONEY_PART_LABEL = { method: 'How the value is measured', direction: 'Which movement counts', sign: 'Which records are gains', currency: 'Currency', window: 'Periods and statuses', off: 'Turn it off', kpi: 'Target KPI', holdout: 'Hold back' };
 
 export default function ImplementWizard({
   uc,
@@ -571,7 +577,7 @@ export default function ImplementWizard({
   const stepIndex = stepIndexOf(steps, step);
   const stepId = steps[stepIndex].id;
   const shows = (panel) => steps[stepIndex].panels.includes(panel);
-  const moneyParts = [...(spec.money?.off ? ['off'] : [...MONEY_PARTS.filter((p) => p !== 'off'), 'off']), ...MEASURE_IMPACT_PARTS];
+  const moneyParts = [...(spec.money?.off ? ['off'] : moneyPartsOf(spec.money?.rule)), ...MEASURE_IMPACT_PARTS];
   const moneyActive = Math.min(moneyPart, moneyParts.length - 1);
   // The money reads are cached per request, so a section that remounts reads its rates and preview once, not again.
   const postRef = useRef(apiPostJson);
@@ -631,7 +637,8 @@ export default function ImplementWizard({
   const scopeGroups = scopeCounted ? readCounted.groups || null : null;
   const scopedProfile = narrowed ? withScopedRows(scopeProfile.profile, scopeCount, scopeGroups) : scopeProfile.profile;
   const scopedFirstRun = narrowed && scopeProfile.firstRun ? { ...scopeProfile.firstRun, profile: withScopedRows(scopeProfile.firstRun.profile, scopeCount, scopeGroups) } : scopeProfile.firstRun;
-  const tooFewRows = tooFewRowsText(readCounted);
+  // On the last step the scope note is the build's refusal (REQ-255); earlier steps keep the plain scope sentence that never blocks.
+  const tooFewRows = lastStep ? dataMinimumRefusalText(readCounted) : tooFewRowsText(readCounted);
 
   const q = useMemo(() => {
     const p = new URLSearchParams({
@@ -798,6 +805,7 @@ export default function ImplementWizard({
 
   const groups = context?.widget_groups || NO_WIDGET_GROUPS;
   const built = builtVersion(context?.history);
+  const liveFor = liveVersionForVibes(context?.history);
   const kpiOptions = useMemo(() => kpiTargetOptions(ucRow, context?.history), [ucRow, context?.history]);
   const scopeShown = withGroupingDefault(scopeValues((name) => spec.config.widgets?.[name]), scopeProfile.profile, spec.config.widgets?.[GROUP_BY]);
   const trackedKpi = trackedKpiOf(context?.history);
@@ -909,7 +917,7 @@ export default function ImplementWizard({
   };
 
   useEffect(() => {
-    if (mode !== 'mvp' || !narrowed || scopeCounted || !shows('first_run') || !scopeNow.table) return undefined;
+    if (mode !== 'mvp' || !(narrowed || scopeNow.window?.column) || scopeCounted || !shows('first_run') || !scopeNow.table) return undefined;
     let live = true;
     countScope(scopeNow).then((got) => { if (live) setReadiness(got); }).catch(() => {});
     return () => { live = false; };
@@ -965,6 +973,8 @@ export default function ImplementWizard({
         }).catch((e) => {
           setSpec((prev) => withResultTable(prev, resultTableParts(inspireTable)));
           setOwnSchema((prev) => ({ ...(prev || {}), place: 'inspire', create: false }));
+          // REQ-131, REQ-260: the refused CREATE SCHEMA grant opens in Permission Required; the note names it in plain words
+          raisePermissions([ownSchemaGrantPermission(own.catalog, context?.me?.username)]);
           setPlaceNote(`${ownSchemaFallbackNote(own.catalog, context?.me?.username)} ${failureReasonOf(e)}`);
           setOutputCheck(null);
           setSchemaJob({ state: 'failed', text: `${ownSchemaFallbackNote(own.catalog, context?.me?.username)} ${failureReasonOf(e)}` });
@@ -1140,7 +1150,7 @@ export default function ImplementWizard({
   }, [columnsByTable, spec]);
 
   useEffect(() => {
-    const wanted = stepId === 'data' || (spec.outputs.app && (stepId === 'delivery' || stepId === 'where' || stepId === 'app'));
+    const wanted = stepId === 'data' || (spec.outputs.app && (stepId === 'delivery' || stepId === 'where'));
     if (!wanted || warehouses !== null || warehousesError) return undefined;
     let cancelled = false;
     apiFetch('/api/warehouses')
@@ -1370,7 +1380,7 @@ export default function ImplementWizard({
   const freshness = freshnessOf(spec.schedule);
   const checkStepOf = (k) => {
     if (PLACE_CHECKS.includes(k)) return 'where';
-    if (ACCESS_CHECKS.includes(k)) return insideInspire(spec) || joinsApp(spec) ? 'where' : APP_STEP.id;
+    if (ACCESS_CHECKS.includes(k)) return 'where';
     return CHOOSE_CHECKS.includes(k) || TILE_CHECK_KEYS.includes(k) ? 'delivery' : SUMMARY_STEP.id;
   };
   const checkStepLabel = (k) => steps.find((s) => s.id === checkStepOf(k))?.label || SUMMARY_STEP.label;
@@ -1409,7 +1419,8 @@ export default function ImplementWizard({
   const unchanged = lastStep && accessVerdict === 'ok' && Boolean(plan?.unchanged);
   const sourceRefused = accessVerdict === 'refused';
   const sourceAccessRefused = sourceRefused && !preflight?.checks?.sources?.missing;
-  const implementBlocked = busy || checksBusy || !placeSettled || schemaJob?.state === 'running' || schemaJob?.state === 'failed' || rebuildNeedsChoice(plan, rebuildAsIs) || sourceRefused
+  const refusedFooterText = appUnreadable?.builtin?.length ? SOURCE_BUILT_IN_REFUSED_REASON : SOURCE_REFUSED_REASON;
+  const implementBlocked = busy || checksBusy || !placeSettled || dataMinimumBlocks(readCounted) || schemaJob?.state === 'running' || schemaJob?.state === 'failed' || rebuildNeedsChoice(plan, rebuildAsIs) || sourceRefused
     || (!ownErrors.length && (!preflight || !checkEntries.every(([, c]) => c.ok) || (lastStep && (!plan || Boolean(planError)))))
     || (lastStep && accessVerdict !== 'ok' && accessVerdict !== 'refused');
   const palette = (look?.palette_colors || []).find((p) => p.id === spec.outputs.app_look.palette) || null;
@@ -1454,6 +1465,8 @@ export default function ImplementWizard({
   };
 
   const pickTable = (original, value) => {
+    const refused = duplicateSourceNotice(sourceTables, original, spec.data.tables[original] || original, value);
+    if (refused) { setNotice(refused); return; }
     const picked = pickedTable(spec, original, value);
     setSpec(picked.spec);
     if (picked.notice !== null) setNotice(picked.notice);
@@ -1523,9 +1536,9 @@ export default function ImplementWizard({
           </section>
         )}
 
-        {(appUnreadable || appGrant) && <AppReadAccess offer={appUnreadable} result={appGrant} busy={granting} onGrant={grantAppRead} />}
+        {(appUnreadable || appGrant) && <AppReadAccess offer={appUnreadable?.builtin?.length ? null : appUnreadable} result={appGrant} busy={granting} onGrant={grantAppRead} />}
 
-        {builtInRefused && (
+        {appUnreadable?.builtin?.length > 0 && (
           <SamplesCopyOffer names={appUnreadable.builtin.join(', ')} target={copyTo} onTarget={setCopyTarget} canCopy={validCopyTarget(copyTo)}
             copying={copying} error={copyError} onCopy={copySamples} copyLabel="Copy it now" />
         )}
@@ -2038,7 +2051,7 @@ export default function ImplementWizard({
                             </SettingRow>
                           </div>
                         ) : spec.money ? (
-                          <MoneyRuleEditor part={p} value={spec.money} sample={scopeProfile.profile?.money_sample || null} table={scopeProfile.profile?.table || ''} columns={scopeProfile.profile?.money_columns || []} api={moneyApi.current} onChange={(money) => { setSpec((prev) => withMoneyRule(prev, money)); if (Boolean(money?.off) !== Boolean(spec.money?.off)) setMoneyPart(money?.off ? 0 : MONEY_PARTS.indexOf('off')); }} />
+                          <MoneyRuleEditor part={p} value={spec.money} sample={scopeProfile.profile?.money_sample || null} table={scopeProfile.profile?.table || ''} columns={scopeProfile.profile?.money_columns || []} api={moneyApi.current} onChange={(money) => { setSpec((prev) => withMoneyRule(prev, money)); if (Boolean(money?.off) !== Boolean(spec.money?.off)) setMoneyPart(money?.off ? 0 : moneyPartsOf(money?.rule).indexOf('off')); }} />
                         ) : (
                           <p className="text-[12px] text-text-secondary">Reading this table to pre-fill the money rule</p>
                         )}
@@ -2125,7 +2138,8 @@ export default function ImplementWizard({
             onPage={(id, on) => setSpec((prev) => withAppPage(prev, id, on))} />
         )}
 
-        {shows('app_look') && (
+        {foldLine('app_look', 'App look', lookText({ ...APP_LOOK_DEFAULT, ...(spec.outputs.app_look || {}) }))}
+        {shows('app_look') && isOpenSection('app_look') && (
           <AppLookStep
             spec={spec}
             look={look}
@@ -2151,7 +2165,7 @@ export default function ImplementWizard({
             )}
             <p data-built-sentence="" className="text-sm font-semibold text-text-primary">{builtSentence(spec)}</p>
             {shows('vibes') && (
-              <VibesPanel spec={spec} built={built} next={(context?.latest?.spec_version ?? 0) + 1} blocks={blocks} onChange={(value) => patch('vibes', value)}
+              <VibesPanel spec={spec} built={built} live={liveFor} next={(context?.latest?.spec_version ?? 0) + 1} blocks={blocks} onChange={(value) => patch('vibes', value)}
                 onPrevious={(choice) => patch('vibe_previous', choice)} />
             )}
             <section aria-label="What Inspire picked" data-picked-summary="" className="bg-bg border border-border rounded-lg p-4 space-y-3 h-48 overflow-y-auto">
@@ -2312,6 +2326,10 @@ export default function ImplementWizard({
             {footerErrors.map((e) => <PlainMessage key={e} text={e} onRetry={footerRetry.get(e) || null} copy={footerRetry.has(e)} className="text-xs text-error-fg" />)}
           </div>
         )}
+        {missingSourcePick(missingTables) && (
+          <button type="button" data-pick-replacement="" className="self-start text-xs font-semibold text-db-red-solid underline"
+            onClick={() => { changeStep(missingSourcePick(missingTables).step); openFoldSection('data'); setDataChoice('sources'); }}>{missingSourcePick(missingTables).label}</button>
+        )}
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
@@ -2329,7 +2347,7 @@ export default function ImplementWizard({
               </p>
             )}
             {mode === 'mvp' && stepIndex > 0 && !lastStep && sourceAccessRefused && (
-              <p data-source-refused="" className="text-[11px] text-warning-fg">{SOURCE_REFUSED_REASON}</p>
+              <p data-source-refused="" className="text-[11px] text-warning-fg">{refusedFooterText}</p>
             )}
             {mode === 'mvp' && stepIndex > 0 && !lastStep && !sourceAccessRefused && (
               <button type="button" data-build-now="" disabled={implementBlocked || steps.some((x) => stepErrors(x.id, spec, extras, mode).length > 0)} onClick={submit}
@@ -2357,7 +2375,7 @@ export default function ImplementWizard({
                 {busy ? 'Starting…' : 'Generate notebook'}
               </button>
             ) : sourceAccessRefused ? (
-              <p data-source-refused="" className="text-[11px] text-warning-fg">{SOURCE_REFUSED_REASON}</p>
+              <p data-source-refused="" className="text-[11px] text-warning-fg">{refusedFooterText}</p>
             ) : (
               <button
                 type="button"
@@ -2394,9 +2412,9 @@ function SegmentButton({ on, disabled = false, onClick, option, children }) {
   );
 }
 
-function VibesPanel({ spec, built, next, blocks, onChange, onPrevious }) {
+function VibesPanel({ spec, built, live, next, blocks, onChange, onPrevious }) {
   const asked = String(spec.vibes ?? '').trim() !== '';
-  const choices = built != null && asked ? vibePreviousChoices(built, next, Boolean(spec.outputs?.alert)) : [];
+  const choices = built != null && asked ? vibePreviousChoices(live ?? built, next, Boolean(spec.outputs?.alert)) : [];
   const skipped = vibesSkippedText(spec, blocks);
   const skippedAsks = skippedAsksText(spec);
   return (
@@ -2561,7 +2579,9 @@ function AppPlacementStep({ spec, targets, targetsError, onTargetsRetry, heldApp
                 onRetry={onTargetsRetry} copy data-app-targets-error="" className="block text-[11px] text-text-secondary" />}
             </span>
           </label>
-          {choices.length > 0 && !inside && (
+          {/* One decision per screen (REQ-001, REQ-265): the Apps list is the detail of the join card, shown once it is picked. When no App
+              can be joined, the list is the only account of why each one does not fit, so it stays. */}
+          {choices.length > 0 && (joined || !open.length) && !inside && (
             <ul ref={listRef} aria-label="Apps Inspire built" data-app-list="" data-choice="app-target"
               className={`relative ms-7 space-y-1.5 overflow-y-auto rounded-md border border-border bg-surface px-2 py-1.5 ${APP_LIST_HEIGHT}`}>
               {choices.map((c) => (

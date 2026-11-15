@@ -61,8 +61,11 @@ def customer_strings(source):
             name, receiver = _call_name(node)
             if name == "implement_gate":
                 # REQ-227: a gate's problems (argument 1) and failure text (argument 4) reach the App. Its feedback (argument 2)
-                # is the repair prompt Genie reads, so it is not copy.
-                for position in (1, 4):
+                # is the repair prompt Genie reads, so it is not copy. A notebook gate's problems are the verdict Genie reads
+                # with exact object names, so they are not copy either: the person's copy is made plain where the warning is
+                # written (implement_plain_change_text), and req227_status_words_test pins that. AI and reply problems stay copy.
+                notebook = bool(node.args) and isinstance(node.args[0], ast.Constant) and node.args[0].value == "notebook"
+                for position in ((4,) if notebook else (1, 4)):
                     if len(node.args) > position:
                         collect(node.args[position])
             elif name in SINK_CALLS or (name in {"append", "extend"} and receiver in SINK_LISTS):
@@ -147,3 +150,36 @@ def test_the_data_filter_line_keeps_its_tag_in_the_log_and_reads_plainly_for_the
     assert customer.startswith("12 of 12 names carried the label"), customer
     for internal in ("re-asked", "rewrite", "deterministic"):
         assert internal not in customer, f"{internal} is internal wording"
+
+
+def test_a_bare_internal_object_name_still_fails_and_a_qualified_table_name_passes():
+    """D-NAMES / coordinator: the internal_object term catches a bare __token only. A catalog.schema.table name is kept."""
+    assert "internal_object" in internal_hits("Skip __constraints")  # must-exclude: a bare token still fails
+    assert internal_hits("the table main.inspire.demand_out__series does not exist") == []  # must-keep
+
+
+def test_req258_bare_use_case_id_fails_in_person_copy_and_the_title_passes():
+    """REQ-258 (D7): a bare use case id is never person copy (must-fail); the use case by its title is kept (must-keep)."""
+    assert "use_case_id" in internal_hits('Genie Agent "N06-U01 Merge Duplicate Customer Records" when it needs the data')
+    assert "use_case_id" in internal_hits("Ask Genie about n06-u01")
+    assert internal_hits('Genie Agent "Merge Duplicate Customer Records" when it needs the data') == [], "must-keep: the title"
+    assert internal_hits("the table main.inspire.n06_u01_scope does not exist") == [], "must-keep: a qualified table name"
+
+
+def test_req258_genie_agent_title_defaults_to_the_use_case_name_not_its_id(story):
+    """REQ-258 (D7): the App shows the Genie Agent's title. With no saved name, the title is the use case name, never 'N06-U01 ...'."""
+    context = {"uc_id": "N06-U01", "use_case": {"Name": "Merge Duplicate Customer Records"},
+               "spec": {"outputs": {"genie_space": True}}, "assets": {"genie_space": "space-1"}}
+    genie, _ = story._implement_app_genie(context)
+    assert genie == {"space_id": "space-1", "title": "Merge Duplicate Customer Records"}
+    named = dict(context, spec={"outputs": {"genie_space": True, "genie_space_name": "Churn questions"}})
+    assert story._implement_app_genie(named)[0]["title"] == "Churn questions", "a saved name still wins"
+
+
+def test_req249_python_repr_fails_and_a_plain_sentence_passes():
+    """REQ-249: a Python or pandas object dump is never customer copy (must-fail); a plain sentence with a number is kept."""
+    dump = "<bound method Series.prod of inspire_group 0 1\nName: 165, dtype: object>"
+    assert "python_repr" in internal_hits(dump), "must-fail: the repr that reached a row explanation on the walker run"
+    assert "python_repr" in internal_hits("the score <function fraud_score at 0x7f3a> was printed"), "must-fail: a function repr"
+    assert internal_hits("Average transaction value rose 12% to 340 USD over the last 30 days.") == [], "must-keep: a plain sentence"
+    assert internal_hits("Name: Acme Corp, the largest account in the region") == [], "must-keep: a name label"

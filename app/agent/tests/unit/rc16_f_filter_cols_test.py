@@ -94,10 +94,12 @@ def test_an_exception_filter_is_written_as_all_except_its_values(scoped):
     assert by_id["N01-U01"]["product"] == "all except Other Co"
 
 
-def test_a_range_filter_is_not_a_categorical_pick_and_adds_no_column(scoped):
+def test_a_range_bound_is_listed_as_a_column_with_its_bound(scoped):
+    # REQ-244: a bound is a value the reader can see, so the Excel names the column and shows the bound next to the picks.
     set_scope(scoped, scope(SALES, ["sku", "sold_on"], [{"column": "sold_on", "op": ">=", "values": ["2026-01-01"]}]))
-    headers, _ = rows_by_id(excel_sheet(scoped, {"Sales": [use_case("N01-U01", [SALES])]}))
-    assert "sold_on" not in headers
+    headers, rows = rows_by_id(excel_sheet(scoped, {"Sales": [use_case("N01-U01", [SALES])]}))
+    assert "sold_on" in headers
+    assert rows["N01-U01"]["sold_on"] == "\u2265 2026-01-01"
 
 
 def test_a_translated_export_keeps_the_filter_header_as_the_column_name(scoped):

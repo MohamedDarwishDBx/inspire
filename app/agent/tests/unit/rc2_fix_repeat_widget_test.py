@@ -65,7 +65,7 @@ def test_a_data_filter_reads_its_own_use_case_scope_even_when_the_run_global_is_
     monkeypatch.setitem(agent_ns, "INSPIRE_TABLE_SCOPES", {})
     scopes = _scopes(agent_ns)
     uc = {"Primary Table": TABLE, "Tables Involved": TABLE, "_data_filter_scopes": scopes}
-    assert agent_ns["use_case_data_filters"](uc) == [("status", TABLE, False, ["gold"])]
+    assert agent_ns["use_case_data_filters"](uc) == [("status", TABLE, "=", ["gold"])]  # REQ-244: the third item is the op, not an exception flag
     other = {"Primary Table": "main.s.customers", "Tables Involved": "main.s.customers"}
     assert agent_ns["use_case_data_filters"](other) == [], "a use case without its own scope gets no filter from a global"
 

@@ -98,7 +98,11 @@ def test_build_refuses_a_user_kept_use_case_with_the_discover_shortfall_before_g
     assert str(raised.value).startswith(agent_ns["IMPLEMENT_DATA_MINIMUM_LEAD"] + ": ")
     assert "(11); at least 200" in str(raised.value)
     assert status["data"]["state"] == "failed" and "(11); at least 200" in status["data"]["data_minimum"]
-    build._implement_update.assert_called_once_with(KEY, asset_status=status)
+    stopped = build._implement_update.call_args.kwargs["status_message"]
+    assert build._implement_update.call_args.args == (KEY,) and build._implement_update.call_args.kwargs["status"] == "failed"
+    assert stopped.startswith("Stopped by Inspire because the data cannot meet the minimum this use case needs: ") and "(11); at least 200" in stopped, \
+        "the stop is recorded on the row before the run ends, so a run that ends after the refusal reads this reason, not outside Inspire"
+    assert build._implement_update.call_args.kwargs["asset_status"] is status
     assert len([s for s in spark.statements if "AS outcome_values" in s]) == 1 and agent.calls == [], \
         "the build counts the data again with the stored columns, and asks the AI nothing"
     assert any(line.startswith("[DATA-MINIMUM FIRED] N01-U01: refused before Genie started") for line in logged(build, "warning"))

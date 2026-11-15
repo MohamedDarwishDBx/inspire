@@ -443,7 +443,9 @@ def test_round_41_a_test_run_is_submitted_with_the_widget_name_and_only_after_th
          "123456789000005); test runs of rounds 27, 31, 39 and 41 passed the label")
     assert ("submit each test run in one command that first lists the active runs with their tasks (`databricks jobs list-runs "
             "--active-only --expand-tasks`, since without `--expand-tasks` a run lists no tasks, so no path matches and nothing is "
-            "canceled) and cancels every run whose task runs this notebook's path, with or without `/Workspace` before it") in rule, \
+            "canceled) and cancels only the runs whose task's notebook_path is exactly this use case's notebook path, with or "
+            "without `/Workspace` before it, never a prefix, a substring, or Inspire's agent notebook `dbx_inspire_ai_agent`, and "
+            "never a run whose job carries the tag `dbx_inspire_ai_launcher_source` = `Inspire App`") in rule, \
         ("round 41: the delisting notebook listed the active runs without --expand-tasks and filtered them on r.get('tasks'), "
          "which no run had, so it canceled nothing")
     assert ("and never submit from two commands at once, since a second submit, such as one repeated after a long output, starts "
@@ -455,7 +457,8 @@ def test_round_41_a_test_run_is_submitted_with_the_widget_name_and_only_after_th
 
     def canceled(listed):
         return [run["run_id"] for run in listed
-                if any((task.get("notebook_task") or {}).get("notebook_path") in (path, "/Workspace" + path)
+                if (run.get("job_tags") or {}).get("dbx_inspire_ai_launcher_source") != "Inspire App"
+                and any((task.get("notebook_task") or {}).get("notebook_path") in (path, "/Workspace" + path)
                        for task in run.get("tasks", []))]
 
     assert canceled([{"run_id": 1, "run_name": "N09-U04-build-test"}, {"run_id": 2, "run_name": "dbx_inspire_ai_n09_u04"}]) == [], \
@@ -463,8 +466,11 @@ def test_round_41_a_test_run_is_submitted_with_the_widget_name_and_only_after_th
     assert canceled([{"run_id": 1, "tasks": [{"notebook_task": {"notebook_path": path}}]},
                       {"run_id": 2, "tasks": [{"notebook_task": {"notebook_path": "/Workspace" + path}}]},
                       {"run_id": 3, "tasks": [{"notebook_task": {"notebook_path": path + "_copy"}}]},
-                      {"run_id": 4, "tasks": [{"spark_python_task": {"python_file": "etl.py"}}]}]) == [1, 2], \
-        "with the tasks listed, only the runs of this notebook's path are canceled"
+                      {"run_id": 4, "tasks": [{"spark_python_task": {"python_file": "etl.py"}}]},
+                      {"run_id": 5, "job_tags": {"dbx_inspire_ai_launcher_source": "Inspire App"}, "tasks": [{"notebook_task": {"notebook_path": path}}]},
+                      {"run_id": 6, "tasks": [{"notebook_task": {"notebook_path": "/Shared/x/dbx_inspire_ai_agent"}}]}]) == [1, 2], \
+        "only runs of this exact notebook path that the App did not launch are canceled; never the App build, never another notebook"
+    assert canceled([{"run_id": 7, "tasks": [{"notebook_task": {"notebook_path": path + "_copy"}}]}]) == [], "a prefix or suffix never matches"
     ns, _call = _controls(agent_ns)
     for values, launched in (({"Execution": "Here"}, True), ({"execution": "Here"}, False)):
         runs = []
@@ -520,3 +526,14 @@ def test_the_tag_cap_keeps_every_id_and_drops_the_kind_tags_first_when_every_tag
     kept, dropped = launcher.capped_tags(every)
     assert len(kept) == launcher.TAG_LIMIT and set(ids) <= set(kept)
     assert dropped[-2:] == ["dbx_inspire_ai_kind", "dbx_inspire_ai_layout"]
+
+
+def test_app_builds_carry_the_launcher_tag_the_run_controls_rule_spares(agent_ns):
+    # The rule tells Genie Code never to cancel a run the App launched. That only holds if the App's launch really tags it.
+    tags = agent_ns["inspire_identity_tags"]("biz", "1794495363431701867", "Inspire App")
+    assert tags["dbx_inspire_ai_launcher_source"] == "Inspire App"
+    assert "`dbx_inspire_ai_launcher_source` = `Inspire App`" in agent_ns["GENIE_RUN_CONTROLS_RULE"]
+    backend = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "backend", "lib", "inspireJobParams.js")
+    with open(backend, encoding="utf-8") as handle:
+        assert "dbx_inspire_ai_launcher_source: inspireTagValue('Inspire App')" in handle.read(), \
+            "the App's launch path must tag its runs with the same key the rule names"

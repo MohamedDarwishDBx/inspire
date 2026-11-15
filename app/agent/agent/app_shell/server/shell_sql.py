@@ -2208,7 +2208,7 @@ def run_level_datasets(page: dict) -> set:
     if not result:
         return set()
     whole = scenario_layout(page)
-    tables = [f"{result}{suffix}" for suffix in layout_contract(page) if whole or suffix in RUN_LEVEL_SUFFIXES]
+    tables = [shell_facts.companion(result, suffix) for suffix in layout_contract(page) if whole or suffix in RUN_LEVEL_SUFFIXES]
     return {str(d.get("name")) for d in page.get("datasets") or [] if isinstance(d, dict)
             and any(reads_table(d.get("sql"), table) for table in tables)}
 
@@ -2231,7 +2231,7 @@ def contract_problems(page: dict) -> list:
             read = [(page.get("scenario") or {}).get("model")] if isinstance(page.get("scenario"), dict) else []
         else:
             read = [i.get("dataset") for i in section_items(page, section)]
-        companion = f"{result}{suffix}"
+        companion = shell_facts.companion(result, suffix)
         if read and not any(reads_table(sqls.get(d), companion) for d in read):
             problems.append(f"the {section} section of a {page_layout(page)} page reads {companion}, the companion table its notebook writes "
                             f"with {', '.join(suffixes[suffix])}; point its dataset at that table")
@@ -2767,6 +2767,52 @@ def left_out_text(rows) -> dict:
     return {"undated": undated, "running": running, "unrated": unrated, "duplicated": duplicated, "future": future, "text": line}
 
 
+SCOPE_COUNT_FORMATS = ("number", "integer")
+
+
+def scope_counts_query(page: dict, names) -> tuple:
+    """One read of the App's result table under the one scope: open, held back, done or closed, and could not be checked.
+    Every count KPI on a page with the quality flag states these numbers, so no count is read as the open work count alone."""
+    if "data_quality_flag" not in names:
+        return None
+    params = _Params()
+    ok = f"COALESCE(({flagged_ok_sql(names)}), FALSE)"
+    held = "COALESCE(`held_back`, FALSE)" if "held_back" in names else "FALSE"
+    statuses = page_statuses(page)
+    status = (f"COALESCE(CAST(`action_status` AS STRING), {params.add(statuses['unset'])})" if "action_status" in names
+              else params.add(statuses["unset"]))
+    opened = ", ".join(params.add(str(v)) for v in statuses["open"])
+    closed = ", ".join(params.add(str(v)) for v in statuses["closed"])
+    scope = " AND ".join(c for c in (use_case_scope(page, params), "`is_current`", "`change_source` <> 'delete'") if c)
+    text = (f"SELECT COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened})) AS open_, COUNT_IF({ok} AND {held}) AS held_, "
+            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({closed})) AS closed_, COUNT_IF(NOT {ok}) AS unchecked "
+            f"FROM {table_name(page['result_table'])} WHERE {scope}")
+    return f"{text} LIMIT 1", params.items
+
+
+COUNTS_ROWS = re.compile(r"\s*COUNT\s*\(\s*(\*|(?:DISTINCT\s+)?`?[A-Za-z_][A-Za-z0-9_]*`?)\s*\)\s*", re.I)
+
+
+def kpi_counts_result_rows(page: dict, kpi: dict) -> bool:
+    """True when the KPI is a plain count of rows of the App's result table (COUNT(*), COUNT(col), COUNT(DISTINCT col)
+    over a dataset that reads that table). Any other count, or a sum, average or ratio, gets no scope line."""
+    if not page.get("result_table") or not COUNTS_ROWS.fullmatch(str(kpi.get("expression") or "")):
+        return False
+    try:
+        sql = _dataset(page, kpi["dataset"])
+    except KeyError:
+        return False
+    return table_name(page["result_table"]) in sql or page["result_table"] in sql
+
+
+def scope_counts_text(rows) -> str:
+    row = (rows or [{}])[0]
+    open_, held, closed, unchecked = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked"))
+    checked = open_ + held + closed
+    return (f"Scope: {checked} checked records, {open_} open, {held} held back, {closed} done or closed. "
+            f"{unchecked} could not be checked and are never open work.")
+
+
 MONEY_RULE_NAME = "money_rule"
 MONEY_BUILD_KEYS = ("statuses", "rule", "rate_table", "per", "group_column")
 
@@ -3030,6 +3076,39 @@ def kpi_values(rows) -> dict:
     single = by_currency[0] if len(by_currency) == 1 else None
     return {"now": single["now"] if single else None, "before": single["before"] if single else None, "by_currency": by_currency}
 
+
+def kpi_needs_rows_check(shown: dict) -> bool:
+    """A KPI shows a zero or nothing (not a number, not a currency split): only then can its zero be missing data rather than a measure."""
+    return isinstance(shown, dict) and not shown.get("by_currency") and shown.get("now") in (None, 0)
+
+
+def kpi_rows_query(page: dict, ident: str, values: dict) -> tuple:
+    """How many rows the KPI's own dataset gives its filters at these values, before the KPI's expression runs."""
+    kpi = _item(page, "kpis", ident)
+    money = kpi.get("format") == "currency"
+    dataset = _dataset(page, kpi["dataset"])
+    sql, params = (money_source(page, kpi["dataset"], dataset) if money else future_source(page, kpi["dataset"], dataset)), _Params()
+    where = _where(page, kpi["dataset"], values, params)
+    return f"SELECT COUNT(*) AS n FROM ({sql}) AS d{where} LIMIT 1", params.items
+
+
+def kpi_empty_text(page: dict, through: str = "") -> dict:
+    """Why a KPI with no rows behind it has no number, in plain words, in every App language: {language code: text}. The words are the
+    tour registry's per-language `reasons` in kinds.json. On a forecast page the reason is the forecast's start."""
+    if plan_contract(page) == "forecast":
+        key = "forecast_not_yet" if through else "forecast_no_date"
+    else:
+        key = "no_rows_dated" if through else "no_rows"
+    languages = (kinds_registry().get("tour") or {}).get("languages") or {}
+    return {str(lang.get("code")): str(lang["reasons"][key]).replace("{through}", through)
+            for lang in languages.values() if isinstance(lang, dict) and isinstance(lang.get("reasons"), dict) and key in lang["reasons"]}
+
+
+def kpi_missing(page: dict, shown: dict, rows: int, through: str = "") -> dict:
+    """A zero or missing KPI value with no rows behind it shows no number and says why. A zero with rows behind it is a measured zero."""
+    if not kpi_needs_rows_check(shown) or rows:
+        return shown
+    return dict(shown, now=None, empty=kpi_empty_text(page, through))
 
 def split_filters(page: dict, dataset: str) -> list:
     return [f for f in page.get("filters") or [] if f.get("type") not in RANGE_EDGES and (f.get("columns") or {}).get(dataset)]
@@ -3480,7 +3559,7 @@ def list_context(page: dict, columns, fields, decisions: bool) -> dict:
             "tier": records.get("tier") if records.get("tier") in names else None,
             "tie": "record_key" if "record_key" in columns else key, "ai": ai,
             "categories": [n for n in ai if AI_CATEGORY.match(n)],
-            "scopes": table_name(str(page["result_table"]).strip() + SUMMARY_SUFFIX) if join and page_scopes(page) else None,
+            "scopes": table_name(shell_facts.companion(page["result_table"], SUMMARY_SUFFIX)) if join and page_scopes(page) else None,
             "treatments": segment_column(page) if join and decisions and BATCH_VALUES in names else None,
             "unjoined": "" if join else unjoined_reason(page, columns, fields)}
 
@@ -4296,7 +4375,7 @@ def runs_compare_sql(sql: str, table: str, columns, backs=(0, 1), history=None, 
     text, carries = _runs_query(tokens, 0, len(tokens), table)
     if not carries:
         raise ValueError(f"it does not read the result table {table} in its FROM, the one table that keeps earlier runs")
-    summary = table_name(str(table).strip() + SUMMARY_SUFFIX) if scopes else None
+    summary = table_name(shell_facts.companion(table, SUMMARY_SUFFIX)) if scopes else None
     rows, text = f"{RUNS_CTE} AS (\n{_runs_rows(table_name(table), columns, backs, history, summary, facts)}\n)", text.replace(_RUNS_MARK, "")
     return f"WITH {rows},\n{text[len('WITH '):]}" if text.startswith("WITH ") else f"WITH {rows}\n{text}"
 
@@ -4583,7 +4662,7 @@ def _current_cte(context: dict, extra=()) -> str:
     join, actions = context["join"], context["actions"]
     mapped = f", CAST({quote(join)} AS STRING) AS `_inspire_join`" if join != "record_key" else ""
     owned = (f", `action_owner` AS `_inspire_owner`, `action_status` AS `_inspire_status`, {context.get('choice') or 'CAST(NULL AS STRING)'} "
-             "AS `_inspire_choice`" + (f", {SNOOZE_EXTRA}" if context.get("snoozed") else "")) if actions else ""
+             "AS `_inspire_choice`") if actions else ""
     explained = "".join(f", CAST({quote(n)} AS STRING) AS {quote(ai_alias(n))}" for n in context["ai"])
     more = "".join(f", {e}" for e in [*extra, f"CAST({quote(KEPT_SINCE)} AS TIMESTAMP) AS `_inspire_missing`", *context.get("money", [])])
     held = context.get("floor") or {}
@@ -4603,10 +4682,9 @@ def _current_on(context: dict, alias: str) -> str:
 
 def _current_join(context: dict, alias: str) -> tuple:
     columns = ["c.`_inspire_key`", "c.`_inspire_version`"] + (["c.`_inspire_owner`", "c.`_inspire_status`", "c.`_inspire_choice`"]
-                                                               + (["c.`_inspire_snooze`"] if context.get("snoozed") else [])
                                                                if context["actions"] else [])
     money = ["c.`_inspire_money`", "c.`_inspire_fx`"] if context.get("money") else []
-    windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else [])
+    windowed = (list(WINDOW_PICKED) + ["c.`_inspire_snooze`"] + (["c.`_inspire_held`"] if context.get("held") else [])
                 + (["c.`_inspire_ok`", "c.`_inspire_flag`"] if context.get("checked") else [])) if context.get("windowed") else []
     joined = " JOIN" if (context.get("floor") or {}).get("on") == "c" else " LEFT JOIN"
     return (f"{joined} c ON {_current_on(context, alias)}",
@@ -4618,7 +4696,8 @@ def _floored(floor: dict, alias: str) -> str:
 
 
 def _window_extra(context: dict) -> list:
-    return list(WINDOW_EXTRA) + (["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else []) + (
+    return list(WINDOW_EXTRA) + ([SNOOZE_EXTRA] if context.get("windowed") else []) + (
+        ["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else []) + (
         [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`", "CAST(`data_quality_flag` AS STRING) AS `_inspire_flag`"]
         if context.get("checked") else [])
 
@@ -4678,9 +4757,16 @@ def list_queries(page: dict, values: dict, request: dict, context: dict, editor:
     if context.get("closes_inline") is not None:
         ctes.update(inline_closes_ctes(context))
         late, joined = late + [f"cz.`{name}`" for name in INLINE_CLOSE_COLUMNS], f"{joined} LEFT JOIN cz ON cz.`{INLINE_CLOSE_KEY}` = {shown}.`_inspire_key`"
+    if context.get("snoozed") and context["actions"] and not context.get("windowed"):
+        # Wake now needs the snooze date on every page row. It is read for the page rows only (the same way the change decorations are),
+        # never added to the full-list current CTE, and a windowed list already picks it from c above.
+        ctes["sn"] = (f"SELECT DISTINCT u.`record_key` AS `_inspire_sk`, CAST(u.`{SNOOZE_COLUMN}` AS DATE) AS `_inspire_snooze` "
+                      f"FROM {context.get('current') or context['table']} AS u JOIN {shown} AS p ON p.`_inspire_key` = u.`record_key` "
+                      "WHERE u.`is_current` AND u.`change_source` <> 'delete'")
+        joined, late = f"{joined} LEFT JOIN sn AS sn ON sn.`_inspire_sk` = {shown}.`_inspire_key`", late + ["sn.`_inspire_snooze`"]
     outer = f"SELECT {', '.join([f'{shown}.*'] + late)} FROM {shown}{joined}"
     counting = dict(ctes, f=plan["plain"]) if plan["plain"] else ctes
-    out = {"rows": (f"{_with(ctes, ['d', 'c', 'r', 'n', 'l0', 'o0', 'p0', 'f', 'w', 's', 'k', 'l', 'o', 'p', 'cz'])} {outer} ORDER BY {order}",
+    out = {"rows": (f"{_with(ctes, ['d', 'c', 'r', 'n', 'l0', 'o0', 'p0', 'f', 'w', 's', 'k', 'l', 'o', 'p', 'cz', 'sn'])} {outer} ORDER BY {order}",
                     params.items),
            "total": (f"{_with(counting, counted)} {capped_count('f')}", counted_params)}
     if request.get("treatments") and context.get("treatments"):
@@ -4794,8 +4880,6 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
         conditions.append(f"l.`_inspire_ch` IN ({wanted})" if logged_changes(context)
                           else f"(l.`_inspire_lk` IS NOT NULL AND (o.`_inspire_ok` IS NULL OR {_moved(context)}))")
         early |= {"c", "h"}
-    if context.get("snoozed") and context["actions"]:
-        early.add("c")
     filtering = set(early)
     if request["sort"] in ACTION_SORTS or money_sort:
         early.add("c")
@@ -4924,8 +5008,8 @@ def state_facts(row, result_table: str = "") -> dict:
         facts = None
     if not facts_ready(facts) or str(facts.get("latest")) != str((row or {}).get("run_id")):
         return None
-    base = ".".join(p.strip() for p in str(result_table or "").split(".")).lower()
-    owned = {key: base + suffix for key, suffix in (("log", shell_facts.RUN_LOG_SUFFIX), ("acted", shell_facts.ACTED_SUFFIX),
+    base = shell_facts.companion(result_table, "").lower()
+    owned = {key: shell_facts.companion(result_table, suffix).lower() for key, suffix in (("log", shell_facts.RUN_LOG_SUFFIX), ("acted", shell_facts.ACTED_SUFFIX),
                                                     ("closed", shell_facts.CLOSED_SUFFIX))}
     changes = str(facts.get("changes") or "").lower()
     if not base or (all(str(facts.get(k) or "").lower() == v for k, v in owned.items()) and changes in ("", base + shell_facts.CHANGES_SUFFIX)):
@@ -4955,7 +5039,7 @@ def summary_query(page: dict, limit: int = 1, run_ids=None, index: bool = False)
         conditions.append(f"CAST(`run_id` AS STRING) IN (SELECT explode(from_json({holder}, 'ARRAY<STRING>')))")
     picked = "CAST(`run_id` AS STRING) AS `run_id`, `updated_at`" if index else "*"
     scope = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-    return (f"SELECT {picked} FROM {table_name(str(page['result_table']).strip() + SUMMARY_SUFFIX)}{scope} "
+    return (f"SELECT {picked} FROM {table_name(shell_facts.companion(page['result_table'], SUMMARY_SUFFIX))}{scope} "
             f"ORDER BY `updated_at` DESC NULLS LAST LIMIT {int(limit)}", params.items)
 
 
@@ -5240,7 +5324,8 @@ def money_sql(model, alias: str = "", live: bool = False) -> str:
 def money_values_sql(model, result_table: str, use_case: str) -> str:
     if not model or not model.get("recomputes"):
         return ""
-    edits, summary = table_name(str(result_table).strip() + ASSUMPTIONS_SUFFIX), table_name(str(result_table).strip() + SUMMARY_SUFFIX)
+    edits, summary = (table_name(shell_facts.companion(result_table, ASSUMPTIONS_SUFFIX)),
+                      table_name(shell_facts.companion(result_table, SUMMARY_SUFFIX)))
     scope, cells, pairs = sql_text(use_case), [], []
     for i, a in enumerate(model["assumptions"]):
         name, path = sql_text(a["name"]), f"$[{model['_at'][a['name']]}]"
@@ -5278,7 +5363,7 @@ ALERT_THRESHOLD_SETTING = "alert_threshold"
 
 
 def setting_value_sql(result_table: str, use_case_id: str, name: str) -> str:
-    return (f"(SELECT CAST(a.`value` AS DOUBLE) FROM {table_name(str(result_table).strip() + ASSUMPTIONS_SUFFIX)} AS a WHERE "
+    return (f"(SELECT CAST(a.`value` AS DOUBLE) FROM {table_name(shell_facts.companion(result_table, ASSUMPTIONS_SUFFIX))} AS a WHERE "
             f"a.`use_case_id` = {sql_text(use_case_id)} AND a.`name` = {sql_text(name)} ORDER BY {assumption_order('a')} LIMIT 1)")
 
 
@@ -5293,7 +5378,7 @@ def assumption_order(alias: str = "") -> str:
 
 
 def sibling_table(page: dict, suffix: str) -> str:
-    return table_name(str(page["result_table"]).strip() + suffix)
+    return table_name(shell_facts.companion(page["result_table"], suffix))
 
 
 def assumptions_table(page: dict) -> str:
@@ -5518,6 +5603,25 @@ def plan_performance(plan: dict, version, rows, label: str = None) -> dict:
             "lines": lines[:PLAN_CAPS["shown_lines"]], "counted": len(lines), "on_plan": on, "off_plan": off, "unknown": unknown,
             "value_planned": planned_value if has_value else None, "value_realized": realized if has_value else None, "has_value": has_value,
             "truncated": len(rows or []) >= PLAN_CAPS["lines"]}
+
+
+FORECAST_PLAN = {"recommended": "forecast", "current": "actual"}
+FORECAST_PLAN_EMPTY = "Actuals arrive after the first cycle, so there is nothing to compare with the forecast yet."
+
+
+def forecast_actuals_query(page: dict) -> tuple:
+    return (f"SELECT s.`series_id`, s.`period`, s.`forecast`, s.`actual` FROM {sibling_table(page, '__series')} AS s "
+            f"WHERE NOT COALESCE(s.`is_future`, false) AND s.`actual` IS NOT NULL AND s.`forecast` IS NOT NULL "
+            f"ORDER BY s.`period` DESC, s.`series_id` LIMIT {PLAN_CAPS['series']}", [])
+
+
+def forecast_plan(rows) -> dict:
+    """Plan vs actuals for a forecast App: each past period's forecast is the plan line, its actual is the actual."""
+    lines = [dict(row, record_key=f"{row.get('series_id')}|{row.get('period')}", line_label=f"{row.get('series_id')} for {row.get('period')}")
+             for row in rows or [] if row.get("series_id") is not None]
+    version = {"plan_id": None, "label": "Model forecast", "status": "Model", "lines": {}} if lines else None
+    out = plan_performance(FORECAST_PLAN, version, lines, "line_label")
+    return dict(out, forecast=True, empty="" if lines else FORECAST_PLAN_EMPTY, missing="")
 
 
 def series_text(column: str, alias: str = "s") -> str:
@@ -5941,7 +6045,7 @@ def overview_query(page: dict, values: dict, picked: dict, context: dict, fields
     priced = money_columns(model) or [f"{money_sql(None)} AS `_inspire_money`", "CAST(NULL AS STRING) AS `_inspire_fx`"]
     checked = "data_quality_flag" in names
     extra = (priced if money else []) + (
-        list(WINDOW_EXTRA) if window else ["CAST(`action_due` AS DATE) AS `_inspire_due`"]) + (
+        (list(WINDOW_EXTRA) + [SNOOZE_EXTRA]) if window else ["CAST(`action_due` AS DATE) AS `_inspire_due`"]) + (
         ["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if held else []) + (
         [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`"] if checked else [])
     on = (floor or {}).get("on")
@@ -6342,7 +6446,7 @@ def scope_line_sql(table: str, use_case: str = "") -> str:
     scope = f" WHERE `use_case_id` = {sql_text(use_case)}" if use_case else ""
     covered = _covered_sql("l.`segments`")
     return (f"COALESCE((SELECT CASE WHEN {covered} = '' THEN '' ELSE concat({sql_text(SCOPE_SENTENCE.lstrip())}, {covered}, '.') END FROM "
-            f"(SELECT CAST(`run_segments` AS STRING) AS `segments` FROM {table_name(str(table).strip() + SUMMARY_SUFFIX)}{scope} ORDER BY "
+            f"(SELECT CAST(`run_segments` AS STRING) AS `segments` FROM {table_name(shell_facts.companion(table, SUMMARY_SUFFIX))}{scope} ORDER BY "
             f"`updated_at` DESC NULLS LAST LIMIT 1) AS l), '')")
 
 
@@ -7120,12 +7224,19 @@ def choice_sql(choices, names, alias: str = "") -> str:
     return parts[0] if len(parts) == 1 else f"COALESCE({', '.join(parts)})"
 
 
+def companion_required_suffixes(ident: str) -> set:
+    """The companion suffixes a layout's table sections read, which the App fit check requires of the page (REQ-264). They are declared
+    in the kinds registry (required_companions) so the notebook reads the same list. The notebook leaves the layout as its decision list
+    when one of these companions is not written yet, because no page could pass the check."""
+    return set((layouts().get(ident) or {}).get("required_companions") or [])
+
+
 def part_table_problems(page: dict, section: str) -> list:
     tables = [t for t in section_items(page, section) if t in (page.get("tables") or [])]
     if not tables:
         return [f"the {section} section of a {page_layout(page)} page needs a table: {section_words(section)}"]
     sqls = {d.get("name"): d.get("sql") for d in page.get("datasets") or [] if isinstance(d, dict)}
-    companion = f"{page.get('result_table') or ''}{(SECTIONS.get(section) or {}).get('suffix') or ''}"
+    companion = shell_facts.companion(page.get("result_table"), (SECTIONS.get(section) or {}).get("suffix") or "")
     problems = []
     for table in tables:
         shown = {str((c or {}).get("column") or "") for c in table.get("columns") or []}

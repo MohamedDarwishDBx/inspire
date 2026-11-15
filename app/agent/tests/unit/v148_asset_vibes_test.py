@@ -261,8 +261,8 @@ def test_every_built_output_and_part_gets_its_own_record_and_only_a_missed_ask_w
     chart = status_of["dashboard:by_region"]
     assert chart["vibes_checks"] == [
         {"ask": "Make it a horizontal bar chart", "status": "missing",
-         "evidence": "the built Customers by region bar chart on the dashboard chart by_region has no horizontal_bar chart; its charts are "
-                     "bar (by_region)",
+         "evidence": "the built Customers by region bar chart on the dashboard chart Customers by region has no horizontal_bar chart; its charts are "
+                     "bar chart Customers by region",
          "checks": [{"name": "chart_type: horizontal bar", "passed": False}]},
         {"ask": "Keep the biggest regions first", "status": "done", "evidence": "sort: value_desc by value",
          "checks": [{"name": "sort: value", "passed": True}]}]
@@ -275,8 +275,8 @@ def test_every_built_output_and_part_gets_its_own_record_and_only_a_missed_ask_w
     assert (status_of["dashboard"]["state"], status_of["app"]["state"]) == ("ready", "ready"), "a part's miss never flags its parent"
     assert status_of["dashboard"]["title"] == "N01-U01 Predict churn" and status_of["app"]["title"] == "churn-desk"
     assert ("Dashboard (widget by_region): Make it a horizontal bar chart: the built Customers by region bar chart on the dashboard chart "
-            "by_region has no horizontal_bar chart") in inst.updates[-1]["status_message"] or any(
-        "by_region has no horizontal_bar chart" in str(e.get("evidence")) for e in status_of["checklist"]), \
+            "Customers by region has no horizontal_bar chart") in inst.updates[-1]["status_message"] or any(
+        "Customers by region has no horizontal_bar chart" in str(e.get("evidence")) for e in status_of["checklist"]), \
         "the unmet ask is listed in the checklist and the published sentence, with its output and widget"
     assert [k for k, _p in seen] == ["split", "split", "judge"]
     whole, previous = _locked(agent_ns)
@@ -330,12 +330,14 @@ def test_a_failed_build_says_why_for_each_ask_and_fails_only_its_own_part(agent_
 
     inst._implement_app = denied
     _llm(inst)
-    assert _run(inst, _vibed(previous, ["app:page:n01_u01"], **{"app:page:n01_u01_vibes": PAGE_VIBES})) == "ready_with_warnings"
+    assert _run(inst, _vibed(previous, ["app:page:n01_u01"], **{"app:page:n01_u01_vibes": PAGE_VIBES})) == "failed", \
+        "the version is failed, not ready: its App is not published (REQ-252). The per-part records below are unchanged"
     final = inst.updates[-1]
-    assert "App not published: PERMISSION_DENIED: User does not have CAN MANAGE on app churn-desk" in final["status_message"]
+    # REQ-260: error codes stay out of the status line; the plain sentence names the App and the missing right.
+    assert "App not published: User does not have CAN MANAGE on app churn-desk" in final["status_message"]
     page = final["asset_status"]["app:page:n01_u01"]
     assert page["state"] == "failed" and [c["evidence"] for c in page["vibes_checks"]] == [
-        "the App page n01_u01 was not built: PERMISSION_DENIED: User does not have CAN MANAGE on app churn-desk"] * 2
+        "the App page n01_u01 was not built: User does not have CAN MANAGE on app churn-desk"] * 2
     assert final["asset_status"]["dashboard:by_region"] == PARTS["dashboard:by_region"], "another output's part is left as it was"
 
 
@@ -392,27 +394,39 @@ def test_the_split_keeps_every_ask_and_only_checks_it_can_trust(agent_ns):
 
 
 @pytest.mark.parametrize("asset,check,status,evidence", [
-    ("dashboard:by_region", {"kind": "chart_type", "value": "Bar chart"}, "done", "chart by_region: type bar"),
+    ("dashboard:by_region", {"kind": "chart_type", "value": "Bar chart"}, "done", "chart Customers by region: type bar"),
     ("dashboard:by_region", {"kind": "chart_type", "value": "horizontal bar"}, "missing",
-     "the built dashboard chart by_region has no horizontal_bar chart; its charts are bar (by_region)"),
+     "the built dashboard chart Customers by region has no horizontal_bar chart; its charts are bar chart Customers by region"),
     ("dashboard:by_region", {"kind": "sort", "value": "value", "direction": "desc"}, "done", "sort: value_desc"),
     ("dashboard:by_region", {"kind": "sort", "value": "region", "direction": "asc"}, "missing",
-     "the built dashboard chart by_region orders by sort value_desc by value, never by region"),
+     "the built dashboard chart Customers by region orders by sort value_desc by value, never by region"),
     ("app:page:n01_u01", {"kind": "filter", "value": "region"}, "done", "filter region:"),
     ("app:page:n01_u01", {"kind": "filter", "value": "channel"}, "missing",
-     "the built App page n01_u01 has no filter on channel; its filters are region"),
+     "the built App page Churn desk has no filter on channel; its filters are region"),
     ("app:page:n01_u01", {"kind": "column", "value": "value_at_stake"}, "done", "value_at_stake"),
-    ("app:page:n01_u01", {"kind": "column", "value": "margin"}, "missing", "the built App page n01_u01 names no column margin"),
+    ("app:page:n01_u01", {"kind": "column", "value": "margin"}, "missing", "the built App page Churn desk names no column margin"),
     ("app:page:n01_u01", {"kind": "page", "value": "churn desk"}, "done", "page n01_u01: Churn desk"),
     ("app:page:n01_u01", {"kind": "text", "value": "customers  AT risk"}, "done", "Where the customers at risk are"),
-    ("app:page:n01_u01", {"kind": "threshold", "value": 5000}, "missing", "the built App page n01_u01 uses no 5000"),
+    ("app:page:n01_u01", {"kind": "threshold", "value": 5000}, "missing", "the built App page Churn desk uses no 5000"),
     ("dashboard:records", {"kind": "sort", "value": "rank", "direction": "asc"}, "done", "rank: rank"),
 ])
 def test_a_checkable_ask_is_checked_against_exactly_what_was_built(agent_ns, asset, check, status, evidence):
     target, reason = agent_ns["implement_vibes_target"](asset, PAGE)
     assert reason == ""
-    found = agent_ns["implement_vibes_fact"](check, target, agent_ns["implement_asset_label"](asset), ("bar", "horizontal_bar", "line"))
+    found = agent_ns["implement_vibes_fact"](check, target, agent_ns["implement_asset_title_label"](asset, PAGE), ("bar", "horizontal_bar", "line"))
     assert found[0] == status and evidence in found[1], found
+
+
+def test_a_chart_listing_names_each_chart_by_its_title_and_never_by_its_id(agent_ns):
+    # REQ-237 / D-NAMES: person copy names a chart by its title. The internal id must not appear in the evidence (must-exclude).
+    target, reason = agent_ns["implement_vibes_target"]("dashboard:by_region", PAGE)
+    assert reason == ""
+    label = agent_ns["implement_asset_title_label"]("dashboard:by_region", PAGE)
+    assert label == "dashboard chart Customers by region", label
+    status, text = agent_ns["implement_vibes_fact"]({"kind": "chart_type", "value": "horizontal bar"}, target, label, ("bar", "horizontal_bar", "line"))
+    assert status == "missing"
+    assert text == "the built dashboard chart Customers by region has no horizontal_bar chart; its charts are bar chart Customers by region", text
+    assert "by_region" not in text
 
 
 def test_an_ask_for_a_part_this_build_does_not_have_says_exactly_why(agent_ns):

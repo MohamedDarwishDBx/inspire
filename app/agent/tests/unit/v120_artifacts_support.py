@@ -104,12 +104,35 @@ class FakeWriter:
         spark.writes.append(record)
 
 
+# The REQ-249 repr guard runs one SQL shape over a frame: max(CAST(`col` RLIKE 'pattern' AS INT)) AS cN.
+REPR_GUARD_EXPR = re.compile(r"^max\(CAST\(`(?P<col>[^`]+)` RLIKE '(?P<lit>(?:[^'\\]|\\.)*)' AS INT\)\) AS c(?P<i>\d+)$")
+
+
 class FakeDataFrame:
-    def __init__(self, spark, rows=None, source=None):
+    def __init__(self, spark, rows=None, source=None, columns=None):
         self.spark = spark
         self.rows = list(rows or [])
         self.source = source
         self.added_columns = []
+        self.columns = list(columns or [])
+
+    @property
+    def schema(self):
+        """The declared columns of a frame made by createDataFrame, as typed string columns (the summary and companion guards read it)."""
+        return types.SimpleNamespace(fields=[types.SimpleNamespace(name=n, dataType=types.SimpleNamespace(typeName=lambda: "string"))
+                                             for n in self.columns])
+
+    def selectExpr(self, *exprs):
+        """Evaluates the REQ-249 repr guard over the tuple rows: max() of the RLIKE hits, NULL when no row holds the column."""
+        values = []
+        for expr in exprs:
+            match = REPR_GUARD_EXPR.match(expr)
+            assert match, f"the guard emitted an unexpected expression: {expr}"
+            index = self.columns.index(match.group("col"))
+            pattern = re.sub(r"\\(.)", r"\1", match.group("lit"))
+            hits = [int(bool(re.search(pattern, str(row[index])))) for row in self.rows if row[index] is not None]
+            values.append(max(hits) if hits else None)
+        return types.SimpleNamespace(first=lambda: tuple(values))
 
     def withColumn(self, name, value):
         self.added_columns.append(name)
@@ -154,7 +177,14 @@ class FakeSpark:
     def createDataFrame(self, rows, schema=None):
         rows = list(rows)
         self.created.append((rows, schema))
-        return FakeDataFrame(self, rows=rows)
+        if isinstance(schema, str):
+            names = [part.split()[0] for part in schema.split(",")]
+        elif schema is None:
+            names = []
+        else:
+            # A pyspark StructType (the product passes one) exposes its columns as `.fields`; Spark iterates none of it.
+            names = [field.name for field in schema.fields]
+        return FakeDataFrame(self, rows=rows, columns=names)
 
 
 class FakeDimension:

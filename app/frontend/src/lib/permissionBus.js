@@ -3,8 +3,36 @@
 // A grant list (its GRANT statements, sorted) opens the dialog once per session: a re-check, a poll or a reload that returns the same grants
 // merges into the open dialog or stays closed. A new grant opens it. An explicit action (explicit: true) always opens.
 // Every GRANT statement the dialog has shown this session: a raise opens the dialog only for a statement it has not shown yet.
-const shown = new Set();
+// The memory lives in sessionStorage when the browser has it, so a reload or a new page load in the same tab does not reopen a list the
+// person already saw. Without storage (tests, private modes that refuse it) it falls back to this module's memory.
+const SHOWN_KEY = 'inspire.permissionStatementsShown';
+const memory = new Set();
 let pending = null;
+
+function storageOrNull() {
+  try { return globalThis.sessionStorage || null; } catch { return null; }
+}
+
+function isShown(statement) {
+  if (memory.has(statement)) return true;
+  const storage = storageOrNull();
+  if (!storage) return false;
+  try {
+    const saved = JSON.parse(storage.getItem(SHOWN_KEY) || '[]');
+    return Array.isArray(saved) && saved.includes(statement);
+  } catch { return false; }
+}
+
+function markShown(statements) {
+  statements.forEach((s) => memory.add(s));
+  const storage = storageOrNull();
+  if (!storage) return;
+  try {
+    const saved = new Set(JSON.parse(storage.getItem(SHOWN_KEY) || '[]'));
+    statements.forEach((s) => saved.add(s));
+    storage.setItem(SHOWN_KEY, JSON.stringify([...saved]));
+  } catch { /* storage refused: the in-module memory still holds */ }
+}
 
 // The identity of a grant list is its content, so the same grants in another order, or as a new object, are the same list.
 export function grantListKey(permissions) {
@@ -31,11 +59,22 @@ export function subscribePermissions(fn) {
   return () => { if (activeHost === fn) activeHost = null; };
 }
 
+// REQ-239: an optional entry with no GRANT statement is still a grant. It is keyed by its identity (its id, or principal + securable +
+// privilege + why), so the once-per-list memory remembers it the same way it remembers a statement.
+function entryKey(p) {
+  if (p?.id != null && p.id !== '') return `entry:id:${p.id}`;
+  return `entry:${JSON.stringify([p?.principal ?? '', p?.securable ?? '', p?.privilege ?? '', p?.why ?? ''])}`;
+}
+
+function grantKeys(permissions) {
+  return permissions.flatMap((p) => (p?.statements?.length ? p.statements : [entryKey(p)]));
+}
+
 export function raisePermissions(permissions, extra = {}, { explicit = false } = {}) {
   if (!Array.isArray(permissions) || !permissions.length) return;
-  const statements = permissions.flatMap((p) => p?.statements || []);
-  const seen = statements.length > 0 && statements.every((s) => shown.has(s));
-  statements.forEach((s) => shown.add(s));
+  const keys = grantKeys(permissions);
+  const seen = keys.length > 0 && keys.every(isShown);
+  markShown(keys);
   if (seen && !explicit) {
     // The same grants again: never reopen. An open dialog for them takes this raise's extras (Try again, Start) through a quiet notice.
     if (activeHost) activeHost(permissions, extra, { quiet: true });
