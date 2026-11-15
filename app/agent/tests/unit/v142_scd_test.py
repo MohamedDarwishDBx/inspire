@@ -371,6 +371,10 @@ class _Frame:
 
         self.write = _Writer()
 
+    def selectExpr(self, *exprs):
+        # The REQ-249 guard's max(...) over a frame that holds no rows: Spark returns NULL for each, so no column is flagged.
+        return types.SimpleNamespace(first=lambda: tuple(None for _ in exprs))
+
     def withColumn(self, name, value):
         self.cast.append((name, value))
         return self
