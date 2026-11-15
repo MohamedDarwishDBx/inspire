@@ -180,3 +180,51 @@ def test_the_call_site_writes_both_proof_lines_through_the_logger_not_the_consol
         source = "".join(json.load(handle)["cells"][1]["source"])
     assert "log_name_fix_lines(self.logger, label_stats, DATA_FILTER_LABEL[\"text\"], name_length_stats)" in source
     assert 'log_print(f"[NAME-LENGTH]' not in source, "log_print is console-only, so the NAME-LENGTH line must not use it"
+
+
+def _story(agent_ns):
+    return object.__new__(agent_ns["DatabricksInspire"])
+
+
+def test_the_no_label_name_length_reask_is_named_for_what_it_does_not_for_the_label(agent_ns):
+    story = _story(agent_ns)
+    stage, title, _ = story._story_prompt_labels("DATA_FILTER_LABEL_RENAME_PROMPT", agent_ns["NAME_LENGTH_REASK_STEP"], "started", "")
+    assert (stage, title) == ("Use Case Prioritization", "Shortening long use case names"), (
+        "with no label the re-ask shortens long names, so the App step says so")
+    stage, title, _ = story._story_prompt_labels("DATA_FILTER_LABEL_RENAME_PROMPT", "DataFilterLabel_Reask", "started", "")
+    assert title == "Tidying Data Filter Labels", "the label re-ask keeps its own title"
+
+
+def test_the_no_label_reask_passes_its_own_step_name_to_the_worker(scoped):
+    stub = _Stub(answers=[json.dumps([{"Ref": "0", "Name": "Predict Subscriber Churn Risk"},
+                                      {"Ref": "1", "Name": "Forecast Monthly Distribution Demand"}])])
+    scoped["reask_data_filter_names"](stub, [dict(uc) for uc in LONG], "", step_name=scoped["NAME_LENGTH_REASK_STEP"])
+    assert stub.calls[0]["step_name"] == scoped["NAME_LENGTH_REASK_STEP"] == "NameLength_Reask"
+
+
+def test_a_failed_no_label_name_length_reask_records_could_not_rename_in_the_app_step_message(agent_ns):
+    assert agent_ns["name_length_step_message"]({"long": 2, "reasked": 0, "shortened": 2, "kept_user_named": 0}) == \
+        "could not rename 2, kept as written"
+    assert agent_ns["name_length_step_message"]({"long": 2, "reasked": 1, "shortened": 1, "kept_user_named": 0}) == \
+        "could not rename 1, kept as written"
+    assert agent_ns["name_length_step_message"]({"long": 2, "reasked": 2, "shortened": 0, "kept_user_named": 0}) == "", (
+        "every long name renamed: no App row")
+
+
+def test_the_app_row_for_that_failure_carries_the_shortening_step_title(agent_ns):
+    story = _story(agent_ns)
+    message = agent_ns["name_length_step_message"]({"long": 2, "reasked": 0, "shortened": 2, "kept_user_named": 0})
+    labels = story._story_pipeline_labels(stage_name="Use Case Prioritization", step_name=agent_ns["NAME_LENGTH_STEP_TITLE"],
+                                          sub_step_name="Complete", status="ended_warning", message=message)
+    assert "shortening long use case names" in " ".join(str(part) for part in labels).lower(), labels
+    assert "could not rename" in " ".join(str(part) for part in labels).lower() or "caution" in " ".join(str(part) for part in labels).lower(), labels
+
+
+def test_the_call_site_emits_that_row_and_passes_the_name_length_step(agent_ns):
+    here = os.path.dirname(os.path.abspath(__file__))
+    notebook = os.path.join(os.path.dirname(os.path.dirname(here)), "agent", "dbx_inspire_ai_agent.ipynb")
+    with open(notebook, encoding="utf-8") as handle:
+        source = "".join(json.load(handle)["cells"][1]["source"])
+    assert "step_name=NAME_LENGTH_REASK_STEP))" in source
+    assert "_name_length_message = name_length_step_message(name_length_stats)" in source
+    assert 'step_name=NAME_LENGTH_STEP_TITLE,' in source and 'status="ended_warning", message=_name_length_message' in source
