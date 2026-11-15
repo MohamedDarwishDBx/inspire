@@ -498,7 +498,7 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
               <AskFirst word={WAKE_WORD} ask={WAKE_ASK} name={title} write="drawer:wake" data-wake
                 run={() => action.send({ snooze_until: null }, WOKE, 'drawer:wake')} />
             )}
-            {undoBatch && !work && !undoAsk && (
+            {undoBatch && !undoAsk && (
               <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{undoWordOf(meta, isClosed(current))}</button>
             )}
             {undoBatch && undoAsk && (
