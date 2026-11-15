@@ -424,6 +424,12 @@ export function groupingDefaultNote(profile) {
   return isMap(profile) && profile.recommended_by === 'use_case' ? GROUPING_NAMED_DEFAULT : '';
 }
 
+// REQ-293: a peer comparison's entity key is what each record compares, so it cannot also be the group.
+export function peerEntityText(profile) {
+  const [entity] = Array.isArray(profile?.peer_entity) ? profile.peer_entity.map(text).filter(Boolean) : [];
+  return entity ? `${entity} is what each record compares, so it cannot also be the group.` : '';
+}
+
 export function groupingReasonText(profile) {
   return isMap(profile) && profile.applies === true ? text(profile.reason) : '';
 }
