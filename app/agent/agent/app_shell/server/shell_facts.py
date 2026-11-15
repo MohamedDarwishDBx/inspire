@@ -1188,16 +1188,55 @@ def page_label(page: dict) -> str:
     return page_spot((page or {}).get("title"))
 
 
-def check_names(pages) -> dict:
-    # Person copy of a check problem: each App page by its title. Two pages that share a title (or a page with no title) keep the
-    # internal id, so no problem is attributed to the wrong page. The check itself keeps 'page <id>' keys for matching.
-    titles = [" ".join(str((p or {}).get("title") or "").split()) for p in pages or []]
-    return {str(p.get("id")): (page_spot(t) if t and titles.count(t) == 1 else f"page {p.get('id')}")
-            for p, t in zip(pages or [], titles)}
+ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
+
+
+def _ordinal(index: int) -> str:
+    return ORDINALS[index] if index < len(ORDINALS) else f"{index + 1}th"
+
+
+def _person_names(items, noun: str, untitled_phrase: str) -> dict:
+    # REQ-237: one naming rule for App pages and charts in person copy. A title names the item; a title that two items share, or
+    # no title at all, is told apart by position among its siblings ('the second Overview page'), never by its internal id.
+    titles = [" ".join(str((item or {}).get("title") or "").split()) for item in items]
+    untitled = [j for j, title in enumerate(titles) if not title]
+    names = {}
+    for index, (item, title) in enumerate(zip(items, titles)):
+        siblings = [j for j, other in enumerate(titles) if other == title]
+        if title and len(siblings) == 1:
+            spot = f"{noun} {title}"
+        elif title:
+            spot = f"the {_ordinal(siblings.index(index))} {title} {noun}"
+        elif len(untitled) == 1:
+            spot = untitled_phrase
+        else:
+            spot = f"the {_ordinal(untitled.index(index))} {noun}"
+        names[str(item.get("id"))] = spot
+    return names
+
+
+def page_names(pages) -> dict:
+    """Person name of each App page, keyed by its id (the check keeps the id for matching)."""
+    return _person_names(list(pages or []), "page", "the App page")
+
+
+def chart_names(page) -> dict:
+    """Person name of each chart on one App page, keyed by the chart id."""
+    return _person_names(list((page or {}).get("charts") or []), "chart", "one chart")
+
+
+def plain_chart_text(text, page) -> str:
+    for ident, spot in chart_names(page).items():
+        text = re.sub(rf"chart {re.escape(ident)}(?!\w)", lambda found, spot=spot: spot, text)
+    return text
 
 
 def plain_check_text(text, pages) -> str:
-    names = check_names(pages)
-    for ident, spot in names.items():
+    """Person copy of text that names App pages and their charts by id: each chart of a named page, then each page, by its name."""
+    pages = list(pages or [])
+    for page in pages:
+        if re.search(rf"page {re.escape(str(page.get('id')))}(?!\w)", text):
+            text = plain_chart_text(text, page)
+    for ident, spot in page_names(pages).items():
         text = re.sub(rf"page {re.escape(ident)}(?!\w)", lambda found, spot=spot: spot, text)
     return text
