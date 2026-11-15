@@ -97,8 +97,9 @@ test('when the person cannot view the job either, Run again names the job and th
   assert.doesNotMatch(again.text, /error_code|PERMISSION_DENIED|does not have/);
   const [grant] = again.data.permissions;
   assert.equal(grant.principal, ME);
-  assert.match(grant.instructions.join('\n'), /\/api\/2\.0\/permissions\/jobs\/5/);
-  assert.match(grant.instructions.join('\n'), /CAN_VIEW/);
+  // AUTO-4 (round 2): the job CLI line is a copyable step (Copy steps), so it is in `steps`, not in the plain `instructions` notes.
+  assert.match(grant.steps.join('\n'), /\/api\/2\.0\/permissions\/jobs\/5/);
+  assert.match(grant.steps.join('\n'), /CAN_VIEW/);
   assert.equal(creates().length, before, 'no job starts');
 
   S.state.launches = [];
@@ -106,7 +107,7 @@ test('when the person cannot view the job either, Run again names the job and th
   assert.equal(unnamed.status, 403, unnamed.text.slice(0, 300));
   assert.match(unnamed.data.error, /on the job of this run in Databricks\./);
   assert.doesNotMatch(unnamed.text, /error_code|PERMISSION_DENIED/);
-  assert.match(unnamed.data.permissions[0].instructions.join('\n'), /find the job of run/);
+  assert.match(unnamed.data.permissions[0].steps.join('\n'), /find the job of run/);
 });
 
 test('a Databricks answer other than a refusal on the read says so in plain words, without the API body (REQ-184)', async () => {
