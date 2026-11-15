@@ -2937,7 +2937,7 @@ class Shell:
         if counts is not None:
             line = {"text": shell_sql.scope_counts_text(counts["rows"])}
             for kpi in page.get("kpis") or []:
-                if kpi.get("format", "number") in shell_sql.SCOPE_COUNT_FORMATS and ("kpi", kpi["id"]) not in errors:
+                if shell_sql.kpi_counts_result_rows(page, kpi) and ("kpi", kpi["id"]) not in errors:
                     out["kpis"].setdefault(kpi["id"], {})["left_out"] = line
         out["zero_state"] = self.zero_state(page, ws, who, out["charts"], rows_checked(scoped[0]) if scoped else None) if out["charts"] else None
         return out

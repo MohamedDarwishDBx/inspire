@@ -2789,6 +2789,21 @@ def scope_counts_query(page: dict, names) -> tuple:
     return f"{text} LIMIT 1", params.items
 
 
+COUNTS_ROWS = re.compile(r"\s*COUNT\s*\(\s*(\*|(?:DISTINCT\s+)?`?[A-Za-z_][A-Za-z0-9_]*`?)\s*\)\s*", re.I)
+
+
+def kpi_counts_result_rows(page: dict, kpi: dict) -> bool:
+    """True when the KPI is a plain count of rows of the App's result table (COUNT(*), COUNT(col), COUNT(DISTINCT col)
+    over a dataset that reads that table). Any other count, or a sum, average or ratio, gets no scope line."""
+    if not page.get("result_table") or not COUNTS_ROWS.fullmatch(str(kpi.get("expression") or "")):
+        return False
+    try:
+        sql = _dataset(page, kpi["dataset"])
+    except KeyError:
+        return False
+    return table_name(page["result_table"]) in sql or page["result_table"] in sql
+
+
 def scope_counts_text(rows) -> str:
     row = (rows or [{}])[0]
     open_, held, closed, unchecked = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked"))
