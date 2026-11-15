@@ -7,7 +7,7 @@ import { METRIC_VIEW_REFUSAL } from '../lib/pickProblem';
 import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
 import TypeCheckBusyTryAgain from './TypeCheckBusyTryAgain';
 import {
-  SCOPE_OPS, columnKindOf, filterValuesOf, filteredTablesOf, isGroupRow, normalizeTableScope, pickedTableNames, scopeKeyOf,
+  SCOPE_OPS, columnKindOf, filterValuesOf, isGroupRow, labelAvailable, normalizeTableScope, pickedTableNames, scopeKeyOf,
   scopeOpOf, scopeProblems, tableBrowseQuery, tableScopeOf,
 } from '../lib/tableScope';
 
@@ -483,26 +483,27 @@ function ColumnGrid({ table, entry, meta, problems, onEntry, valuesOf, loadValue
 }
 
 function UseCaseLabel({ scopes, tables, label, onLabel }) {
-  const filtered = filteredTablesOf(scopes, tables);
+  const available = labelAvailable(scopes, tables);
   const prefill = groupLabelOf(filterValuesOf(scopes, tables));
   const shown = label.text == null ? prefill : label.text;
   return (
     <div data-use-case-label className="rounded-xl border border-border p-3 space-y-2">
       <label className="flex items-center gap-2 font-semibold text-text-primary">
-        <input type="checkbox" data-use-case-label-on checked={label.on} onChange={(e) => onLabel({ ...label, on: e.target.checked })} />
+        <input type="checkbox" data-use-case-label-on checked={label.on && available} disabled={!available}
+          onChange={(e) => onLabel({ ...label, on: e.target.checked })} />
         Use case labeling enhanced using filters
       </label>
-      <input dir="auto" type="text" aria-label="Use case label" data-use-case-label-text value={shown} disabled={!label.on}
-        placeholder={label.on ? 'Pick row groups, then the label fills in here' : 'Tick the box above to use a label'}
+      <input dir="auto" type="text" aria-label="Use case label" data-use-case-label-text value={shown} disabled={!label.on || !available}
+        placeholder={!available ? 'Add a row group to fill in the label' : label.on ? 'Pick row groups, then the label fills in here' : 'Tick the box above to use a label'}
         onChange={(e) => onLabel({ ...label, text: e.target.value })}
         className={`${FIELD} h-9 w-full disabled:opacity-50`} />
-      {label.text != null && label.on && (
+      {label.text != null && label.on && available && (
         <button type="button" className={BUTTON} onClick={() => onLabel({ ...label, text: null })}>Use the group values</button>
       )}
+      {!available && <p data-use-case-label-reason className="text-text-secondary">Add a row group above to label your use cases.</p>}
       <p className="text-text-tertiary">
         Inspire puts this label in the name of every use case that reads a filtered table, for example
         &quot;Improve Contoso customer experience using segmentation&quot;.
-        {label.on && !filtered.length && ' Pick row groups first: the label has nothing to name yet.'}
       </p>
     </div>
   );
@@ -593,7 +594,7 @@ export default function DataFilters({ scope, scopes, onScopes, label, onLabel, a
   };
   const tableProblems = tables.map(problemsOf);
   const problems = tableProblems.flat();
-  const labelProblem = label.on && filteredTablesOf(scopes, tables).length && !(label.text ?? groupLabelOf(filterValuesOf(scopes, tables))).trim()
+  const labelProblem = label.on && labelAvailable(scopes, tables) && !(label.text ?? groupLabelOf(filterValuesOf(scopes, tables))).trim()
     ? ['Use case labeling is ticked but the label is empty: type the label or untick the box.'] : [];
   const allProblems = [...problems, ...labelProblem];
   const allKey = allProblems.join('\n');
