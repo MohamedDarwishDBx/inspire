@@ -90,9 +90,28 @@ test('a non-grant reason is one plain sentence, shown without a Copy button when
     const dialog = await openDialog(page);
     assert.equal(await dialog.getByRole('button', { name: 'Copy' }).count(), 0, 'no Copy button: there is no GRANT to copy');
     assert.equal(await dialog.locator('[data-permission-statements=""]').count(), 0, 'no statement box');
-    const steps = await dialog.locator('[data-permission-steps=""]').innerText();
-    assert.equal(steps.trim(), REBUILD, 'the rebuild sentence shows once, as plain text');
+    const notes = await dialog.locator('[data-permission-notes=""]').innerText();
+    assert.equal(notes.trim(), REBUILD, 'the rebuild sentence shows once, as a plain note');
+    assert.equal(await dialog.getByRole('button', { name: 'Copy steps' }).count(), 0, 'a note has no Copy steps button');
     assert.doesNotMatch(await dialog.innerText(), new RegExp(COPY_LINE));
+  } finally {
+    await ui.close();
+  }
+});
+
+// AUTO-4: folder Share and CLI steps have their own Copy steps button; Copy stays for the GRANT statements only.
+test('Copy steps copies the folder Share step and CLI line, and Copy still copies only the GRANT statements', async () => {
+  const STEPS = ['In Workspace, open /Workspace/Users/pat/out > Share, add inspire-sp with Can Edit',
+    "databricks api patch /api/2.0/permissions/directories/<object_id> --json '{}'"];
+  const { ui, page } = await openLaunch([{ statements: GRANTS, principal: APP, steps: STEPS }]);
+  try {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });
+    const dialog = await openDialog(page);
+    await dialog.getByRole('button', { name: 'Copy steps' }).click();
+    await until(async () => (await page.evaluate(() => navigator.clipboard.readText())) === STEPS.join('\n'), 'Copy steps copies the steps');
+    await dialog.getByRole('button', { name: 'Copy', exact: true }).click();
+    await until(async () => (await page.evaluate(() => navigator.clipboard.readText())) === GRANTS.map((s) => `${s};`).join('\n'),
+      'Copy copies the GRANT statements only');
   } finally {
     await ui.close();
   }

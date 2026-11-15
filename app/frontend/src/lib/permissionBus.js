@@ -49,6 +49,11 @@ export function grantAsk(p) {
 
 // REQ-300: Copy carries only the GRANT statements, each ending with a semicolon, across every grantee. A reason or a non-grant step never
 // goes into the copy.
+// AUTO-4: the folder Share and CLI steps copy on their own (Copy steps), never with the GRANT statements.
+export function copyStepsText(permissions) {
+  return (permissions || []).flatMap((p) => p?.steps || []).join('\n');
+}
+
 export function copyText(permissions) {
   return (permissions || []).flatMap((p) => (p?.statements || []).map((s) => (String(s).endsWith(';') ? s : `${s};`))).join('\n');
 }

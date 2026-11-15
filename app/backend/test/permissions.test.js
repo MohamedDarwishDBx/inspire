@@ -6,7 +6,7 @@ const APP = '11111111-2222-3333-4444-555555555555';
 
 test('a permission carries its statements once, its principal and its reason, and an empty list is no permission', () => {
   const p = PM.permissionRequired({ statements: ['GRANT SELECT ON TABLE `a`.`b`.`c` TO `x`', ' GRANT SELECT ON TABLE `a`.`b`.`c` TO `x` ', ''], principal: 'the App', why: 'Discover reads it' });
-  assert.deepEqual(p, { statements: ['GRANT SELECT ON TABLE `a`.`b`.`c` TO `x`'], instructions: [], principal: 'the App', why: 'Discover reads it' });
+  assert.deepEqual(p, { statements: ['GRANT SELECT ON TABLE `a`.`b`.`c` TO `x`'], instructions: [], steps: [], principal: 'the App', why: 'Discover reads it' });
   assert.equal(PM.permissionRequired({ statements: [], principal: 'x' }), null);
   assert.equal(PM.permissionRequired({}), null);
 });
@@ -102,11 +102,12 @@ test('the publish check names the MANAGE grant for each gap as statements, with 
   assert.equal(p.principal, 'inspire-sp');
 });
 
-test('a workspace folder the App cannot write to is shown as copyable instructions, not SQL, with the Share step and the CLI line', () => {
+test('a workspace folder the App cannot write to is shown as copyable steps, not SQL, with the Share step and the CLI line', () => {
   const p = PM.folderPermission('/Workspace/Users/pat@example.com/inspire_output', 'inspire-sp');
   assert.deepEqual(p.statements, []);
-  assert.equal(p.instructions[0], 'In Workspace, open /Workspace/Users/pat@example.com/inspire_output > Share, add inspire-sp with Can Edit');
-  assert.ok(p.instructions.some((line) => line.startsWith('databricks api patch /api/2.0/permissions/directories/')), JSON.stringify(p.instructions));
+  assert.deepEqual(p.instructions, [], 'the steps are copied with Copy steps, not shown as plain notes');
+  assert.equal(p.steps[0], 'In Workspace, open /Workspace/Users/pat@example.com/inspire_output > Share, add inspire-sp with Can Edit');
+  assert.ok(p.steps.some((line) => line.startsWith('databricks api patch /api/2.0/permissions/directories/')), JSON.stringify(p.steps));
   assert.equal(p.principal, 'inspire-sp');
   assert.equal(PM.folderPermission('', 'inspire-sp'), null);
 });
