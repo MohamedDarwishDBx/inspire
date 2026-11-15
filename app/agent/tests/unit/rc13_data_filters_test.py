@@ -201,7 +201,8 @@ def test_the_rename_prompt_is_a_registered_template_with_the_label_and_the_names
 
     template = agent_ns["PROMPT_TEMPLATES"]["DATA_FILTER_LABEL_RENAME_PROMPT"]
     fields = {name for _, name, _, _ in string.Formatter().parse(template) if name}
-    assert fields == {"label_intro", "label_rule", "names_json"}, "the label prompt states the filters and the label rule (REQ-175)"
+    assert fields == {"label_intro", "label_rule", "strategy_name_rule", "names_json"}, (
+        "the label prompt states the filters and the label rule (REQ-175), and the customer strategy names rule (REQ-299)")
     assert "USER DIRECTIVES ARE THE SUPREME AUTHORITY" not in template, "the loader adds the preamble, so the template never embeds it"
     sent = agent_ns["with_user_directive_preamble"](template)
     assert sent.count("USER DIRECTIVES ARE THE SUPREME AUTHORITY") == 1, "every prompt carries the user-vibes preamble once"
