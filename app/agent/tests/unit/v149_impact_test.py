@@ -155,7 +155,7 @@ def test_the_impact_route_keeps_estimated_reported_and_measured_apart(tmp_path):
         "estimated counts open flagged records only: never a fixed, dismissed, held back, deleted or Monitor one"
     assert out["reported"] == {"n": 1, "n_since": 1, "money": 900.0, "money_since": 900.0}
     assert out["measured"] == {"n": 2, "n_since": 2, "money": 1800.0, "money_since": 1800.0}, \
-        "measured is the money at stake when fixed less what a later run still finds: 1200 - 100 for f1 and 700 - 0 for f2, which left"
+        "measured is the value at stake when fixed less what a later run still finds: 1200 - 100 for f1 and 700 - 0 for f2, which left"
     assert out["closed"] == {"Done": {"n": 4, "n_since": 3}, "Dismissed": {"n": 3, "n_since": 2}, "Could not fix": {"n": 1, "n_since": 1}}
     assert out["outcomes"] == {"left": 1, "missing": 0, "resolved": 1, "flagged": 1, "unchecked": 1}
     assert out["reasons"] == [{"reason": "The store closed", "n": 2}, {"reason": "Known issue", "n": 1}], "reasons are trimmed and grouped"
@@ -336,10 +336,10 @@ def test_the_weekly_digest_reads_the_impact_of_the_last_seven_days_in_plain_rows
     rows = Workspace().run_sql("wh1", week, [])["rows"]
     assert all(r["send"] == 1 for r in rows)
     assert [(r["figure"], r["amount"]) for r in rows] == [
-        ("Money at stake now (estimated)", "1,550 USD"), ("Acted on this week", "1,250 USD"), ("Reported by people this week", "0 USD"),
+        ("Value at stake now (estimated)", "1,550 USD"), ("Acted on this week", "1,250 USD"), ("Reported by people this week", "0 USD"),
         ("Measured by later runs this week", "1,800 USD"), ("Closed this week", "4"), ("Recommendations people said were wrong", "38%"),
         ("Held back to measure impact", "43% vs 33%")]
-    assert rows[3]["how"] == ("Money at stake when fixed, less what a later run still finds, on 2 fixes a later run confirmed this week; "
+    assert rows[3]["how"] == ("Value at stake when fixed, less what a later run still finds, on 2 fixes a later run confirmed this week; "
                               "1,800 USD on 2 fixes so far")
     assert rows[4]["how"] == "2 fixed, 1 not an issue, 1 could not fix"
     plain = Workspace([dict(r, held_back=None, run_tier=None) for r in ROWS])
@@ -663,7 +663,7 @@ def _money_digest_sql(ns, tmp_path, ws):
 
 def _digest_estimated(ws, sql):
     rows = ws.run_sql("wh1", sql.replace("date_sub(current_date(), 7)", "CAST('2026-10-21' AS DATE)"), [])["rows"]
-    return next(r["amount"] for r in rows if r["figure"] == "Money at stake now (estimated)")
+    return next(r["amount"] for r in rows if r["figure"] == "Value at stake now (estimated)")
 
 
 def _impact_estimated(s):

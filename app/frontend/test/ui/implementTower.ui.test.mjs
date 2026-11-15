@@ -194,7 +194,7 @@ test('the build page has one tile per asset in a fixed order; each asset opens a
       assert.equal(await panel(page).locator('[data-vibe-card]').count(), 1, `${output}: one card at a time`);
     }
     assert.deepEqual(parts, {
-      notebook: ['Notebook, Ready', 'AI reasoning, Ready', 'Money at stake, Ready'],
+      notebook: ['Notebook, Ready', 'AI reasoning, Ready', 'Value at stake, Ready'],
       dashboard: ['The whole dashboard, Ready with warnings', 'Chart: Weekly trend, Ready with warnings'], genie_space: [], alert: [],
     }, 'a tab with one part shows its card with no picker, and the whole dashboard comes before its charts');
 

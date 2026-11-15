@@ -13,7 +13,7 @@ import shell_core  # noqa: E402
 import shell_sql  # noqa: E402
 from v141_app_shell_test import ShapedWorkspace  # noqa: E402
 
-MONEY = {"label": "Money at stake", "expression": "SUM(value)", "format": "currency", "currency": "USD"}
+MONEY = {"label": "Value at stake", "expression": "SUM(value)", "format": "currency", "currency": "USD"}
 RECORDS = {"label": "Records tested", "expression": "COUNT(*)", "format": "integer"}
 
 
@@ -61,7 +61,7 @@ def test_flat_money_whose_unfiltered_rule_finds_money_stays_strict(tmp_path):
     page, _m, records = _page(0.0, (3.0, 5.0))
     s, _ws = _shell(tmp_path, page, _shape(page, 7.0, records))
     flat = [p for p in s.check({}) if "ranks nothing" in p]
-    assert len(flat) == 3 and all("gives every group the same Money at stake (0)" in p for p in flat), flat
+    assert len(flat) == 3 and all("gives every group the same Value at stake (0)" in p for p in flat), flat
 
 
 def test_records_tested_alone_do_not_build_the_zero_state(tmp_path):

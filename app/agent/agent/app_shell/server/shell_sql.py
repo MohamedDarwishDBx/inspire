@@ -6191,7 +6191,8 @@ def stake_noun(impact) -> str:
 
 
 def stake_words(impact) -> str:
-    return f"{stake_noun(impact)} at stake"
+    money = isinstance(impact, dict) and impact.get("kind") == "money"
+    return f"{'value' if money else stake_noun(impact)} at stake"
 
 
 def stake_label(impact) -> str:

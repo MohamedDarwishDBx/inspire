@@ -550,7 +550,7 @@ test('full window, the Inspire menu switches use case, opens the page in a new t
   }
 });
 
-test('Run shows each MVP\'s last result: when it ran, what it flagged with the money at stake, why nothing is to act on, and that you own it', async () => {
+test('Run shows each MVP\'s last result: when it ran, what it flagged with the value at stake, why nothing is to act on, and that you own it', async () => {
   const history = [{ ...REGISTRY[1], spec_json: JSON.stringify({ use_case_name: 'Plan shifts', config: { result_table: 'main.inspire.n02_u01_s43_out' }, outputs: { app: true } }) }];
   const summary = { use_case_id: 'N02-U01', run_id: 'r-7', updated_at: '2026-11-03T06:00:00Z', currency: 'USD', decision_basis: 'measured', act_now_amount: '5000',
     review_amount: '1000', act_now_records: '3', review_records: '5', records: '40', value_at_stake: '42000', nothing_to_act: null, value_formula: null, value_assumptions: null, accepted: null };

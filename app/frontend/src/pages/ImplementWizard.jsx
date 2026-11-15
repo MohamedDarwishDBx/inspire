@@ -1998,7 +1998,7 @@ export default function ImplementWizard({
         {shows('stake') && (
           <section className="space-y-3" aria-label={MEASURE_LABEL}>
             <div>
-              <h3 className="text-sm font-semibold text-text-primary">Money at stake</h3>
+              <h3 className="text-sm font-semibold text-text-primary">Value at stake</h3>
               <p className="text-[11px] text-text-secondary">{`Each record is counted in the ${stakeWords(sampleStake)}. Optional: the default already counts it, so Next moves on. Open a section to change it.`}</p>
             </div>
             <ol aria-label="Money decisions" className="space-y-2">

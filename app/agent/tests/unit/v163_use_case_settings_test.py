@@ -166,7 +166,7 @@ def test_an_assumption_saved_outside_its_kind_is_not_applied(fresh_ns):
     printed = []
     applied = fresh_ns["inspire_apply_assumptions"](_saved(rows), TABLE, "N01-U01", fresh_ns, printed.append, run={})
     assert applied == {"WEEKS_LEFT": -3} and fresh_ns["KEEP_RATE"] == 0.5
-    assert printed[0] == ("Money at stake: the App holds a value for KEEP_RATE outside what the run accepts (KEEP_RATE is '1.4'; "
+    assert printed[0] == ("Value at stake: the App holds a value for KEEP_RATE outside what the run accepts (KEEP_RATE is '1.4'; "
                           "allowed: 0 to 1), so this run keeps 0.5")
 
 

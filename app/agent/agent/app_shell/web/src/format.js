@@ -98,7 +98,10 @@ export const stakeNoun = (unit, kind) => {
   return isMoney(label, kind) ? 'money' : label || kind;
 };
 
-export const stakeWords = (unit, kind) => `${stakeNoun(unit, kind)} at stake`;
+export const stakeWords = (unit, kind) => {
+  const noun = stakeNoun(unit, kind);
+  return `${noun === 'money' ? 'value' : noun} at stake`;
+};
 
 export function stakeName(unit, kind) {
   return cap(stakeWords(unit, kind));

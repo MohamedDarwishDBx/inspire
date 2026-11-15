@@ -260,7 +260,7 @@ def test_an_expression_without_an_assumption_checks_the_run_but_gives_the_app_no
     expression, _value = _notebook(agent_ns, "units * price", [])
     assert expression is not None, "the run still checks its money against the arithmetic"
     model = _shell("units * price", [])
-    assert model["recomputes"] is False and model["problem"] == "the money at stake formula of this use case names no assumption"
+    assert model["recomputes"] is False and model["problem"] == "the value at stake formula of this use case names no assumption"
 
 
 @pytest.mark.parametrize("value", [True, False, float("inf"), float("-inf"), float("nan"), 10 ** 400, "12", None])

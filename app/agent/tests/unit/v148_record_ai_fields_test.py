@@ -138,7 +138,7 @@ def test_the_money_formula_fills_in_each_record_s_numbers_and_is_null_without_mo
 
 
 @pytest.mark.parametrize("formula,constants,problem", [
-    (None, {}, "the notebook has no VALUE_AT_STAKE_FORMULA, so the App cannot show how each record's money at stake is worked out"),
+    (None, {}, "the notebook has no VALUE_AT_STAKE_FORMULA, so the App cannot show how each record's value at stake is worked out"),
     ("   ", {}, "the notebook has no VALUE_AT_STAKE_FORMULA"),
     ("{margin_lost_week:money} x {SEASON_WEEKS}", {}, "{SEASON_WEEKS} in VALUE_AT_STAKE_FORMULA is neither a numeric column"),
     ("{margin_lost_week:money} x {SEASON_WEEKS}", {"SEASON_WEEKS": "6"}, "{SEASON_WEEKS} in VALUE_AT_STAKE_FORMULA is neither"),
@@ -169,7 +169,7 @@ def test_the_run_writes_the_formula_itself_refuses_a_priced_row_it_cannot_show_a
     assert ("CASE WHEN s.`value_at_stake` IS NULL THEN NULL ELSE concat(concat(regexp_replace(format_number(CAST("
             "s.`margin_lost_week` AS DOUBLE), 2), '\\\\.?0+$', ''), ' USD'), ' margin lost a week x ', ") in create
     assert create.count("AS `value_at_stake_formula`") == 1 and "s.`value_at_stake_formula`" not in create
-    assert ("Money at stake: left out value_at_stake_formula from the run's rows: Inspire writes it from VALUE_AT_STAKE_FORMULA and "
+    assert ("Value at stake: left out value_at_stake_formula from the run's rows: Inspire writes it from VALUE_AT_STAKE_FORMULA and "
             "each row's numbers") in printed
     profile = [s for s in tables.spark.statements if s.startswith("SELECT COUNT(*) AS row_count")][0]
     assert "COUNT_IF(`value_at_stake` IS NOT NULL AND (`margin_lost_week` IS NULL)) AS unshown_stake" in profile
