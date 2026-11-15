@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const P = require('../lib/routePolicy');
 
-const DOCUMENTED_USER_SCOPES = ['ai-functions', 'ai-gateway', 'apps', 'files', 'genie', 'model-serving', 'postgres', 'sql', 'vector-search',
+// unity-catalog: the Request for Access API page names it ("API scopes: unity-catalog") (REQ-311).
+const DOCUMENTED_USER_SCOPES = ['ai-functions', 'ai-gateway', 'apps', 'files', 'genie', 'model-serving', 'postgres', 'sql', 'unity-catalog', 'vector-search',
   'sql:restricted-query', 'iam.access-control:read', 'iam.current-user:read',
   ...['catalog.catalogs', 'catalog.connections', 'catalog.schemas', 'catalog.tables', 'workspace.workspace'].flatMap((s) => [s, `${s}:read`])];
 const req = (query = {}, body = undefined) => ({ query, body });
