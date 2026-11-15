@@ -8,35 +8,46 @@ test.after(closeBrowser);
 
 const ROOT = new URL('../../../', import.meta.url);
 
-// REQ-143: the Genie progress drawer overlays the Build page. The page keeps its full width when the drawer opens.
-test('REQ-143 the Build progress drawer overlays the page: the use case pane keeps its width with the drawer open, at 1440x900 and 1920x1080', async () => {
+// REQ-143: the Build progress drawer pushes the page aside. It takes a column beside the use case pane, so the pane narrows
+// with the drawer open and nothing of the card is covered: every visible action button stays clickable at 1280, 1440 and 1920.
+test('REQ-143 the Build progress drawer pushes the page aside: the use case card stays clear of it and its buttons stay clickable at 1280x800, 1440x900 and 1920x1080', async () => {
   const ui = await openUi('implement', STUDIO_STATE);
   const { page } = ui;
   try {
     await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
-    for (const [width, height] of [[1440, 900], [1920, 1080]]) {
+    for (const [width, height] of [[1280, 800], [1440, 900], [1920, 1080]]) {
       await page.setViewportSize({ width, height });
       const card = page.locator('[data-progress-card]');
       const dialog = page.locator('[data-progress-dock] [data-progress-panel] [role="dialog"]');
-      if (width === 1440) assert.equal(await card.getAttribute('data-progress-open'), 'false', 'page load keeps the drawer closed');
+      if (width === 1280) assert.equal(await card.getAttribute('data-progress-open'), 'false', 'page load keeps the drawer closed');
       if (await card.getAttribute('data-progress-open') === 'false') await card.locator('[data-progress-show]').click();
       await dialog.waitFor();
       assert.equal(await card.getAttribute('data-progress-open'), 'true', `Show progress opens the drawer at ${width}px`);
-      const paddingEnd = await page.locator('[data-implement-page]').evaluate((el) => getComputedStyle(el).paddingRight);
-      assert.equal(paddingEnd, '24px', `the page does not reserve a column for the drawer at ${width}px (padding-right ${paddingEnd})`);
-      const openPane = await page.locator('[data-use-case-pane]').boundingBox();
       const dock = await page.locator('[data-progress-dock]').evaluate((el) => getComputedStyle(el).position);
-      assert.equal(dock, 'fixed', 'the drawer is fixed over the page');
+      assert.notEqual(dock, 'fixed', `the drawer takes a column in the page, it is not fixed over it (position ${dock})`);
+      const pane = await page.locator('[data-use-case-pane]').boundingBox();
       const box = await dialog.boundingBox();
-      assert.ok(openPane.x + openPane.width > box.x, `the drawer sits over the use case pane at ${width}px`);
+      assert.ok(pane.x + pane.width <= box.x + 1, `the use case pane ends before the drawer starts at ${width}px (pane ends ${Math.round(pane.x + pane.width)}, drawer starts ${Math.round(box.x)})`);
+      const buttons = page.locator('[data-use-case-pane] button:visible');
+      const covered = [];
+      for (let i = 0; i < await buttons.count(); i += 1) {
+        const button = buttons.nth(i);
+        await button.scrollIntoViewIfNeeded();
+        const r = await button.boundingBox();
+        const hit = await page.evaluate(([x, y]) => {
+          const el = document.elementFromPoint(x, y);
+          return el ? { tag: el.tagName, inButton: Boolean(el.closest('button')) } : null;
+        }, [r.x + r.width / 2, r.y + r.height / 2]);
+        covered.push({ label: (await button.textContent()).trim().slice(0, 40), clickable: Boolean(hit?.inButton) && r.x + r.width <= width + 1 });
+      }
+      assert.ok(covered.length > 0, 'the use case card has action buttons');
+      assert.deepEqual(covered.filter((b) => !b.clickable), [], `every action button on the card is visible and clickable at ${width}px`);
       await dialog.getByRole('button', { name: 'Close', exact: true }).click();
       await dialog.waitFor({ state: 'detached' });
-      const closedPane = await page.locator('[data-use-case-pane]').boundingBox();
-      assert.ok(Math.abs(openPane.width - closedPane.width) <= 1,
-        `the use case pane is as wide with the drawer open (${Math.round(openPane.width)}px) as closed (${Math.round(closedPane.width)}px) at ${width}px`);
       await page.locator('[data-progress-show]').click();
       await dialog.waitFor();
     }
+    assert.deepEqual(ui.pageErrors, []);
   } finally {
     await ui.close();
   }
