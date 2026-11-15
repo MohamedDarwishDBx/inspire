@@ -41,7 +41,7 @@ def test_a_preview_that_misses_a_companion_table_its_page_draws_is_sent_back_to_
     assert gate["problems"] == [f"run r-1 did not write the companion tables its page draws: {TABLE}__series {why}"]
     assert f"inspire_write_companion(frame, result_table, suffix, columns)" in gate["feedback"]
     assert f"{TABLE}__series: {', '.join(SERIES)}" in gate["feedback"]
-    assert gate["event"].startswith("the preview run did not write the companion tables its page draws, sent back to Genie")
+    assert gate["event"].startswith("the preview run did not write the supporting tables its page draws, sent back to Genie")
 
 
 def test_a_written_companion_table_and_a_decision_queue_use_case_raise_no_companion_gate(agent_ns):
