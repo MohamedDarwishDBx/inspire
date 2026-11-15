@@ -109,7 +109,7 @@ test('Uninstall all names what goes and what stays, asks for the use case id, an
     assert.equal(await confirm.isDisabled(), true);
     for (const dark of [false, true]) {
       await setDark(page, dark);
-      const result = await lowContrast(page, ['[aria-label="Uninstall everything N01-U01 built"]']);
+      const result = await lowContrast(page, ['[data-confirm-dialog]']);
       assert.ok(result.checked >= 5, `measured ${result.checked} elements`);
       assert.deepEqual(result.low, [], dark ? 'dark' : 'light');
     }
