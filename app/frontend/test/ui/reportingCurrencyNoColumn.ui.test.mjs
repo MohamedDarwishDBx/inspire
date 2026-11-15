@@ -43,3 +43,4 @@ test('REQ-103: with no currency column the Currency screen offers Convert, and t
     await ui.close();
   }
 });
+
