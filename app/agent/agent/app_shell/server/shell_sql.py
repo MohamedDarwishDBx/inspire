@@ -2947,6 +2947,24 @@ def money_off(page: dict) -> bool:
     return money.get("off") is True
 
 
+def money_label_problems(page: dict) -> list:
+    """The money rule names the value-at-stake card: a currency card that reads value_at_stake carries the money rule's words, never a
+    name a notebook invented (REQ-293)."""
+    problems = []
+    if not isinstance(page.get("money"), dict) or money_off(page):
+        return problems
+    sqls = _dataset_sql(page)
+    for kpi in page.get("kpis") or []:
+        if kpi.get("format") != "currency" or not kpi.get("dataset"):
+            continue
+        reads = f"{sqls.get(kpi['dataset'], '')} {kpi.get('expression') or ''}".lower()
+        label = " ".join(str(kpi.get("label") or "").split())
+        if "value_at_stake" in reads and "value at stake" not in label.lower():
+            problems.append(f"the {label or 'unnamed'} card reads value_at_stake, so its label must be the money rule's 'Value at stake', "
+                            f"not {label!r}")
+    return problems
+
+
 def money_page_problems(page: dict) -> list:
     """The money rule against the page's own datasets: a rate table needs a dated dataset, and the statuses and the
     losses rule must reach the dataset SQL, not be ignored."""
@@ -2965,7 +2983,7 @@ def money_page_problems(page: dict) -> list:
                 problems.append(f"the {name} dataset ignores the status {status!r}; its SQL must keep rows whose status is {status!r}")
         if money.get("rule", "losses") == "losses" and "greatest(" not in sql.lower():
             problems.append(f"the {name} dataset does not count losses only; its SQL must net each loss at zero, as GREATEST(-effect, 0)")
-    return problems
+    return problems + money_label_problems(page)
 
 
 def money_check_queries(page: dict) -> list:
