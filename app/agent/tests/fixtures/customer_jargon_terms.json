@@ -55,6 +55,18 @@
       "pattern": "<bound method |<function |<built-in |<class '|object at 0x|\\bdtype: \\w+|\\bName: \\S+,? dtype",
       "flags": "",
       "why": "a Python or pandas object dump such as '<bound method Series.prod of ... Name: 165, dtype: object>' (REQ-249): Genie's code formatted a method or a Series instead of its value"
+    },
+    {
+      "id": "error_code",
+      "pattern": "\\[[A-Z]+(?:_[A-Z]+)+\\]",
+      "flags": "",
+      "why": "REQ-260: a Databricks error code is never shown to a person"
+    },
+    {
+      "id": "grant_statement",
+      "pattern": "\\bGRANT\\s+(?:USE|CREATE|SELECT|MODIFY|MANAGE|READ|EXECUTE|ALL)\\b",
+      "flags": "",
+      "why": "REQ-260: a GRANT SQL command (upper case, as Databricks prints it) shows only inside the Permission Required dialog; prose 'grant' is not matched"
     }
   ],
   "run_output_files": [
