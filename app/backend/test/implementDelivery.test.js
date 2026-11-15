@@ -18,7 +18,7 @@ test('an output the build did not deliver is never shown as ready or delivered, 
   const C = await lib('implementControl.js');
   const latest = row('ready_with_warnings', missing());
   assert.deepEqual(W.undeliveredOutputs(latest), [{ output: 'genie_space', label: 'Genie Agent', reason: REASON }]);
-  assert.deepEqual(W.implementState(latest), { group: 'held', label: W.UNDELIVERED_LABEL, tone: 'warning', kind: 'mvp' });
+  assert.deepEqual(W.implementState(latest), { group: 'held', label: W.UNDELIVERED_LABEL, tone: 'warning', kind: 'mvp', hold: 'other' }); // REQ-295: hold kind added
   assert.deepEqual(C.deliveredOutputs(latest), ['dashboard']);
   const rows = C.controlRows({ targets: { genie_space: 'g1', dashboard: 'd1' }, assets: { genie_space: { ok: true }, dashboard: { ok: true } } }, latest);
   assert.equal(rows.find((r) => r.id === 'genie_space').url, '', 'no link to an agent that failed');
