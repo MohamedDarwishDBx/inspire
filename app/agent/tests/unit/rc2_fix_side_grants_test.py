@@ -80,7 +80,9 @@ def test_remove_still_grants_the_live_view_to_the_same_principals(agent_ns):
     spark = FakeSpark()
     context = {"uc_id": "N06-U01", "key": (1, "N06-U01", 7), "side": (), "reasons_view": REASONS, "permissions": [],
                "spec": {"outputs": {}}}
-    _obj(agent_ns, spark)._implement_app_audience_after_share(context, APP, {})
+    obj = _obj(agent_ns, spark)
+    obj._implement_publish_views(context, _scopes(), "app")  # the live views are published before the audience step (REQ-245)
+    obj._implement_app_audience_after_share(context, APP, {})
     assert _granted_to(spark.statements, LIVE) == {f"`{AMR}`", f"`{GROUP}`"}
     assert not [s for s in spark.statements if _mentions(s, VERSIONED)]
 
@@ -95,4 +97,5 @@ def test_keep_without_a_versioned_publish_in_this_build_grants_nothing_on_the_li
 def test_the_persisted_read_objects_of_a_side_app_name_its_versioned_views(agent_ns):
     obj = _obj(agent_ns, FakeSpark())
     assert obj._implement_app_read_views(_keep()) == [VERSIONED]
-    assert obj._implement_app_read_views({"side": (), "reasons_view": REASONS}) == [LIVE]
+    assert obj._implement_app_read_views({"side": (), "reasons_view": REASONS}) == [], "nothing published, so nothing to read"
+    assert obj._implement_app_read_views({"side": (), "reasons_view": REASONS, "published_views": {"app": [LIVE]}}) == [LIVE]
