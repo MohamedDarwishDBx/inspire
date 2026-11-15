@@ -44,7 +44,7 @@ def test_the_build_counts_the_chosen_column_values_inside_the_scope_and_names_th
 
     spark = FakeSpark(responder=answer)
     inst = build_inspire(agent_ns, spark=spark)
-    assert inst._implement_one_value_columns("N04-U01", TABLE, {}, ["product", "paymentMethod"]) == ["product"]
+    assert inst._implement_one_value_columns("N04-U01", TABLE, {}, ["product", "paymentMethod"]) == (["product"], [])
     assert any("sales_transactions" in statement for statement in spark.statements), spark.statements
 
 
