@@ -46,8 +46,18 @@ const PICKS = {
   },
   // Where it lives holds the App access and the App look now (REQ-002): one pick, both values in order.
   'Where it lives': {
-    pick: async (page) => [await pickOther(page, 'app-access'), await pickOther(page, 'app-style')],
-    read: async (page) => [...await checked(page, 'input[type="radio"][name="app-access"]'), ...await checked(page, 'input[type="radio"][name="app-style"]')],
+    pick: async (page) => {
+      await openFolded(page, 'Who sees which rows');
+      const access = await pickOther(page, 'app-access');
+      await openFolded(page, 'App look');
+      return [access, await pickOther(page, 'app-style')];
+    },
+    read: async (page) => {
+      await openFolded(page, 'Who sees which rows');
+      const access = await checked(page, 'input[type="radio"][name="app-access"]');
+      await openFolded(page, 'App look');
+      return [...access, ...await checked(page, 'input[type="radio"][name="app-style"]')];
+    },
   },
   'Review & build': {
     pick: async (page) => { await page.getByRole('region', { name: 'Vibes' }).locator('textarea').first().fill('keep the draft words'); return 'keep the draft words'; },

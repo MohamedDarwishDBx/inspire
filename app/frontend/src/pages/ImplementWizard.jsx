@@ -2130,7 +2130,8 @@ export default function ImplementWizard({
             onPage={(id, on) => setSpec((prev) => withAppPage(prev, id, on))} />
         )}
 
-        {shows('app_look') && (
+        {foldLine('app_look', 'App look', lookText({ ...APP_LOOK_DEFAULT, ...(spec.outputs.app_look || {}) }))}
+        {shows('app_look') && isOpenSection('app_look') && (
           <AppLookStep
             spec={spec}
             look={look}

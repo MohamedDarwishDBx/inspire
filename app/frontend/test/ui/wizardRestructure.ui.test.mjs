@@ -31,7 +31,7 @@ test('the step count reads the same total on every step for a fixed scope', asyn
     }
     const all = new Set(totals.map((t) => t.split(' of ')[1]));
     assert.equal(all.size, 1, `the total never changes: ${totals.join(' | ')}`);
-    assert.match(totals[0], /^Step 1 of 8$/, 'What to deliver is step 1 of 8 with the App on');
+    assert.match(totals[0], /^Step 1 of 6$/, 'What to deliver is step 1 of 6 with the App on: the App panels are one step (REQ-002)');
   } finally {
     await ui.close();
   }
@@ -74,6 +74,7 @@ test('What to deliver is the first step, Data and results is one page, and Where
     await snap(page, 'restructure-where');
 
     await goToStep(page, 'Who uses the App');
+    await openFolded(page, 'Who sees which rows');
     await page.getByRole('region', { name: 'App access' }).waitFor();
     await openFolded(page, 'What people can do');
     await page.getByRole('region', { name: 'App features' }).waitFor();
@@ -81,6 +82,7 @@ test('What to deliver is the first step, Data and results is one page, and Where
     await snap(page, 'restructure-who');
 
     await goToStep(page, 'App look');
+    await openFolded(page, 'App look');
     await page.getByRole('region', { name: 'App look' }).waitFor();
     await snap(page, 'restructure-look');
 

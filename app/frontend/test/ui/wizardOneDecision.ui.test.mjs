@@ -167,18 +167,19 @@ test('Next on Data and results does not wait for the own schema to be created: t
   }
 });
 
-test('App pages sit on Where it lives with the App placement, and App look is its own step that holds no pages', async () => {
+test('App pages sit on Where it lives with the App placement, and App look is a fold of Where it lives that holds no pages (REQ-002)', async () => {
   const ui = await openUi('wizard', ME);
   const { page } = ui;
   try {
     await goToStep(page, 'App pages');
     await openFolded(page, 'Pages');
     const labels = await stepLabels(page);
-    assert.ok(labels.includes('Where it lives') && !labels.includes('App look'), labels.join(' | '));
+    assert.ok(labels.includes('Where it lives') && !labels.includes('App look'), `App look is not a step of its own: ${labels.join(' | ')}`);
     assert.equal(labels.includes('App pages'), false, 'App pages is no step of its own (must-exclude)');
     await page.getByRole('region', { name: 'App pages' }).waitFor();
     assert.equal(await page.getByRole('tab', { name: 'Palette', exact: true }).count(), 0, 'the look is not on the pages step (must-exclude)');
     await goToStep(page, 'App look');
+    await openFolded(page, 'App look');
     await page.getByText('How should the App look?', { exact: true }).waitFor();
     assert.equal(await page.getByRole('region', { name: 'App pages' }).count(), 0, 'the pages are not on the look step (must-exclude)');
     assert.deepEqual(ui.pageErrors, []);
