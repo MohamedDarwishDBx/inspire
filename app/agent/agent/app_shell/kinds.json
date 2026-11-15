@@ -7279,9 +7279,10 @@
   "K": {"min_rows": 2, "min_join_coverage": 0.8, "min_group_rows": 30, "fdr_alpha": 0.05},
   "L": {"min_rows": 1, "min_join_coverage": 0.8, "min_reportable_groups": 1}
  },
- "one_model_families": [
-  "C"
- ],
+ "one_model": {
+  "families": ["C"],
+  "kinds": ["segmentation"]
+ },
  "technique_min_rows": {
   "Regression Analysis": 100,
   "Entity Matching": 2

@@ -1966,7 +1966,7 @@ function registerImplementRoutes(app, deps) {
       const { history, target, refusal, useCase } = await settingsContext(req);
       if (refusal) return res.status(refusal[0]).json({ error: refusal[1] });
       // REQ-193: a family C use case fits one model, so a column Grouping is refused on save, before the App is asked.
-      const oneModel = sent.name === GR.GROUP_BY && GR.fitsOneModel(useCase && useCase.analytics_technique);
+      const oneModel = sent.name === GR.GROUP_BY && GR.fitsOneModel(useCase && useCase.analytics_technique, useCase && useCase.use_case_kind);
       const refused = oneModel ? GR.oneModelProblem(sent.value, true) : '';
       if (refused) return res.status(400).json({ error: refused });
       const body = { page: target.page, ...Object.fromEntries(keys.filter((key) => sent[key] !== undefined).map((key) => [key, sent[key]])) };
@@ -2198,7 +2198,7 @@ function registerImplementRoutes(app, deps) {
         const valuesQuery = picked.length ? GP.statement(launchScopes, (ctx) => GP.valuesSql(scan, picked, profiledJoined, ctx), scan.parameters) : null;
         const values = valuesQuery ? await rows(valuesQuery.sql, valuesQuery.parameters, GP.PROFILE_VALUE_ROWS) : [];
         const deep = GP.deepSuggestionOf(useCase);
-        const draft = (paths) => GP.profileView({ table, technique: useCase.analytics_technique, columns, candidates, stats, sample, values, paths,
+        const draft = (paths) => GP.profileView({ table, technique: useCase.analytics_technique, kind: useCase.use_case_kind, columns, candidates, stats, sample, values, paths,
           time, days, joined: profiledJoined, deep: deep ? deep.columns : [], groupBy, readAt: new Date().toISOString(), subject: text });
         const pick = GP.moneySampleColumns(columns);
         const example = pick ? await rows(GP.moneySampleSql(scan, pick), scan.parameters, GP.MONEY_SAMPLE_ROWS) : [];

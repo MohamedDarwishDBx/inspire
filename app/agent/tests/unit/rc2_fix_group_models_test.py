@@ -93,8 +93,8 @@ def test_the_sweep_only_segmentation_family_c_techniques_default_to_the_whole_da
     }
 
 
-def test_the_kinds_json_one_model_families_are_the_notebook_registry(agent_ns):
-    assert _kinds()["one_model_families"] == list(agent_ns["INSPIRE_ONE_MODEL_FAMILIES"]) == ["C"]
+def test_the_kinds_json_one_model_registry_is_the_notebook_registry(agent_ns):
+    assert _kinds()["one_model"] == agent_ns["ONE_MODEL_REGISTRY"] == {"families": ["C"], "kinds": ["segmentation"]}
 
 
 def test_a_generated_notebook_run_start_guard_refuses_a_column_for_a_one_model_kind_with_only_its_inlined_sources(agent_ns):
@@ -108,3 +108,34 @@ def test_a_generated_notebook_run_start_guard_refuses_a_column_for_a_one_model_k
     notebook["INSPIRE_RUN"] = {"grouping": {"one_model": False}}
     with pytest.raises(TypeError):
         notebook["inspire_group_records"](None, group_by="region")
+
+
+# P54 (REQ-193): the use case's kind decides. A segmentation kind fits one model whatever its technique string (Clustering, K-means, RFM), so it
+# defaults to the whole data and refuses a column Grouping at build time; an anomaly kind keeps its planned Grouping (must-exclude). Fail-pre: before
+# the kind was read, K-means and RFM (not in the technique table) got no one-model plan and kept the planned Grouping.
+@pytest.mark.parametrize("technique", ["Clustering", "K-means", "RFM"])
+def test_p54_a_segmentation_kind_defaults_to_the_whole_data_for_any_technique(agent_ns, technique):
+    plan = agent_ns["implement_grouping_plan"](technique, CANDIDATES, "", "", ["region"], "deep", kind="segmentation")
+    assert (plan["applies"], plan["default"], plan["columns"], plan["one_model"], plan["recommended"]) == (True, "all", CANDIDATES, True, [])
+    assert plan["chosen_by"] == "default"
+
+
+@pytest.mark.parametrize("technique", ["Clustering", "K-means", "RFM"])
+def test_p54_a_segmentation_kind_refuses_a_column_grouping_at_build_time_for_any_technique(agent_ns, technique):
+    plan = agent_ns["implement_grouping_plan"](technique, CANDIDATES, "region", "", (), "Inspire", kind="segmentation")
+    assert plan["one_model"] is True and plan["applies"] is False
+    assert plan["problem"].startswith("group_by is 'region': ")
+    assert "one model across all of the data" in plan["problem"]
+
+
+def test_p54_an_anomaly_kind_keeps_its_planned_grouping(agent_ns):
+    plan = agent_ns["implement_grouping_plan"]("Anomaly Detection", CANDIDATES, "", "", ["region"], "statistics", kind="anomaly")
+    assert (plan["one_model"], plan["applies"], plan["default"], plan["recommended"]) == (False, True, "region", ["region"])
+
+
+def test_p54_the_kind_is_read_before_the_technique_for_the_one_model_decision(agent_ns):
+    fits = agent_ns["inspire_grouping_fits_one_model"]
+    assert fits("K-means", "segmentation") is True
+    assert fits("RFM", "segmentation") is True
+    assert fits("Anomaly Detection", "anomaly") is False
+    assert fits("Anomaly Detection", "") is False
