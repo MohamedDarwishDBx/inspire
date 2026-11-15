@@ -2976,6 +2976,11 @@ export function lostTablesAction(missing) {
   return `swap ${primary.table} for a table with the same role, because the primary table can be swapped, not removed${rest}`;
 }
 
+// REQ-240: a blocked preview offers the Data step's own table picker, the same step the summary's Change link opens.
+export function missingSourcePick(missing) {
+  return (missing || []).length ? { label: 'Choose a replacement table', step: 'data' } : null;
+}
+
 export function lostTablesText(missing) {
   if (!missing?.length) return '';
   const action = lostTablesAction(missing);

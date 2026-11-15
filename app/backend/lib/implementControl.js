@@ -234,6 +234,25 @@ function controlLogInsert(table, { sessionId, useCaseId, asset, assetId, action,
   };
 }
 
+// REQ-231: a person's Stop of a run writes its record before the cancel, so a run Databricks reports as CANCELED reads as theirs.
+// Only a run Inspire can tie to a person counts; a cancel with no record is read as made outside Inspire.
+function isRunStop(asset, action) {
+  return (asset === 'build' || asset === 'job') && action === 'cancel';
+}
+
+function stoppedByRecord(logRows, { runId = '', jobId = '' } = {}) {
+  for (const row of logRows || []) {
+    if (str(row.action) !== 'cancel') continue;
+    const asset = str(row.asset);
+    const matches = (asset === 'build' && str(runId) && str(row.asset_id) === str(runId))
+      || (asset === 'job' && str(jobId) && str(row.asset_id) === str(jobId));
+    if (!matches) continue;
+    if (str(row.result) === 'failed' || !str(row.acted_by)) return null;
+    return { person: str(row.acted_by) };
+  }
+  return null;
+}
+
 function controlLogSelect(table, { sessionId, useCaseId, limit = 50 }) {
   return {
     sql: `SELECT l.asset, l.asset_id, l.action, l.result, l.message, l.acted_by, date_format(l.acted_at, 'yyyy-MM-dd\\'T\\'HH:mm:ss.SSSXXX') AS acted_at FROM ${table} AS l `
@@ -281,6 +300,8 @@ module.exports = {
   CONTROL_LOG_MISSING_MS,
   controlLogCreateSql,
   controlLogInsert,
+  isRunStop,
+  stoppedByRecord,
   controlLogOwnerFix,
   controlLogOwnerSql,
   controlLogSelect,

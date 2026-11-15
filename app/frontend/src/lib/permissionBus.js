@@ -59,11 +59,22 @@ export function subscribePermissions(fn) {
   return () => { if (activeHost === fn) activeHost = null; };
 }
 
+// REQ-239: an optional entry with no GRANT statement is still a grant. It is keyed by its identity (its id, or principal + securable +
+// privilege + why), so the once-per-list memory remembers it the same way it remembers a statement.
+function entryKey(p) {
+  if (p?.id != null && p.id !== '') return `entry:id:${p.id}`;
+  return `entry:${JSON.stringify([p?.principal ?? '', p?.securable ?? '', p?.privilege ?? '', p?.why ?? ''])}`;
+}
+
+function grantKeys(permissions) {
+  return permissions.flatMap((p) => (p?.statements?.length ? p.statements : [entryKey(p)]));
+}
+
 export function raisePermissions(permissions, extra = {}, { explicit = false } = {}) {
   if (!Array.isArray(permissions) || !permissions.length) return;
-  const statements = permissions.flatMap((p) => p?.statements || []);
-  const seen = statements.length > 0 && statements.every(isShown);
-  markShown(statements);
+  const keys = grantKeys(permissions);
+  const seen = keys.length > 0 && keys.every(isShown);
+  markShown(keys);
   if (seen && !explicit) {
     // The same grants again: never reopen. An open dialog for them takes this raise's extras (Try again, Start) through a quiet notice.
     if (activeHost) activeHost(permissions, extra, { quiet: true });

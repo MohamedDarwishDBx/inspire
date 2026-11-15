@@ -1693,7 +1693,7 @@ function implementRunEndedStatement(table, row, stalled) {
       + 'WHERE session_id = :sid AND use_case_id = :uc AND spec_version = :v AND status = :was AND implement_run_id = :run',
     parameters: [
       { name: 'message', value: str(stalled.reason).slice(0, 2000), type: 'STRING' },
-      { name: 'endedBy', value: stalled.ended_by === 'user' ? 'user' : 'system', type: 'STRING' },
+      { name: 'endedBy', value: IMPLEMENT_ENDED_BY.includes(stalled.ended_by) ? stalled.ended_by : 'system', type: 'STRING' },
       { name: 'was', value: str(row.status), type: 'STRING' },
       { name: 'run', value: str(row.implement_run_id), type: 'BIGINT' },
       ...implementVersionParameters({ sessionId: row.session_id, useCaseId: row.use_case_id, specVersion: row.spec_version }),
@@ -1714,12 +1714,22 @@ function implementBuildRunId(row) {
   return runId;
 }
 
-function implementEndedBy(state, details) {
-  const userCancelled = str(state.result_state) === 'CANCELED' || ['USER_CANCELED', 'CANCELED'].includes(str(details.code));
-  return userCancelled ? 'user' : 'system';
+// REQ-231: Databricks reports every cancel as "Run cancelled by user", so a CANCELED run is read as a person's Stop only when the
+// control log holds that person's Stop record (stopper = { person }). Otherwise it was stopped outside Inspire, never "by user".
+const IMPLEMENT_ENDED_BY = ['user', 'outside', 'system'];
+
+function implementEndedBy(state, details, stopper = null) {
+  const canceled = str(state.result_state) === 'CANCELED' || ['USER_CANCELED', 'CANCELED'].includes(str(details.code));
+  if (!canceled) return 'system';
+  return stopper && str(stopper.person) ? 'user' : 'outside';
 }
 
-function implementStalled(row, run, now = Date.now()) {
+function implementStoppedText(endedBy, stopper) {
+  if (endedBy === 'user') return `stopped by ${str(stopper.person)} from the Build page`;
+  return 'stopped outside Inspire';
+}
+
+function implementStalled(row, run, now = Date.now(), stopper = null) {
   if (implementEndedRecord(row)) {
     return { run_id: str(row.implement_run_id), run_url: str(run && run.run_page_url) || null, reason: str(row.status_message), ended: true, ended_by: str(row.ended_by) || null };
   }
@@ -1733,14 +1743,16 @@ function implementStalled(row, run, now = Date.now()) {
     const lifeCycle = str(state.life_cycle_state || status.state).toUpperCase();
     if (!IMPLEMENT_RUN_ENDED_STATES.includes(lifeCycle)) return null;
     const details = isPlainObject(status.termination_details) ? status.termination_details : {};
-    const how = [runStateText(lifeCycle, state.result_state || details.code) || RUN_STATE_UNKNOWN, str(state.state_message || details.message).trim()]
-      .filter(Boolean).join(': ');
+    const endedBy = implementEndedBy(state, details, stopper);
+    const how = endedBy === 'system'
+      ? [runStateText(lifeCycle, state.result_state || details.code) || RUN_STATE_UNKNOWN, str(state.state_message || details.message).trim()].filter(Boolean).join(': ')
+      : implementStoppedText(endedBy, stopper);
     return {
       run_id: runId,
       run_url: str(run.run_page_url) || null,
       reason: `the run building ${version} ended (${how}) while ${version} was still ${doing}`,
       ended: true,
-      ended_by: implementEndedBy(state, details),
+      ended_by: endedBy,
     };
   }
   const last = Date.parse(str(row.updated_at || row.created_at));

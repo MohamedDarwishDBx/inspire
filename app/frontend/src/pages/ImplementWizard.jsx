@@ -86,6 +86,7 @@ import {
   MEASURE_IMPACT_PARTS, impactPartOf, impactPartSummary,
   stepIndexOf,
   lostTablesText,
+  missingSourcePick,
   SOURCE_REFUSED_REASON,
   ACCESS_CHECKING,
   ACCESS_UNKNOWN,
@@ -2307,6 +2308,10 @@ export default function ImplementWizard({
           <div role="alert" className="bg-error-bg border border-error/20 rounded-md px-3 py-2 space-y-0.5">
             {footerErrors.map((e) => <PlainMessage key={e} text={e} onRetry={footerRetry.get(e) || null} copy={footerRetry.has(e)} className="text-xs text-error-fg" />)}
           </div>
+        )}
+        {missingSourcePick(missingTables) && (
+          <button type="button" data-pick-replacement="" className="self-start text-xs font-semibold text-db-red-solid underline"
+            onClick={() => changeStep(missingSourcePick(missingTables).step)}>{missingSourcePick(missingTables).label}</button>
         )}
         <div className="flex items-center justify-between gap-3">
           <button
