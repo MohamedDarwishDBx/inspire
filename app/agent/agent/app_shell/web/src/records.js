@@ -583,6 +583,16 @@ export const ACCEPTED = { action_status: IN_PROGRESS, note: 'Accepted the sugges
 export const UNDO_ACCEPT = 'Undo';
 export const UNDO_ACCEPT_ASK = 'Undo puts the record back to Open with no status, as it was before Accept.';
 export const UNACCEPTED = { action_status: NEW, note: 'Undid the accepted suggested action' };
+/** REQ-289 (REQ-057, REQ-223): Reopen writes the open status through the same act route Done uses. D-UNDO: a closed row whose undo already reads Reopen is its own Reopen. */
+export const REOPEN = 'Reopen';
+export const REOPEN_ASK = 'Reopen puts the record back to Open, with no status. Its earlier version stays in the history.';
+export const REOPENED = { action_status: NEW, note: 'Reopened' };
+export const REOPENED_SAID = 'Reopened. The record is back in Open.';
+export const needsReopen = (meta, batch) => !batch || undoWordOf(meta, true) !== REOPEN;
+/** REQ-223: Unassign clears the owner through the write Give to uses. */
+export const UNASSIGN = 'Unassign';
+export const UNASSIGN_VALUES = { action_owner: '' };
+export const UNASSIGNED_SAID = 'Owner cleared. The earlier version stays in the history.';
 export const suggestionOf = (meta, row) => (meta?.action ? plainText(row?.[meta.action]).trim() : '');
 export const acceptable = (meta, row) => !!suggestionOf(meta, row) && !!row?._inspire_version && (row._inspire_status || NEW) === NEW;
 export function acceptedText(n, left = 0) {
