@@ -3472,6 +3472,7 @@ def list_context(page: dict, columns, fields, decisions: bool) -> dict:
     join = "record_key" if versioned and "record_key" in columns else key if versioned and key in columns and key in names else None
     ai = ([n for n in AI_LISTED if n in names] + sorted(n for n in names if AI_CATEGORY.match(n))) if join else []
     return {"table": table_name(page["result_table"]) if join else None, "join": join, "held": bool(join and "held_back" in names),
+            "checked": bool(join and "data_quality_flag" in names),
             "actions": bool(join and decisions), "changes": bool(join),
             "choice": choice_sql(status_choices(page), names) if join and decisions else None,
             "tier": records.get("tier") if records.get("tier") in names else None,
@@ -3631,11 +3632,18 @@ WINDOW_EXTRA = ("CAST(`action_due` AS DATE) AS `_inspire_due`", f"CAST(`{SNOOZE_
 WINDOW_PICKED = ("c.`_inspire_due`", "c.`_inspire_snooze`", "c.`_inspire_joined`")
 
 
-def window_conditions(bounds: dict, params, held: bool, today: str, alias: str = "c") -> list:
+def checked_sql(alias: str = "c") -> str:
+    """A row the notebook evaluated (data_quality_flag = 'ok'). Open work is only checked rows; see flagged_ok_sql."""
+    return f"COALESCE({alias}.`_inspire_ok`, FALSE)"
+
+
+def window_conditions(bounds: dict, params, held: bool, today: str, alias: str = "c", checked: bool = False) -> list:
     a = f"{alias}."
     out = [f"COALESCE({a}`_inspire_status`, '{NEW}') IN ({shell_facts.sql_list(OPEN_STATUSES)})", f"({a}`_inspire_snooze` IS NULL OR {a}`_inspire_snooze` <= {today})"]
     if held:
         out.append(f"NOT COALESCE({a}`_inspire_held`, FALSE)")
+    if checked:
+        out.append(checked_sql(alias))
     if bounds["window"] != "all":
         first, last = params.add(bounds["start_day"], "DATE"), params.add(bounds["end_day"], "DATE")
         start, end = params.add(str(bounds["start_us"]), "BIGINT"), params.add(str(bounds["end_us"]), "BIGINT")
@@ -3701,6 +3709,10 @@ def focus_conditions(page: dict, focus: dict, context: dict, params) -> list:
     statuses = page_statuses(page)
     opened = ", ".join(params.add(s) for s in statuses["open"])
     out = [f"COALESCE(c.`_inspire_status`, {params.add(statuses['unset'])}) IN ({opened})"]
+    if context.get("held"):
+        out.append("NOT COALESCE(c.`_inspire_held`, FALSE)")
+    if context.get("checked"):
+        out.append(checked_sql("c"))
     if focus["focus"] == "overdue":
         out.append(f"c.`_inspire_due` < {params.add(focus['today'], 'DATE')}")
     elif focus["focus"] == "unassigned":
@@ -4575,7 +4587,8 @@ def _current_join(context: dict, alias: str) -> tuple:
     columns = ["c.`_inspire_key`", "c.`_inspire_version`"] + (["c.`_inspire_owner`", "c.`_inspire_status`", "c.`_inspire_choice`"]
                                                                if context["actions"] else [])
     money = ["c.`_inspire_money`", "c.`_inspire_fx`"] if context.get("money") else []
-    windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else [])) if context.get("windowed") else []
+    windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else []) + (["c.`_inspire_ok`"] if context.get("checked") else [])
+                ) if context.get("windowed") else []
     joined = " JOIN" if (context.get("floor") or {}).get("on") == "c" else " LEFT JOIN"
     return (f"{joined} c ON {_current_on(context, alias)}",
             columns + [f"c.{quote(ai_alias(n))}" for n in context["ai"]] + money + ["c.`_inspire_missing`"] + windowed)
@@ -4586,7 +4599,8 @@ def _floored(floor: dict, alias: str) -> str:
 
 
 def _window_extra(context: dict) -> list:
-    return list(WINDOW_EXTRA) + (["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else [])
+    return list(WINDOW_EXTRA) + (["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else []) + (
+        [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`"] if context.get("checked") else [])
 
 
 def _stake(context: dict, prefix: str = "") -> str:
@@ -4676,16 +4690,19 @@ def status_counts_query(page: dict, values: dict, request: dict, context: dict, 
     plan = _list_plan(page, values, dict(request, columns=columns, mine=False, window=None, exclude=[], choice=None, due_first=True), context,
                       editor, params, current=True)
     status = f"COALESCE(f.`_inspire_status`, '{NEW}')"
-    listed = f"CASE WHEN {' AND '.join(window_conditions({'window': 'all'}, params, context['held'], params.add(request['today'], 'DATE'), 'f'))} THEN 1 ELSE 0 END"
+    checked = context.get("checked", False)
+    listed = f"CASE WHEN {' AND '.join(window_conditions({'window': 'all'}, params, context['held'], params.add(request['today'], 'DATE'), 'f', checked))} THEN 1 ELSE 0 END"
+    unchecked = f"CASE WHEN {checked_sql('f')} THEN 1 ELSE 0 END" if checked else "CAST(1 AS INT)"
     mine = f"lower(f.`_inspire_owner`) = lower({params.add(editor)})" if editor else "FALSE"
-    return (f"{_with(plan['ctes'], plan['counted'])} SELECT {status} AS v, f.`_inspire_choice` AS c, {listed} AS l, COUNT(*) AS n, "
-            f"COALESCE(SUM(CASE WHEN {mine} THEN 1 ELSE 0 END), 0) AS m FROM f GROUP BY {status}, f.`_inspire_choice`, {listed}", params.items)
+    return (f"{_with(plan['ctes'], plan['counted'])} SELECT {status} AS v, f.`_inspire_choice` AS c, {listed} AS l, {unchecked} AS u, COUNT(*) AS n, "
+            f"COALESCE(SUM(CASE WHEN {mine} THEN 1 ELSE 0 END), 0) AS m FROM f GROUP BY {status}, f.`_inspire_choice`, {listed}, {unchecked}",
+            params.items)
 
 
 def status_counts_of(rows, choices=None) -> dict:
     statuses = dict.fromkeys(ACTION_STATUSES, 0)
     picked = dict.fromkeys((c.get("id") for c in (DEFAULT_CHOICES if choices is None else choices)), 0)
-    mine, listed_open = 0, 0
+    mine, listed_open, unchecked = 0, 0, 0
     for row in rows or []:
         name, n = row.get("v") or NEW, int(row.get("n") or 0)
         statuses[name] = statuses.get(name, 0) + n
@@ -4694,9 +4711,11 @@ def status_counts_of(rows, choices=None) -> dict:
         mine += int(row.get("m") or 0)
         if name in OPEN_STATUSES and int(row.get("l") or 0):
             listed_open += n
+        if name in OPEN_STATUSES and row.get("u") is not None and not int(row.get("u")):
+            unchecked += n
     open_all = sum(statuses.get(s, 0) for s in OPEN_STATUSES)
-    return {"statuses": statuses, "choices": picked, "open": listed_open, "watch": open_all - listed_open, "mine": mine,
-            "all": sum(statuses.values())}
+    return {"statuses": statuses, "choices": picked, "open": listed_open, "watch": open_all - listed_open - unchecked,
+            "unchecked": unchecked, "mine": mine, "all": sum(statuses.values())}
 
 
 def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: str, params, current: bool = False) -> dict:
@@ -4716,7 +4735,7 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
         early.add("c")
     if window:
         today = params.add(window["today"], "DATE")
-        conditions += window_conditions(window, params, context["held"], today)
+        conditions += window_conditions(window, params, context["held"], today, "c", context.get("checked", False))
     elif due_first:
         today = params.add(request["today"], "DATE")
     focus = request.get("focus")
@@ -5708,11 +5727,7 @@ def setting_set_problems(values: dict) -> list:
     return problems
 
 
-def flagged_ok_sql(names, segments=()) -> str:
-    ok = "`data_quality_flag` = 'ok'" if "data_quality_flag" in names else "TRUE"
-    if segments and "segment_or_item" in names:
-        ok += " AND CAST(`segment_or_item` AS STRING) IN (" + ", ".join(sql_text(str(s)) for s in segments) + ")"
-    return ok
+flagged_ok_sql = shell_facts.flagged_ok_sql
 
 
 def amount_tier_sql(stake: str, cutoffs: tuple, segments, names) -> str:
@@ -5841,9 +5856,11 @@ def overview_query(page: dict, values: dict, picked: dict, context: dict, fields
     money, held = MONEY_COLUMN in names, "held_back" in names
     table, params = context["table"], _Params()
     priced = money_columns(model) or [f"{money_sql(None)} AS `_inspire_money`", "CAST(NULL AS STRING) AS `_inspire_fx`"]
+    checked = "data_quality_flag" in names
     extra = (priced if money else []) + (
         list(WINDOW_EXTRA) if window else ["CAST(`action_due` AS DATE) AS `_inspire_due`"]) + (
-        ["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if held else [])
+        ["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if held else []) + (
+        [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`"] if checked else [])
     on = (floor or {}).get("on")
     ctes = {"d": f"SELECT * FROM ({_dataset(page, RECORDS_DATASET)}) AS d{_where(page, RECORDS_DATASET, values, params)}",
             "c": _current_cte(dict(context, actions=True, floor=floor if on == "c" else None), extra)}
@@ -5854,6 +5871,8 @@ def overview_query(page: dict, values: dict, picked: dict, context: dict, fields
     conditions = [f"({flagged} OR {due} IS NOT NULL)", f"COALESCE(c.`_inspire_status`, '{NEW}') IN ({opened})"]
     if held:
         conditions.append("NOT COALESCE(c.`_inspire_held`, FALSE)")
+    if checked:
+        conditions.append(checked_sql("c"))
     if on == "d":
         conditions.append(_floored(floor, "d"))
     conditions += [f"{_ai_value(name)} IN ({', '.join(params.add(v) for v in chosen)})" for name, chosen in picked.items()]
