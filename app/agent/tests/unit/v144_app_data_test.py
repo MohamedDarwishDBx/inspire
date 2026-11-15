@@ -365,9 +365,10 @@ def test_a_per_user_decision_the_app_may_not_write_names_the_app_identity_not_th
 
 
 def test_a_failed_list_query_is_a_502_and_a_failed_summary_query_is_reported_without_failing_the_list(tmp_path):
-    s, _ws, _made = shell(tmp_path, ws=DataWorkspace(fail={"rows": shell_db.QueryError("TABLE_OR_VIEW_NOT_FOUND")}))
+    # REQ-236 (4be319413): a refusal or a missing view on the list is the waiting state, so a 502 is for a failure that is not one.
+    s, _ws, _made = shell(tmp_path, ws=DataWorkspace(fail={"rows": shell_db.QueryError("warehouse stopped")}))
     status, out = records(s)
-    assert status == 502 and out == {"error": "TABLE_OR_VIEW_NOT_FOUND"}
+    assert status == 502 and out == {"error": "warehouse stopped"}
     (tmp_path / "summary").mkdir()
     s, _ws, _made = shell(tmp_path / "summary", ws=DataWorkspace(fail={"impact": shell_db.QueryError("PERMISSION_DENIED")}))
     status, out = records(s)

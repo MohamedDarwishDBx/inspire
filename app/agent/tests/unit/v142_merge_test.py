@@ -407,7 +407,8 @@ def test_an_old_page_that_now_fails_blocks_the_merge_and_names_it_while_this_pag
     with pytest.raises(RuntimeError) as raised:
         inst._implement_app(context, None)
     assert type(raised.value) is RuntimeError, "a failure of this use case's own page is Genie's to fix"
-    assert str(raised.value) == "the App was run at its default filters and page Predict churn: kpi:revenue failed: DIVIDE_BY_ZERO"
+    # The send-back verdict to Genie keeps the exact page id (D-NAMES, 44ad35ca5); only the person's copy names a page by its title.
+    assert str(raised.value) == "the App was run at its default filters and page n01_u01_s5150: kpi:revenue failed: DIVIDE_BY_ZERO"
 
 
 def test_rebuilding_a_use_cases_own_app_keeps_the_pages_merged_into_it(agent_ns, tmp_path, monkeypatch):

@@ -37,13 +37,13 @@ def _obj(agent_ns, acl, spark):
 
 
 def _context():
-    return {"reasons_view": REASONS, "permissions": [], "spec": {"outputs": {}}}
+    # The publish records the views it put in place (REQ-245, eb73c49c7); the audience grant reads that list, not the build scopes.
+    return {"reasons_view": REASONS, "permissions": [], "spec": {"outputs": {}}, "published_views": {"app": [VIEW]}}
 
 
-def test_the_audience_read_after_the_share_is_granted_the_full_read_set_on_each_app_view(agent_ns, monkeypatch):
+def test_the_audience_read_after_the_share_is_granted_the_full_read_set_on_each_app_view(agent_ns):
     spark = FakeSpark()
     obj = _obj(agent_ns, ACL_AFTER_SHARE, spark)
-    monkeypatch.setitem(agent_ns, "scope_views_refs", lambda scopes=None: [VIEW])
     context, asset_status = _context(), {}
     problems = obj._implement_app_audience_after_share(context, APP, asset_status)
     assert problems == []
@@ -56,15 +56,14 @@ def test_the_audience_read_after_the_share_is_granted_the_full_read_set_on_each_
     assert context["permissions"] == []
 
 
-def test_the_audience_grant_never_names_a_source_table_the_app_reads_directly(agent_ns, monkeypatch):
+def test_the_audience_grant_never_names_a_source_table_the_app_reads_directly(agent_ns):
     spark = FakeSpark()
     obj = _obj(agent_ns, ACL_AFTER_SHARE, spark)
-    monkeypatch.setitem(agent_ns, "scope_views_refs", lambda scopes=None: [VIEW])
     obj._implement_app_audience_after_share(_context(), APP, {})
     assert spark.statements and not any(SOURCE in s for s in spark.statements)
 
 
-def test_a_grant_the_build_cannot_run_for_the_audience_becomes_permission_required_with_its_sql(agent_ns, monkeypatch):
+def test_a_grant_the_build_cannot_run_for_the_audience_becomes_permission_required_with_its_sql(agent_ns):
     spark = FakeSpark()
     obj = _obj(agent_ns, ACL_AFTER_SHARE, spark)
     refused = f"GRANT SELECT ON TABLE `inspire_kinds_rc7`.`_inspire`.`{VIEW.split('.')[-1]}` TO `{AMR}`"
@@ -74,20 +73,18 @@ def test_a_grant_the_build_cannot_run_for_the_audience_becomes_permission_requir
         if statement == refused:
             raise RuntimeError("[PERMISSION_DENIED] no MANAGE")
     obj.spark = types.SimpleNamespace(sql=sql)
-    monkeypatch.setitem(agent_ns, "scope_views_refs", lambda scopes=None: [VIEW])
     context = _context()
     obj._implement_app_audience_after_share(context, APP, {})
     entries = context["permissions"]
     assert len(entries) == 1 and entries[0]["principal"] == AMR and refused in entries[0]["statements"]
 
 
-def test_an_unreadable_audience_is_a_warning_not_a_silent_skip(agent_ns, monkeypatch):
+def test_an_unreadable_audience_is_a_warning_not_a_silent_skip(agent_ns):
     obj = _obj(agent_ns, None, FakeSpark())
 
     def fail(method, path, body=None):
         raise RuntimeError("HTTP 503")
     obj._implement_api = fail
-    monkeypatch.setitem(agent_ns, "scope_views_refs", lambda scopes=None: [VIEW])
     problems = obj._implement_app_audience_after_share(_context(), APP, {})
     assert len(problems) == 1 and "could not read who may open the App" in problems[0]
 

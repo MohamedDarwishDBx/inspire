@@ -375,6 +375,10 @@ class _Frame:
         self.cast.append((name, value))
         return self
 
+    def selectExpr(self, *exprs):
+        # REQ-249 (860e79ca5): the write guard scans each text column for an object dump; this fake's values are plain text.
+        return types.SimpleNamespace(first=lambda: [0] * len(exprs))
+
     def __getitem__(self, name):
         return types.SimpleNamespace(cast=lambda kind: f"{name}::{kind}")
 
