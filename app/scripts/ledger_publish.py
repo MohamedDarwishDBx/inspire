@@ -85,7 +85,7 @@ RELEASE_NONE = "not in RC2 scope"
 AREAS = (
     ("Build wizard and first-run flow", r"wizard|step|first run|review & build|who uses"),
     ("Data filters and labels", r"filter|label|reask|row group"),
-    ("Metrics, measure and money at stake", r"stake|measure|metric|mvp-d|total"),
+    ("Metrics, measure and value at stake", r"stake|measure|metric|mvp-d|total"),
     ("Access, grants and permissions", r"grant|permission|principal|access|service principal|sourceaccess"),
     ("Apps, pages and layout", r"\bapp\b|page|card|tour|help|button|layout|overlap|1280|1440|dark"),
     ("Build runs and Genie agent", r"build|job|genie|run\b|runs\b|agent"),

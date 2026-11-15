@@ -95,7 +95,7 @@ Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed
 - REQ-313 | RC2 | BUILDING | (Amr) "This request for Access is very cool, anytime user wanted to run a row filter, an enhanced discovery, etc on any catalog, just show user the dialog with 
 - REQ-318 | RC2 | BUILDING | (W2-A, rc7 1dc9051e1, run 2) the name re-ask (DATA_FILTER_LABEL_RENAME_PROMPT / DataFilterLabel_Reask) answer is not parsed: 2 junk rows, response_type raw, no 
 
-### Metrics, measure and money at stake (14)
+### Metrics, measure and value at stake (14)
 
 - REQ-013 | RC2 | DEV | How to measure, set a target, how it is calculated: all in Settings
 - REQ-024 | RC2 | DEV (dev 87546a08; was LOCAL (E a0868819 + E3 rebasing)) | Value aggregation: value at stake and saved on each use case card (highlighted)
