@@ -36,3 +36,13 @@ test('a kept entry of another output never changes the live App version', async 
   assert.equal(W.liveAppVersion(rows), 7);
   assert.equal(W.sideAppVersion(rows), null);
 });
+
+test('the keep and remove choices name the live App version under keep-previous, and the newest version without one', async () => {
+  const W = await lib('implementWizard.js');
+  const [keep, remove] = W.vibePreviousChoices(W.liveVersionForVibes(keepRows()), 8);
+  assert.equal(keep.label, 'Keep v6 live');
+  assert.equal(remove.label, 'Remove v6 once v8 is ready');
+  const plain = [{ spec_version: 3, status: 'ready', asset_status: { app: { state: 'ready', spec_version: 3 } } }];
+  assert.equal(W.liveVersionForVibes(plain), 3);
+  assert.deepEqual(W.appVersionLines(plain), { live: 'Live: v3', side: '' });
+});

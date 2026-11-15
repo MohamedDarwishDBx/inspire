@@ -7,7 +7,7 @@ import {
 import {
   statusChip, statusReason, statusDetails, nextSpecFrom, retryableOutputs, lostTables, lostTablesText, genieQuestions, appStatusRows, editedNotebook,
   runProfileText, runStopped, cancelledByUser, versionActive, historyStatus, implementGroups, notebookRunEnded, notebookStatus, START_MVP_LABEL, IMPLEMENT_ACTIVE_STATUSES, IMPLEMENT_UNINSTALLED,
-  vibesPreview, canBuildAgain, buildAgainChanges, buildAgainHint, resultTableMoveNote, IMPLEMENT_DONE_STATUSES, builtVersion, vibePreviousChoices,
+  vibesPreview, canBuildAgain, buildAgainChanges, buildAgainHint, resultTableMoveNote, IMPLEMENT_DONE_STATUSES, builtVersion, vibePreviousChoices, liveVersionForVibes, appVersionLines,
   vibesProblems, OPEN_ALL_SETTINGS, VIBE_FEATURES_LABEL, DATA_STOP_HINT, dataStopped, shownStatusMessage,
   swapParts,
   failureChoices, stoppedChoices, genieNotebookRequest, FAILURE_CHOICES_HEADING, FAILURE_ROUNDS_HEADING, TERMINAL_STOP_HINT, TERMINAL_NEEDS_CHANGE,
@@ -1139,7 +1139,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   const builtOn = builtVersion(history);
   const nextSpec = built && latest ? rebuildSpec(latest, vibes) : null;
   const choices = builtOn != null && String(nextSpec?.vibes ?? '').trim()
-    ? vibePreviousChoices(builtOn, (latest?.spec_version ?? 0) + 1, Boolean(nextSpec.outputs?.alert)) : [];
+    ? vibePreviousChoices(liveVersionForVibes(history), (latest?.spec_version ?? 0) + 1, Boolean(nextSpec.outputs?.alert)) : [];
+  const versionLines = appVersionLines(history);
   const buildAgain = canBuildAgain(latest, { edited, missing });
   const sendsAgain = buildAgain && !IMPLEMENT_DONE_STATUSES.includes(String(latest?.status || ''));
   const rebuildBlocked = !vibes.length && !sendsAgain ? REBUILD_NOTHING : '';
@@ -1632,6 +1633,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
               <span className="min-w-0">
                 <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-db-red-fg">History</span>
                 <span className="block text-[11px] text-text-secondary">{historyHint}</span>
+                {versionLines.live && <span className="block text-[11px] font-semibold text-text-primary" data-app-live>{versionLines.live}</span>}
+                {versionLines.side && <span className="block text-[11px] text-text-secondary" data-app-side>{versionLines.side}</span>}
               </span>
             </span>
             <ChevronDown size={14} className={`shrink-0 text-text-secondary transition-transform ${historyOpen ? 'rotate-180' : ''}`} aria-hidden />

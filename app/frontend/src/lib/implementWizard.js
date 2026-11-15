@@ -538,6 +538,22 @@ export function isAppUpdate(history, row) {
   return Number(asked) === liveAppVersion(before);
 }
 
+// REQ-241: the version a vibe's keep/remove choice names as live: the App's live version when a keep-previous build left a side App,
+// else the newest built version (the same rule as the Build page's Live line).
+export function liveVersionForVibes(history) {
+  return liveAppVersion(history) ?? builtVersion(history);
+}
+
+// REQ-241: the Build page's version lines. 'Live' is the version that serves the live App name; 'Side App' is the newest build's App until it is published as live.
+export function appVersionLines(history) {
+  const live = liveAppVersion(history);
+  const side = sideAppVersion(history);
+  return {
+    live: live != null ? `Live: v${live}` : '',
+    side: side != null ? `Side App: v${side} (not live yet)` : '',
+  };
+}
+
 export function vibePreviousChoices(live, next, inPlace = false) {
   return [
     { id: 'keep', label: `Keep v${live} live`,
