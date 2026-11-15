@@ -35,3 +35,40 @@ test('with two hosts mounted, a raise reaches one host only, so two dialogs neve
   assert.equal(first.length + second.length, 1, 'exactly one host receives the raise');
   assert.equal(second.length, 1, 'the host mounted last takes over');
 });
+
+// REQ-239, REQ-138: the once-per-list memory survives a page load in the same tab, so a grant list the person already saw stays closed.
+function fakeSessionStorage(initial = {}) {
+  const data = { ...initial };
+  return { getItem: (k) => (k in data ? data[k] : null), setItem: (k, v) => { data[k] = String(v); }, data };
+}
+
+test('a grant list shown before a page load stays closed after the load (sessionStorage memory)', () => {
+  const stored = `GRANT CREATE ON DATABASE \`databricks_postgres\` TO \`reload-probe\`;`;
+  const storage = fakeSessionStorage({ 'inspire.permissionStatementsShown': JSON.stringify([stored]) });
+  globalThis.sessionStorage = storage;
+  try {
+    const calls = [];
+    const off = subscribePermissions((permissions, extra, opts = {}) => calls.push({ quiet: Boolean(opts.quiet) }));
+    raisePermissions([{ statements: [stored], optional: true, principal: 'reload-probe' }]);
+    off();
+    assert.deepEqual(calls, [{ quiet: true }], 'a list already in the session memory never reopens: only a quiet notice reaches the host');
+  } finally {
+    delete globalThis.sessionStorage;
+  }
+});
+
+test('a new grant list is saved to sessionStorage so the next page load keeps it closed', () => {
+  const storage = fakeSessionStorage();
+  globalThis.sessionStorage = storage;
+  try {
+    const fresh = 'GRANT SELECT ON TABLE `main`.`s`.`persisted_probe` TO `app-sp`;';
+    const calls = [];
+    const off = subscribePermissions((permissions, extra, opts = {}) => calls.push({ quiet: Boolean(opts.quiet) }));
+    raisePermissions([{ statements: [fresh], principal: 'app-sp' }]);
+    off();
+    assert.equal(calls.length, 1, 'the first sight of a new list opens the dialog');
+    assert.deepEqual(JSON.parse(storage.data['inspire.permissionStatementsShown']), [fresh], 'the list is saved for the session');
+  } finally {
+    delete globalThis.sessionStorage;
+  }
+});
