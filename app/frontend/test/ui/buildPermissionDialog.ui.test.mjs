@@ -79,7 +79,7 @@ test('Check again on an unreadable build opens See the grant, with the full read
     // Check again shows the same grants the card showed, so Permission Required does not open a second time.
     await page.waitForTimeout(800);
     assert.equal(await page.locator('[data-permission-dialog=""]').count(), 0, 'Check again reopens nothing for the same grants');
-    const see = card.locator('[data-see-grant=""]');
+    const see = card.locator('[data-app-reads-primary="copy"]');
     await see.waitFor({ timeout: 15000 });
     await see.click();
     await dialog.waitFor({ timeout: 15000 });
