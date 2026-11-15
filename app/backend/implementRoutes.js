@@ -1297,13 +1297,27 @@ function registerImplementRoutes(app, deps) {
     }
   }
 
+  // REQ-231: who pressed Stop on this run, from the control log. A read that fails is no record, so the run reads as outside Inspire.
+  async function stoppedByOf(req, row, runId) {
+    const { catalog, schema } = dbOf(req, splitInspireDatabase);
+    try {
+      const select = C.controlLogSelect(C.controlLogTableName(catalog, schema), { sessionId: sessionIdOf(req), useCaseId: row.use_case_id, limit: 200 });
+      return C.stoppedByRecord(await sqlRows(req.dbHost, req.dbToken, warehouseOf(req), select), { runId, jobId: row.job_id });
+    } catch (err) {
+      console.warn(`implement stop record read failed: ${err.message}`);
+      return null;
+    }
+  }
+
   async function stalledOf(req, row) {
     if (!row || (!I.IMPLEMENT_ACTIVE_STATUSES.includes(row.status) && !I.implementEndedRecord(row))) return null;
     const runId = String(row.implement_run_id ?? '');
     const got = /^\d{1,19}$/.test(runId)
       ? await jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${runId}`).catch(() => null)
       : null;
-    const stalled = I.implementStalled(row, got && got.ok ? got.data : null);
+    const runState = got && got.ok && got.data && got.data.state ? got.data.state : {};
+    const stopper = String(runState.result_state || '') === 'CANCELED' ? await stoppedByOf(req, row, runId) : null;
+    const stalled = I.implementStalled(row, got && got.ok ? got.data : null, Date.now(), stopper);
     const { catalog, schema } = dbOf(req, splitInspireDatabase);
     const ended = I.implementRunEndedStatement(I.implementTableName(catalog, schema), { session_id: sessionIdOf(req), ...row }, stalled);
     if (!ended) return stalled;
@@ -2415,11 +2429,21 @@ function registerImplementRoutes(app, deps) {
       await executeSql(req.dbHost, req.dbToken, ctx.warehouseId, C.controlLogCreateSql(ctx.logTable));
       missingControlLogs.delete(ctx.logTable);
       const ownerError = await alignControlLogOwner(req, ctx);
+      const person = await personOf(req);
+      if (C.isRunStop(asset, action)) {
+        // REQ-231: the person is recorded before the run is cancelled. If the record cannot be written, nothing is cancelled.
+        if (!String(person.username || '').trim()) throw I.badRequest(`Inspire did not ${phrase}: Inspire cannot tell who is stopping it`, 409);
+        const recorded = C.controlLogInsert(ctx.logTable, { sessionId: ctx.sid, useCaseId: ctx.useCaseId, asset, assetId: id, action, result: 'requested', message: `${label} requested by ${person.username} from the Build page`, actedBy: person.username });
+        try {
+          await executeSql(req.dbHost, req.dbToken, ctx.warehouseId, recorded.sql, recorded.parameters);
+        } catch (e) {
+          throw I.badRequest(`Inspire did not ${phrase}: it could not record who stopped it in ${C.CONTROL_LOG_TABLE} (${e.message})`, 502);
+        }
+      }
       const got = await jsonOf(dbFetch, req.dbHost, req.dbToken, request.path,
         { method: request.method, ...(request.body ? { body: jsonWithInt64Ids(request.body, request.int64 || []) } : {}) });
       const failure = got.ok ? '' : String((got.data && (got.data.message || got.data.error || got.data.raw)) || `HTTP ${got.status}`);
       const message = got.ok ? `${label}: done` : `${label} failed: ${failure}`;
-      const person = await personOf(req);
       const insert = C.controlLogInsert(ctx.logTable, {
         sessionId: ctx.sid, useCaseId: ctx.useCaseId, asset, assetId: id, action, result: got.ok ? 'done' : 'failed', message, actedBy: person.username,
       });

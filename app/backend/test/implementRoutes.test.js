@@ -242,7 +242,8 @@ test('a version whose run ended while it was still active is written failed once
   const history = fresh();
   const ended = { run_id: 5555555555555555, run_page_url: 'https://x/run/5555555555555555',
     state: { life_cycle_state: 'TERMINATED', result_state: 'CANCELED', state_message: 'Run cancelled by amr@x' } };
-  const reason = 'the run building v1 ended (Stopped: Run cancelled by amr@x) while v1 was still filling';
+  // REQ-231: no Stop record in the control log, so the CANCELED run reads as stopped outside Inspire, never by a person.
+  const reason = 'the run building v1 ended (stopped outside Inspire) while v1 was still filling';
   const endedWrites = (made) => made.sqlCalls.filter((c) => /^UPDATE .* SET status = 'failed'/.test(String(c.sql)) && /implement_run_id = :run/.test(String(c.sql)));
   for (const read of [`/api/inspire/implement/status?${Q}`, `/api/inspire/implement/history?${RAIL}`, `/api/inspire/implement/live?${Q}`]) {
     await withApp({ history: fresh(), implementRun: ended }, async (url, made) => {
@@ -251,8 +252,8 @@ test('a version whose run ended while it was still active is written failed once
       const writes = endedWrites(made);
       assert.equal(writes.length, 1, `${read} writes the ended run once`);
       const p = Object.fromEntries(writes[0].parameters.map((x) => [x.name, x.value]));
-      assert.deepEqual([p.message, p.endedBy, p.was, p.run, p.v, p.uc], [reason, 'user', 'filling', '5555555555555555', '1', 'N01-U01'], read);
-      const stalled = { run_id: '5555555555555555', run_url: 'https://x/run/5555555555555555', reason, ended: true, ended_by: 'user' };
+      assert.deepEqual([p.message, p.endedBy, p.was, p.run, p.v, p.uc], [reason, 'outside', 'filling', '5555555555555555', '1', 'N01-U01'], read);
+      const stalled = { run_id: '5555555555555555', run_url: 'https://x/run/5555555555555555', reason, ended: true, ended_by: 'outside' };
       if (read.includes('/status')) {
         assert.deepEqual(got.data.stalled, stalled, 'the stopped build still reads as stopped, with its reason and its run');
         assert.deepEqual([got.data.latest.status, got.data.latest.status_message], ['failed', reason]);
@@ -1554,4 +1555,20 @@ test('the context names the generation path the notebook is written to', async (
   } finally {
     await srv.close();
   }
+});
+
+// REQ-231 (3): the route reads the control log for the CANCELED run. A Stop the person recorded names the person; the same cancel with no record does not.
+test('a CANCELED run the person stopped from the Build page is written as the person, read from the control log', async () => {
+  const fresh = () => [{ session_id: '42', spec_version: 1, status: 'filling', spec_json: SPEC, use_case_id: 'N01-U01',
+    implement_run_id: '5555555555555555', updated_at: new Date().toISOString() }];
+  const ended = { run_id: 5555555555555555, run_page_url: 'https://x/run/5555555555555555',
+    state: { life_cycle_state: 'TERMINATED', result_state: 'CANCELED', state_message: 'Run cancelled by user' } };
+  const controlLog = [{ asset: 'build', asset_id: '5555555555555555', action: 'cancel', result: 'requested', message: 'Stop the build requested by amr@x from the Build page', acted_by: 'amr@x' }];
+  await withApp({ history: fresh(), implementRun: ended, controlLog }, async (url, made) => {
+    const got = await call(url, `/api/inspire/implement/status?${Q}`);
+    assert.equal(got.status, 200, JSON.stringify(got.data));
+    const write = made.sqlCalls.find((c) => /^UPDATE .* SET status = 'failed'/.test(String(c.sql)) && /implement_run_id = :run/.test(String(c.sql)));
+    const p = Object.fromEntries(write.parameters.map((x) => [x.name, x.value]));
+    assert.deepEqual([p.message, p.endedBy], ['the run building v1 ended (stopped by amr@x from the Build page) while v1 was still filling', 'user']);
+  });
 });
