@@ -18,6 +18,7 @@ EXAMPLES = os.path.join(HERE, "examples")
 PALETTES = os.path.join(WEB, "src", "palettes.json")
 KINDS = os.path.join(HERE, "kinds.json")
 TRANSLATIONS = os.path.join(HERE, "translations.json")
+PROMPTS = os.path.join(HERE, "prompts.json")
 SHELL = os.path.join(HERE, "app_shell.b64")
 CELL = 1
 VERSION = 1
@@ -33,7 +34,8 @@ CONSTANT = "INSPIRE_NOTEBOOK_ASSETS = "
 LEGACY_CONSTANTS = ("_INSPIRE_APP_SHELL = ", "_INSPIRE_KINDS = ")
 FX_AVERAGES = os.path.normpath(os.path.join(ROOT, "..", "backend", "lib", "fxAverages.json"))
 ASSETS = {"app_shell": ("notebook/app_shell.b64", SHELL), "kinds": ("notebook/kinds.json", KINDS),
-          "translations": ("notebook/translations.json", TRANSLATIONS), "fx_averages": ("notebook/fx_averages.json", FX_AVERAGES)}
+          "translations": ("notebook/translations.json", TRANSLATIONS), "prompts": ("notebook/prompts.json", PROMPTS),
+          "fx_averages": ("notebook/fx_averages.json", FX_AVERAGES)}
 
 
 def _walk(base: str, relative: str) -> list:

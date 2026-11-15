@@ -4,12 +4,15 @@ from pathlib import Path
 
 import pytest
 
+from _nbload import prompt_templates
+
 NOTEBOOK = Path(__file__).resolve().parents[2] / "agent" / "dbx_inspire_ai_agent.ipynb"
 
 
 def _code() -> str:
     cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
-    return "\n".join("".join(c["source"]) for c in cells if c["cell_type"] == "code")
+    # The prompt templates live in the pinned prompts asset, so their text joins the notebook's code for the scans below.
+    return "\n".join(["".join(c["source"]) for c in cells if c["cell_type"] == "code"] + list(prompt_templates().values()))
 
 
 def test_no_pipeline_step_a_person_reads_carries_an_internal_code_such_as_uc_or_p2():

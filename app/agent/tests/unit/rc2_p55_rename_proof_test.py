@@ -13,6 +13,7 @@ SOURCES = [
     os.path.join(ROOT, "dbx_inspire_ai_agent.ipynb"),
     os.path.join(AGENT, "agent", "app_shell", "translations.json"),
     os.path.join(AGENT, "agent", "app_shell", "kinds.json"),
+    os.path.join(AGENT, "agent", "app_shell", "prompts.json"),
     *glob.glob(os.path.join(AGENT, "agent", "app_shell", "server", "*.py")),
     *glob.glob(os.path.join(AGENT, "agent", "app_shell", "web", "src", "**", "*.*"), recursive=True),
     *glob.glob(os.path.join(ROOT, "frontend", "src", "**", "*.*"), recursive=True),
@@ -40,3 +41,4 @@ def test_the_proof_scans_the_sources_it_claims_to_scan():
     scanned = [p for p in set(SOURCES) if os.path.isfile(p)]
     assert len(scanned) >= 60, len(scanned)
     assert any(p.endswith("translations.json") for p in scanned) and any(p.endswith(".ipynb") for p in scanned)
+    assert any(p.endswith("prompts.json") for p in scanned)

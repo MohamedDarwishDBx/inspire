@@ -55,6 +55,13 @@ function makeApp(overrides = {}, { mount } = {}) {
   });
   if (mount) mount(app);
   app.use('/api/inspire/implement', async (req, _res, next) => { await (state.hold || {})[req.path]; next(); });
+  // REQ-311: Request for Access. state.accessCheck is the offer the check reads; state.accessSend is the answer to the send, and
+  // state.accessSent records the statements the dialog sent.
+  app.post('/api/access-request/check', (req, res) => res.json(state.accessCheck || { offered: false, destinations: [], reason: 'no one has set up where access requests for these go yet' }));
+  app.post('/api/access-request', (req, res) => {
+    state.accessSent = req.body?.statements || [];
+    res.json(state.accessSend || { sent: false, destinations: [], reason: 'no destination' });
+  });
   registerImplementRoutes(app, {
     ...(state.buildStamp ? { buildStamp: () => state.buildStamp } : {}),
     requireToken: (req, _res, next) => {
