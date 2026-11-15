@@ -3226,12 +3226,13 @@ function sampleCopyDestination(name) {
   return to;
 }
 
-// A copy takes its source schema into its name, so two samples tables with one table name (in different schemas) never share a copy:
-// samples.bakehouse.sales_franchises lands as <destination>.bakehouse_sales_franchises (REQ-242 follow-up). One helper names both the
-// statement and the returned copy, so the two cannot drift.
+// A copy's table name is the source schema's length, then the schema and the table joined by one underscore: samples.bakehouse.sales_franchises
+// lands as 9_bakehouse_sales_franchises. The length is the only part read back before the first underscore, so the name is injective:
+// two (schema, table) pairs never share a copy, even when identifiers contain underscores (a_b + c and a + b_c stay distinct). One helper
+// names both the statement and the returned copy, so the two cannot drift.
 function sampleCopyTable(source) {
   const from = tableParts(source);
-  return `${from.schema}_${from.table}`;
+  return `${from.schema.length}_${from.schema}_${from.table}`;
 }
 
 function sampleCopyName(source, destination) {
@@ -3993,6 +3994,7 @@ module.exports = {
   schemaParts,
   sampleCopyDestination,
   sampleCopyName,
+  sampleCopyTable,
   sampleCopyStatement,
   sampleCopyFailureKind,
   samplesNeedChoice,

@@ -9,7 +9,7 @@ test.after(closeBrowser);
 const BUSINESS = 'e.g. Contoso, Acme Corp, Retail Division';
 const SOURCE = 'samples.bakehouse.sales_franchises';
 const DESTINATION = 'inspire_kinds_rc7._inspire';
-const COPY = `${DESTINATION}.bakehouse_sales_franchises`;
+const COPY = `${DESTINATION}.9_bakehouse_sales_franchises`;
 const COLUMNS = ['franchiseID', 'name', 'country', 'brand_name'].map((column_name, i) => ({
   column_name, data_type: i === 0 ? 'BIGINT' : 'STRING', ordinal_position: i + 1,
 }));

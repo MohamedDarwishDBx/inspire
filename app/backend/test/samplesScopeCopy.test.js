@@ -78,6 +78,26 @@ test('the backend keeps the scope of a copied table when the copy destination sc
 });
 
 // Two samples tables with one table name in different schemas: their copies must not share a name, and each scope stays on its own copy.
+// The copy name is injective over (schema, table): pairs that differ only by where the underscores fall never share a name.
+test('copy names stay distinct where identifiers contain underscores (a_b + c vs a + b_c, a__b + c vs a + b__c)', () => {
+  const impl = require('../lib/inspireImplement');
+  const pairs = [['samples.a_b.c', 'samples.a.b_c'], ['samples.a__b.c', 'samples.a.b__c'], ['samples.a_b.c_d', 'samples.a.b_c_d']];
+  for (const [x, y] of pairs) {
+    assert.notEqual(impl.sampleCopyTable(x), impl.sampleCopyTable(y), `${x} and ${y} do not collide`);
+  }
+  assert.equal(impl.sampleCopyTable('samples.a_b.c'), '3_a_b_c');
+  assert.equal(impl.sampleCopyTable('samples.a.b_c'), '1_a_b_c');
+});
+
+test('the statement and the returned copy name come from one helper, so they name the same table', () => {
+  const impl = require('../lib/inspireImplement');
+  const dest = { catalog: 'inspire_kinds_rc7', schema: '_inspire' };
+  const src = 'samples.a_b.c_d';
+  const table = impl.sampleCopyTable(src);
+  assert.equal(impl.sampleCopyName(src, dest), `inspire_kinds_rc7._inspire.${table}`);
+  assert.match(impl.sampleCopyStatement(src, dest), new RegExp(`\\\`${table}\\\` AS SELECT`));
+});
+
 test('two samples tables with one table name in different schemas copy to different tables, and their scopes stay separate', async () => {
   const impl = require('../lib/inspireImplement');
   const S = await lib('samplesCopy.js');
@@ -87,9 +107,9 @@ test('two samples tables with one table name in different schemas copy to differ
   const copyA = impl.sampleCopyName(A, dest);
   const copyB = impl.sampleCopyName(B, dest);
   assert.notEqual(copyA, copyB, 'the copies do not collide');
-  assert.equal(copyA, 'inspire_kinds_rc7._inspire.bakehouse_sales_franchises');
-  assert.match(impl.sampleCopyStatement(A, dest), new RegExp(`\`bakehouse_sales_franchises\` AS SELECT`));
-  assert.match(impl.sampleCopyStatement(B, dest), new RegExp(`\`tpch_sales_franchises\` AS SELECT`));
+  assert.equal(copyA, 'inspire_kinds_rc7._inspire.9_bakehouse_sales_franchises');
+  assert.match(impl.sampleCopyStatement(A, dest), new RegExp(`\`9_bakehouse_sales_franchises\` AS SELECT`));
+  assert.match(impl.sampleCopyStatement(B, dest), new RegExp(`\`4_tpch_sales_franchises\` AS SELECT`));
   const scopeB = { columns: ['franchiseID'], rows: [{ column: 'franchiseID', op: '>=', values: ['3000001'] }] };
   const moved = S.scopesAfterSampleCopies({ [A]: SCOPE, [B]: scopeB }, [{ source: A, copy: copyA }, { source: B, copy: copyB }]);
   assert.deepEqual(moved[copyA], SCOPE);
