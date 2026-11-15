@@ -644,6 +644,9 @@ test('the use case list sits on the left; on the right the name, then Use case d
   const ui = await openTower();
   const { page } = ui;
   try {
+    // The asset drawer that openTower opens now pushes the use case pane aside (REQ-143), so the header is measured with it closed.
+    await page.keyboard.press('Escape');
+    await page.locator('[data-asset-drawer], [role="dialog"][aria-label*="Job"]').first().waitFor({ state: 'detached', timeout: 5000 }).catch(() => null);
     for (const [width, height] of [[1440, 900], [1920, 1080]]) {
       await page.setViewportSize({ width, height });
       await painted(page);
@@ -1445,8 +1448,8 @@ test('Build progress opens pinned to the right under the App header, full window
       const useCase = await page.locator('section[aria-label="Use case"]').boundingBox();
       assert.ok(Math.abs(box.y - 56) <= 1 && Math.abs(box.height - (height - 56)) <= 2, `at ${width}x${height} the panel runs from under the App header to the bottom of the window ${JSON.stringify(box)}`);
       assert.ok(Math.abs(box.x + box.width - width) <= 1, `at ${width}x${height} the panel is pinned to the right edge ${JSON.stringify(box)}`);
-      // The drawer overlays the Build page ("Genie progress overlay the page not push it to the side"): the use case stays under it.
-      assert.ok(useCase.x + useCase.width > box.x + 1, `at ${width}x${height} the use case keeps its place under the overlaid panel ${JSON.stringify({ useCase, box })}`);
+      // REQ-143: the Build page is pushed aside by the drawer. The use case ends where the drawer starts, and nothing is covered.
+      assert.ok(useCase.x + useCase.width <= box.x + 1, `at ${width}x${height} the use case ends before the drawer starts ${JSON.stringify({ useCase, box })}`);
       assert.ok(box.width >= 400 && box.width <= Math.round(width * 0.4) + 1, `at ${width}x${height} the panel is 400px or more and at most 40% of the window (${box.width} px)`);
       const room = await log.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight, overflow: getComputedStyle(el).overflowY,
         page: document.scrollingElement.scrollHeight - window.innerHeight }));
@@ -1604,7 +1607,7 @@ test('a Build page with short content ends where its content ends: the list and 
         assert.equal(await page.locator('[data-progress-card]').getAttribute('data-progress-open'), 'false', `${name}: page load keeps the progress panel closed, so it covers nothing`);
         await page.locator('[data-progress-card] [data-progress-show]').click();
         assert.equal(await page.locator('[data-progress-card]').getAttribute('data-progress-open'), 'true', `${name}: Show progress opens it`);
-        await page.locator('[data-progress-card] [data-progress-show]').click();
+        await page.locator('[data-mvp-progress] [role="dialog"]').getByRole('button', { name: 'Close', exact: true }).click();
         assert.equal(await page.locator('[data-progress-card]').getAttribute('data-progress-open'), 'false', `${name}: the progress panel is folded`);
       }
       for (const [width, height] of [[1440, 900], [1920, 1080]]) {
