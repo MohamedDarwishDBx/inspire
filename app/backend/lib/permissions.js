@@ -1,10 +1,12 @@
 const I = require('./inspireImplement');
 
-function permissionRequired({ statements, instructions, principal = '', why = '' } = {}) {
+// AUTO-4: `steps` are the commands and Share steps an admin copies on their own (Copy steps); `instructions` are plain notes, shown once.
+function permissionRequired({ statements, instructions, steps, principal = '', why = '' } = {}) {
   const list = [...new Set((Array.isArray(statements) ? statements : []).map((s) => String(s || '').trim()).filter(Boolean))];
   const lines = [...new Set((Array.isArray(instructions) ? instructions : []).map((s) => String(s || '').trim()).filter(Boolean))];
-  if (!list.length && !lines.length) return null;
-  return { statements: list, instructions: lines, principal: String(principal || ''), why: String(why || '') };
+  const copy = [...new Set((Array.isArray(steps) ? steps : []).map((s) => String(s || '').trim()).filter(Boolean))];
+  if (!list.length && !lines.length && !copy.length) return null;
+  return { statements: list, instructions: lines, steps: copy, principal: String(principal || ''), why: String(why || '') };
 }
 
 function folderPermission(folder, principal) {
@@ -12,7 +14,7 @@ function folderPermission(folder, principal) {
   const who = String(principal || '').trim();
   if (!path || !who) return null;
   return permissionRequired({
-    instructions: [
+    steps: [
       `In Workspace, open ${path} > Share, add ${who} with Can Edit`,
       `databricks workspace get-status ${path}  (note its object_id)`,
       `databricks api patch /api/2.0/permissions/directories/<object_id> --json '{"access_control_list":[{"service_principal_name":"${who}","permission_level":"CAN_EDIT"}]}'`,

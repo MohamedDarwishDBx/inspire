@@ -120,7 +120,7 @@ test('a folder the App cannot write to shows See the grant under the output chec
   const FOLDER = '/Workspace/Users/pat.lee@example.com/inspire_output';
   const folder = {
     statements: [], principal: 'inspire-sp', why: `The run writes its files to ${FOLDER}, and the App cannot write there yet.`,
-    instructions: [`In Workspace, open ${FOLDER} > Share, add inspire-sp with Can Edit`, `databricks api patch /api/2.0/permissions/directories/<object_id> --json '{"access_control_list":[{"service_principal_name":"inspire-sp","permission_level":"CAN_EDIT"}]}'`],
+    steps: [`In Workspace, open ${FOLDER} > Share, add inspire-sp with Can Edit`, `databricks api patch /api/2.0/permissions/directories/<object_id> --json '{"access_control_list":[{"service_principal_name":"inspire-sp","permission_level":"CAN_EDIT"}]}'`],
   };
   const ui = await openUi('launch', { ...STATE, outputRefusal: { message: `Inspire cannot save to ${FOLDER}.`, permissions: [folder] } });
   const { page } = ui;
