@@ -2,13 +2,15 @@
 // Build stayed enabled; the built-in sample refusal footer said "Grant access first" and pointed to a hand copy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dataMinimumBlocks, tooFewRowsText, SOURCE_BUILT_IN_REFUSED_REASON, SOURCE_REFUSED_REASON } from '../src/lib/implementWizard.js';
+import { dataMinimumBlocks, dataMinimumRefusalText, tooFewRowsText, SOURCE_BUILT_IN_REFUSED_REASON, SOURCE_REFUSED_REASON } from '../src/lib/implementWizard.js';
 
 const forecast17 = { row_count: 3333, period_count: 17, minimum_rows: 60, skipped: false };
 
 test('a forecast whose data has 17 distinct dates against a 60 minimum blocks the build and names both numbers and the way forward', () => {
   assert.equal(dataMinimumBlocks(forecast17), true);
-  const text = tooFewRowsText(forecast17);
+  // Earlier steps: the plain sentence, which never blocks. The last step shows the refusal (dataMinimumRefusalText).
+  assert.equal(tooFewRowsText(forecast17), 'Only 17 distinct dates are in this scope, fewer than the 60 this use case needs; you can still go on.');
+  const text = dataMinimumRefusalText(forecast17);
   assert.match(text, /17 distinct dates/);
   assert.match(text, /at least 60 are needed/);
   assert.match(text, /coarser period/);

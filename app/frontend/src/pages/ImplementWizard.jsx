@@ -56,6 +56,7 @@ import {
   readinessText,
   countedFor,
   tooFewRowsText,
+  dataMinimumRefusalText,
   dataMinimumBlocks,
   columnsReadOf,
   filterTablesOutside,
@@ -631,7 +632,8 @@ export default function ImplementWizard({
   const scopeGroups = scopeCounted ? readCounted.groups || null : null;
   const scopedProfile = narrowed ? withScopedRows(scopeProfile.profile, scopeCount, scopeGroups) : scopeProfile.profile;
   const scopedFirstRun = narrowed && scopeProfile.firstRun ? { ...scopeProfile.firstRun, profile: withScopedRows(scopeProfile.firstRun.profile, scopeCount, scopeGroups) } : scopeProfile.firstRun;
-  const tooFewRows = tooFewRowsText(readCounted);
+  // On the last step the scope note is the build's refusal (REQ-255); earlier steps keep the plain scope sentence that never blocks.
+  const tooFewRows = lastStep ? dataMinimumRefusalText(readCounted) : tooFewRowsText(readCounted);
 
   const q = useMemo(() => {
     const p = new URLSearchParams({

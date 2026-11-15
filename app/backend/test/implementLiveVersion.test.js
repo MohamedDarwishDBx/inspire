@@ -114,6 +114,15 @@ test('live-App sites read the kept live App, the newest-build helper reads the s
   assert.equal(I.liveCarriedAssets([]).app, undefined, 'no build, no live App');
 });
 
+// D-LIVE amended (11-15): a first build whose App crashed never served, so the newest App stays visible (must-keep).
+test('a first build whose App crashed still shows its App when no App has ever served', () => {
+  const I = require('../lib/inspireImplement');
+  const failedFirst = [{ session_id: 's1', use_case_id: 'UC1', spec_version: 1, status: 'failed', app_name: 'churn-desk', app_url: 'https://churn.example.test',
+    updated_at: '2026-11-15T04:00:00Z', spec_json: { use_case_name: 'Churn', outputs: { app: true } }, asset_status: { app: { state: 'failed', spec_version: 1 } } }];
+  assert.equal(I.liveAppOf(failedFirst), null, 'nothing has built, so no App has served');
+  assert.equal(I.liveCarriedAssets(failedFirst).app, 'churn-desk', 'the newest App is shown');
+});
+
 test('the settings target of the live App is the kept App URL, not the side App URL', () => {
   const I = require('../lib/inspireImplement');
   assert.equal(I.implementSettingsTarget(keptShapeRows(), 'UC1').url, 'https://kept.example.test');

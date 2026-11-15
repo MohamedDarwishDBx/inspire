@@ -272,7 +272,7 @@ test('the control tower lists every built asset grouped by output with its parts
   const page = cards.find((x) => x.id === PAGE);
   assert.deepEqual([page.label, page.name, page.vibes, page.rebuild, page.live.version, page.state.label, page.versions],
     ['Decisions page', 'Decisions', ASKED, true, 2, 'Ready', []]);
-  assert.equal(cards.find((x) => x.id === 'app:page:detail').live.version, 1, 'a carried page names the version that built it');
+  assert.equal(cards.find((x) => x.id === 'app:page:detail').live.version, 2, 'a carried page is served by the live App, so it names the live App version (REQ-241 D-LIVE)');
   const chart = cards.find((x) => x.id === CHART);
   assert.deepEqual([chart.label, chart.state, chart.url, chart.what, chart.noun], ['Weekly trend chart', { label: 'Ready with warnings', tone: 'warning' }, rows[0].dashboard_url,
     'A chart on the dashboard', 'chart']);
