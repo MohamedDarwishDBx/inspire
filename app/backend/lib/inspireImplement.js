@@ -1822,10 +1822,12 @@ function carriedAssets(history) {
 }
 
 // REQ-241 (D-LIVE): the carried outputs with `app` replaced by the live App (liveAppOf). Every site that means "the App that serves people" uses this.
+// D-LIVE, amended 11-15 (D-AUTO): the App that serves the live name; if no App has ever served (a first build whose App crashed),
+// the newest build's App, so its state still shows in status, diagnostics and control.
 function liveCarriedAssets(history) {
-  const { app, ...rest } = carriedAssets(history);
+  const carried = carriedAssets(history);
   const live = liveAppOf(history);
-  return live && live.name ? { ...rest, app: live.name } : rest;
+  return live && live.name ? { ...carried, app: live.name } : carried;
 }
 
 function implementNotebookImpact(assetStatus) {

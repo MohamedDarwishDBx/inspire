@@ -45,7 +45,6 @@ const STATE = {
       dashboard_url: `${HOST}/dashboardsv3/d1`, created_at: '2026-11-08T10:00:00.000Z', updated_at: '2026-11-08T10:12:00.000Z',
       asset_status: JSON.stringify({ dashboard: { state: 'failed', spec_version: 2, reason: `Gold tier rows in ${TABLE} had value 4821.75` }, 'app:page:Gold tier': { state: 'ready', spec_version: 1 } }) },
     { session_id: '42', use_case_id: 'N01-U01', spec_version: 1, status: 'ready', spec_json: spec, created_by: 'Ana Lopez', status_message: `built by ${OTHER_EMAIL}`,
-      app_name: 'contoso-churn-desk', app_url: 'https://contoso-churn-desk-1.aws.databricksapps.com',
       created_at: '2026-11-07T10:00:00.000Z', updated_at: '2026-11-07T10:30:00.000Z' },
   ],
   steps: [
