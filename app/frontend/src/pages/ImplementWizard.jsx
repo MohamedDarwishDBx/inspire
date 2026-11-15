@@ -2377,7 +2377,7 @@ export default function ImplementWizard({
           <div className="relative flex items-center gap-2">
             {/* The Build button already reads Checking access while the check runs, so the status is announced, not shown. Absolute, so it takes no room and the footer keeps its height. */}
             {lastStep && checksBusy && (
-              <p data-access-progress="" className="absolute bottom-full right-0 mb-1 whitespace-nowrap text-[11px] text-text-secondary">{accessCheckingText(checkSeconds)}</p>
+              <p data-access-progress="" className="absolute bottom-full end-0 mb-1 whitespace-nowrap text-[11px] text-text-secondary">{accessCheckingText(checkSeconds)}</p>
             )}
             {lastStep && (
               <p role="status" data-access-verdict={accessVerdict === 'pending' ? 'pending' : undefined} className="sr-only">

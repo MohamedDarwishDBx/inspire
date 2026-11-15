@@ -32,7 +32,8 @@ test('Load groups refused for the signed-in person opens Permission Required wit
     await page.getByRole('button', { name: 'Load groups for gender' }).click();
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
-    const text = await dialog.locator('[data-permission-statements=""]').innerText();
+    // The SQL sits under Advanced, which stays closed while a request offer is shown (REQ-311). innerText of a closed disclosure is '', so the listed text is read.
+    const text = await dialog.locator('[data-permission-statements=""]').textContent();
     assert.match(text, /GRANT USE CATALOG ON CATALOG `adb_fe_uae_01` TO `harness\.person@example\.com`;/);
     assert.match(text, /GRANT USE SCHEMA ON SCHEMA `adb_fe_uae_01`\.`demo_telco` TO `harness\.person@example\.com`;/);
     assert.match(text, /GRANT SELECT ON SCHEMA `adb_fe_uae_01`\.`demo_telco` TO `harness\.person@example\.com`;/);
@@ -60,7 +61,8 @@ test('a column-list refusal opens Permission Required once from the shared error
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     assert.equal(await page.locator('[data-permission-dialog=""]').count(), 1, 'exactly one Permission Required dialog');
-    const text = await dialog.locator('[data-permission-statements=""]').innerText();
+    // The SQL sits under Advanced, which stays closed while a request offer is shown (REQ-311). innerText of a closed disclosure is '', so the listed text is read.
+    const text = await dialog.locator('[data-permission-statements=""]').textContent();
     assert.match(text, /GRANT USE SCHEMA ON SCHEMA `adb_fe_uae_01`\.`demo_telco` TO `harness\.person@example\.com`;/);
     assert.match(text, /GRANT SELECT ON SCHEMA `adb_fe_uae_01`\.`demo_telco` TO `harness\.person@example\.com`;/);
   } finally {
@@ -79,7 +81,8 @@ test('a Launch picker refusal opens Permission Required once, with the schema gr
     await dialog.waitFor({ timeout: 15000 });
     await idle(page);
     assert.equal(await page.locator('[data-permission-dialog=""]').count(), 1, 'exactly one Permission Required dialog');
-    const text = await dialog.locator('[data-permission-statements=""]').innerText();
+    // The SQL sits under Advanced, which stays closed while a request offer is shown (REQ-311). innerText of a closed disclosure is '', so the listed text is read.
+    const text = await dialog.locator('[data-permission-statements=""]').textContent();
     assert.match(text, /GRANT USE CATALOG ON CATALOG `adb_fe_uae_01` TO `harness\.person@example\.com`;/);
     assert.match(text, /GRANT USE SCHEMA ON SCHEMA `adb_fe_uae_01`\.`demo_telco` TO `harness\.person@example\.com`;/);
   } finally {
