@@ -1,3 +1,4 @@
+import WaitingForAccess from './WaitingForAccess.jsx';
 import { Suspense, lazy, useState } from 'react';
 import { ColumnFilterStatus, withColumnFilters } from './ColumnFilters.jsx';
 import { addCounts, cap, integer, largestFirst, savedVerb, wholeMoney } from './format.js';
@@ -205,7 +206,8 @@ export default function Dashboard({ app, page, meta, state, onState, view, onVie
           <FilterBar meta={meta?.filters} columns={meta?.columns} grouping={meta?.grouping} state={state || { range: {}, sel: {} }} onState={onState} pageId={page.id} />
         </Placed>
       )}
-      {meta?.error && <PlainNote text={meta.error} prefix="The filters could not load, so the page shows nothing until they load: " icon={<Icon name="info" size={14} />} className="tile-err" role="alert" onRetry={onRetryMeta} />}
+      {meta?.waiting && <WaitingForAccess waiting={meta.waiting} compact />}
+      {meta?.error && !meta.waiting && <PlainNote text={meta.error} prefix="The filters could not load, so the page shows nothing until they load: " icon={<Icon name="info" size={14} />} className="tile-err" role="alert" onRetry={onRetryMeta} />}
       <PageFailure failures={failures} onRetry={onChanged} onRuns={onRuns} />
       {error && !failures?.whole && <PlainNote text={error} icon={<Icon name="info" size={14} />} className="tile-err" role="alert" onRetry={onRetry} />}
       {laidOut && !meta?.error && (

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { WAITING_FOR_ACCESS_CODE, getApp, getDefaults, getFilters, getOverview, getSummary } from './api.js';
+import { WAITING_FOR_ACCESS_CODE, filtersFailure, getApp, getDefaults, getFilters, getOverview, getSummary } from './api.js';
 import { applyTheme, hueVars, rememberPalette, storedPalette } from './theme.js';
 import { apiValues, initialFilterState } from './filters.js';
 import { AGENT_OPEN, EMPTY_LOOK, applyActions, changesView, visibleOf, topFact } from './agentView.js';
@@ -238,7 +238,7 @@ function Shell({ app, onRefreshSiblings }) {
       if (found?.range) setStates((s) => (s[id] ? s : { ...s, [id]: { range: found.range, sel: {}, defaults: true } }));
     };
     getDefaults(id).then(start).catch(() => {});
-    getFilters(id).then(settle).catch((error) => settle({ filters: [], error: error.message }));
+    getFilters(id).then(settle).catch((error) => settle(filtersFailure(error)));
   }, []);
   const retryMeta = useCallback((id) => { requested.current.delete(id); loadMeta(id); }, [loadMeta]);
   useEffect(() => { if (page) loadMeta(page.id); }, [page, loadMeta]);
