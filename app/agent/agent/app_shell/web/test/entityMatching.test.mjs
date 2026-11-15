@@ -362,3 +362,33 @@ test('entity matching: the record panel clears a single record\'s owner and says
   await context.close();
   assert.deepEqual(seen.errors.filter((e) => !/Failed to load resource/.test(e)), []);
 });
+
+test('entity matching: an accepted suggestion undoes on its own row with the word Undo, and puts the record back with no status', async () => {
+  const state = { rows: freshRows() };
+  const h = listing(state);
+  const base = kindRoutes(CASE.data(), state.rows, [], PAGE);
+  const { page, context, seen } = await open({ ...base, records: h.records, 'records/act': h.act });
+  await goRail(page, 'work');
+  await idle(page);
+  const first = page.locator('table tbody tr', { has: page.locator('[data-accept]') }).first();
+  await first.locator('[data-accept]').click();
+  await idle(page);
+  await page.waitForTimeout(300);
+  assert.equal(h.acts.length, 1, 'the accept is one write');
+  assert.equal(h.acts[0].values.action_status, 'In progress', 'accept writes Needs review');
+  const undo = page.locator('[data-row-undo-accept]');
+  assert.equal(await undo.count(), 1, 'the accepted record offers its undo on its row');
+  assert.equal((await undo.innerText()).trim(), 'Undo', 'the row says Undo');
+  await undo.click();
+  const confirm = page.locator('[role="group"][aria-label^="Undo "]').first();
+  await confirm.waitFor();
+  assert.equal(h.acts.length, 1, 'nothing is written before the person confirms');
+  await confirm.getByRole('button', { name: 'Undo', exact: true }).click();
+  await idle(page);
+  await page.waitForTimeout(300);
+  assert.equal(h.acts.length, 2, 'the undo is one more write');
+  assert.equal(h.acts[1].values.action_status, 'New', 'the record goes back to no status');
+  assert.deepEqual(h.acts[1].record_keys, h.acts[0].record_keys);
+  await context.close();
+  assert.deepEqual(seen.errors.filter((e) => !/Failed to load resource/.test(e)), []);
+});

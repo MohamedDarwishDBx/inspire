@@ -1924,6 +1924,7 @@ class Shell:
         self.state_pool = ThreadPoolExecutor(max_workers=STAMP_WORKERS)
         self.head_pool = ThreadPoolExecutor(max_workers=STAMP_WORKERS)
         self.factless, self.heads, self.early = set(), {}, {}
+        self.epoch = 0
         self.opening, self.opened = {}, threading.Condition()
         self.uncached = False
         self.enforced = self.backend.get("enforced") is True
@@ -2130,10 +2131,15 @@ class Shell:
             self.lakebase.close()
 
     def forget(self):
+        """A write (or a settings change) makes every state read before it stale. The epoch stops a lookup that started
+        before the write from caching its pre-write state after it (REQ-257 D5: that cached state held the list for 15 s)."""
         self.cache.clear()
         with self.stamp_lock:
+            self.epoch += 1
             self.stamps.clear()
             self.early.clear()
+            self.lookups.clear()
+            self.heads.clear()
 
     def read_tables(self, sql: str):
         with self.stamp_lock:
@@ -2204,9 +2210,12 @@ class Shell:
     def settle_state(self, ws, page: dict, key, running: Future) -> dict:
         with self.stamp_lock:
             head = self.heads.get(key) or Future()
+            epoch = self.epoch
         try:
             state = self.read_state(ws, page, head)
-            self.cache.put(key, state, STAMP_TTL_S)
+            with self.stamp_lock:
+                if epoch == self.epoch:
+                    self.cache.put(key, state, STAMP_TTL_S)
         except BaseException as error:
             if not head.done():
                 head.set_exception(error)
@@ -2214,8 +2223,10 @@ class Shell:
             raise
         finally:
             with self.stamp_lock:
-                self.lookups.pop(key, None)
-                self.heads.pop(key, None)
+                if self.lookups.get(key) is running:
+                    self.lookups.pop(key, None)
+                    if self.heads.get(key) is head:
+                        self.heads.pop(key, None)
         if not head.done():
             head.set_result((state["row"], state["error"]))
         running.set_result(state)

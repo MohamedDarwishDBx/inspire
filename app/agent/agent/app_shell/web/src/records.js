@@ -579,6 +579,10 @@ export const uncheckedWhy = (flag) => {
 export const isClosed = (row) => CLOSED_STATUSES.includes(row?._inspire_status || row?.action_status);
 
 export const ACCEPTED = { action_status: IN_PROGRESS, note: 'Accepted the suggested action' };
+/** REQ-257 D-UNDO: an accepted suggestion is reversed on its own row. The confirm repeats the word. */
+export const UNDO_ACCEPT = 'Undo';
+export const UNDO_ACCEPT_ASK = 'Undo puts the record back to Open with no status, as it was before Accept.';
+export const UNACCEPTED = { action_status: NEW, note: 'Undid the accepted suggested action' };
 export const suggestionOf = (meta, row) => (meta?.action ? plainText(row?.[meta.action]).trim() : '');
 export const acceptable = (meta, row) => !!suggestionOf(meta, row) && !!row?._inspire_version && (row._inspire_status || NEW) === NEW;
 export function acceptedText(n, left = 0) {

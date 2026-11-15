@@ -32,7 +32,7 @@ import { recordName, recordSentenceName,
   missingSince, NOT_IN_RUN, notInRunText, overdueFirst, pageText, recordCurrency, recordKeyOf, recordRef, recordView, recordsText, savingText, statusClass,
   statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf, WAKE_WORD, WAKE_ASK, WOKE, snoozeOf,
   isStaleRecord, closedText, closedBatchOf, undoBatchOf, undoWordOf, UNDO_CLOSE, isClosed, skippedText, READ_ONLY, READ_ONLY_KEPT, READ_ONLY_THEIRS,
-  CLOSED_PICK, ACCEPTED, acceptable, uncheckedWhy, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
+  CLOSED_PICK, ACCEPTED, UNDO_ACCEPT, UNDO_ACCEPT_ASK, UNACCEPTED, IN_PROGRESS, suggestionOf, acceptable, uncheckedWhy, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
 } from './records.js';
 import { SectionHelp } from './SectionHelp.jsx';
 import { ClusterBar, useChoices } from './KindParts.jsx';
@@ -965,8 +965,13 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
           ) : '';
         }
         const now = rowChoice(choices, r)?.id;
+        const accepted = r._inspire_status === IN_PROGRESS && !!suggestionOf(meta, r);
         return (
           <span className="row-acts row-next-acts">
+            {accepted && (
+              <AskFirst word={UNDO_ACCEPT} ask={UNDO_ACCEPT_ASK} name={name} write={`undo-accept:${keyOf(r)}`} data-row-undo-accept
+                run={() => quick(r, UNACCEPTED, 'Accept undone', `undo-accept:${keyOf(r)}`)} />
+            )}
             {snoozeOf(r) >= today && (
               <AskFirst word={WAKE_WORD} ask={WAKE_ASK} name={name} write={`wake:${keyOf(r)}`} data-row-wake
                 run={() => quick(r, { snooze_until: null }, WOKE, `wake:${keyOf(r)}`)} />
