@@ -46,6 +46,7 @@ const NO_PICKS = {};
 const FOOTER_CELLS = 6;
 const NARROW_FOOTER = 470;
 const SOMEONE_ELSE = ' someone else';
+const CLEAR_OWNER = ' clear owner';
 const SAVED = 'Action saved. The earlier version stays in the history.';
 const SAVE_WRITE = 'drawer:save';
 const NOTE_WRITE = 'drawer:note';
@@ -355,6 +356,8 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
     if (who === SOMEONE_ELSE) {
       ownerInput.current?.focus();
       ownerInput.current?.select();
+    } else if (who === CLEAR_OWNER) {
+      action.save({ ...action.form, owner: '' }, 'Owner cleared. The earlier version stays in the history.', GIVE_WRITE);
     } else if (who) {
       action.save({ ...action.form, owner: who }, `Given to ${who}. The earlier version stays in the history.`, GIVE_WRITE);
     }
@@ -479,6 +482,7 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                   {kept.slice(0, 2)}
                   <select className="btn" aria-label="Give to someone" value="" onChange={giveTo} disabled={action.saving} aria-busy={action.mine(GIVE_WRITE) || undefined}>
                     <option value="">{action.mine(GIVE_WRITE) ? savingLabel(action.slow) : owner ? `With ${owner}` : 'Give to someone'}</option>
+                    {owner && <option value={CLEAR_OWNER}>Clear the owner</option>}
                     {person && person !== owner && <option value={person}>Give to me</option>}
                     {owners.filter((o) => o !== owner && o !== person).map((o) => <option key={o} value={o}>Give to {o}</option>)}
                     <option value={SOMEONE_ELSE}>Someone else…</option>
@@ -950,8 +954,16 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     ...(tracker ? [{
       key: '_next', label: 'Next step', hideLabel: true, fixed: true, className: 'nowrap row-next',
       render: (r) => {
-        if (isClosed(r)) return '';
         const name = recordSentenceName(r, meta);
+        if (isClosed(r)) {
+          const batch = undoBatchOf(r, person);
+          return batch ? (
+            <span className="row-acts row-next-acts">
+              <AskFirst word={undoWordOf(meta, true)} ask={UNDO_CLOSE} name={name} write={`undo:${keyOf(r)}`} data-row-undo
+                run={() => acts.undo(batch, `undo:${keyOf(r)}`)} />
+            </span>
+          ) : '';
+        }
         const now = rowChoice(choices, r)?.id;
         return (
           <span className="row-acts row-next-acts">
@@ -1025,12 +1037,12 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
           {tracker && !tab && <WindowChips />}
           {tracker && !matching && person && (data?.status_counts?.mine ?? 0) > 0 && (
             <button className="pick-i" ref={clearAnchor} onClick={() => setClearing(!clearing)} aria-expanded={clearing} data-clear-queue>
-              Clear my queue · {integer(data.status_counts.mine)}
+              Mark my {integer(data.status_counts.mine)} open done
             </button>
           )}
           {tracker && (openCount ?? shownTotal) > 0 && !matching && (
             <button className="pick-i" onClick={selectAll} data-act-all data-tour="bulk">
-              {mine ? `Clear my queue: ${capped ? 'more than ' : ''}${integer(openCount ?? shownTotal)} open` : `Act on all ${capped ? 'more than ' : ''}${integer(openCount ?? shownTotal)} matching`}
+              {mine ? `Select my ${capped ? 'more than ' : ''}${integer(openCount ?? shownTotal)} open` : `Act on all ${capped ? 'more than ' : ''}${integer(openCount ?? shownTotal)} matching`}
             </button>
           )}
           {(freshCount > 0 || fresh) && (
@@ -1050,7 +1062,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
       {impact && <p className="impact"><Icon name="check" size={14} />{impact}</p>}
       {acts.saidAt('all')}
       {clearing && (
-        <Popover anchor={clearAnchor.current} onClose={() => setClearing(false)} label="Clear my queue" width={300}>
+        <Popover anchor={clearAnchor.current} onClose={() => setClearing(false)} label="Mark my open records done" width={300}>
           <div className="bulk-pop">
             <p>Mark your open assigned records as done? Closed records stay as they are.</p>
             <button type="button" className="btn btn--pri" data-clear-confirm onClick={() => clearMyQueue()}>Mark my open records done</button>
