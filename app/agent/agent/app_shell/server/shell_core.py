@@ -2945,6 +2945,14 @@ class Shell:
         for kpi in page.get("kpis") or []:
             if basis and kpi.get("format") == "currency":
                 out["kpis"].setdefault(kpi["id"], {})["basis"] = basis
+        through = None
+        for kpi in page.get("kpis") or []:
+            shown = out["kpis"].get(kpi["id"])
+            if ("kpi", kpi["id"]) in errors or not shell_sql.kpi_needs_rows_check(shown):
+                continue
+            through = self.data_through_date(ws, who, page) if through is None else through
+            seen = self.run(ws, who, *shell_sql.kpi_rows_query(page, kpi["id"], values or {}), 1)["rows"]
+            out["kpis"][kpi["id"]] = shell_sql.kpi_missing(page, shown, int((seen or [{}])[0].get("n") or 0), through)
         if counts is not None:
             line = {"text": shell_sql.scope_counts_text(counts["rows"])}
             for kpi in page.get("kpis") or []:
@@ -2952,6 +2960,15 @@ class Shell:
                     out["kpis"].setdefault(kpi["id"], {})["left_out"] = line
         out["zero_state"] = self.zero_state(page, ws, who, out["charts"], rows_checked(scoped[0]) if scoped else None) if out["charts"] else None
         return out
+
+    def data_through_date(self, ws, who, page: dict) -> str:
+        # The newest date the page's date filter reads from its data: the date a KPI with no rows behind it is missing data after.
+        dated = next((f["id"] for f in page.get("filters") or [] if f.get("type") == "date_range"), None)
+        if dated is None:
+            return ""
+        done, _errors = self.bounds(ws, who, page)
+        rows = (done.get(("filter", dated)) or {}).get("rows") or []
+        return str((rows[0] if rows else {}).get("high") or "")[:10]
 
     def previous_datasets(self, ws, who, page: dict) -> dict:
         names = sorted({k["dataset"] for k in page.get("kpis") or [] if k.get("compare")})
