@@ -2919,7 +2919,7 @@ class Shell:
             names = {f["name"] for f in self.table_fields(ws, who, page)} if page.get("result_table") and self.lakebase is None else set()
         except (QueryError, HttpError):
             names = set()  # an unreadable table keeps its own error on the KPI, with no scope line
-        counted = shell_sql.scope_counts_query(page, names) if names else None
+        counted = shell_sql.scope_counts_query(page, names, shell_sql.window_bounds("all", self.now())["today"]) if names else None
         if counted:
             jobs[("scope", "counts")] = (lambda s=counted[0], p=counted[1]: self.run(ws, who, s, p, 1))
         done, errors = self._parallel(jobs, probe)
@@ -3117,6 +3117,10 @@ class Shell:
         ai = {"columns": {name: shell_sql.ai_alias(name) for name in context["ai"]},
               "categories": [{"name": name, "options": sorted(counted.get(name, []), key=lambda o: (-o["n"], str(o["value"])))}
                              for name in context["categories"]], "picked": request["ai"], "counted": request["ai_counts"]}
+        statuses = shell_sql.status_counts_of(done[("list", "statuses")].get("rows"), shell_sql.status_choices(page)) if counting and (
+            "list", "statuses") in done else None
+        if statuses is not None:  # the Actions line's Open figure is the Work tab's Open count: one predicate, one number
+            summary = dict(summary, open=statuses["open"])
         rows = done[("list", "rows")]["rows"]
         total, more = (int(first("total").get("total") or 0), False) if whole and facts else shell_sql.counted_total(first("total"))
         missed = floor is not None and floor["on"] == "d" and any(r.get("_inspire_key") is None for r in rows)
@@ -3138,8 +3142,7 @@ class Shell:
                 "window": {"window": window["window"], "limit": window.get("limit"), "shown": shown, "more": total - shown,
                            "today": window["today"]} if window else None,
                 "as_of_us": self.as_of_us(served_by(done), read_at),
-                **({"status_counts": shell_sql.status_counts_of(done[("list", "statuses")].get("rows"), shell_sql.status_choices(page))
-                    if ("list", "statuses") in done else None} if counting else {}),
+                **({"status_counts": statuses} if counting else {}),
                 **({"treatments": [{"segment": r.get("s"), "treatment": r.get("v"), "n": int(r.get("n") or 0)}
                                    for r in done[("list", "treatments")].get("rows") or []] if ("list", "treatments") in done else None}
                    if request["treatments"] else {})}

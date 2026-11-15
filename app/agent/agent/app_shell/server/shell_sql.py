@@ -2769,9 +2769,10 @@ def left_out_text(rows) -> dict:
 SCOPE_COUNT_FORMATS = ("number", "integer")
 
 
-def scope_counts_query(page: dict, names) -> tuple:
-    """One read of the App's result table under the one scope: open, held back, done or closed, and could not be checked.
-    Every count KPI on a page with the quality flag states these numbers, so no count is read as the open work count alone."""
+def scope_counts_query(page: dict, names, today: str) -> tuple:
+    """One read of the App's result table under the one scope: open, snoozed, held back, done or closed, and could not be checked.
+    Every count KPI on a page with the quality flag states these numbers, so no count is read as the open work count alone.
+    The open and snoozed cells split the same open-status rows on the snooze date, exactly as the Work list does."""
     if "data_quality_flag" not in names:
         return None
     params = _Params()
@@ -2782,9 +2783,12 @@ def scope_counts_query(page: dict, names) -> tuple:
               else params.add(statuses["unset"]))
     opened = ", ".join(params.add(str(v)) for v in statuses["open"])
     closed = ", ".join(params.add(str(v)) for v in statuses["closed"])
+    snooze = f"CAST(`{SNOOZE_COLUMN}` AS DATE)" if SNOOZE_COLUMN in names else "CAST(NULL AS DATE)"
+    awake = not_snoozed_sql(snooze, params.add(today, "DATE"))
     scope = " AND ".join(c for c in (use_case_scope(page, params), "`is_current`", "`change_source` <> 'delete'") if c)
-    text = (f"SELECT COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened})) AS open_, COUNT_IF({ok} AND {held}) AS held_, "
-            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({closed})) AS closed_, COUNT_IF(NOT {ok}) AS unchecked "
+    text = (f"SELECT COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened}) AND {awake}) AS open_, COUNT_IF({ok} AND {held}) AS held_, "
+            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({closed})) AS closed_, COUNT_IF(NOT {ok}) AS unchecked, "
+            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened}) AND NOT {awake}) AS snoozed_ "
             f"FROM {table_name(page['result_table'])} WHERE {scope}")
     return f"{text} LIMIT 1", params.items
 
@@ -2806,9 +2810,10 @@ def kpi_counts_result_rows(page: dict, kpi: dict) -> bool:
 
 def scope_counts_text(rows) -> str:
     row = (rows or [{}])[0]
-    open_, held, closed, unchecked = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked"))
-    checked = open_ + held + closed
-    return (f"Scope: {checked} checked records, {open_} open, {held} held back, {closed} done or closed. "
+    open_, held, closed, unchecked, snoozed = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked", "snoozed_"))
+    checked = open_ + held + closed + snoozed
+    later = f" {snoozed} snoozed until a later date." if snoozed else ""
+    return (f"Scope: {checked} checked records, {open_} open, {held} held back, {closed} done or closed.{later} "
             f"{unchecked} could not be checked and are never open work.")
 
 
@@ -3718,9 +3723,15 @@ def checked_sql(alias: str = "c") -> str:
     return f"COALESCE({alias}.`_inspire_ok`, FALSE)"
 
 
+def not_snoozed_sql(snooze: str, today: str) -> str:
+    """Open work waits for its snooze date: no snooze, or the snooze date is today or earlier. The Work list, the scope line and
+    the Work tab count all read this one expression, so a snoozed row is counted in none of them until it wakes."""
+    return f"({snooze} IS NULL OR {snooze} <= {today})"
+
+
 def window_conditions(bounds: dict, params, held: bool, today: str, alias: str = "c", checked: bool = False) -> list:
     a = f"{alias}."
-    out = [f"COALESCE({a}`_inspire_status`, '{NEW}') IN ({shell_facts.sql_list(OPEN_STATUSES)})", f"({a}`_inspire_snooze` IS NULL OR {a}`_inspire_snooze` <= {today})"]
+    out = [f"COALESCE({a}`_inspire_status`, '{NEW}') IN ({shell_facts.sql_list(OPEN_STATUSES)})", not_snoozed_sql(f"{a}`_inspire_snooze`", today)]
     if held:
         out.append(f"NOT COALESCE({a}`_inspire_held`, FALSE)")
     if checked:
