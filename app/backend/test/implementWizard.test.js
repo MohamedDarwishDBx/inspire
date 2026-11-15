@@ -815,6 +815,12 @@ test('the Implement page shows lost tables from a refused re-run first, else onl
   assert.deepEqual(w.missingSourcePick([{ table: 'main.s.pax', reason: 'not found', primary: true }]), { label: 'Choose a replacement table', step: 'data' });
   assert.equal(w.missingSourcePick([]), null, 'a preview with no missing table offers no picker');
   assert.equal(w.missingSourcePick(undefined), null);
+  // REQ-240: a replacement already used as a source is refused; a new table, or the table's own name, is allowed.
+  const used = ['main.s.returns', 'main.s.returns'];
+  assert.match(w.duplicateSourceNotice(used, 'main.s.orders', 'main.s.orders', 'main.s.returns'), /already a source table/);
+  assert.equal(w.duplicateSourceNotice(['main.s.orders', 'main.s.returns'], 'main.s.orders', 'main.s.orders', 'main.s.orders_v2'), '', 'a new table is allowed');
+  assert.equal(w.duplicateSourceNotice(['main.s.returns'], 'main.s.returns', 'main.s.returns', 'main.s.returns'), '', 'the table keeps its own name');
+  assert.match(w.duplicateSourceNotice(['main.s.orders', 'main.s.returns'], 'main.s.orders', 'main.s.orders', 'MAIN.S.RETURNS'), /already a source table/, 'case-insensitive');
 });
 
 test('the business Hub App is inspire-hub- and the business name, at most 30 characters, and a fresh App of a known business takes that name', async () => {
