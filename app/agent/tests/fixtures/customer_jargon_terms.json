@@ -26,6 +26,12 @@
       "why": "log tags such as [DATA-FILTER-LABEL FIRED]"
     },
     {
+      "id": "page_id",
+      "pattern": "\\bpage n\\d+_u\\d+\\b",
+      "flags": "i",
+      "why": "an internal App page id such as 'page n06_u01' (REQ-237): person copy names an App page by its title"
+    },
+    {
       "id": "internal_object",
       "pattern": "(?<![\\w.])\\w*__[a-z]\\w*",
       "flags": "",

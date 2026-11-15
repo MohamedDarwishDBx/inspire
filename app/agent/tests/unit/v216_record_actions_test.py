@@ -10,6 +10,7 @@ SERVER = os.path.join(ROOT, "agent", "app_shell", "server")
 if SERVER not in sys.path:
     sys.path.insert(0, SERVER)
 
+import shell_core
 import shell_sql
 from v141_app_shell_test import call
 from v142_edits_test import edit_page
@@ -89,7 +90,7 @@ def test_an_informational_page_shows_no_actions_and_refuses_every_decision_route
     for values in ({"action_status": "Done"}, {"action_status": "Dismissed", "dismiss_reason": "not ours"}, {"snooze_until": "2026-12-01"}):
         status, out = act_on(s, page["id"], values)
         assert status == 403 and out["error"] == (
-            f"page {page['id']} is a {label} page: it shows information only, so people record no decisions on it"), out
+            f"{shell_core.page_label(page)} is a {label} page: it shows information only, so people record no decisions on it"), out
     status, out = call(s, "POST", "records/undo", headers=EDITOR, body={"page": page["id"], "batch_id": REQUEST})
     assert status == 403 and "shows information only" in out["error"]
     assert ws.queries("MERGE INTO") == [] and ws.queries("action_batch") == []
