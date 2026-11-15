@@ -190,6 +190,9 @@ REVIEWED = {
     'name': {
         # REQ-204/REQ-197: the Table Scope view name Inspire computed, named in the refusal to rewrite a view that is not one.
         ('scope_view_definition', 'view'),
+        # REQ-225: the owned view name of the Table Scope, Inspire's own scope['view'] key (the live dict is keyed by it), named in
+        # the refusal to restore a view whose saved definition is not a view. The caller's except passes it through redact_error.
+        ('scope_view_restore_sql', 'view'),
         ('_implement_alert', 'named'),
         ('_verify_file', 'file'),
         ('notebook_file', "pin['file']"),
