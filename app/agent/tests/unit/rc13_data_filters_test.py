@@ -295,17 +295,17 @@ def test_a_user_named_use_case_keeps_the_persons_own_words(labelled):
 
 def test_the_fired_line_carries_the_counts_and_is_written_as_a_step_message(agent_ns):
     line = agent_ns["data_filter_label_line"]({"affected": 2, "carried": 1, "reasked": 1, "fallback": 0, "kept_user_named": 0, "subtitled": 0}, "Contoso")
-    assert line.startswith("[DATA-FILTER-LABEL FIRED] carried at generation 1 of 2; after repair 2 of 2")
-    assert "(re-asked 1, rewrite 0, kept 0 user-named)" in line and 'label "Contoso"' in line
+    assert line.startswith('[DATA-FILTER-LABEL FIRED] 1 of 2 names carried the label "Contoso" when generated; after the fix 2 of 2 carry it')
+    assert "1 asked again, 0 set directly, 0 kept as you named them" in line
 
 
 def test_the_fired_line_separates_the_generation_count_from_the_count_after_repair(agent_ns):
     zero_at_generation = agent_ns["data_filter_label_line"]({"affected": 17, "carried": 0, "reasked": 17, "fallback": 0, "kept_user_named": 0, "subtitled": 0}, "Tokyo Tidbits")
-    assert zero_at_generation.startswith("[DATA-FILTER-LABEL FIRED] carried at generation 0 of 17; after repair 17 of 17")
-    assert "(re-asked 17, rewrite 0, kept 0 user-named)" in zero_at_generation
+    assert zero_at_generation.startswith('[DATA-FILTER-LABEL FIRED] 0 of 17 names carried the label "Tokyo Tidbits" when generated; after the fix 17 of 17 carry it')
+    assert "17 asked again, 0 set directly, 0 kept as you named them" in zero_at_generation
     mixed = agent_ns["data_filter_label_line"]({"affected": 4, "carried": 1, "reasked": 2, "fallback": 1, "kept_user_named": 3, "subtitled": 0}, "Contoso")
-    assert mixed.startswith("[DATA-FILTER-LABEL FIRED] carried at generation 1 of 4; after repair 4 of 4")
-    assert "kept 3 user-named" in mixed
+    assert mixed.startswith('[DATA-FILTER-LABEL FIRED] 1 of 4 names carried the label "Contoso" when generated; after the fix 4 of 4 carry it')
+    assert "3 kept as you named them" in mixed
     import json as _json
     import os
     here = os.path.dirname(os.path.abspath(__file__))
