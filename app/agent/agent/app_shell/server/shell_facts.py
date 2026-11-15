@@ -1176,3 +1176,9 @@ def run_rows_source(source: str, date_column: str) -> str:
     page = {"datasets": [{"name": RUN_ROWS_DATASET, "sql": source}],
             "filters": [{"id": "as_of", "type": "date_range", "columns": {RUN_ROWS_DATASET: date_column}}]}
     return future_source(page, RUN_ROWS_DATASET, source)
+
+
+def page_label(page: dict) -> str:
+    # REQ-237: a person sees an App page by its title; the internal page id stays out of the copy.
+    name = " ".join(str(page.get("title") or "").split())
+    return f"page {name}" if name else "the App page"

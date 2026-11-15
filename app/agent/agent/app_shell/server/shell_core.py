@@ -102,6 +102,8 @@ def is_write_route(method: str, name: str) -> bool:
     return method != "GET" and (name in WRITE_ROUTE_NAMES or name in WRITE_SOURCES or name in ALERT_ROUTES or name.startswith("scenario/"))
 
 
+page_label = shell_facts.page_label  # REQ-237: the App page as a person names it (its title, never its id)
+
 WAITING_FOR_ACCESS = "This App is waiting for access to its data. Your data owner needs to grant the App access; the exact grant is under Details."
 
 
@@ -358,9 +360,9 @@ def similar_keys(query: dict) -> list:
 def informational_text(page: dict) -> str:
     ident = shell_sql.page_layout(page)
     if shell_sql.layout_decides(ident):
-        return f"page {page.get('id')} has no decision list, so people record no decisions on it"
+        return f"{page_label(page)} has no decision list, so people record no decisions on it"
     label = (shell_sql.layouts().get(ident) or {}).get("label") or ident
-    return f"page {page.get('id')} is a {label.lower()} page: it shows information only, so people record no decisions on it"
+    return f"{page_label(page)} is a {label.lower()} page: it shows information only, so people record no decisions on it"
 
 
 def reviewed_text(count: int) -> str:
@@ -398,7 +400,7 @@ def treatment_of(page: dict, data: dict, values: dict):
         return None
     named = (page.get("segments") or {}).get("treatments") if isinstance(page.get("segments"), dict) else None
     if not named:
-        raise HttpError(400, f"page {page['id']} has no segment treatments, so an action on it names none")
+        raise HttpError(400, f"{page_label(page)} has no segment treatments, so an action on it names none")
     if treatment not in named:
         raise HttpError(400, f"treatment must be one of this page's segment treatments: {', '.join(named)}")
     if values.get("action_status") != shell_sql.IN_PROGRESS:
@@ -2847,7 +2849,7 @@ class Shell:
         table = str(query["table"]) if query.get("table") is not None else None
         ident = str(column if column is not None else query.get("filter") or "")
         if column is None and not any(f.get("id") == ident and f.get("type") == "multi_select" for f in page.get("filters") or []):
-            raise HttpError(404, f"page {page['id']} has no choice filter {ident!r}")
+            raise HttpError(404, f"{page_label(page)} has no choice filter {ident!r}")
         text = str(query.get("q") or "").strip()
         if len(text) > shell_sql.CAPS["value_chars"]:
             raise HttpError(400, f"search for at most {shell_sql.CAPS['value_chars']} characters")
@@ -2855,14 +2857,14 @@ class Shell:
         try:
             dataset = None if column is None else shell_sql.column_dataset(page, table)
         except KeyError as error:
-            raise HttpError(404, f"page {page['id']}: {shell_sql.error_text(error)}") from error
+            raise HttpError(404, f"{page_label(page)}: {shell_sql.error_text(error)}") from error
         ws, who = self.workspace(headers)
         if column is not None:
             types = self.list_columns(ws, who, page, dataset)
             try:
                 shell_sql.column_filter(page, table, ident, "multi_select", types)
             except KeyError as error:
-                raise HttpError(404, f"page {page['id']}: {shell_sql.error_text(error)}") from error
+                raise HttpError(404, f"{page_label(page)}: {shell_sql.error_text(error)}") from error
         limit = shell_sql.CAPS["option_matches"]
         sql, params = (shell_sql.options_query(page, ident, text, limit) if column is None
                        else shell_sql.column_options_query(page, table, ident, text, limit, types))
@@ -2989,7 +2991,7 @@ class Shell:
 
     def list_records(self, headers: dict, page: dict, data: dict, probe=None) -> dict:
         if not page.get("records"):
-            raise HttpError(404, f"page {page['id']} has no decision list")
+            raise HttpError(404, f"{page_label(page)} has no decision list")
         values = data.get("filters") or {}
         problems = shell_sql.filter_values_problems(page, values) + shell_sql.list_values_problems(
             page, data.get(shell_sql.COLUMN_FILTERS), {"actions": True})
@@ -4049,7 +4051,7 @@ class Shell:
         failed = lambda texts: found.extend((CHECK_FAILED, t) for t in texts)
         design = lambda texts: found.extend((CHECK_DESIGN, t) for t in texts)
         for page in self.pages:
-            where = f"page {page['id']}"
+            where = f"page {page['id']}"  # internal check problem: keyed by id, the build shows it by title (REQ-237)
             bounds, slicing, single = {}, 0, []
             probe = Probe(self.workspace(headers)[0], self.timer)
             meta = self.filters(headers, page["id"], probe)
@@ -4606,7 +4608,7 @@ class Shell:
         page = self.page(data.get("page"))
         plan = page.get("plan")
         if not isinstance(plan, dict):
-            raise HttpError(404, f"page {page['id']} has no plan to decide")
+            raise HttpError(404, f"{page_label(page)} has no plan to decide")
         decisions, editable = self.decides(page), self.plan_editable(page)
         if not decisions and not editable:
             raise HttpError(403, self.undecided_text(page))
@@ -4622,7 +4624,7 @@ class Shell:
         version, ws = None, None
         if data.get("plan_id") is not None:
             if shell_sql.plan_contract(page) is None:
-                raise HttpError(400, f"page {page['id']} keeps no plan versions, so send no plan_id")
+                raise HttpError(400, f"{page_label(page)} keeps no plan versions, so send no plan_id")
             ws, _who = self.workspace(headers)
             version = self.open_version(ws, page, data.get("plan_id"))
         edited = None
@@ -4650,7 +4652,7 @@ class Shell:
         page = self.page(ident)
         found = shell_sql.plan_contract(page)
         if not page.get("result_table") or found is None or (contract and found != contract):
-            raise HttpError(404, f"page {page['id']} has no {contract or 'plan or forecast'} to work on")
+            raise HttpError(404, f"{page_label(page)} has no {contract or 'plan or forecast'} to work on")
         return page
 
     @staticmethod
@@ -4768,7 +4770,7 @@ class Shell:
     def plan_results(self, headers: dict, ident) -> dict:
         page = self.planned_page(ident, "plan")
         if not isinstance(page.get("plan"), dict):
-            raise HttpError(404, f"page {page['id']} has no plan to compare with its actuals")
+            raise HttpError(404, f"{page_label(page)} has no plan to compare with its actuals")
         ws, who = self.workspace(headers)
         rows, missing = self.plan_rows(ws, page)
         versions = shell_sql.plan_versions(rows)
@@ -4829,7 +4831,7 @@ class Shell:
         page = self.page(data.get("page"))
         scenario = page.get("scenario")
         if not isinstance(scenario, dict):
-            raise HttpError(404, f"page {page['id']} has no scenario to evaluate")
+            raise HttpError(404, f"{page_label(page)} has no scenario to evaluate")
         ws, who = self.session(headers, probe)
         queries = shell_sql.scenario_queries(page)
         read, failed = self._parallel({name: (lambda q=q: self.run(ws, who, *q, shell_sql.CAPS["scenario_rows"]))
@@ -4855,7 +4857,7 @@ class Shell:
     def scenario_page(self, ident) -> dict:
         page = self.page(ident)
         if not isinstance(page.get("scenario"), dict):
-            raise HttpError(404, f"page {page['id']} has no scenario to save")
+            raise HttpError(404, f"{page_label(page)} has no scenario to save")
         if not page.get("result_table"):
             raise HttpError(409, "this page names no result table, so the App has nowhere to keep its scenarios")
         return page
@@ -5045,7 +5047,7 @@ class Shell:
 
     def list_context(self, ws, who, page: dict, delta: bool = False) -> tuple:
         if not page.get("records"):
-            raise HttpError(404, f"page {page['id']} has no decision list")
+            raise HttpError(404, f"{page_label(page)} has no decision list")
         columns, fields = self.list_columns(ws, who, page), self.table_fields(ws, who, page) if page.get("result_table") else None
         return self.context_of(ws, who, page, columns, fields, delta)[0], fields
 
