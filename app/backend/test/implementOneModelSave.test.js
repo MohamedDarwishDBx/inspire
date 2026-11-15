@@ -92,3 +92,20 @@ test('REQ-193: the whole data is still saved for family C, and an anomaly column
     assert.equal(kept.status, 200, 'an anomaly use case keeps its planned Grouping (must-exclude)');
   });
 });
+
+// P54 (REQ-193): the kind decides the save refusal. K-Means and RFM are not in the technique table, so the technique alone never refused them.
+test('P54: a column Grouping is refused on save for a segmentation kind whatever its technique (K-Means, RFM); anomaly keeps its column (fail-pre: forwarded)', async () => {
+  for (const technique of ['K-Means', 'RFM']) {
+    const useCase = { ...SEGMENTATION, analytics_technique: technique, use_case_kind: 'segmentation' };
+    await withApp({ forwardedToken: PERSON, useCase, appApi: { 'POST /api/settings/save': [{ saved: true }] } }, async (url, made) => {
+      const refused = await call(url, `/api/inspire/implement/settings/save?${Q}`, { method: 'POST', body: { name: 'group_by', value: 'region', was: 'all', note: '' } });
+      assert.equal(refused.status, 400, `${technique}: ${JSON.stringify(refused.data)}`);
+      assert.match(refused.data.error, REASON);
+      assert.equal(made.fetches.some((f) => String(f.path).includes('/api/settings/save')), false, 'the App is never asked to save it');
+    });
+  }
+  await withApp({ forwardedToken: PERSON, useCase: { ...ANOMALY, use_case_kind: 'anomaly' }, appApi: { 'POST /api/settings/save': [{ settings: [], saved: true }] } }, async (url) => {
+    const kept = await call(url, `/api/inspire/implement/settings/save?${Q}`, { method: 'POST', body: { name: 'group_by', value: 'region', was: 'all', note: '' } });
+    assert.equal(kept.status, 200, 'an anomaly kind keeps its planned Grouping (must-exclude)');
+  });
+});
