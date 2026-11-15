@@ -38,6 +38,12 @@
       "why": "Inspire's bare internal object names such as __constraints (REQ-227: a Genie change line named one). A catalog.schema.table name is not a bare token and is kept (D-NAMES)"
     },
     {
+      "id": "use_case_id",
+      "pattern": "\\bN\\d{2}-U\\d{2}\\b",
+      "flags": "i",
+      "why": "an internal use case id such as 'N06-U01' (REQ-258): the Ask Genie panel names the use case by its title; the id stays in Genie-facing text (D-NAMES)"
+    },
+    {
       "id": "companion",
       "pattern": "\\bcompanions?\\b",
       "flags": "i",

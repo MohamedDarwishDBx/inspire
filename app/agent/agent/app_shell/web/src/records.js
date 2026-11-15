@@ -337,9 +337,9 @@ export function claimTarget(rows, person, limit = 200) {
 export const claimText = (n) => `Nobody owns these records yet, so My work stays empty for everyone. Take the ${n === 1 ? 'one' : n} on this page, or assign each one to the person who will work it.`;
 
 export const QUIET_MIN = 3;
-export const RAISE_CONFIDENCE = 'What would raise it: more history for each item, so the forecast can beat a simple guess; fixing the data quality issues flagged on the rows; and a run on every group instead of the First run only.';
+export const RAISE_CONFIDENCE = 'What would raise it: more of the data behind each item; fixing the data quality issues flagged on the rows; and a run on every group instead of the First run only.';
 
-export function quietList(rows, meta, aliases = {}) {
+export function quietList(rows, meta, aliases = {}, raise = RAISE_CONFIDENCE) {
   const list = rows || [];
   if (list.length < QUIET_MIN) return null;
   const levels = list.map((r) => aiValue('confidence_level', null, r, { confidence_level: '_inspire_confidence_level', ...aliases }));
@@ -348,7 +348,7 @@ export function quietList(rows, meta, aliases = {}) {
   const action = actions.size === 1 ? [...actions][0] : '';
   const why = list.map((r) => aiValue('ai_confidence_reason', null, r, aliases)).find(Boolean) || '';
   const said = action ? `, so the suggested action on each one is “${action}”` : '';
-  return { title: `All ${list.length} rows on this list are low confidence${said}.`, why: why ? `Why: ${why}` : '', raise: RAISE_CONFIDENCE };
+  return { title: `All ${list.length} rows on this list are low confidence${said}.`, why: why ? `Why: ${why}` : '', raise };
 }
 
 export function recordView(meta, current, row, aliases = {}, unit = '', kind = '') {

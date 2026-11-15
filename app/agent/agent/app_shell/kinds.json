@@ -447,6 +447,7 @@
  ],
  "contracts": {
   "forecast": {
+   "raise_confidence": "What would raise it: more history for each item, so the forecast can beat a simple guess; fixing the data quality issues flagged on the rows; and a run on every group instead of the First run only.",
    "suffixes": {
     "__series": [
      "series_id",
