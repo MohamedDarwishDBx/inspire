@@ -3495,7 +3495,10 @@ app.get('/api/inspire/log', requireToken, async (req, res) => {
     const rows = sqlResultToObjects(await executeSql(req.dbHost, req.dbToken, warehouse_id,
       `SELECT business_name FROM \`${catalog}\`.\`${schema}\`.\`__inspire_session\` WHERE session_id = ${session_id} LIMIT 1`));
     if (!rows.length) return res.status(404).json({ error: `Session ${session_id} is not in ${catalog}.${schema}.` });
-    const logPath = liveLogPath(`${catalog}.${schema}`, rows[0].business_name, session_id);
+    // run_id reads the build-stage log of one implement run (log_implement_<run_id>.log); without it the session's live log.
+    const runId = req.query.run_id === undefined ? '' : String(req.query.run_id);
+    if (runId && !/^\d{1,19}$/.test(runId)) return res.status(400).json({ error: 'run_id must be numeric.' });
+    const logPath = liveLogPath(`${catalog}.${schema}`, rows[0].business_name, session_id, runId);
     const got = await readLogTail(req.dbHost, req.dbToken, logPath);
     if (got.status === 404) return res.json({ log_path: logPath, found: false, text: '', truncated: false, size: 0 });
     if (got.status !== 200) {
