@@ -1572,3 +1572,23 @@ test('a CANCELED run the person stopped from the Build page is written as the pe
     assert.deepEqual([p.message, p.endedBy], ['the run building v1 ended (stopped by amr@x from the Build page) while v1 was still filling', 'user']);
   });
 });
+
+// REQ-231 (3), close-out: a Stop whose "requested" record cannot be written is refused, and no cancel reaches Databricks.
+test('a Stop whose control-log record cannot be written is refused and never cancels the run', async () => {
+  const history = () => [{ session_id: '42', spec_version: 1, status: 'filling', spec_json: SPEC, use_case_id: 'N01-U01',
+    implement_run_id: '5555555555555555', updated_at: new Date().toISOString() }];
+  const cancelPath = '/api/2.1/jobs/runs/cancel';
+  const stopUrl = `/api/inspire/implement/control?${Q}&asset=build&action=cancel`;
+  await withApp({ history: history(), sqlErrors: { 'INSERT INTO `main`.`inspire`.`__inspire_control_log`': 'write refused' } }, async (url, made) => {
+    const got = await call(url, stopUrl, { method: 'POST', body: {} });
+    assert.notEqual(got.status, 200, JSON.stringify(got.data));
+    assert.match(got.data.error || got.data.message || '', /could not record who stopped it/);
+    assert.equal(made.fetches.some((f) => f.path.startsWith(cancelPath)), false, 'no cancel is sent when the record is not written');
+  });
+  // The same Stop with a writable log cancels the run, so the refusal above is the only thing that stopped it.
+  await withApp({ history: history(), responses: { [`POST ${cancelPath}`]: [{}] } }, async (url, made) => {
+    const got = await call(url, stopUrl, { method: 'POST', body: {} });
+    assert.equal(got.status, 200, JSON.stringify(got.data));
+    assert.equal(made.fetches.some((f) => f.path.startsWith(cancelPath)), true, 'with a writable log the cancel is sent');
+  });
+});
