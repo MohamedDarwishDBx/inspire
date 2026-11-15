@@ -2571,7 +2571,9 @@ function AppPlacementStep({ spec, targets, targetsError, onTargetsRetry, heldApp
                 onRetry={onTargetsRetry} copy data-app-targets-error="" className="block text-[11px] text-text-secondary" />}
             </span>
           </label>
-          {choices.length > 0 && !inside && (
+          {/* One decision per screen (REQ-001, REQ-265): the Apps list is the detail of the join card, shown once it is picked. When no App
+              can be joined, the list is the only account of why each one does not fit, so it stays. */}
+          {choices.length > 0 && (joined || !open.length) && !inside && (
             <ul ref={listRef} aria-label="Apps Inspire built" data-app-list="" data-choice="app-target"
               className={`relative ms-7 space-y-1.5 overflow-y-auto rounded-md border border-border bg-surface px-2 py-1.5 ${APP_LIST_HEIGHT}`}>
               {choices.map((c) => (

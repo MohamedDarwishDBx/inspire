@@ -829,13 +829,18 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
     await genie.getByText('Inspire has built none yet').waitFor();
     await goToStep(page, 'Where it lives');
     await openFolded(page, 'Where it lives');
+    // REQ-001/REQ-265 (D-WHERE): the Apps list is the detail of the join card; it shows once that card is picked.
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await placeStep(page).locator('[data-app-target]').first().waitFor();
     assert.deepEqual([await targetRadio(page, 'ops-desk').isChecked(), await targetRadio(page, 'ops-desk').isDisabled()], [false, true],
       'a new use case signs each viewer in, so it does not join an App that shows everyone the same rows (must-exclude)');
+    // REQ-001/REQ-265: Create a new App unpicks the join while App access is set, then the join is picked again for its list.
+    await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await goToStep(page, 'App access');
     await page.getByRole('region', { name: 'App access' }).getByRole('radio', { name: /^Internal data/ }).check();
     await goToStep(page, 'Where it lives');
     await openFolded(page, 'Where it lives');
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await targetRadio(page, 'ops-desk').check();
     assert.equal(await page.getByLabel('App name').count(), 0, 'joining an App asks no App name');
     assert.deepEqual(await placeTargets(page), [['ops-desk', 'recommended', 'Recommended'], ['care-desk', 'not_recommended', '']],
@@ -858,6 +863,8 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
     assert.equal(await page.getByLabel('App name').inputValue(), 'predict-churn');
     await policy(page, /^One App for all use cases/).check();
     assert.equal(await page.getByLabel('App name').inputValue(), 'inspire-hub-acme');
+    // REQ-001/REQ-265: the Apps list shows once the join is picked.
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await targetRadio(page, 'ops-desk').check();
     assert.equal(await placeStep(page).getByRole('note', { name: JOIN_NOTE }).textContent(),
       'It keeps the look of ops-desk (Style B, Top tabs, the Ocean palette and Light mode), its sign-in and its data source, '
@@ -879,6 +886,8 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
     await page.getByRole('region', { name: 'App access' }).getByRole('radio', { name: /^Sensitive data/ }).check();
     await goToStep(page, 'Where it lives');
     await openFolded(page, 'Where it lives');
+    // REQ-001/REQ-265: the Apps list shows once the join is picked; the blocked App is listed with its reason.
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     assert.equal(await targetRadio(page, 'ops-desk').isDisabled(), true, 'with per-user chosen, the service-principal App cannot be picked');
     assert.match(await placeStep(page).locator('[data-app-target="ops-desk"]').textContent(), /ops-desk shows everyone the same rows/);
     await targetRadio(page, 'care-desk').check();
@@ -941,6 +950,7 @@ test('a new use case joins the App made for its domain by default, the badge sit
     await asks.quiet(800);
     await page.clock.resume();
     assert.equal(await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).isChecked(), true, 'the person chose Create new, so the default does not come back');
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await targetRadio(page, 'inspire-acme-customer').check();
     await toVibes(page);
     await startWhenReady(page);
@@ -1022,7 +1032,8 @@ test('while the App list loads nothing looks chosen and Next waits, and Create a
     await page.getByLabel('App name').waitFor();
     assert.equal(await group.getAttribute('aria-busy'), 'false');
     assert.equal(await fresh.isChecked(), true, 'the list arriving never turns a new App into joining one');
-    assert.equal(await targetRadio(page, 'inspire-acme-customer').isChecked(), false);
+    // REQ-001/REQ-265 (D-WHERE): the Apps list is the detail of the join card, so it is not on screen while Create a new App is picked.
+    assert.equal(await targetRadio(page, 'inspire-acme-customer').count(), 0, 'no App to join is listed while Create a new App is picked (must-exclude)');
     assert.equal(await page.getByLabel('App name').inputValue(), 'inspire-acme-customer-2');
     await startWhenReady(page);
     const spec = submittedSpec(made);
@@ -1124,6 +1135,8 @@ test('every wizard step but the App steps, Deliver with the App and where it goe
     await fits('4-deliver-joining');
     await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
     await goToStep(page, 'Where it lives');
+    // REQ-001/REQ-265 (D-WHERE): the Apps list is the detail of the join card, so it is picked before the list shows.
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await placeStep(page).locator('[data-app-target]').first().waitFor();
     await fits('4-where-app');
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -1241,7 +1254,8 @@ test('fifteen Apps scroll inside a list of fixed height: the wizard keeps the he
       await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
       await toSharedAccess(page);
       await goToStep(page, 'App placement');
-      await placeStep(page).locator('[data-app-target]').nth(count - 1).waitFor({ state: 'attached' });
+      await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
+    await placeStep(page).locator('[data-app-target]').nth(count - 1).waitFor({ state: 'attached' });
       sizes[count] = await placementBox(page);
       assert.equal(await placeStep(page).locator('[data-app-target] [data-fit]').count(), count, 'every row keeps its fit badge');
       assert.equal(await placeStep(page).locator('[data-app-target]', { hasText: 'It holds only Finance use cases, not Customer' }).count(), count,
@@ -1369,11 +1383,17 @@ test('a use case added to another use case\'s App shows that App\'s SQL warehous
     await toDelivery(page);
     await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
     await goToStep(page, 'App placement');
+    // REQ-001/REQ-265 (D-WHERE): the Apps list shows once Add to an existing App is picked (it is always shown when no App can be joined).
+    const joinRadio = placeStep(page).getByRole('radio', { name: /^Add to an existing App/ });
+    if (await joinRadio.isEnabled()) await joinRadio.check();
     await placeStep(page).locator('[data-app-target="ops-desk"]').waitFor();
     assert.deepEqual([await targetRadio(page, 'ops-desk').isChecked(), await targetRadio(page, 'ops-desk').isDisabled()], [false, true],
       'a new use case signs each viewer in, so it does not join an App that shows everyone the same rows (must-exclude)');
+    // REQ-001/REQ-265: the join is picked only to list the Apps; Create a new App unpicks it before App access, then the join is picked again.
+    await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await toSharedAccess(page);
     await goToStep(page, 'App placement');
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await targetRadio(page, 'ops-desk').check();
     await placeStep(page).getByRole('note', { name: JOIN_NOTE }).waitFor();
     const locked = placeStep(page).locator('[data-app-warehouse="locked"]');
@@ -1432,6 +1452,30 @@ test('a result table the person cannot write says why on Data, with the reason t
     await openFolded(page, 'Result table');
     await page.getByRole('button', { name: 'Next', exact: true }).click();
     await page.getByText(/to write to |to create /).first().waitFor({ timeout: 15000 });
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});
+
+// REQ-001/REQ-265 (D-WHERE): Where it lives holds one open decision. The Apps list is the detail of "Add to an existing App": it is
+// not on screen until that card is picked, and it is picked by the person, never by the screen. (fail-pre: the list was always shown.)
+test('REQ-265: Where it lives shows no App to join until Add to an existing App is picked, and the list shows once it is (must-exclude: two open decisions)', async () => {
+  const ui = await openUi('wizard', { ...MERGE_STATE, useCase: PLACE_UC, useCaseScope: PLACE_SCOPE });
+  const { page } = ui;
+  try {
+    await toDelivery(page);
+    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'Where it lives');
+    const join = placeStep(page).getByRole('radio', { name: /^Add to an existing App/ });
+    await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).waitFor();
+    assert.equal(await join.isChecked(), false, 'no place is picked yet');
+    assert.equal(await placeStep(page).locator('[data-app-target]').count(), 0, 'no App to join is listed before the join card is picked (must-exclude)');
+    assert.equal(await placeStep(page).locator('input[name="app-target"]').count(), 0, 'no App radio on screen before the join card is picked (must-exclude)');
+    await join.check();
+    await placeStep(page).locator('[data-app-target]').first().waitFor();
+    assert.ok(await placeStep(page).locator('[data-app-target]').count() > 0, 'the list shows once Add to an existing App is picked');
     assert.deepEqual(ui.pageErrors, []);
   } finally {
     await ui.close();
