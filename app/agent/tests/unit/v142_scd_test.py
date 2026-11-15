@@ -375,6 +375,10 @@ class _Frame:
         self.cast.append((name, value))
         return self
 
+    def selectExpr(self, *exprs):
+        """This fake holds no values, so the REQ-249 repr guard's max() over its rows is NULL: no row holds a dump."""
+        return types.SimpleNamespace(first=lambda: (None,) * len(exprs))
+
     def __getitem__(self, name):
         return types.SimpleNamespace(cast=lambda kind: f"{name}::{kind}")
 

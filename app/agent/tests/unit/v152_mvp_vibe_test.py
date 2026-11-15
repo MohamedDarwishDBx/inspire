@@ -310,7 +310,7 @@ def test_a_kept_part_whose_new_build_fails_stays_live_and_is_not_listed_as_kept(
 
     inst._implement_dashboard = dashboard
     _llm(inst, {"dashboard": RISKY})
-    assert _run(inst, _vibe(previous, RISKY)) == "ready_with_warnings", "the ask of a part that did not build is not met; the other parts still publish"
+    assert _run(inst, _vibe(previous, RISKY)) == "failed", "REQ-252 / D-INCOMPLETE: an unpublished dashboard ends the version failed; the other parts still publish"
     final = _final(inst)
     assert ("Dashboard: v2 stays live, because the new one of v3 did not build; ") in final["status_message"]
     assert "v3 is not fully published, with 1 unmet ask (not met or could not be checked)" in final["status_message"], "the Dashboard did not publish, so the version does not say it did"
