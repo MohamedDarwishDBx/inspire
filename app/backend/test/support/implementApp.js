@@ -124,8 +124,12 @@ function makeApp(overrides = {}, { mount } = {}) {
         const listed = (state.useCases || []).find((row) => asked !== undefined && String(row.id) === String(asked));
         return { rows: listed ? [listed] : (state.useCase ? [state.useCase] : []) };
       }
-      // The run summary of every use case is one batched statement (REQ-323); its rows are the same shape as the per-use-case read.
-      if (sql.includes('_summary` WHERE use_case_id = :uc') || sql.includes('AS run_rank')) return { rows: state.moneySummary || [] };
+      // The run summary of every use case is one batched statement (REQ-323): each row carries the use_case_id of the parameter it answers.
+      if (sql.includes('AS run_rank')) {
+        const ids = (parameters || []).filter((p) => /^uc\d+$/.test(p.name)).map((p) => p.value);
+        return { rows: ids.flatMap((id) => (state.moneySummary || []).map((row) => ({ use_case_id: id, ...row }))) };
+      }
+      if (sql.includes('_summary` WHERE use_case_id = :uc')) return { rows: state.moneySummary || [] };
       if (sql.includes('_assumptions` WHERE use_case_id = :uc')) return { rows: state.moneyEdits || [] };
       if (sql.includes('system.information_schema.catalogs') && !sql.includes('WITH o AS')) {
         if (state.accessError) throw new Error(state.accessError);
