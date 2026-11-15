@@ -10,7 +10,7 @@ Install the **inspire-ai** Databricks App with **`inspire_installer.py`** from t
 2. Import it into a folder of your workspace (**Workspace, Import, File**).
 3. Open it, attach **Serverless**, and **Run All**. Pick the **warehouse** and **catalog** from the lists in the widgets, or type the exact name (or the warehouse id), then run it again.
 
-The installer downloads the latest release from GitHub, checks the size and sha256 of every file, installs the agent assets into **`/Workspace/Shared/inspire-ai/assets/<version>/`**, deploys the App and grants its service principal. Open **Compute, Apps, inspire-ai**.
+The installer downloads the latest release from GitHub, checks the size and sha256 of every file, installs the agent assets into **`/Workspace/Shared/inspire-ai/assets/<version>/<build id>/`** (one folder per build, so a second install never replaces the files another install's jobs read), deploys the App and grants its service principal. Open **Compute, Apps, inspire-ai**.
 
 **A workspace that cannot reach GitHub:** the installer then uses the release files imported next to it (`manifest.json`, `inspire-app.zip` and `inspire-assets.tar`; the workspace import unpacks `inspire-app.zip` into that folder, and the installer checks every unpacked file against `manifest.json`; `databricks workspace import --format RAW` keeps the file whole). When those are missing, it shows a page with the commands for macOS, Linux and Windows that download the 4 release files and check each sha256 against `manifest.json`, the exact folder to import the files into, and direct links with sizes. It never mixes files of two releases and never uses a partial download.
 
@@ -69,7 +69,7 @@ python3 installer/release.py check --base https://github.com/amralieg/inspire/re
 1. Gets the release (GitHub, or the files next to the installer) and checks every file.
 2. Checks your rights on the App, the warehouse, the Inspire catalog and the workspace folders.
 3. Unpacks the App into a new folder under **`/Workspace/Shared/inspire-ai/apps/<app name>/`**, so any workspace admin can reinstall or clean it up.
-4. Installs the assets into **`/Workspace/Shared/inspire-ai/assets/<version>/`** (files already there with the same sha256 are kept).
+4. Installs the assets into **`/Workspace/Shared/inspire-ai/assets/<version>/<build id>/`**, where the build id names the build's notebook pins (files already there with the same sha256 are kept).
 5. Keeps the installed App and its service principal, so grants and implemented use cases carry over, and removes only Inspire service principals no App uses.
 6. Runs **`CREATE SCHEMA IF NOT EXISTS`** for **`{catalog}._inspire`**, publishes **`dbx_inspire_ai_agent`** and **`dbx_generate_demo_data`** under **`/Shared/inspire-ai/`**.
 7. Writes **`app.yaml`** with **`INSPIRE_DATABASE`**, **`INSPIRE_WAREHOUSE_ID`**, **`NOTEBOOK_PATH`**, **`INSPIRE_ASSETS_PATH`** and **`INSPIRE_AUTO_SETUP`**, then creates the App when it is not there and deploys the new version. Every job the App launches receives the assets path as `inspire_assets_path`.
@@ -86,7 +86,7 @@ python3 installer/release.py check --base https://github.com/amralieg/inspire/re
 | **App URL opens** | Open the app URL from the notebook final summary link; it opens on its landing page, not on the workspace connection wizard. |
 | **Health** | Visit **/api/defaults** on the app; `envSkipsSetupWizard` is `true`. |
 | **Schema** | In Unity Catalog, confirm **{your_catalog}._inspire** exists. |
-| **Assets** | `/Workspace/Shared/inspire-ai/assets/<version>/manifest.json` exists. |
+| **Assets** | `/Workspace/Shared/inspire-ai/assets/<version>/<build id>/manifest.json` exists. |
 
 ---
 
