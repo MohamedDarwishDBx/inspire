@@ -87,3 +87,8 @@ def test_the_app_statements_carry_the_name_tag_next_to_the_id(ns):
 def test_the_build_page_carries_the_encoded_name_for_the_app_statements(ns):
     page = ns["implement_app_page"]({"title": "Churn desk"}, "N01-U01", {"Name": "Predict Customer Churn"}, shell_sql=None)
     assert page["use_case_name_tag"] == "predict_customer_churn" and page["use_case_id"] == "N01-U01"
+
+
+def test_the_notebook_tracking_columns_include_the_lakebase_project_id(ns):
+    columns = dict(ns["IMPLEMENT_COLUMNS"])
+    assert columns["lakebase_project_id"] == "STRING" and columns["use_case_name_tag"] == "STRING" and columns["warehouse_id"] == "STRING"
