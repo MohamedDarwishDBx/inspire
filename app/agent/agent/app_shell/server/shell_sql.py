@@ -3678,6 +3678,11 @@ def list_request(page: dict, data: dict, context: dict, now: datetime.datetime =
     unowned, within = data.get("unowned", False), data.get("due_within")
     if not isinstance(unowned, bool):
         raise ValueError("unowned takes true or false")
+    unchecked = data.get("unchecked", False)
+    if not isinstance(unchecked, bool):
+        raise ValueError("unchecked takes true or false")
+    if unchecked and not context["actions"]:
+        raise ValueError("this decision list keeps no actions, so it cannot show the records that could not be checked")
     if unowned and data.get("mine"):
         raise ValueError("send mine or unowned, not both")
     if unowned and not context["actions"]:
@@ -3690,7 +3695,8 @@ def list_request(page: dict, data: dict, context: dict, now: datetime.datetime =
     now = now or datetime.datetime.now(datetime.timezone.utc)
     ranked = not sort and (bool(window) or due_first)
     return dict(_list_request(page, data, context, allowed), window=window, ranked=ranked, due_first=due_first, today=now.date().isoformat(),
-                exclude=list(dict.fromkeys(exclude)), unowned=unowned, due_within=within, focus=focus_request(data, context, now))
+                exclude=list(dict.fromkeys(exclude)), unowned=unowned, unchecked=unchecked, due_within=within,
+                focus=focus_request(data, context, now))
 
 
 def focus_request(data: dict, context: dict, now: datetime.datetime):
@@ -3709,8 +3715,8 @@ def focus_conditions(page: dict, focus: dict, context: dict, params) -> list:
     statuses = page_statuses(page)
     opened = ", ".join(params.add(s) for s in statuses["open"])
     out = [f"COALESCE(c.`_inspire_status`, {params.add(statuses['unset'])}) IN ({opened})"]
-    if context.get("held"):
-        out.append("NOT COALESCE(c.`_inspire_held`, FALSE)")
+    # Held-back rows stay in a focus list: the focus tabs are the Dashboard's "Fix this" lists (trends_query counts held rows as open,
+    # and the All tab that carries a focus sends no window). Only the Open tab hides them (window_conditions).
     if context.get("checked"):
         out.append(checked_sql("c"))
     if focus["focus"] == "overdue":
@@ -3721,6 +3727,15 @@ def focus_conditions(page: dict, focus: dict, context: dict, params) -> list:
         first = f"(SELECT MIN(t.`valid_from`) FROM {context['table']} AS t WHERE t.`record_key` = c.`_inspire_key`)"
         out.append(f"unix_micros(COALESCE(c.`_inspire_joined`, {first})) < {params.add(str(focus['before_us']), 'BIGINT')}")
     return out
+
+
+def unchecked_conditions(page: dict, context: dict, params) -> list:
+    """The 'Could not be checked' tab: open-status rows the notebook did not evaluate (data_quality_flag is not 'ok'). Never Open."""
+    if not context.get("checked"):
+        return ["FALSE"]
+    statuses = page_statuses(page)
+    opened = ", ".join(params.add(s) for s in statuses["open"])
+    return [f"COALESCE(c.`_inspire_status`, {params.add(statuses['unset'])}) IN ({opened})", f"NOT {checked_sql('c')}"]
 
 
 def _list_request(page: dict, data: dict, context: dict, allowed: list) -> dict:
@@ -4587,8 +4602,8 @@ def _current_join(context: dict, alias: str) -> tuple:
     columns = ["c.`_inspire_key`", "c.`_inspire_version`"] + (["c.`_inspire_owner`", "c.`_inspire_status`", "c.`_inspire_choice`"]
                                                                if context["actions"] else [])
     money = ["c.`_inspire_money`", "c.`_inspire_fx`"] if context.get("money") else []
-    windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else []) + (["c.`_inspire_ok`"] if context.get("checked") else [])
-                ) if context.get("windowed") else []
+    windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else [])
+                + (["c.`_inspire_ok`", "c.`_inspire_flag`"] if context.get("checked") else [])) if context.get("windowed") else []
     joined = " JOIN" if (context.get("floor") or {}).get("on") == "c" else " LEFT JOIN"
     return (f"{joined} c ON {_current_on(context, alias)}",
             columns + [f"c.{quote(ai_alias(n))}" for n in context["ai"]] + money + ["c.`_inspire_missing`"] + windowed)
@@ -4600,7 +4615,8 @@ def _floored(floor: dict, alias: str) -> str:
 
 def _window_extra(context: dict) -> list:
     return list(WINDOW_EXTRA) + (["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else []) + (
-        [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`"] if context.get("checked") else [])
+        [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`", "CAST(`data_quality_flag` AS STRING) AS `_inspire_flag`"]
+        if context.get("checked") else [])
 
 
 def _stake(context: dict, prefix: str = "") -> str:
@@ -4687,7 +4703,7 @@ def list_match_query(page: dict, values: dict, request: dict, context: dict, edi
 def status_counts_query(page: dict, values: dict, request: dict, context: dict, editor: str = "") -> tuple:
     params = _Params()
     columns = {k: v for k, v in (request.get("columns") or {}).items() if k != "action_status"}
-    plan = _list_plan(page, values, dict(request, columns=columns, mine=False, window=None, exclude=[], choice=None, due_first=True), context,
+    plan = _list_plan(page, values, dict(request, columns=columns, mine=False, window=None, exclude=[], choice=None, due_first=True, unchecked=False), context,
                       editor, params, current=True)
     status = f"COALESCE(f.`_inspire_status`, '{NEW}')"
     checked = context.get("checked", False)
@@ -4722,7 +4738,7 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
     records = page.get("records") or {}
     window = request.get("window")
     due_first = bool(request.get("due_first"))
-    context = dict(context, windowed=bool(window) or due_first)
+    context = dict(context, windowed=bool(window) or due_first or bool(request.get("unchecked")))
     listed, money = _listed(page, values, request.get("columns"), context, params)
     ctes = {"d": listed}
     conditions = list(money) + ([_floored(context["floor"], "d")] if (context.get("floor") or {}).get("on") == "d" else [])
@@ -4742,6 +4758,9 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
     if focus:
         early.add("c")
         conditions += focus_conditions(page, focus, context, params)
+    if request.get("unchecked"):
+        early.add("c")
+        conditions += unchecked_conditions(page, context, params)
     if request.get("exclude"):
         conditions.append(f"COALESCE(c.`_inspire_key`, '') NOT IN (SELECT explode(from_json("
                           f"{params.add(json.dumps(request['exclude'], ensure_ascii=False))}, 'ARRAY<STRING>')))")
@@ -4777,7 +4796,7 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
     if context["join"]:
         held = context.get("floor")
         ctes["c"] = _current_cte(dict(context, floor=held if held and (held["on"] == "c" or "c" not in early) else None),
-                                 _window_extra(context) if window or focus or request.get("due_first") else ())
+                                 _window_extra(context) if window or focus or request.get("due_first") or request.get("unchecked") else ())
     picked, joins = ["d.*"], ""
     if "c" in early:
         join, columns = _current_join(context, "d")
@@ -4808,7 +4827,7 @@ def counted_total(row) -> tuple:
 def unfiltered(values: dict, request: dict) -> bool:
     return (not any(v not in (None, "", [], {}) for v in (values or {}).values()) and not request["search"] and not request["mine"]
             and not request.get("unowned") and request.get("due_within") is None and not request["changed"] and not request["ai"] and not request["columns"] and not request.get("window")
-            and not request.get("exclude") and request.get("choice") is None and not request.get("focus"))
+            and not request.get("exclude") and request.get("choice") is None and not request.get("focus") and not request.get("unchecked"))
 
 
 def facts_total_query(facts: dict, table: str, names: set) -> tuple:
@@ -4828,7 +4847,7 @@ def list_floor(page: dict, request: dict, context: dict, facts, model, filtered:
     scaled = live and ready and money_scale(model) is not None
     if live and by_money and not scaled:
         selective = (request["mine"] or request.get("unowned") or request["changed"] or request["ai"] or request.get("ranked") or request.get("choice") is not None
-                     or request.get("focus") or MONEY_COLUMN in (request.get("columns") or {}))
+                     or request.get("focus") or request.get("unchecked") or MONEY_COLUMN in (request.get("columns") or {}))
         if selective or context["join"] != "record_key":
             return None
         depth = shell_facts.floor_depth(shell_facts.FLOOR_DEPTHS, int(request["offset"]) + int(request["limit"]), filtered)

@@ -561,9 +561,15 @@ export const undoBatchOf = (row, person) => (String(person || '').trim() && row?
 export const UNDO_THEIRS = 'Only the person who made this change or an owner of this use case can undo it.';
 
 /** REQ-223: one word for undoing a change. The trigger and its confirm button both read this, so they never disagree. */
-export const undoWordOf = (meta) => meta?.undo || 'Reopen';
+// D-UNDO: a kind names its undo word (records.undo, e.g. Unmerge). Without one a reversible change says Undo; a closed record says Reopen.
+export const undoWordOf = (meta, closed = false) => meta?.undo || (closed ? 'Reopen' : 'Undo');
 export const UNDO_CLOSE = 'Undo puts back every record this change touched, as they were before it, and keeps both versions in their history.';
 
+// A row the notebook could not check carries its own data_quality_flag as the reason; any other row has no reason to show.
+export const uncheckedWhy = (flag) => {
+  const text = String(flag ?? '').trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'No reason was recorded';
+};
 export const isClosed = (row) => CLOSED_STATUSES.includes(row?._inspire_status || row?.action_status);
 
 export const ACCEPTED = { action_status: IN_PROGRESS, note: 'Accepted the suggested action' };

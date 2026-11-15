@@ -101,7 +101,7 @@ test('entity matching: a merged pair offers Unmerge, which asks first and puts t
   const ask = page.locator('[role="group"][aria-label="Undo this decision"]');
   await ask.waitFor();
   assert.equal(h.undos.length, 0, 'nothing is undone before the person confirms');
-  await ask.getByRole('button', { name: 'Undo it' }).click();
+  await ask.getByRole('button', { name: 'Unmerge', exact: true }).click();
   await idle(page);
   await page.waitForTimeout(300);
   assert.deepEqual(h.undos.map((u) => u.batch_id), [batchId(1)], 'the merge batch is undone once');

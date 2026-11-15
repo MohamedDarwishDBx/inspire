@@ -5,12 +5,13 @@ import FilterBar from './FilterBar.jsx';
 import { Icon } from './icons.jsx';
 import { PlainNote, Skeleton } from './ui.jsx';
 import { integer } from './format.js';
-import { FOCUSES, tabCount, workTabs } from './links.js';
+import { FOCUSES, UNCHECKED_TAB, tabCount, workTabs } from './links.js';
 
 export function WorkTabs({ tab, choices, counts, onTab }) {
   return (
     <div className="work-tabs" role="tablist" aria-label="Records by status">
-      {workTabs(choices).map(([id, label]) => {
+      {/* The unchecked tab shows once the counts carry its number, which the server sends with every status_counts reply. */}
+      {workTabs(choices).filter(([id]) => id !== UNCHECKED_TAB || counts?.unchecked != null).map(([id, label]) => {
         const n = tabCount(counts, id);
         return (
           <button key={id} type="button" role="tab" aria-selected={tab === id} className={`work-t ${tab === id ? 'is-on' : ''}`} onClick={() => onTab(id)} data-tab={id}>
