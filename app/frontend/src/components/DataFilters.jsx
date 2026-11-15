@@ -61,26 +61,28 @@ function conditionText(f) {
   return `${label} ${f.values.join(def.op === 'in' ? ', ' : ' and ')}`;
 }
 
-function buildTree(picks, tables) {
+// The tree is built from the same picked scope the run reads (pickedScope): a catalog or schema is whole only when the run reads
+// all of it, and only a whole node lists every table under it. A picked table is listed alone.
+function buildTree(scope, tables) {
   const catalogs = new Map();
   const catalogOf = (name) => {
     const key = scopeKeyOf(name);
-    if (!catalogs.has(key)) catalogs.set(key, { name, picked: false, schemas: new Map() });
+    if (!catalogs.has(key)) catalogs.set(key, { name, whole: false, schemas: new Map() });
     return catalogs.get(key);
   };
   const schemaOf = (catalog, schema) => {
     const cat = catalogOf(catalog);
     const key = scopeKeyOf(schema);
-    if (!cat.schemas.has(key)) cat.schemas.set(key, { name: schema, picked: false, tables: new Map() });
+    if (!cat.schemas.has(key)) cat.schemas.set(key, { name: schema, whole: false, tables: new Map() });
     return cat.schemas.get(key);
   };
-  picks.catalogs.forEach((c) => { catalogOf(c).picked = true; });
-  picks.schemas.forEach((s) => { const [c, sc] = s.split('.'); schemaOf(c, sc).picked = true; });
+  scope.catalogs.forEach((c) => { catalogOf(c).whole = true; });
+  scope.schemas.forEach((s) => { const [c, sc] = s.split('.'); schemaOf(c, sc).whole = true; });
   tables.forEach((t) => { const [c, sc] = t.split('.'); schemaOf(c, sc).tables.set(scopeKeyOf(t), t); });
   return [...catalogs.values()].map((c) => ({
     name: c.name,
-    picked: c.picked,
-    schemas: [...c.schemas.values()].map((s) => ({ name: s.name, picked: s.picked, tables: [...s.tables.values()] })).sort(byName),
+    whole: c.whole,
+    schemas: [...c.schemas.values()].map((s) => ({ name: s.name, whole: s.whole, tables: [...s.tables.values()] })).sort(byName),
   })).sort(byName);
 }
 
@@ -191,20 +193,20 @@ function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouse
   );
 }
 
-function CatalogNode({ catalog, picked, schemas, apiFetch, warehouseId, renderSchema }) {
+function CatalogNode({ catalog, whole, schemas, apiFetch, warehouseId, renderSchema }) {
   const [manual, setOpen] = useState(null);
   const open = manual ?? schemas.length > 0;
   const [listed, setListed] = useState(null);
   useEffect(() => {
-    if (!open || !picked || listed) return undefined;
+    if (!open || !whole || listed) return undefined;
     let cancelled = false;
     apiFetch(`/api/catalogs/${encodeURIComponent(catalog)}/schemas${tableBrowseQuery(warehouseId)}`)
       .then((d) => { if (!cancelled) setListed({ schemas: (d.schemas || []).map((s) => s.name) }); })
       .catch((e) => { if (!cancelled) setListed({ error: e.message || `Inspire could not list the schemas of ${catalog}.` }); });
     return () => { cancelled = true; };
-  }, [open, picked, listed, apiFetch, warehouseId, catalog]);
+  }, [open, whole, listed, apiFetch, warehouseId, catalog]);
   const merged = new Map();
-  (listed?.schemas || []).forEach((name) => merged.set(scopeKeyOf(name), { name, picked: false, tables: [] }));
+  (listed?.schemas || []).forEach((name) => merged.set(scopeKeyOf(name), { name, whole: false, tables: [] }));
   schemas.forEach((s) => merged.set(scopeKeyOf(s.name), s));
   const children = [...merged.values()].sort(byName);
   const count = listed?.schemas ? `${listed.schemas.length} schema${listed.schemas.length === 1 ? '' : 's'}`
@@ -212,8 +214,8 @@ function CatalogNode({ catalog, picked, schemas, apiFetch, warehouseId, renderSc
   return (
     <Branch level={1} label={catalog} dataKey="data-catalog-group" name={catalog} open={open} setOpen={setOpen} count={count}
       error={open ? listed?.error : ''}>
-      {open && picked && !listed && <li role="none" className="px-2 text-text-tertiary">Listing the schemas of {catalog}</li>}
-      {children.map((s) => renderSchema(catalog, s, picked))}
+      {open && whole && !listed && <li role="none" className="px-2 text-text-tertiary">Listing the schemas of {catalog}</li>}
+      {children.map((s) => renderSchema(catalog, s, whole))}
     </Branch>
   );
 }
@@ -506,7 +508,7 @@ function UseCaseLabel({ scopes, tables, label, onLabel }) {
   );
 }
 
-export default function DataFilters({ picks, scopes, onScopes, label, onLabel, apiFetch, warehouseId, onProblems }) {
+export default function DataFilters({ scope, scopes, onScopes, label, onLabel, apiFetch, warehouseId, onProblems }) {
   const [split, setSplit] = useState(readSplit);
   const rootRef = useRef(null);
   useEffect(() => { writeSplit(split); }, [split]);
@@ -517,15 +519,15 @@ export default function DataFilters({ picks, scopes, onScopes, label, onLabel, a
   const requested = useRef(new Set());
   const fired = useRef({});
 
-  const tables = pickedTableNames(scopes, picks);
+  const tables = pickedTableNames(scopes, scope);
   const coveredBy = (table) => {
     const key = scopeKeyOf(table);
     return tables.some((t) => scopeKeyOf(t) === key)
-      || picks.schemas.some((s) => key.startsWith(`${scopeKeyOf(s)}.`))
-      || picks.catalogs.some((c) => key.startsWith(`${scopeKeyOf(c)}.`));
+      || scope.schemas.some((s) => key.startsWith(`${scopeKeyOf(s)}.`))
+      || scope.catalogs.some((c) => key.startsWith(`${scopeKeyOf(c)}.`));
   };
   const shownTable = openTable && coveredBy(openTable) ? openTable : null;
-  const tree = buildTree(picks, tables);
+  const tree = buildTree(scope, tables);
   const jobs = tables
     .map((table) => ({ table, filters: normalizeTableScope(tableScopeOf(scopes, table)).rows.filter(filterIsComplete) }))
     .filter((job) => job.filters.length)
@@ -637,11 +639,11 @@ export default function DataFilters({ picks, scopes, onScopes, label, onLabel, a
     <TableLeaf key={table} level={3} table={table} summary={summaryOf(table)} selected={table === shownTable}
       onSelect={() => setOpenTable(table)} />
   );
-  const renderSchema = (catalog, s, catalogPicked) => (
+  const renderSchema = (catalog, s, catalogWhole) => (
     <SchemaNode key={`${catalog}.${s.name}`} catalog={catalog} schema={s.name}
-      listable={catalogPicked || s.picked} tableNames={s.tables} apiFetch={apiFetch} warehouseId={warehouseId} renderTable={renderTable} />
+      listable={catalogWhole || s.whole} tableNames={s.tables} apiFetch={apiFetch} warehouseId={warehouseId} renderTable={renderTable} />
   );
-  const nothingPicked = !picks.tables.length && !picks.schemas.length && !picks.catalogs.length;
+  const nothingPicked = !scope.entries.length;
 
   return (
     <div data-data-filters className="space-y-4 text-xs">
@@ -661,7 +663,7 @@ export default function DataFilters({ picks, scopes, onScopes, label, onLabel, a
           <div data-filters-tree className="min-w-0 max-h-[28rem] overflow-y-auto">
             <ul role="tree" aria-label="Tables you picked, by catalog, schema and table" className="space-y-1">
               {tree.map((c) => (
-                <CatalogNode key={c.name} catalog={c.name} picked={c.picked} schemas={c.schemas} apiFetch={apiFetch}
+                <CatalogNode key={c.name} catalog={c.name} whole={c.whole} schemas={c.schemas} apiFetch={apiFetch}
                   warehouseId={warehouseId} renderSchema={renderSchema} />
               ))}
             </ul>
