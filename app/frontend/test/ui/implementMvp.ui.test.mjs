@@ -154,7 +154,7 @@ test('an uninstalled MVP says what is kept, offers Start again with no Uninstall
 
     const filters = page.getByRole('group', { name: 'Show use cases with' });
     const counts = await filters.locator('[data-asset-filter]').evaluateAll((boxes) => boxes.map((c) => [c.dataset.assetFilter, c.closest('label').textContent.trim(), c.disabled]));
-    assert.deepEqual(counts, [['notebook', 'Notebook 2', false], ['app', 'App 0', true], ['dashboard', 'Dashboard 0', true], ['genie_space', 'Genie Agent 0', true],
+    assert.deepEqual(counts, [['notebook', 'Notebook 2', false], ['app', 'Agentic App 0', true], ['dashboard', 'Dashboard 0', true], ['genie_space', 'Genie Agent 0', true],
       ['alert', 'Alert 0', true]], 'the removed assets no longer count, and the notebooks Discover wrote still do');
     const nav = page.getByRole('navigation', { name: 'Use cases' });
     await filters.getByRole('checkbox', { name: /^Notebook/ }).check();
@@ -182,7 +182,7 @@ test('the asset filters count a built MVP\'s outputs and show only the use cases
     const nav = page.getByRole('navigation', { name: 'Use cases' });
     await filters.waitFor();
     assert.deepEqual(await filters.locator('[data-asset-filter]').evaluateAll((boxes) => boxes.map((c) => c.closest('label').textContent.trim())),
-      ['Notebook 2', 'App 1', 'Dashboard 1', 'Genie Agent 1', 'Alert 1']);
+      ['Notebook 2', 'Agentic App 1', 'Dashboard 1', 'Genie Agent 1', 'Alert 1']);
     await filters.getByRole('checkbox', { name: /^Agentic App/ }).check();
     await nav.getByText('Score suppliers').waitFor({ state: 'detached' });
     await nav.getByText('Forecast demand').waitFor({ state: 'detached' });

@@ -42,7 +42,11 @@ test('a person who cannot grant sees one plain sentence naming the owner, the GR
     // A person who cannot grant: Permission Required opens once on load with the owner's GRANTs; the inline card stays under it.
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 8000 });
-    assert.match(await dialog.locator('[data-permission-statements=""]').innerText(), /^GRANT /m, 'the owner GRANTs open on load');
+    // REQ-313: the SQL sits under Advanced, which opens by default when no destination exists (the owner is an id, not an email).
+    // The check that decides the default is async, so wait for the statements to show rather than read them at once.
+    const statements = dialog.locator('[data-permission-advanced=""] [data-permission-statements=""]').first();
+    await statements.waitFor({ state: 'visible', timeout: 8000 });
+    assert.match(await statements.innerText(), /^GRANT /m, 'the owner GRANTs open on load');
     await closeOnLoadPermission(page, { expect: true });
     await expandBuild(page);
     const card = page.locator('[data-app-reads]');

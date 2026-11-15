@@ -213,7 +213,7 @@ test('an App Inspire cannot afford is dimmed on Deliver with one plain reason an
     await shot(page, 'app-unaffordable-05-deliver', false);
     await goToStep(page, 'Review & build');
     assert.doesNotMatch(await builtLine(page), /\bApp\b/);
-    assert.match(await page.locator('[data-picked-row="dropped"] [data-picked-value]').innerText(), /^App: \S/, 'Summary says the App is not built and why');
+    assert.match(await page.locator('[data-picked-row="dropped"] [data-picked-value]').innerText(), /^Agentic App: \S/, 'Summary says the App is not built and why'); // D-LABEL209
     await summaryHasNoCapacity(page);
     await shot(page, 'app-unaffordable-07-summary', false);
     await page.getByRole('button', { name: BUILD_IT, exact: true }).click();

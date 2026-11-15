@@ -113,7 +113,7 @@ test('removing an App another use case shares offers to take this use case\'s pa
     await tile.getByRole('radio', { name: 'Keep it unmanaged' }).check();
     assert.equal(await tile.getByRole('radio', { name: TAKE_OUT }).count(), 1, 'the radio keeps the last check while the plan no longer deletes it');
     await plan();
-    await page.getByText('Leaves in place, no longer managed: App', { exact: true }).waitFor();
+    await page.getByText('Leaves in place, no longer managed: Agentic App', { exact: true }).waitFor();
     assert.deepEqual(pageErrors, []);
   } finally {
     await ui.close();
