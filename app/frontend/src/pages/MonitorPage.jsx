@@ -61,7 +61,7 @@ const STATUS_FILTERS = [
 ];
 
 const MONITOR_NO_PROGRESS = 'Inspire has saved no progress for this run yet. Each step shows here as soon as it is saved.';
-const MONITOR_NO_RUN_OPEN = 'No run is open here. Start a run on Launch, or open one from Results.';
+const MONITOR_NO_RUN_OPEN = 'No run is open here. Start a run or open one from Start to see it here.';
 
 export default function MonitorPage({ settings, update, sessionId, runId, launchNotes = [], launchDetails = [], onComplete, onResultsSession, onOpenImplement, onGenerateData, onRunAgain = null }) {
   const { databricksHost, token, warehouseId, inspireDatabase, showcase = '' } = settings;
