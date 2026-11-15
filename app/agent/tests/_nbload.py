@@ -216,9 +216,29 @@ def notebook_cells(path=None):
     for cell in nb.get("cells", []):
         src = cell.get("source", [])
         out.append((cell.get("cell_type"), "".join(src) if isinstance(src, list) else str(src)))
+    # The prompt templates left the notebook for the pinned prompts asset (notebook/prompts.json). They are appended as one
+    # non-code cell after the notebook's own cells, so index-addressed readers keep their positions and text scanners still see them.
+    out.append((PROMPT_CELL_TYPE, "\n".join(prompt_templates(path).values())))
     if fp is not None:
         _CELL_CACHE[fp] = list(out)
     return out
+
+
+PROMPT_CELL_TYPE = "prompt_assets"
+
+
+def asset_path(name, path=None):
+    """The repo file the notebook pins for one asset (`notebook_pins` entry, relative to the repo root)."""
+    with open(path or AGENT_NB, encoding="utf-8") as fh:
+        lines = json.load(fh)["cells"][1]["source"]
+    line = next(item for item in lines if item.startswith("INSPIRE_NOTEBOOK_ASSETS = "))
+    return os.path.join(ROOT, json.loads(line[len("INSPIRE_NOTEBOOK_ASSETS = "):])[name]["repo"])
+
+
+def prompt_templates(path=None) -> dict:
+    """Every prompt template, read from the pinned prompts asset the notebook loads at runtime."""
+    with open(asset_path("prompts", path), encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def strip_magic_lines(src):

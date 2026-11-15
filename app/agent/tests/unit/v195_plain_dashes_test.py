@@ -4,7 +4,7 @@ import os
 import re
 
 from _agentload import agent_source
-from _nbload import AGENT_NB, notebook_cells
+from _nbload import AGENT_NB, notebook_cells, prompt_templates
 
 DASH = re.compile("[\u2013\u2014]|&[mn]dash;|&#821[12];")
 SHELL_SERVER = os.path.join(os.path.dirname(os.path.abspath(AGENT_NB)), "app_shell", "server")
@@ -124,7 +124,7 @@ def test_no_agent_message_log_line_or_artifact_text_uses_an_em_or_en_dash():
     assert shown == []
     used = {(h[0], h[1]) for h in hits}
     assert PROMPT_TEXT | DASH_AS_DATA <= used, sorted((PROMPT_TEXT | DASH_AS_DATA) - used)
-    assert any(h[1].startswith(PROMPT_TEMPLATE_PREFIX) for h in hits)
+    assert prompt_templates(), "the prompt templates are read from the prompts asset, which the notebook pins"
 
 
 def test_the_notebook_introduction_uses_no_em_or_en_dash():

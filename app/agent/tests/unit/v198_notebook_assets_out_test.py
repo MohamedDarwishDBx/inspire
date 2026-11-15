@@ -14,6 +14,8 @@ BUNDLED = os.path.join(APP, "dbx_inspire_ai_agent.ipynb")
 BUNDLE_JS = os.path.join(APP, "backend", "notebook_bundle.js")
 LEGACY = ("_INSPIRE_APP_SHELL", "_INSPIRE_KINDS")
 NOTEBOOK_BYTES_CAP = 6_000_000
+# D-SIZE (REQ-298): the notebook must keep this much headroom under the cap, so the next lane that adds code does not fail the cap by surprise.
+NOTEBOOK_BUDGET_MARGIN = 100_000
 # rc.2 (REQ-165) regenerated the three count notices in every curated language, so the guard now covers the rest of the copy.
 COUNT_NOTICE_KEYS = ("doc_fallback_notice", "doc_fallback_notice_one", "doc_bar_partial_notice")
 # REQ-175 (names are short plain phrases, the technique moves to the subtitle) retired the key that joined a name to its technique in
@@ -80,13 +82,14 @@ def test_no_notebook_copy_holds_the_app_shell_or_the_kind_registry_and_each_stay
         assert text.count("INSPIRE_NOTEBOOK_ASSETS = ") == 1, label
         size = len(text.encode("utf-8"))
         assert size < NOTEBOOK_BYTES_CAP, f"{label} is {size:,} bytes"
+        assert size < NOTEBOOK_BYTES_CAP - NOTEBOOK_BUDGET_MARGIN, f"{label} is {size:,} bytes, within {NOTEBOOK_BUDGET_MARGIN:,} of the cap"
         assert len(base64.b64encode(text.encode("utf-8"))) < IMPORT_BYTES_CAP, f"{label} import request is over the cap"
 
 
 def test_every_notebook_copy_pins_the_repo_build_of_each_asset(agent_ns):
     embed = _embed()
     pins = agent_ns["INSPIRE_NOTEBOOK_ASSETS"]
-    assert set(pins) == {"app_shell", "fx_averages", "kinds", "translations"}
+    assert set(pins) == {"app_shell", "fx_averages", "kinds", "prompts", "translations"}
     assert pins == embed.pins()
     for label, text in _texts().items():
         line = next(item for item in json.loads(text)["cells"][1]["source"] if item.startswith("INSPIRE_NOTEBOOK_ASSETS = "))
