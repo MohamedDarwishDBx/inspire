@@ -26,6 +26,18 @@
       "why": "log tags such as [DATA-FILTER-LABEL FIRED]"
     },
     {
+      "id": "internal_object",
+      "pattern": "\\b\\w*__[a-z]\\w*",
+      "flags": "",
+      "why": "Inspire's internal object names such as __constraints (REQ-227: a Genie change line named one)"
+    },
+    {
+      "id": "companion",
+      "pattern": "\\bcompanions?\\b",
+      "flags": "i",
+      "why": "Inspire's internal word for the extra tables a part draws (REQ-227)"
+    },
+    {
       "id": "mode_name_on_run_output",
       "pattern": "AI Enhanced Discovery|Standard Discovery",
       "flags": "",

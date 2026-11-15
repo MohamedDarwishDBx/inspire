@@ -59,7 +59,13 @@ def customer_strings(source):
                     collect(sub.value)
         if isinstance(node, ast.Call):
             name, receiver = _call_name(node)
-            if name in SINK_CALLS or (name in {"append", "extend"} and receiver in SINK_LISTS):
+            if name == "implement_gate":
+                # REQ-227: a gate's problems (argument 1) and failure text (argument 4) reach the App. Its feedback (argument 2)
+                # is the repair prompt Genie reads, so it is not copy.
+                for position in (1, 4):
+                    if len(node.args) > position:
+                        collect(node.args[position])
+            elif name in SINK_CALLS or (name in {"append", "extend"} and receiver in SINK_LISTS):
                 for arg in list(node.args) + [kw.value for kw in node.keywords]:
                     collect(arg)
         elif isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and SINK_DICTS.match(t.id) for t in node.targets):
@@ -81,7 +87,8 @@ def internal_hits(text):
 def test_positive_controls_catch_the_rc7_strings():
     assert internal_hits("Filter Business Tables batch 1 depth0 attempt1") == ["step_code"]
     assert internal_hits("Inspire is working on FILTER_BUSINESS_TABLES_PROMPT") == ["prompt_key"]
-    assert internal_hits("Read it from __inspire_session") == ["internal_table"]
+    assert "internal_table" in internal_hits("Read it from __inspire_session")
+    assert internal_hits("Write the __constraints dashboard companion") == ["internal_object", "companion"], "REQ-227 class"
     assert internal_hits("[DATA-FILTER-LABEL FIRED] 12 of 12 names") == ["log_tag"]
     assert internal_hits("Discovery: the AI sees the summary figures") == [], "the plain Discovery label is clean (must-include)"
 

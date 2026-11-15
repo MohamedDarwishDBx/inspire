@@ -54,6 +54,11 @@ async function send(method, path, body, again = readsOnly(method, path)) {
 export const WAITING_FOR_ACCESS_CODE = 'waiting_for_access';
 export const WAITING_FOR_ACCESS_TITLE = 'This App is waiting for access to its data';
 export const waitingOf = (error) => (error?.code === WAITING_FOR_ACCESS_CODE ? (error.detail || { tables: [] }) : null);
+// REQ-131: a filter load refused for access keeps its waiting state, so the page shows the grant with Copy, not a bare message.
+export const filtersFailure = (error) => {
+  const waiting = waitingOf(error);
+  return waiting ? { filters: [], error: error.message, waiting } : { filters: [], error: error.message };
+};
 export const waitingError = (data) => {
   const error = new Error(data.message || WAITING_FOR_ACCESS_TITLE);
   error.status = 200;
