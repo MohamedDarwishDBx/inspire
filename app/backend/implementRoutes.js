@@ -1363,7 +1363,8 @@ function registerImplementRoutes(app, deps) {
       ? await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, draftId) : [];
     const legacyAccess = I.legacyAppAccess(history);
     const impact = I.implementNotebookImpact(I.implementCarried(history).status);
-    const { spec: asked, errors } = I.validateImplementSpec(raw, { legacyAccess, impact });
+    const live = I.previousBuilt(history);
+    const { spec: asked, errors } = I.validateImplementSpec(raw, { legacyAccess, impact, appExperience: live ? I.appExperienceOf(live.spec_json) : null });
     if (errors.length) throw I.badRequest(errors.join('; '));
     return { sid, warehouseId, inspire_database, catalog, schema, raw, history, legacyAccess, asked };
   }

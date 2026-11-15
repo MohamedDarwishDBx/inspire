@@ -1,3 +1,4 @@
+import OUTPUT_LABELS from '../../../backend/lib/implementOutputLabels.json' with { type: 'json' };
 import {
   BUILT_ASSET_STATES, IMPLEMENT_DONE_STATUSES, IMPLEMENT_OUTPUTS, IMPLEMENT_UNINSTALLED, IMPLEMENT_VIBE_NOT_MET, assetLabel, builtVersion, heldAsks,
   holderNames, holdersText, holdoutText, joinWords, partAsks, partLabel, partOf, rebuildableOutputs, statusChip, versionActive, vibesKey, VIBE_NOT_MET_FIRST,
@@ -5,13 +6,13 @@ import {
 } from './implementWizard.js';
 import { formatWhen } from './formatWhen.js';
 import { plural } from './plural.js';
-import { assetNotes, planActionText, planActions, rephrasableAsks } from './mvpProgress.js';
+import { assetNotes, OUTPUT_STEP, planActionText, planActions, rephrasableAsks } from './mvpProgress.js';
 import { rowImpact, stakeLabel, stakeWords } from './targetKpi.js';
 
 export const CONTROL_REFRESH_MS = 15000;
 
 export const ASSET_TILES = [
-  { id: 'app', label: 'App' }, { id: 'dashboard', label: 'Dashboard' }, { id: 'genie_space', label: 'Genie Agent' },
+  { id: 'app', label: OUTPUT_LABELS.app }, { id: 'dashboard', label: OUTPUT_LABELS.dashboard }, { id: 'genie_space', label: OUTPUT_LABELS.genie_space },
   { id: 'alert', label: 'Alerts' }, { id: 'notebook', label: 'Notebook' }, { id: 'job', label: 'Job' },
 ];
 
@@ -188,7 +189,7 @@ export function controlRows(live, latest) {
   return rows;
 }
 
-const DELIVERED_WORDS = { dashboard: ['dashboard', 'dashboards'], genie_space: ['Genie Agent', 'Genie Agents'], app: ['App', 'Apps'], alert: ['alert', 'alerts'] };
+const DELIVERED_WORDS = { dashboard: ['dashboard', 'dashboards'], genie_space: ['Genie Agent', 'Genie Agents'], app: [OUTPUT_LABELS.app, `${OUTPUT_LABELS.app}s`], alert: ['alert', 'alerts'] };
 
 export function deliveredOutputs(latest) {
   const assets = latest?.asset_status || {};
@@ -265,7 +266,7 @@ function plannedWork(plan, stages, building) {
   return (output) => {
     const act = acts.get(output.id);
     if (!act) return null;
-    const stage = (stages || []).find((s) => s.id === output.label) || null;
+    const stage = (stages || []).find((s) => s.id === OUTPUT_STEP[output.id]) || null;
     if (stage && !STAGE_PENDING.includes(stage.state)) return { settled: true };
     return { now: building.has(output.id), doing: planActionText(act).now };
   };
@@ -396,25 +397,29 @@ export function statusWarnings(row) {
   return [...new Set(messageParts(row).map((w) => w.trim()).filter(Boolean))];
 }
 
+// Builds written before the label rename still say the old label in their warning lines; those lines match too.
+const EARLIER_OUTPUT_LABELS = { app: ['App'] };
+
 export function vibeWarnings(row, id) {
   const label = IMPLEMENT_OUTPUTS.find((o) => o.id === id)?.label || id;
-  const lead = `${label} vibe not done: `;
+  const leads = [label, ...(EARLIER_OUTPUT_LABELS[id] || [])].map((name) => `${name} vibe not done: `);
+  const leadOf = (w) => leads.find((lead) => w.includes(lead));
   const listed = [...messageParts(row), ...builtWarnings(row, id)];
-  return [...new Set(listed.filter((w) => w.includes(lead)).map((w) => w.slice(w.indexOf(lead)).trim()))];
+  return [...new Set(listed.filter(leadOf).map((w) => w.slice(w.indexOf(leadOf(w))).trim()))];
 }
 
 const PART_STATES = [...BUILT_ASSET_STATES, 'failed'];
 const ASSET_WHAT = {
   notebook: 'The Genie Code notebook that finds the rows to act on',
   ai_reasoning: 'Why each row is flagged, what to do, and how sure',
-  app_page: 'A page of the App',
+  app_page: `A page of the ${OUTPUT_LABELS.app}`,
   dashboard_chart: 'A chart on the dashboard',
   dashboard: 'The whole dashboard',
   genie_space: 'How Genie answers questions on this use case',
-  app: 'The whole App',
+  app: `The whole ${OUTPUT_LABELS.app}`,
   alert: 'Emails people when the latest run has rows to act on',
 };
-const ASSET_NOUNS = { app_page: 'page', dashboard_chart: 'chart', ai_reasoning: 'part', value_formula: 'part', notebook: 'notebook', dashboard: 'dashboard', genie_space: 'Genie Agent', app: 'App', alert: 'alert' };
+const ASSET_NOUNS = { app_page: 'page', dashboard_chart: 'chart', ai_reasoning: 'part', value_formula: 'part', notebook: 'notebook', dashboard: 'dashboard', genie_space: 'Genie Agent', app: OUTPUT_LABELS.app, alert: 'alert' };
 const ASSET_PILLS = {
   ready: { label: 'Ready', tone: 'success' },
   ready_with_warnings: { label: 'Ready with warnings', tone: 'warning' },
@@ -614,7 +619,7 @@ export function vibeCards(history, latest, stalled = null, notebookUrl = '', pla
   }).filter((c) => c.rebuild || c.versions.length)], planned);
 }
 
-const PICK_GROUPS = [['notebook', 'Genie Code notebook'], ['results', 'Results'], ['app', 'App'], ['dashboard', 'Dashboard'], ['genie_space', 'Genie Agent'], ['alert', 'Alert']];
+const PICK_GROUPS = [['notebook', 'Genie Code notebook'], ['results', 'Results'], ['app', OUTPUT_LABELS.app], ['dashboard', 'Dashboard'], ['genie_space', 'Genie Agent'], ['alert', 'Alert']];
 const pickGroup = (card) => (card.output === 'notebook' && card.id !== 'notebook' ? 'results' : card.output);
 
 function pickTitle(card, liveName) {
@@ -623,7 +628,7 @@ function pickTitle(card, liveName) {
   if (part?.kind === 'dashboard_chart') return `Chart: ${card.name || part.key}`;
   return {
     notebook: 'Notebook', ai_reasoning: 'AI reasoning', value_formula: stakeLabel(card.impact || null), genie_space: 'Instructions',
-    alert: liveName ? `Alert: ${liveName}` : 'Alert', app: 'The whole App', dashboard: 'The whole dashboard',
+    alert: liveName ? `Alert: ${liveName}` : 'Alert', app: `The whole ${OUTPUT_LABELS.app}`, dashboard: 'The whole dashboard',
   }[card.id];
 }
 
@@ -820,7 +825,7 @@ export function keptVersions(history) {
   return [...byVersion.values()].sort((a, b) => b.version - a.version);
 }
 
-export const ASSET_FILTERS = [['notebook', 'Notebook'], ['app', 'App'], ['dashboard', 'Dashboard'], ['genie_space', 'Genie Agent'], ['alert', 'Alert']];
+export const ASSET_FILTERS = [['notebook', 'Notebook'], ['app', OUTPUT_LABELS.app], ['dashboard', 'Dashboard'], ['genie_space', 'Genie Agent'], ['alert', 'Alert']];
 
 export function itemAssets(item) {
   const gone = item?.latest?.status === IMPLEMENT_UNINSTALLED;

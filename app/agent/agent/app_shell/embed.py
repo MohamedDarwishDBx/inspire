@@ -22,8 +22,8 @@ PROMPTS = os.path.join(HERE, "prompts.json")
 SHELL = os.path.join(HERE, "app_shell.b64")
 CELL = 1
 VERSION = 1
-SERVER_FILES = ("app.py", "app.yaml", "shell_agent.py", "shell_alerts.py", "shell_core.py", "shell_db.py", "shell_facts.py", "shell_pg.py",
-                "shell_redact.py", "shell_sql.py")
+SERVER_FILES = ("app.py", "app.yaml", "shell_actions.py", "shell_agent.py", "shell_alerts.py", "shell_blocks.py", "shell_core.py", "shell_db.py", "shell_facts.py",
+                "shell_pg.py", "shell_redact.py", "shell_sql.py")
 WEB_INPUTS = ("index.html", "package.json", "package-lock.json", "vite.config.js", "src")
 # Files outside web/ that the build inlines (the boot guard and its Vite plugin, shared with the frontend). Listed here and in
 # web/test/freshDist.mjs; web/test/sharedInputs.test.mjs fails when a file in app/shared is missing from either list.

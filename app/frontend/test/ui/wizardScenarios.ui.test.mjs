@@ -153,8 +153,8 @@ const impactUncheck = (name) => async (page) => { await goToMeasureImpact(page);
 const both = (...fns) => async (page) => { for (const fn of fns) await fn(page); };
 
 const COMBOS = [
-  ['app-off', { 'What to deliver': uncheck(/^App A Databricks/) }],
-  ['app-off-alert-dashboard', { 'What to deliver': both(uncheck(/^App A Databricks/), check(/^Dashboard/), check(/^Alert/)) }],
+  ['app-off', { 'What to deliver': uncheck(/^Agentic App A Databricks/) }],
+  ['app-off-alert-dashboard', { 'What to deliver': both(uncheck(/^Agentic App A Databricks/), check(/^Dashboard/), check(/^Alert/)) }],
   ['per-user', { 'Who uses the App and storage': radio(/^Sensitive data/) }],
   ['per-user-edit', { 'Who uses the App and storage': both(radio(/^Sensitive data/), inFold('What people can do', check(/^Let people edit data/))) }],
   ['one-app-per-use-case', { 'Where it lives': radio(/^One App per use case/) }],

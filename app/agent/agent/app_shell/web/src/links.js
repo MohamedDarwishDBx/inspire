@@ -75,7 +75,7 @@ export function sectionHash(pageId, section, query = new URLSearchParams()) {
 
 export const workRecordHash = (pageId, key) => sectionHash(pageId, 'work', new URLSearchParams({ tab: 'all', rec: String(key) }));
 
-export function canonicalHash(hash, { pages = [], last = '', sectionsOf = () => SECTIONS, queueOf = () => true } = {}) {
+export function canonicalHash(hash, { pages = [], last = '', sectionsOf = () => SECTIONS, queueOf = () => true, landingOf = () => '' } = {}) {
   const link = parseHash(hash);
   const body = String(hash || '').replace(/^#\/?/, '');
   const cut = body.indexOf('?');
@@ -94,7 +94,7 @@ export function canonicalHash(hash, { pages = [], last = '', sectionsOf = () => 
   const legacy = link.v != null ? sectionOfView(link.v) : '';
   query.delete('v');
   const has = sectionsOf(page);
-  const asked = link.section || legacy || ((link.rec || link.changed) && has.includes('work') && queueOf(page) ? 'work' : DEFAULT_SECTION);
+  const asked = link.section || legacy || ((link.rec || link.changed) && has.includes('work') && queueOf(page) ? 'work' : landingOf(page) || DEFAULT_SECTION);
   const section = has.includes(asked) ? asked : DEFAULT_SECTION;
   if (section !== 'work') query.delete('tab');
   else if (query.has('tab') && !workTabs(statusChoices(page)).some(([id]) => id === query.get('tab'))) query.set('tab', OPEN_TAB);

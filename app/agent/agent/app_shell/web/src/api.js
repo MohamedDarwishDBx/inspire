@@ -91,6 +91,10 @@ export const agentAsk = (body) => json('POST', 'agent/ask', body);
 export const agentTurn = (turnId) => json('GET', `agent/turn?turn_id=${encodeURIComponent(turnId)}`);
 export const agentFeedback = (turnId, rating) => json('POST', 'agent/feedback', { turn_id: turnId, rating });
 export const agentPrepare = (body) => json('POST', 'agent/prepare', body);
+export const agentWrite = (route, body) => json('POST', route, body);
+export const agentThreads = (page) => json('GET', `agent/threads?page=${encodeURIComponent(page)}`);
+export const agentThreadSave = (body) => json('POST', 'agent/thread/save', body);
+export const agentBriefing = (page) => json('GET', `agent/briefing?page=${encodeURIComponent(page)}`);
 export const getHistory = (page, ref) => json('GET', `records/history?${new URLSearchParams({ page, ...ref })}`);
 export const getFields = (page) => json('GET', `records/fields?page=${encodeURIComponent(page)}`);
 const DEMO_DECIDED = 'inspire-demo-decisions';
@@ -122,8 +126,12 @@ export const getListed = (body, plain = null) => getRecords(body).then((data) =>
     ? getRecords(plain).then((data) => { if (data?.actions) throw e; return { data, unwindowed: true }; })
     : Promise.reject(e)));
 export const requestId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+// The server reads an action id only where the values cannot say what the write is. Update, Done and Snooze are read from their
+// values (shell_actions.action_for_values), so their body keeps the shape every version reads; any other id is sent.
+const VALUE_NAMED_ACTIONS = ['update', 'done', 'snooze'];
 export const actRecords = async (body) => {
   const sent = { request_id: requestId(), ...body };
+  if (VALUE_NAMED_ACTIONS.includes(sent.action)) delete sent.action;
   try {
     return await json('POST', 'records/act', sent);
   } catch (err) {

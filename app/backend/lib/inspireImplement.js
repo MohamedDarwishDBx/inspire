@@ -32,7 +32,8 @@ const IMPLEMENT_STATUSES = ['queued', 'filling', 'previewing', 'building_outputs
 const IMPLEMENT_ACTIVE_STATUSES = ['queued', 'filling', 'previewing', 'building_outputs', 'checking'];
 const IMPLEMENT_DONE_STATUSES = ['ready', 'ready_with_warnings'];
 const IMPLEMENT_OUTPUTS = ['dashboard', 'genie_space', 'app', 'alert'];
-const IMPLEMENT_OUTPUT_LABELS = { dashboard: 'Dashboard', genie_space: 'Genie Agent', app: 'App', alert: 'Alert' };
+// The one label of each output, shared with the wizard (frontend imports the same file): every person-facing text reads it.
+const IMPLEMENT_OUTPUT_LABELS = require('./implementOutputLabels.json');
 const IMPLEMENT_NOTEBOOK = 'notebook';
 const IMPLEMENT_CONTRACT_OUTPUTS = ['genie_space', 'dashboard', 'app', 'alert'];
 const IMPLEMENT_RETRY_TARGETS = [IMPLEMENT_NOTEBOOK, ...IMPLEMENT_CONTRACT_OUTPUTS];
@@ -87,12 +88,18 @@ const IMPLEMENT_OUTPUT_OPTIONS = {
 const IMPLEMENT_APP_LOOK_DEFAULT = { style: 'a', layout: 'sidebar', palette: 'default', theme: 'light' };
 const IMPLEMENT_APP_LOOK_LISTS = { style: 'styles', layout: 'layouts', palette: 'palettes', theme: 'themes' };
 const IMPLEMENT_APP_OPTION_DEFAULTS = { modify: false, replace_edits: false, decisions: true, alerts: false };
+// The experience is a choice, not a switch: the App lands on its Agent page (agentic), its classic pages (ui) or both.
+const IMPLEMENT_APP_EXPERIENCES = ['agentic', 'ui', 'both'];
+const IMPLEMENT_APP_EXPERIENCE_DEFAULT = 'agentic';
+// An App built before the experience choice has no key; that App is the classic one.
+const IMPLEMENT_APP_EXPERIENCE_CLASSIC = 'ui';
 const IMPLEMENT_APP_OPTION_KEYS = Object.keys(IMPLEMENT_APP_OPTION_DEFAULTS);
+const IMPLEMENT_APP_CHOICE_KEYS = ['experience'];
 const IMPLEMENT_PER_USER_OFF = ['alerts'];
 const IMPLEMENT_APP_CHARTS_MIN = 3;
 const IMPLEMENT_MERGE_OUTPUTS = ['dashboard', 'genie_space', 'app'];
-const IMPLEMENT_MERGE_NOUNS = { app: 'an App', dashboard: 'a dashboard', genie_space: 'a Genie Agent' };
-const IMPLEMENT_MERGE_LABELS = { app: 'App', dashboard: 'dashboard', genie_space: 'Genie Agent' };
+const IMPLEMENT_MERGE_NOUNS = { app: `an ${IMPLEMENT_OUTPUT_LABELS.app}`, dashboard: 'a dashboard', genie_space: 'a Genie Agent' };
+const IMPLEMENT_MERGE_LABELS = { app: IMPLEMENT_OUTPUT_LABELS.app, dashboard: 'dashboard', genie_space: 'Genie Agent' };
 const IMPLEMENT_APP_ACCESS_CHOICE = "choose who the App reads its data as: 'user' (each person sees only the rows and columns their Unity Catalog grants allow) or 'sp' (everyone sees the same data through the App's service principal)";
 const IMPLEMENT_APP_BACKEND_CHOICE = "choose where the App reads its data: 'lakebase' (its pages load instantly) or 'delta' (Delta tables, its pages take a few seconds to load)";
 const IMPLEMENT_APP_INSIDE = 'inspire';
@@ -324,7 +331,7 @@ function personalKeyOf(spec, useCase, tags) {
   return personalColumn(ref.split('.').pop(), tags[ref.toLowerCase()] || {}) ? personalKeyProblem(ref) : '';
 }
 
-function validateImplementSpec(input, { shell = null, legacyAccess = '', impact = null } = {}) {
+function validateImplementSpec(input, { shell = null, legacyAccess = '', impact = null, appExperience = null } = {}) {
   const errors = [];
   let spec = input;
   if (typeof spec === 'string') {
@@ -534,7 +541,9 @@ function validateImplementSpec(input, { shell = null, legacyAccess = '', impact 
   const chosen = {};
   for (const name of IMPLEMENT_OUTPUTS) chosen[name] = flagField(outputs[name], `outputs.${name}`, errors);
   if (!ownKey(spec, 'outputs')) chosen.dashboard = true;
-  const app = appSettings(outputs, chosen.app, shell, errors, legacyAccess);
+  // A rebuild keeps the experience the App already has (appExperience, read from its live build); a new build starts agentic.
+  const experience = appExperience || (spec.based_on_version != null && spec.based_on_version !== '' ? IMPLEMENT_APP_EXPERIENCE_CLASSIC : IMPLEMENT_APP_EXPERIENCE_DEFAULT);
+  const app = appSettings(outputs, chosen.app, shell, errors, legacyAccess, experience);
   const merge = mergeChoices(outputs, chosen, errors);
   const inside = Boolean(chosen.app) && app.placement === IMPLEMENT_APP_INSIDE;
   const appName = inside ? '' : merge.app || (textValue(outputs.app_name) || '').toLowerCase();
@@ -1161,9 +1170,9 @@ function appWarehouseLock(target, asked) {
     + "too. Keep the App's SQL warehouse, or create a new App for this use case";
 }
 
-function appSettings(outputs, on, shell, errors, legacyAccess = '') {
+function appSettings(outputs, on, shell, errors, legacyAccess = '', experience = IMPLEMENT_APP_EXPERIENCE_DEFAULT) {
   const look = { ...IMPLEMENT_APP_LOOK_DEFAULT };
-  const options = { ...IMPLEMENT_APP_OPTION_DEFAULTS };
+  const options = { ...IMPLEMENT_APP_OPTION_DEFAULTS, experience };
   if (!on) return { access: '', look: {}, options: {}, backend: '', charts: [], pages: {}, placement: '' };
   const catalog = shell || appShellCatalog();
   if (!catalog.ok) {
@@ -1191,8 +1200,11 @@ function appSettings(outputs, on, shell, errors, legacyAccess = '') {
     else errors.push(`the App ${key} ${shownValue(value)} is not one Inspire offers; pick one of ${list.join(', ')}`);
   }
   for (const [key, value] of Object.entries(objectField(outputs.app_options, 'outputs.app_options', errors))) {
-    if (!IMPLEMENT_APP_OPTION_KEYS.includes(key)) {
+    if (!IMPLEMENT_APP_OPTION_KEYS.includes(key) && !IMPLEMENT_APP_CHOICE_KEYS.includes(key)) {
       errors.push(`the App has no option ${shownValue(key)}; its options are ${IMPLEMENT_APP_OPTION_KEYS.join(', ')}`);
+    } else if (key === 'experience') {
+      if (value != null && !IMPLEMENT_APP_EXPERIENCES.includes(value)) errors.push(`the App experience ${shownValue(value)} is not one Inspire offers; pick one of ${IMPLEMENT_APP_EXPERIENCES.join(', ')}`);
+      else if (value != null) options[key] = value;
     } else if (value != null && typeof value !== 'boolean') {
       errors.push(`the App option ${key} must be true or false, not ${shownValue(value)}`);
     } else if (value != null) {
@@ -1790,7 +1802,7 @@ function parseImplementRow(row) {
 function withOfferedAppOptions(spec) {
   const outputs = isPlainObject(spec) && isPlainObject(spec.outputs) ? spec.outputs : null;
   if (!outputs || !isPlainObject(outputs.app_options)) return spec;
-  const options = Object.fromEntries(Object.entries(outputs.app_options).filter(([key]) => IMPLEMENT_APP_OPTION_KEYS.includes(key)));
+  const options = Object.fromEntries(Object.entries(outputs.app_options).filter(([key]) => [...IMPLEMENT_APP_OPTION_KEYS, ...IMPLEMENT_APP_CHOICE_KEYS].includes(key)));
   return { ...spec, outputs: { ...outputs, app_options: options } };
 }
 
@@ -2043,6 +2055,13 @@ function runPagesServed(pages) {
   return (pages || []).filter((p) => p.kind === IMPLEMENT_APP_INSIDE && !p.conflict);
 }
 
+// The experience a live App already has: its stored choice, or the classic (ui) App when the build never saved one.
+function appExperienceOf(specJson) {
+  const options = specJson && specJson.outputs && specJson.outputs.app_options;
+  const saved = options && typeof options === 'object' ? options.experience : undefined;
+  return IMPLEMENT_APP_EXPERIENCES.includes(saved) ? saved : IMPLEMENT_APP_EXPERIENCE_CLASSIC;
+}
+
 function previousBuilt(history) {
   const rows = [...(history || [])].sort((a, b) => (b.spec_version || 0) - (a.spec_version || 0));
   const row = rows.find((r) => IMPLEMENT_DONE_STATUSES.includes(r.status) || r.status === IMPLEMENT_UNINSTALLED);
@@ -2135,7 +2154,7 @@ function planSubmission(history, spec, stalled = null, { requester = null, table
   const parts = [...partProblems(built, spec), ...mvpActionProblems(rows, spec)];
   if (parts.length) throw badRequest(parts.join('; '));
   const before = previousBuilt(rows);
-  const previous = before ? validateImplementSpec(before.spec_json, { legacyAccess: legacyAppAccess(rows) }).spec : null;
+  const previous = before ? validateImplementSpec(before.spec_json, { legacyAccess: legacyAppAccess(rows), appExperience: appExperienceOf(before.spec_json) }).spec : null;
   const hasBuiltNotebook = implementHasBuiltNotebook(rows);
   // carriedAssets: the newest build's outputs, the App the next build changes
   const summary = implementChangeSummary(previous, spec, carriedAssets(rows), implementBuiltSettings(implementCarried(rows).status), hasBuiltNotebook, tableChange);
@@ -3980,6 +3999,7 @@ module.exports = {
   mvpActionProblems,
   withVibePreviousDefault,
   previousBuilt,
+  appExperienceOf,
   IMPLEMENT_OUTPUTS,
   IMPLEMENT_OUTPUT_LABELS,
   IMPLEMENT_OUTPUT_ID_COLUMNS,

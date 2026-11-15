@@ -1,3 +1,4 @@
+import OUTPUT_LABELS from '../../../backend/lib/implementOutputLabels.json' with { type: 'json' };
 import { busySwapRows, unusableSwapRows } from './tableUsability.js';
 import { compareMeetsQualityBarFirst, nameOfUseCase, subtitleOfUseCase } from './useCaseFields.js';
 import { placeholderWords } from './placeholderWords.js';
@@ -304,6 +305,17 @@ export function withAppBackend(spec, backend) {
 
 export const APP_OPTION_DEFAULTS = { modify: false, replace_edits: false, decisions: true, alerts: false };
 export const APP_OPTION_KEYS = Object.keys(APP_OPTION_DEFAULTS);
+// The experience is a choice, not a switch. An App built before it existed is classic (ui) in the shell; a new build starts agentic.
+export const APP_EXPERIENCE_DEFAULT = 'agentic';
+export const APP_EXPERIENCE_QUESTION = 'How people start in the App';
+export const APP_EXPERIENCE_CHOICES = [
+  { id: 'agentic', label: 'Agentic (default)', blurb: 'The App opens on the Agent page: a briefing of the records that matter most, and a box to ask or act. Every task the classic pages allow can be done there.' },
+  { id: 'ui', label: 'Classic UI', blurb: 'The App opens on the dashboard and the decision list, as before. The Agent page is not shown.' },
+  { id: 'both', label: 'Both', blurb: 'The App keeps its classic pages and adds the Agent page in the side menu. It does not open on it.' },
+];
+export const experienceOf = (value) => (APP_EXPERIENCE_CHOICES.some((c) => c.id === value) ? value : APP_EXPERIENCE_DEFAULT);
+// A rebuild of an App that never chose an experience keeps it classic; a new build starts agentic (same rule as the backend).
+export const experienceDefault = (spec) => (spec?.based_on_version != null && spec.based_on_version !== '' ? 'ui' : APP_EXPERIENCE_DEFAULT);
 export const PER_USER_OFF = ['alerts'];
 export const APP_OPTIONS = [
   { id: 'modify', label: 'Let people edit data', blurb: 'People can change records in the App, and Inspire keeps who changed what.' },
@@ -475,11 +487,12 @@ export const FRESHNESS_OPTIONS = [
   { id: 'weekly', label: 'Weekly', cron: '0 0 6 ? * MON' },
 ];
 
+// The label of each output comes from the one shared file the backend reads too.
 export const IMPLEMENT_OUTPUTS = [
-  { id: 'dashboard', label: 'Dashboard', blurb: 'Decision list, trend and run health.' },
-  { id: 'genie_space', label: 'Genie Agent', blurb: 'An agent over the result and source tables, with 5 sample questions.' },
-  { id: 'app', label: 'App', blurb: 'A Databricks App with the decision list, row detail and Ask. Ask is answered by the App\'s own agent.' },
-  { id: 'alert', label: 'Alert', blurb: 'Emails you when the latest run has rows to act on. Genie writes the check.' },
+  { id: 'dashboard', label: OUTPUT_LABELS.dashboard, blurb: 'Decision list, trend and run health.' },
+  { id: 'genie_space', label: OUTPUT_LABELS.genie_space, blurb: 'An agent over the result and source tables, with 5 sample questions.' },
+  { id: 'app', label: OUTPUT_LABELS.app, blurb: 'A Databricks App with the decision list, row detail and Ask. Ask is answered by the App\'s own agent, and the App can open on its Agent page.' },
+  { id: 'alert', label: OUTPUT_LABELS.alert, blurb: 'Emails you when the latest run has rows to act on. Genie writes the check.' },
 ];
 
 export const VIBES_MAX = 2000;
@@ -1313,7 +1326,7 @@ export function defaultSpecFromUseCase(uc, { warehouseId, inspireDatabase, sessi
       app_purpose: '',
       app_access: APP_ACCESS_DEFAULT,
       app_look: { ...APP_LOOK_DEFAULT },
-      app_options: { ...APP_OPTION_DEFAULTS },
+      app_options: { ...APP_OPTION_DEFAULTS, experience: APP_EXPERIENCE_DEFAULT },
       app_backend: '',
       app_owners: [],
       app_warehouse_id: '',
@@ -1370,6 +1383,9 @@ export function specFromLatest(latest, fallback, assets = {}) {
   for (const key of ['app_look', 'app_options', 'merge']) {
     outputs[key] = { ...fallback.outputs[key], ...(saved[key] && typeof saved[key] === 'object' && !Array.isArray(saved[key]) ? saved[key] : {}) };
   }
+  // A stored App with no experience key is the classic (ui) App, as the backend reads it: the new-build default must not reach it.
+  const savedOptions = saved.app_options && typeof saved.app_options === 'object' && !Array.isArray(saved.app_options) ? saved.app_options : {};
+  if (!Object.prototype.hasOwnProperty.call(savedOptions, 'experience')) outputs.app_options = { ...outputs.app_options, experience: 'ui' };
   if (!Array.isArray(outputs.app_owners)) outputs.app_owners = fallback.outputs.app_owners;
   if (!APP_ACCESS_CHOICES.some((c) => c.id === saved.app_access)) outputs.app_access = saved.app && assets?.app ? 'sp' : APP_ACCESS_DEFAULT;
   if (saved.app && assets?.app && !Object.prototype.hasOwnProperty.call(saved, 'app_backend')) outputs.app_backend = 'delta';
@@ -2165,7 +2181,7 @@ export function appOptionShown(spec, key) {
 }
 
 export function withAppOption(spec, key, value) {
-  const options = { ...spec.outputs.app_options, [key]: Boolean(value) };
+  const options = { ...spec.outputs.app_options, [key]: key === 'experience' ? experienceOf(value) : Boolean(value) };
   if (key === 'modify' && !value) options.replace_edits = false;
   return { ...spec, outputs: { ...spec.outputs, app_options: options } };
 }
@@ -2676,7 +2692,7 @@ export function pickedSummary(spec, sourceTables = [], more = {}) {
     row('schedule', FIRST_RUN_STEP.id, FRESH_LABEL, freshness === 'off' ? 'Run once now'
       : `${freshness === 'custom' ? 'Custom' : FRESHNESS_OPTIONS.find((o) => o.id === freshness).label}, runs ${cronInWords(spec.schedule.cron, spec.schedule.timezone)}`),
     ...(principals.length ? [row('sharing', 'delivery', 'Shared with', principals.join(', '))] : []),
-    ...(app ? [row('app', 'where', 'App', joined ? `Joins ${outputs.merge.app}`
+    ...(app ? [row('app', 'where', OUTPUT_LABELS.app, joined ? `Joins ${outputs.merge.app}`
       : [placement?.label, outputs.app_name].filter(Boolean).join(': ') || 'not placed yet')] : []),
     ...(app && !joined ? [
       row('app_access', 'where', 'App access', APP_ACCESS_CHOICES.find((c) => c.id === outputs.app_access)?.label || 'not picked yet'),
@@ -3312,7 +3328,7 @@ export function appStatusRows(appStatus, asset) {
   if (appStatus?.ok === false) rows.push(['Live status', appStatus.error]);
   if (appStatus?.ok) {
     const joined = (...parts) => parts.filter(Boolean).join(': ');
-    rows.push(['App', joined(appStatus.app_state, appStatus.app_message) || 'unknown']);
+    rows.push([OUTPUT_LABELS.app, joined(appStatus.app_state, appStatus.app_message) || 'unknown']);
     rows.push(['Compute', appStatus.compute_state || 'unknown']);
     const deployment = joined(appStatus.deployment_state, appStatus.deployment_message);
     rows.push(['Last deployment', deployment ? `${deployment}${appStatus.deployed_at ? ` (${appStatus.deployed_at})` : ''}` : 'none']);

@@ -1973,7 +1973,7 @@ def test_deleting_an_app_deletes_only_this_use_cases_app(agent_ns):
     assert ours.emitted[-1][2:4] == ("deleted churn-desk at the user's request", "ended_success")
     foreign = _delete_app_inspire(agent_ns, {"description": "Finance team tool"})
     refused = foreign._implement_delete_output("app", "churn-desk", (5150, "N01-U01", 3))["note"]
-    assert refused == "App: churn-desk is no longer this use case's App, so Inspire did not delete it"
+    assert refused == "Agentic App: churn-desk is no longer this use case's App, so Inspire did not delete it"
     assert foreign.calls == [("GET", "/api/2.0/apps/churn-desk")], "an App another team now owns under the same name is never deleted"
     assert foreign.updates == [{"app_name": None, "app_url": None}] and foreign.emitted[-1][2:4] == (refused, "ended_warning")
     gone = _delete_app_inspire(agent_ns, None)
@@ -3030,7 +3030,7 @@ def test_sharing_gives_use_on_this_use_cases_app_only(agent_ns):
             assert warnings == [] and patched == ["/api/2.0/permissions/apps/churn-desk"]
             assert calls[-1][2] == {"access_control_list": [{"group_name": "planners", "permission_level": "CAN_USE"}]}
         else:
-            assert warnings == ["Sharing App: churn-desk is no longer this use case's App, so Inspire did not share it"]
+            assert warnings == ["Sharing Agentic App: churn-desk is no longer this use case's App, so Inspire did not share it"]
             assert patched == [], "an App that is no longer this use case's gets no permission change"
 
 
@@ -5330,7 +5330,7 @@ def test_the_app_settings_start_with_decisions_on_and_every_other_option_off_and
     settings = agent_ns["implement_app_settings"]
     off = settings(core.SETTINGS_VERSION, " N01-U01   Predict churn ", [page["id"]], None, "no agent", "2026-10-27T00:00:00Z",
                    {"app_access": "sp"})
-    assert off["options"] == {"modify": False, "replace_edits": False, "decisions": True, "alerts": False}
+    assert off["options"] == {"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}
     assert (off["title"], off["style"], off["layout"], off["palette"], off["theme"], off["auth"]) == (
         "N01-U01 Predict churn", "a", "sidebar", "default", "light", "sp")
     assert off["genie"] is None and off["genie_note"] == "no agent"
@@ -5634,7 +5634,7 @@ def test_a_page_json_that_breaks_a_rule_goes_back_to_genie_and_nothing_deploys(a
     assert inst._implement_app(context, None) == {}
     assert len(seen["errors"]) == 1 and needle in seen["errors"][0], seen["errors"]
     if make in (_no_kpis, _two_segments, _reads_salaries):
-        assert seen["errors"][0].startswith("page.json does not fit the App: ")
+        assert seen["errors"][0].startswith("page.json does not fit the Agentic App: ")
     assert seen["deployed"] == []
 
 
@@ -5642,7 +5642,7 @@ def test_the_app_prompt_asks_for_page_json_only_with_the_example_tables_and_user
     inst, context, seen = _app_flow(agent_ns, tmp_path, outputs={"app_purpose": "Let the retention lead see who leaves next"})
     inst._implement_app(context, None)
     prompt = seen["prompt"]
-    assert seen["label"] == "App" and prompt.startswith("Write the file page.json in your working folder")
+    assert seen["label"] == "Agentic App" and prompt.startswith("Write the file page.json in your working folder")
     assert ("What the user asked the App to show or let people do (this wins over every rule below): Let the retention lead see who "
             "leaves next") in prompt
     assert '"title": "Price-loss decision desk"' in prompt, "the example spec is shown in full"

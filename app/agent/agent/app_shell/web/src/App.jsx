@@ -10,6 +10,7 @@ import WaitingForAccess from './WaitingForAccess.jsx';
 import { isQueue, pageSections } from './Layouts.jsx';
 import { hasPlan, pageMode, performanceOn, sectionTitle } from './modes.js';
 import ModeView from './ModeView.jsx';
+import AgentPage from './AgentPage.jsx';
 import { inboxOn } from './inbox.js';
 const Admin = lazy(() => import('./Admin.jsx'));
 import { ADMIN_ROUTE } from './admin.js';
@@ -33,7 +34,7 @@ const THEME_KEY = 'inspire-app-theme';
 const GENIE_CLOSED = 'inspire-genie-closed';
 const genieClosedThisSession = () => { try { return window.sessionStorage.getItem(GENIE_CLOSED) === '1'; } catch { return false; } };
 const rememberGenie = (open) => { try { window.sessionStorage.setItem(GENIE_CLOSED, open ? '0' : '1'); } catch { /* private mode opens it on every load */ } };
-const RAIL_ICONS = { dashboard: 'grid', inbox: 'bell', work: 'check', plan: 'trend', performance: 'trend', runs: 'history', alerts: 'bell', impact: 'trend', settings: 'sliders' };
+const RAIL_ICONS = { dashboard: 'grid', inbox: 'bell', work: 'check', plan: 'trend', performance: 'trend', runs: 'history', alerts: 'bell', impact: 'trend', settings: 'sliders', agent: 'send' };
 
 function initials(user) {
   const source = user?.name || user?.email || '';
@@ -82,9 +83,12 @@ function useHub(pages, asked) {
   return { hub, error, summaries, load, summarize };
 }
 
+// The Agent page is on for every experience but ui; it opens first, so the briefing is one click from any page.
+const agentOn = (app) => !!app && app.experience !== 'ui';
+
 function railOf(app, page) {
   const inbox = inboxOn(app, page);
-  const sections = pageSections(app, page);
+  const sections = agentOn(app) ? ['agent', ...pageSections(app, page)] : pageSections(app, page);
   const all = inbox ? [sections[0], 'inbox', ...sections.slice(1)] : sections;
   const at = 1 + (sections.includes('work') ? 1 : 0) + (sections.includes('plan') ? 1 : 0) + (inbox ? 1 : 0);
   return [...all.slice(0, at), ...(performanceOn(app) ? ['performance'] : []), ...all.slice(at)];
@@ -124,7 +128,8 @@ function Shell({ app, onRefreshSiblings }) {
   const resolve = useCallback(() => {
     const before = window.location.hash;
     if (unknownRoute(parseHash(before).route, known.current.pages)) missed.current = UNKNOWN_PAGE;
-    const next = canonicalHash(before, { pages: known.current.pages, last: known.current.last, sectionsOf: (p) => railOf(app, p), queueOf: (p) => pageMode(p).queue });
+    const next = canonicalHash(before, { pages: known.current.pages, last: known.current.last, sectionsOf: (p) => railOf(app, p), queueOf: (p) => pageMode(p).queue,
+      landingOf: (p) => (app.experience === 'agentic' && railOf(app, p).includes('agent') ? 'agent' : '') });
     if (next) window.history.replaceState(window.history.state, '', next);
     if (next && staleSection(before, next)) missed.current = LINK_STALE;
     return parseHash(window.location.hash);
@@ -329,8 +334,9 @@ function Shell({ app, onRefreshSiblings }) {
                   fallback={<Performance key={page.id} app={app} page={page} summary={summaries[page.id]} onRecord={openRecord} onExplain={explain} genieBusy={genie.busy} />} />
               </GenieScope.Provider>
             )}
+            {!admin && page && section === 'agent' && <AgentPage key={page.id} app={app} page={page} onRecord={openRecord} themeKey={themeKey} />}
             {!admin && page && section === 'plan' && <ModeView key={page.id} mode={mode.id} part="Plan" app={app} page={page} />}
-            {!admin && page && section !== 'performance' && section !== 'plan' && (
+            {!admin && page && section !== 'performance' && section !== 'agent' && section !== 'plan' && (
               <Page key={page.id} app={app} page={page} meta={metas[page.id]} state={states[page.id]} onState={setPageState(page.id)} look={looks[page.id] || EMPTY_LOOK}
                 onLook={setPageLook(page.id)} themeKey={themeKey} onAsk={ask} onExplain={explain} genieBusy={genie.busy} hubEntry={hub?.pages?.[page.id]}
                 summary={summaries[page.id]} view={view} onView={setView} genie={genie} section={section} tab={link.tab} focus={link.focus} chrome={chrome}

@@ -52,8 +52,9 @@ export function useActs({ pageId, similarBy, onActed, labelOf }) {
       return null;
     }
   }, [pageId, onActed, toast]);
-  const write = async (body, values, { said, about, nameOf } = {}) => {
-    const out = await actRecords({ page: pageId, ...body, values });
+  // One write shape: every record write names its registry action; the server builds the values from it (shell_actions.py).
+  const write = async (body, values, { said, about, nameOf, action = 'update' } = {}) => {
+    const out = await actRecords({ page: pageId, ...body, action, values });
     const outcome = actOutcome(out);
     if (outcome.batch) last.current = outcome.batch;
     setConflicts(outcome.conflicts ? outcome : null);
@@ -157,9 +158,9 @@ export function BulkBar({ picked, matching, total, capped = false, allOnPage, ow
   const what = matching ? `${over}${integer(n)} open ${n === 1 ? 'record' : 'records'}` : `${over}${recordsText(n)}`;
   const problem = actionProblem({ status, reason });
   const why = actionProblem({ status: DISMISSED, reason });
-  const submit = (name, values) => async (e) => {
+  const submit = (name, values, action = 'update') => async (e) => {
     e.preventDefault();
-    if (!(await onAct(withNote(values, note), { key: `bulk:${name}` }))) return;
+    if (!(await onAct(withNote(values, note), { key: `bulk:${name}`, action }))) return;
     setNote('');
     close();
   };
@@ -187,7 +188,7 @@ export function BulkBar({ picked, matching, total, capped = false, allOnPage, ow
       {matching && <small className="bulk-asof">As of {asOfText(matching.as_of_us)}. A record that changes after that is left as it is.</small>}
       {open === 'done' && (
         <Popover anchor={anchors.done.current} onClose={close} label="Mark the selected records done" width={300}>
-          <form className="bulk-pop" onSubmit={submit('done', { action_status: DONE })}>
+          <form className="bulk-pop" onSubmit={submit('done', { action_status: DONE }, 'done')}>
             {note500}
             {matching?.closed > 0 && <small className="faint" data-closed-note>{integer(matching.closed)} closed {matching.closed === 1 ? 'record stays' : 'records stay'} as {matching.closed === 1 ? 'it is' : 'they are'}.</small>}
             <SaveButton write="bulk:done" type="submit" className="btn btn--pri"><Icon name="check" size={14} />{matching ? `Mark ${what} as done?` : `Mark ${what} done`}</SaveButton>
@@ -235,7 +236,7 @@ export function BulkBar({ picked, matching, total, capped = false, allOnPage, ow
       )}
       {open === 'snooze' && (
         <Popover anchor={anchors.snooze.current} onClose={close} label="Snooze the selected records" width={300}>
-          <form className="bulk-pop" onSubmit={submit('snooze', { snooze_until: until })}>
+          <form className="bulk-pop" onSubmit={submit('snooze', { snooze_until: until }, 'snooze')}>
             <label className="in"><span>Snooze until</span><input type="date" name="bulk_snooze" min={tomorrow} value={until} onChange={(e) => setUntil(e.target.value)} required /></label>
             {note500}
             <SaveButton write="bulk:snooze" type="submit" className="btn btn--pri" disabled={!until || until < tomorrow} why={until ? 'Pick a date after today to snooze.' : missingWhy(['a date'])}>Snooze {what}</SaveButton>
@@ -256,9 +257,9 @@ export function QueueBulk({ pageId, list, asked, person = '', onChanged, choices
   const total = countOf(list?.total);
   const asOf = listAsOf(list);
   if (!list?.actions || !(compareValues(total, 0) > 0)) return null;
-  const act = async (values, { key } = {}) => {
+  const act = async (values, { key, action = 'update' } = {}) => {
     try {
-      const out = await acts.act({ match: matchOf(asked, asOf) }, values, { key });
+      const out = await acts.act({ match: matchOf(asked, asOf) }, values, { key, action });
       if (out) setOn(false);
       return out;
     } catch (err) {

@@ -4,6 +4,12 @@ import { withRecord } from './links.js';
 export const AGENT_OPEN = 'inspire-agent-open';
 export const AGENT_CHANGED = 'inspire-agent-changed';
 export const EMPTY_LOOK = Object.freeze({ sorts: {}, charts: {} });
+// REQ-313: a denial the agent raises (its access confirm) is the App shell's Permission Required dialog: WaitingForAccess takes the
+// tables the App cannot read and their owners.
+export const accessWaiting = (access) => {
+  const tables = access?.tables || [];
+  return { tables: tables.map((t) => t.table), owners: tables.map((t) => t.owner), detail: '' };
+};
 const EMPTY_STATE = Object.freeze({ range: {}, sel: {} });
 
 function withRange(state, action, meta) {

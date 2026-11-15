@@ -18,6 +18,7 @@ import shell_alerts
 import shell_db
 import shell_facts
 import shell_pg
+import shell_actions
 import shell_sql
 from shell_db import HttpError, QueryError, Workspace, error_body, normalize_host, stamp_of
 from shell_redact import inspire_parse_time, inspire_redact_text
@@ -31,6 +32,20 @@ AUTHS = ("user", "sp")
 THEMES = ("light", "dark")
 PALETTES = ("default", "muted", "vivid", "ocean", "sunset", "earth", "jewel", "nordic", "berry", "pop", "neon", "solid", "mono")
 OPTIONS = ("modify", "replace_edits", "decisions", "alerts")
+EXPERIENCES = ("agentic", "ui", "both")
+EXPERIENCE_DEFAULT = "ui"
+CHOICE_OPTIONS = ("experience",)
+
+
+def experience_of(options) -> str:
+    """The App's experience: agentic, ui or both. An App built before the choice existed has no key and stays ui."""
+    value = options.get("experience") if isinstance(options, dict) else None
+    return value if value in EXPERIENCES else EXPERIENCE_DEFAULT
+
+
+def experience_problems(options) -> list:
+    value = options.get("experience") if isinstance(options, dict) else None
+    return [] if value is None or value in EXPERIENCES else [f"the App experience {value!r} is not one of {', '.join(EXPERIENCES)}"]
 SCREENS = ("runs", "impact")
 REMOVED_SCREENS = ("performance",)
 USER_OFF = ("alerts",)
@@ -507,7 +522,7 @@ def settings_problems(settings: dict, pages: list) -> list:
         if settings.get(key) not in allowed:
             problems.append(f"the App {key} must be one of {', '.join(allowed)}")
     options = settings.get("options")
-    unknown = sorted(str(k) for k in options if k not in OPTIONS) if isinstance(options, dict) else []
+    unknown = sorted(str(k) for k in options if k not in OPTIONS and k not in CHOICE_OPTIONS) if isinstance(options, dict) else []
     if not isinstance(options, dict) or any(not isinstance(options.get(k), bool) for k in OPTIONS
                                             if k not in OFF_WHEN_UNSET or k in options):
         problems.append(f"the App options must set {', '.join(k for k in OPTIONS if k not in OFF_WHEN_UNSET)} to true or false, "
@@ -516,6 +531,7 @@ def settings_problems(settings: dict, pages: list) -> list:
         problems.append(f"the App options name {', '.join(unknown)}, which the App does not offer; its options are {', '.join(OPTIONS)}")
     elif settings.get("auth") == "user":
         problems += [USER_OFF_PROBLEMS[k] for k in USER_OFF if options.get(k)]
+    problems += experience_problems(options)
     host = settings.get("host")
     if host is not None and host != INSIDE:
         problems.append(f"the App host must be {INSIDE} when it is set, for a page inside Inspire")
@@ -1949,6 +1965,9 @@ class Shell:
         self.alerts = shell_alerts.Alerts(self)
         self.agent = shell_agent.Agent(self, clock=clock)
 
+    def experience(self) -> str:
+        return experience_of(self.settings.get("options"))
+
     def option(self, key: str) -> bool:
         if key not in OPTIONS or (key in USER_OFF and self.settings["auth"] == "user"):
             return False
@@ -2497,6 +2516,12 @@ class Shell:
                 return 200, self.genie_ask(headers, data)
             if route == ("POST", "genie/explain"):
                 return 200, self.genie_explain(headers, data)
+            if route == ("GET", "agent/threads"):
+                return 200, self.agent_threads(headers, query.get("page"))
+            if route == ("POST", "agent/thread/save"):
+                return 200, self.agent_thread_save(headers, data)
+            if route == ("GET", "agent/briefing"):
+                return 200, self.agent.briefing(headers, query.get("page"))
             if route == ("GET", "agent/status"):
                 return 200, self.agent.status(headers, query.get("page"))
             if route == ("POST", "agent/ask"):
@@ -2618,7 +2643,7 @@ class Shell:
         return {
             "title": hub_title(s), "subtitle": s.get("subtitle") or "", "style": s["style"], "palette": s["palette"],
             "theme": s["theme"], "layout": s["layout"], "auth": s["auth"],
-            "options": {k: self.option(k) for k in OPTIONS}, "screens": {k: self.screen(k) for k in SCREENS + REMOVED_SCREENS},
+            "options": {k: self.option(k) for k in OPTIONS}, "experience": self.experience(), "screens": {k: self.screen(k) for k in SCREENS + REMOVED_SCREENS},
             "image_export": s["auth"] == "sp", "genie": genie, "inside": self.inside,
             "user": {"email": headers.get("x-forwarded-email") or "", "name": headers.get("x-forwarded-preferred-username") or ""},
             "is_owner": self.is_owner(headers), "pages": pages, "built_at": s.get("built_at") or "", "backend": self.backend_status(),
@@ -2627,6 +2652,52 @@ class Shell:
             "siblings": self.siblings(headers), "review_run": shell_sql.run_review_link(s.get("review_run")),
             "no_access": {table: owner for table, owner in (s.get("unread_owners") or {}).items() if table in (s.get("unread") or {})},
         }
+
+    def thread_person(self, headers: dict) -> str:
+        person = str(headers.get("x-forwarded-email") or "").strip().lower()
+        if not person:
+            raise HttpError(403, "saved threads belong to a signed-in person; sign in to keep this conversation")
+        return person
+
+    def agent_threads(self, headers: dict, ident) -> dict:
+        page = self.page(ident)
+        person = self.thread_person(headers)
+        ws, _who = self.workspace(headers)
+        try:
+            rows = self.execute(ws, *shell_sql.thread_events_query(page, person), shell_sql.THREAD_CAPS["events"], delta=True)["rows"]
+            return {"threads": shell_sql.threads_of(rows), "note": ""}
+        except QueryError as error:
+            if NO_TABLE.search(str(error)):
+                return {"threads": [], "note": "No conversation is saved yet."}
+            raise
+
+    def agent_thread_save(self, headers: dict, data: dict) -> dict:
+        page = self.page(data.get("page"))
+        person = self.thread_person(headers)
+        turn = self.agent.turns.get(str(data.get("turn_id") or ""))
+        if turn is None or turn.who != self.workspace(headers)[1] or turn.page_id != page["id"]:
+            raise HttpError(404, "no answer with this turn_id is waiting for you")
+        thread = str(data.get("thread_id") or "")
+        if thread and not shell_agent.TURN_ID.match(thread):
+            raise HttpError(400, "the thread_id is not one the App returned")
+        thread = thread or uuid.uuid4().hex
+        view = turn.view()
+        blocks = json.dumps(view.get("blocks") or [], ensure_ascii=False, default=str)
+        ws, _who = self.workspace(headers)
+        sql, params = shell_sql.thread_event_write(page, person, thread, turn.question, view.get("answer") or "", blocks)
+        self.save_thread_row(ws, page, sql, params)
+        return {"thread_id": thread, "saved": True}
+
+    def save_thread_row(self, ws, page: dict, sql: str, params: list) -> None:
+        """Write one saved turn. The companion table is ensured on the first save that finds it missing, the way the App's
+        other companion tables are: CREATE TABLE IF NOT EXISTS through the same writer, then the write again. Later saves never create it."""
+        try:
+            self.write_saved(ws, shell_sql.threads_table(page), sql, params)
+        except HttpError as error:
+            if not NO_TABLE.search(str(error.message)):
+                raise
+            self.execute(self.decision_writer(ws), shell_sql.threads_create_sql(page), [], 1, delta=True)
+            self.write_saved(ws, shell_sql.threads_table(page), sql, params)
 
     def app_access(self, headers: dict, data: dict) -> dict:
         step = data.get("step")
@@ -3607,7 +3678,7 @@ class Shell:
 
     def setting_change(self, headers: dict, data: dict) -> tuple:
         page = self.page(data.get("page"))
-        refusal = self.owner_refusal(headers, page, SETTING_WORDS)
+        refusal = self.setting_refusal(headers, page)
         if refusal:
             raise HttpError(403, refusal)
 
@@ -4576,7 +4647,12 @@ class Shell:
         editor = self.editor(headers)
         keys, seen, match = self.act_target(data)
         similar = None if data.get("similar") is None else self.match_target(data["similar"], "similar")
-        values = shell_sql.action_values(data.get("values"), self.now().date(), shell_sql.status_choices(page))
+        try:
+            name = data.get("action") or shell_actions.action_for_values(data.get("values"))
+            built = shell_actions.record_body(name, data.get("values"), self.now().date())
+        except ValueError as error:
+            raise HttpError(400, shell_sql.error_text(error)) from error
+        values = shell_sql.action_values(built, self.now().date(), shell_sql.status_choices(page))
         treatment = treatment_of(page, data, values)
         request = data.get("request_id")
         if request is not None and not shell_sql.BATCH_ID.match(str(request)):
@@ -5340,6 +5416,21 @@ class Shell:
 
     def may_run(self, headers: dict, page: dict) -> bool:
         return bool(self.job_of(page)) and not self.inside and not self.requester(headers, page)[2]
+
+    def app_change_refusal(self, headers: dict, page: dict, action: str) -> str:
+        """Why this person may not make this app change, by the same checks the change's own route runs. "" means allowed."""
+        if action == "set_target":
+            return self.setting_refusal(headers, page)
+        if action == "run_again":
+            return self.requester(headers, page)[2]
+        if action == "create_alert":
+            state = self.alerts.status()
+            return "" if state["on"] else (state["reason"] or "alerts are off for this App")
+        raise ValueError(f"{action} is not an app action")
+
+    def setting_refusal(self, headers: dict, page: dict) -> str:
+        """The refusal settings/save gives (setting_change runs the same owner check before it touches a setting)."""
+        return self.owner_refusal(headers, page, SETTING_WORDS) or ""
 
     def requester(self, headers: dict, page: dict) -> tuple:
         names = [str(headers.get(h) or "").strip() for h in IDENTITY_HEADERS]
