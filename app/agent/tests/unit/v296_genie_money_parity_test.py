@@ -15,7 +15,7 @@ import money_currency_split_test as money  # noqa: E402
 import shell_sql  # noqa: E402
 from v218_kpi_genie_parity_test import genie_block  # noqa: E402
 
-KPI_LABEL = "Revenue at stake"
+KPI_LABEL = "Value at stake"
 UNDATED_AND_FUTURE = [(1000.0, "AED", "web", None, None), (800.0, "AED", "web", "2099-01-01", None)]
 ROWS = [(r["value_at_stake"], r["currency_code"], r["channel"], r["event_month"], r.get("fx_rate")) for r in money.ROWS]
 END_OF_QUERY = re.compile(r"\n  (?:The page narrows|Split it)|\n- ")

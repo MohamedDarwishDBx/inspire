@@ -504,13 +504,16 @@ function profileView({ table, technique, kind = '', columns, candidates, stats, 
   const keptNames = kept.map((p) => p.name);
   const { profiles, nests } = sampleProfile(sample, candidates);
   const heavy = new Set(kept.filter((p) => R.nullHeavy({ records, nulls: p.nulls })).map((p) => p.name));
-  const named = keptNames.filter((n) => !heavy.has(n) && namedIn(subject, n));
-  const discovered = keptColumns(deep, keptNames, heavy);
+  // A peer comparison's entity is the subject itself, so the column named after the subject is no Grouping it can recommend (REQ-293).
+  const entityKeys = new Set(R.peerComparison(technique, kind) ? keptNames.filter((n) => namedIn(subject, n)) : []);
+  const groupable = keptNames.filter((n) => !entityKeys.has(n));
+  const named = groupable.filter((n) => !heavy.has(n) && namedIn(subject, n));
+  const discovered = keptColumns(deep, groupable, heavy);
   const bySubject = !discovered && named.length > 0;
   const oneModel = R.fitsOneModel(technique, kind);
-  const recommended = oneModel ? [] : discovered || (bySubject ? [named[0]] : R.recommendation(profiles.filter((p) => keptNames.includes(p.column) && !heavy.has(p.column)), nests));
+  const recommended = oneModel ? [] : discovered || (bySubject ? [named[0]] : R.recommendation(profiles.filter((p) => groupable.includes(p.column) && !heavy.has(p.column)), nests));
   const grouped = keptColumns(groupBy, keptNames) || recommended;
-  const shown = kept.map((p) => {
+  const shown = kept.filter((p) => !entityKeys.has(p.name)).map((p) => {
     const sizes = [...groups.get(p.name).values()].map((g) => g.records);
     return { name: p.name, type: types.get(p.name) || '', distinct: sizes.length, smallest: Math.min(...sizes), largest: Math.max(...sizes), nulls: p.nulls,
       parent: parentOf(p.name, groups, nests, keptNames), ...(dimension.has(p.name) ? { join: joinOf(dimension.get(p.name)) } : {}) };
@@ -551,6 +554,8 @@ function profileView({ table, technique, kind = '', columns, candidates, stats, 
     recommended_by: qualifies ? (discovered ? 'discovery' : bySubject ? 'use_case' : 'statistics') : '',
     standalone,
     columns: oneModel ? [] : shown,
+    // A peer comparison's entity key is not offered as a Grouping: each entity alone has no peers (REQ-293). The reason is shown in its place.
+    peer_entity: [...entityKeys],
     one_model: oneModel,
     recommended: applies ? recommended : [],
     example: applies ? exampleOf(recommended, groups, grouped.join(',') === recommended.join(',') ? paths : null) : null,

@@ -56,6 +56,10 @@ function familyOf(technique) {
 // A per-group fit needs one registered model per group when the use case's kind is in kinds.json one_model.kinds (segmentation, whatever its
 // technique), or when its technique is a family in one_model.families for a kind that lists it (cost_to_serve, peer_benchmarking). The notebook's
 // inspire_grouping_fits_one_model is the same rule. Such a use case is built on the whole data only: a Grouping of columns is refused.
+// A peer comparison's entity key is no Grouping: each entity alone is its own group, with no peers (REQ-293). The notebook's
+// implement_peer_entity is the same rule and refuses such a Grouping at build time.
+const peerComparison = (technique, kind = '') => lower(kind).trim() === 'peer_benchmarking'
+  || lower(technique).split(/\s+/).filter(Boolean).join(' ') === 'peer benchmarking';
 const fitsOneModel = (technique, kind = '') => ONE_MODEL.kinds.includes(lower(kind).trim())
   || (groupingApplies(technique) && ONE_MODEL.families.includes(familyOf(technique)));
 
@@ -331,6 +335,7 @@ module.exports = {
   groupingApplies,
   standaloneRecords,
   fitsOneModel,
+  peerComparison,
   oneModelProblem,
   ONE_MODEL_REFUSED,
   groupByParts,
