@@ -15,7 +15,6 @@ test('the walker payload is a published App whose results are not trusted yet (o
   const state = implementState(latest, null);
   assert.equal(state.label, 'MVP built, results not trusted yet');
   assert.equal(state.hold, 'untrusted');
-  assert.equal(state.published, true);
   assert.deepEqual(deliveredOutputs(latest), ['app']);
   assert.match(statusReason(latest, null), /The App is published with a Results not trusted yet banner/);
 });

@@ -11,7 +11,7 @@ test('a build whose run is not reliable is never shown as ready, and says why an
   const W = await lib('implementWizard.js');
   for (const status of ['ready', 'ready_with_warnings']) {
     const state = W.implementState(row(status, { reason: REASON, spec_version: 3 }));
-    assert.deepEqual(state, { group: 'held', label: W.UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp' }, status);
+    assert.deepEqual(state, { group: 'held', label: W.UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp', hold: 'untrusted' }, status); // REQ-295: hold kind added
     assert.doesNotMatch(state.label, /ready/i);
     const said = W.statusReason(row(status, { reason: REASON, spec_version: 3 }));
     assert.equal(said, `The latest run's results are not reliable yet: ${REASON}. The App is not published until a run passes. `
