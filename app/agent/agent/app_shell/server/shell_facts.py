@@ -1178,7 +1178,26 @@ def run_rows_source(source: str, date_column: str) -> str:
     return future_source(page, RUN_ROWS_DATASET, source)
 
 
-def page_label(page: dict) -> str:
-    # REQ-237: a person sees an App page by its title; the internal page id stays out of the copy.
-    name = " ".join(str(page.get("title") or "").split())
+def page_spot(title) -> str:
+    # REQ-237: the one wording for an App page in person copy: its title, never its internal id. A page with no title says so in plain words.
+    name = " ".join(str(title or "").split())
     return f"page {name}" if name else "the App page"
+
+
+def page_label(page: dict) -> str:
+    return page_spot((page or {}).get("title"))
+
+
+def check_names(pages) -> dict:
+    # Person copy of a check problem: each App page by its title. Two pages that share a title (or a page with no title) keep the
+    # internal id, so no problem is attributed to the wrong page. The check itself keeps 'page <id>' keys for matching.
+    titles = [" ".join(str((p or {}).get("title") or "").split()) for p in pages or []]
+    return {str(p.get("id")): (page_spot(t) if t and titles.count(t) == 1 else f"page {p.get('id')}")
+            for p, t in zip(pages or [], titles)}
+
+
+def plain_check_text(text, pages) -> str:
+    names = check_names(pages)
+    for ident, spot in names.items():
+        text = re.sub(rf"page {re.escape(ident)}(?!\w)", lambda found, spot=spot: spot, text)
+    return text

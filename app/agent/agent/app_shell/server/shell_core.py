@@ -4051,7 +4051,7 @@ class Shell:
         failed = lambda texts: found.extend((CHECK_FAILED, t) for t in texts)
         design = lambda texts: found.extend((CHECK_DESIGN, t) for t in texts)
         for page in self.pages:
-            where = f"page {page['id']}"  # internal check problem: keyed by id, the build shows it by title (REQ-237)
+            where = f"page {page['id']}"
             bounds, slicing, single = {}, 0, []
             probe = Probe(self.workspace(headers)[0], self.timer)
             meta = self.filters(headers, page["id"], probe)

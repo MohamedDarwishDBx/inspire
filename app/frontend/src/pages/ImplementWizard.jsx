@@ -198,7 +198,7 @@ import {
   vibesProblem,
   vibePreviousProblem,
   vibePreviousChoices,
-  builtVersion,
+  builtVersion, liveVersionForVibes,
   VIBES_STEP_TITLE,
   VIBES_STEP_NOTE,
   vibesSkippedText,
@@ -796,6 +796,7 @@ export default function ImplementWizard({
 
   const groups = context?.widget_groups || NO_WIDGET_GROUPS;
   const built = builtVersion(context?.history);
+  const liveFor = liveVersionForVibes(context?.history);
   const kpiOptions = useMemo(() => kpiTargetOptions(ucRow, context?.history), [ucRow, context?.history]);
   const scopeShown = withGroupingDefault(scopeValues((name) => spec.config.widgets?.[name]), scopeProfile.profile, spec.config.widgets?.[GROUP_BY]);
   const trackedKpi = trackedKpiOf(context?.history);
@@ -2151,7 +2152,7 @@ export default function ImplementWizard({
             )}
             <p data-built-sentence="" className="text-sm font-semibold text-text-primary">{builtSentence(spec)}</p>
             {shows('vibes') && (
-              <VibesPanel spec={spec} built={built} next={(context?.latest?.spec_version ?? 0) + 1} blocks={blocks} onChange={(value) => patch('vibes', value)}
+              <VibesPanel spec={spec} built={built} live={liveFor} next={(context?.latest?.spec_version ?? 0) + 1} blocks={blocks} onChange={(value) => patch('vibes', value)}
                 onPrevious={(choice) => patch('vibe_previous', choice)} />
             )}
             <section aria-label="What Inspire picked" data-picked-summary="" className="bg-bg border border-border rounded-lg p-4 space-y-3 h-48 overflow-y-auto">
@@ -2398,9 +2399,9 @@ function SegmentButton({ on, disabled = false, onClick, option, children }) {
   );
 }
 
-function VibesPanel({ spec, built, next, blocks, onChange, onPrevious }) {
+function VibesPanel({ spec, built, live, next, blocks, onChange, onPrevious }) {
   const asked = String(spec.vibes ?? '').trim() !== '';
-  const choices = built != null && asked ? vibePreviousChoices(built, next, Boolean(spec.outputs?.alert)) : [];
+  const choices = built != null && asked ? vibePreviousChoices(live ?? built, next, Boolean(spec.outputs?.alert)) : [];
   const skipped = vibesSkippedText(spec, blocks);
   const skippedAsks = skippedAsksText(spec);
   return (
