@@ -1,0 +1,70 @@
+{
+  "_about": "Shared parity cases for the use case NAME tag (dbx_inspire_ai_usecase_name). JS useCaseNameTag and Python inspire_usecase_name_tag must both return expected for each name and max.",
+  "cases": [
+    {
+      "name": "Predict Customer Churn",
+      "max": 63,
+      "expected": "predict_customer_churn"
+    },
+    {
+      "name": "  Predict   Customer  Churn!! ",
+      "max": 63,
+      "expected": "predict_customer_churn"
+    },
+    {
+      "name": "Q3 Revenue (EU) & APAC: forecast/refresh",
+      "max": 63,
+      "expected": "q3_revenue_eu_apac_forecast_refresh"
+    },
+    {
+      "name": "Churn-Model v2",
+      "max": 63,
+      "expected": "churn_model_v2"
+    },
+    {
+      "name": "Café Résumé Scoring",
+      "max": 63,
+      "expected": "cafe_resume_scoring"
+    },
+    {
+      "name": "Churn 客户 Score",
+      "max": 63,
+      "expected": "churn_score"
+    },
+    {
+      "name": "客户流失",
+      "max": 63,
+      "expected": ""
+    },
+    {
+      "name": "",
+      "max": 63,
+      "expected": ""
+    },
+    {
+      "name": "Predict the probability that each active subscriber cancels within the next ninety days",
+      "max": 40,
+      "expected": "predict_the_probability_that_each_active"
+    },
+    {
+      "name": "Supercalifragilisticexpialidocious",
+      "max": 10,
+      "expected": "supercalif"
+    },
+    {
+      "name": "abcdefgh ijk",
+      "max": 9,
+      "expected": "abcdefgh"
+    },
+    {
+      "name": "a_b",
+      "max": 2,
+      "expected": "a"
+    },
+    {
+      "name": "Exactly Sixty Three Characters Long Name For The Tag Value Limit Test Y",
+      "max": 63,
+      "expected": "exactly_sixty_three_characters_long_name_for_the_tag_value"
+    }
+  ]
+}

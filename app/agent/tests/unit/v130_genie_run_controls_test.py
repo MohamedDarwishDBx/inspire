@@ -15,7 +15,7 @@ from v120_genie_support import build_inspire, make_uc
 
 FAMILIES = {"A": "Classification", "B": "Anomaly Detection", "C": "Clustering", "D": "Recommendation", "E": "Forecasting",
             "F": "Trend Analysis", "G": "Sentiment Analysis", "H": "Optimization"}
-TAG_KEYS = {"dbx_inspire_ai_business", "dbx_inspire_ai_usecase", "dbx_inspire_ai_usecase_id", "dbx_inspire_ai_session",
+TAG_KEYS = {"dbx_inspire_ai_business", "dbx_inspire_ai_usecase", "dbx_inspire_ai_usecase_name", "dbx_inspire_ai_usecase_id", "dbx_inspire_ai_session",
             "dbx_inspire_ai_session_id", "dbx_inspire_ai_launcher_source", "dbx_inspire_ai_run_type", "inspire_version",
             "dbx_inspire_ai_version", "dbx_inspire_ai_kind", "dbx_inspire_ai_layout"}
 INSTRUCTION = ("## 1. Goal\nThe retention lead decides weekly.\n\n## 3. Parameters\n| widget | type | default | used for |\n"
