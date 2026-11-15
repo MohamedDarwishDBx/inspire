@@ -20,12 +20,13 @@ test('the App read sentence on the Build page is one plain sentence with no GRAN
   assert.match(text, /^The build finished, but the App riverside-assets cannot read this table, so its pages show no data from it yet/);
 });
 
-test('the Build page card renders the offer sentence through PlainMessage and keeps the grant SQL under Details (REQ-041)', () => {
+test('the Build page card renders the offer sentence through PlainMessage and sends the grant SQL to Permission Required (REQ-041, REQ-131)', () => {
   const SHARED = fs.readFileSync(path.join(FRONT, 'components', 'AppReadAccess.jsx'), 'utf8');
   const body = SHARED.slice(SHARED.indexOf('export function AppReadAccess('));
   assert.match(body, /<PlainMessage text=\{offer\.text\}/, 'the offer goes through PlainMessage, which moves statements and codes to Details');
   assert.doesNotMatch(body, /<p className="text-text-secondary">\{offer\.text\}<\/p>/, 'the raw offer text is not rendered as a paragraph');
-  assert.match(body, /<TechnicalDetails items=\{offer\.grants\} \/>/, 'the grant SQL sits under Details');
+  assert.doesNotMatch(body, /<TechnicalDetails items=\{offer\.grants\} \/>/, 'the grant SQL is not under Details (REQ-260)');
+  assert.match(body, /raisePermissions\(offer\.permissions/, 'the grant SQL goes to the Permission Required channel (REQ-131)');
   assert.doesNotMatch(body, /<GrantList/, 'no grant list is shown outside Details');
 });
 

@@ -1092,8 +1092,11 @@ function registerImplementRoutes(app, deps) {
       const sent = req.body?.spec && typeof req.body.spec === 'object' ? req.body.spec : ((historyNow[0] && historyNow[0].spec_json) || {});
       const checkSpec = I.withResultTable(sent, moved ? moved.to : (resultTable || (sent.config && sent.config.result_table) || ''));
       const verdict = await sourceCheckOf(req, warehouseId, useCaseNow, checkSpec, historyNow);
+      // REQ-131, REQ-260: the detail is plain words; the GRANT statements ride the check's Permission Required entry (BuildNext raises it)
+      const sourcePermission = verdict.refusal?.details?.app_unreadable?.permissions?.[0];
       checks.sources = verdict.refusal
-        ? { ok: false, detail: verdict.refusal.message, ...(verdict.refusal.details?.missing_tables ? { missing: true } : {}) }
+        ? { ok: false, detail: verdict.refusal.message, ...(verdict.refusal.details?.missing_tables ? { missing: true } : {}),
+          ...(sourcePermission ? { permission: sourcePermission } : {}) }
         : { ok: true, detail: 'the App can read every source of this use case' };
       if (shares) checks.result_grant = I.shareCheck(output ? output.grant : null);
       if (appName) {
