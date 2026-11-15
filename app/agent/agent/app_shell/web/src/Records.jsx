@@ -30,7 +30,7 @@ import { recordName, recordSentenceName,
   DRAFT_LABEL, ACT_LIMIT, CHOICE_COLUMN, CLOSED_STATUSES, DONE, HELD, NOTE_CHARS, PAGE_SIZES, REASON_CHARS, UNEXPLAINED, actionForm, actionProblem, actionValues, pageChoices, pickChoice, statusKind, OPEN_STATUSES, isOpenStatus, choiceLabel, closingChoices, isDefaultChoice, QUICK_CLOSE,
   aiValue, askQuestions, changeBadge, doneText, dueText, explainContext, heldBack, heldText, impactText, initials, isOverdue, keptText, leftText, matchOf,
   missingSince, NOT_IN_RUN, notInRunText, overdueFirst, pageText, recordCurrency, recordKeyOf, recordRef, recordView, recordsText, savingText, statusClass,
-  statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf,
+  statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf, WAKE_WORD, WAKE_ASK, WOKE, snoozeOf,
   isStaleRecord, closedText, closedBatchOf, undoBatchOf, undoWordOf, UNDO_CLOSE, isClosed, skippedText, READ_ONLY, READ_ONLY_KEPT, READ_ONLY_THEIRS,
   CLOSED_PICK, ACCEPTED, acceptable, uncheckedWhy, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
 } from './records.js';
@@ -190,6 +190,22 @@ function SnoozeButton({ action, tomorrow }) {
         </Popover>
       )}
     </>
+  );
+}
+
+/** REQ-223 P52: a row or drawer action that asks first. The trigger and its confirm read the same word (D-UNDO). */
+function AskFirst({ word, ask, name, write, run, ...rest }) {
+  const [asking, setAsking] = useState(false);
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+  if (!asking) {
+    return <button type="button" className="btn btn--sm" onClick={stop(() => setAsking(true))} aria-label={`${word} ${name}`} {...rest}>{word}</button>;
+  }
+  return (
+    <span className="row-ask" role="group" aria-label={`${word} ${name}`} onClick={(e) => e.stopPropagation()}>
+      <span>{ask}</span>
+      <SaveButton write={write} className="btn btn--sm btn--pri" onClick={async () => { if (await run()) setAsking(false); }}>{word}</SaveButton>
+      <button type="button" className="btn btn--sm" onClick={stop(() => setAsking(false))}>Keep it</button>
+    </span>
   );
 }
 
@@ -474,6 +490,10 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                 </>
               );
             })()}
+            {acting && !closed && snoozeOf(current) >= today && (
+              <AskFirst word={WAKE_WORD} ask={WAKE_ASK} name={title} write="drawer:wake" data-wake
+                run={() => action.send({ snooze_until: null }, WOKE, 'drawer:wake')} />
+            )}
             {undoBatch && !work && !undoAsk && (
               <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{undoWordOf(meta, isClosed(current))}</button>
             )}
@@ -737,10 +757,11 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     }
     if (key == null || !row._inspire_version) return;
     try {
-      await acts.act({ record_keys: [String(key)], seen: { [String(key)]: String(row._inspire_version) } }, values,
+      return await acts.act({ record_keys: [String(key)], seen: { [String(key)]: String(row._inspire_version) } }, values,
         { said, about: { record_key: String(key), label: recordSentenceName(row, meta) }, key: write });
     } catch (err) {
       toastFailure(toast, err, () => quick(row, values, said, write));
+      return null;
     }
   };
   const clearAll = () => {
@@ -930,9 +951,14 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
       key: '_next', label: 'Next step', hideLabel: true, fixed: true, className: 'nowrap row-next',
       render: (r) => {
         if (isClosed(r)) return '';
+        const name = recordSentenceName(r, meta);
         const now = rowChoice(choices, r)?.id;
         return (
           <span className="row-acts row-next-acts">
+            {snoozeOf(r) >= today && (
+              <AskFirst word={WAKE_WORD} ask={WAKE_ASK} name={name} write={`wake:${keyOf(r)}`} data-row-wake
+                run={() => quick(r, { snooze_until: null }, WOKE, `wake:${keyOf(r)}`)} />
+            )}
             {closingChoices(choices).filter((c) => c.id !== now).map((c) => {
               const label = isDefaultChoice(c) ? QUICK_CLOSE[statusKind(c.status)]?.[0] || c.label : c.label;
               const name = recordSentenceName(r, meta);

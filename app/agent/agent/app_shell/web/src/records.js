@@ -564,6 +564,12 @@ export const UNDO_THEIRS = 'Only the person who made this change or an owner of 
 // D-UNDO: a kind names its undo word (records.undo, e.g. Unmerge). Without one a reversible change says Undo; a closed record says Reopen.
 export const undoWordOf = (meta, closed = false) => meta?.undo || (closed ? 'Reopen' : 'Undo');
 export const UNDO_CLOSE = 'Undo puts back every record this change touched, as they were before it, and keeps both versions in their history.';
+/** REQ-223 (b) P52: the one label for clearing a snooze. The trigger and its confirm both read WAKE_WORD. */
+export const WAKE_WORD = 'Wake now';
+export const WAKE_ASK = 'The record goes back to Open now and its snooze date is cleared.';
+export const WOKE = 'Woken. The record is back in Open.';
+/** The snooze date (YYYY-MM-DD) on a list row (`_inspire_snooze`) or a current version (`snooze_until`), or '' when there is none. */
+export const snoozeOf = (row) => String(row?._inspire_snooze ?? row?.snooze_until ?? '').slice(0, 10);
 
 // A row the notebook could not check carries its own data_quality_flag as the reason; any other row has no reason to show.
 export const uncheckedWhy = (flag) => {
