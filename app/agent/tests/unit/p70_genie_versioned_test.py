@@ -98,3 +98,18 @@ def test_the_view_names_a_publish_writes_into_the_space_are_the_views_it_creates
     held = [t["identifier"] for t in published["data_sources"]["tables"]]
     assert held == [ORDERS_VIEW + "__v2"] and created == held
     assert all(n in spark.views for n in held), "every view name the space holds exists"
+
+
+def test_try_again_builds_the_space_from_genie_not_from_a_stored_versioned_space(agent_ns, tmp_path):
+    """A stored space from an earlier attempt (rc7 kept __v<N> names) is never reused by a fresh build: Genie writes it again from base names."""
+    inst, _calls, _spark = _harness(agent_ns, tmp_path)
+    stored = json.loads(_doc())
+    stored["serialized_space"]["data_sources"]["tables"] = [
+        dict(t, identifier=ORDERS_VIEW + "__v2") if t["identifier"] == ORDERS else t for t in stored["serialized_space"]["data_sources"]["tables"]]
+    inst._implement_snapshot = lambda key, name, version: {"artifact": stored, "spec_version": version}
+    runner = _FileRunner([{"exit": 0}], [{"genie_space.json": _doc()}])
+    with pytest.raises(agent_ns["ImplementCandidate"]) as held:
+        inst._implement_genie_space(_side_context(agent_ns), runner)
+    assert runner.prompts, "a fresh build asks Genie for the space"
+    names = [t["identifier"] for t in held.value.artifact["serialized_space"]["data_sources"]["tables"]]
+    assert ORDERS in names and not any("__v" in n for n in names), names
