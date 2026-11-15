@@ -1,6 +1,7 @@
 import argparse
 import base64
 import hashlib
+import importlib.util
 import json
 import pathlib
 import re
@@ -23,6 +24,7 @@ S = rc_settings.load()
 HERE = rc_settings.HERE
 PROFILE = rc_settings.need(S, "profile")
 REPO = "amralieg/inspire"
+INSTALLER = pathlib.Path(__file__).resolve().parents[2] / "installer" / "inspire_setup.py"
 W40 = rc_settings.path(S, "work")
 WAREHOUSE = rc_settings.need(S, "warehouse")
 CATALOG = rc_settings.need(S, "catalog")
@@ -31,6 +33,14 @@ SCRATCH_APP = rc_settings.need(S, "scratch_app")
 WATCHED_SPS = set(rc_settings.need(S, "watched_service_principals"))
 WORKSPACE_FOLDER = rc_settings.need(S, "workspace_folder")
 UPLOAD_TIMEOUT_SECONDS = 1800
+
+
+def installer_module():
+    """The installer's own functions, so the assets folder this check reads is the one the installer names."""
+    spec = importlib.util.spec_from_file_location("inspire_setup", INSTALLER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def say(text):
@@ -286,9 +296,10 @@ def verify(w, tag, out, app_name, key, work):
     result["sp_catalog_grants"] = {k: v for k, v in held.items() if v}
     result["catalogs_seen"] = len(catalogs)
     version = json.loads((work / "release" / "manifest.json").read_text(encoding="utf-8"))["version"]
-    assets_root = f"/Workspace/Shared/inspire-ai/assets/{version}"
     with tarfile.open(work / "release" / "inspire-assets.tar") as tar:
         wanted = json.loads(tar.extractfile("manifest.json").read().decode("utf-8"))["files"]
+    setup = installer_module()
+    assets_root = setup.assets_root_for(f"{setup.ASSETS_PARENT}/{version}", setup.assets_build_id(wanted))
     landed = {o.path.split(f"{assets_root}/", 1)[-1]: o.size for o in retried(lambda: list(w.workspace.list(assets_root, recursive=True)))
               if str(o.object_type).split(".")[-1] == "FILE"}
     result["assets_root"] = assets_root

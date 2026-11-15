@@ -9,6 +9,7 @@ ASSETS_PARENT = "/Workspace/Shared/inspire-ai/assets"
 APPS_PARENT = "/Workspace/Shared/inspire-ai/apps"
 ASSETS_MANIFEST = "manifest.json"
 ASSETS_FORMAT = 1
+ASSETS_BUILD_ID_LEN = 12
 SCAN_SKIPPED = ("samples", "system", "__databricks_internal", "information_schema")
 SCAN_GRANTS = ("USE CATALOG", "USE SCHEMA", "SELECT", "BROWSE")
 CONSENT_PRIVILEGES = "USE CATALOG, USE SCHEMA, SELECT, BROWSE"
@@ -245,6 +246,27 @@ def _yaml_quote(value):
 
 
 FX_RATE_SOURCE = 'https://api.frankfurter.dev/v1/latest'
+
+
+def assets_build_id(files) -> str:
+    """The id that names one Inspire build's assets folder: a short sha256 of the notebook pins its manifest lists.
+
+    The notebook derives the same id from its own INSPIRE_NOTEBOOK_ASSETS pins (inspire_assets_build_id), so the installer
+    and every notebook of one build agree on the folder without sharing state. Two builds of one version never share it.
+    """
+    pins = {}
+    for entry in files:
+        if isinstance(entry, dict) and entry.get("kind") == "notebook":
+            pins[str(entry.get("name"))] = {"file": entry.get("file"), "sha256": entry.get("sha256"), "size": entry.get("size")}
+    if not pins:
+        raise RuntimeError(f"{ASSETS_MANIFEST} lists no notebook file, so its Inspire build cannot be named. Download the release again.")
+    canonical = json.dumps(pins, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()[:ASSETS_BUILD_ID_LEN]
+
+
+def assets_root_for(version_root, build) -> str:
+    """The one folder a build's assets live in: <assets parent>/<version>/<build id>, with version_root the first two parts."""
+    return f"{version_root}/{build}"
 
 
 def write_app_yaml_deploy(path, inspire_db, warehouse_id, notebook_path, sp_resource_name, assets_path=None, test_tag=None, extra_env=None):
@@ -1961,12 +1983,14 @@ def _assets_listing(tar, version):
 
 
 def step_assets(ctx):
-    tar_path, root, version = ctx["ASSETS_TAR"], ctx["ASSETS_ROOT"], ctx["RELEASE_VERSION"]
+    """Install the build's files into its own folder: ASSETS_ROOT holds one folder per build, named by assets_build_id."""
+    tar_path, version_root, version = ctx["ASSETS_TAR"], ctx["ASSETS_ROOT"], ctx["RELEASE_VERSION"]
     print(f"Inspire assets: checking every file in {ASSETS_TAR} ...")
     stage = tempfile.mkdtemp(prefix="inspire_assets_")
     try:
         with tarfile.open(tar_path, "r:") as tar:
             manifest_member, files = _assets_listing(tar, version)
+            root = assets_root_for(version_root, assets_build_id(files))
             for entry in files:
                 try:
                     member = tar.getmember(entry["file"])
