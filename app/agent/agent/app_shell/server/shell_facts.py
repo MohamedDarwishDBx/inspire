@@ -1142,7 +1142,7 @@ def window_anchor(page: dict, dataset: str, column: str) -> str:
                   and (f.get("columns") or {}).get(dataset) == column), "")
     high = ((page.get(DEFAULT_RANGE) or {}).get(ident) or {}).get("high") if ident else None
     try:
-        last = datetime.date.fromisoformat(str(high)[:10]) if high else None
+        last = datetime.datetime.strptime(str(high)[:10], "%Y-%m-%d").date() if high else None
     except ValueError:
         last = None
     return f"LEAST(current_date(), DATE '{last.isoformat()}')" if last else "current_date()"

@@ -288,7 +288,7 @@ def test_the_closed_facts_keep_the_choice_and_older_facts_are_rebuilt_not_read()
     assert ("_inspire_choice", "STRING") in shell_facts.CLOSED_COLUMNS
     assert [n for n, _k in shell_facts.CLOSED_COLUMNS][:4] == ["_inspire_k", "_inspire_label", "_inspire_status", "_inspire_choice"]
     assert shell_facts.CHOICE_COLUMN in shell_facts.ACTED_COLUMNS
-    assert shell_facts.FACTS_VERSION == 5
+    assert shell_facts.FACTS_VERSION == 6  # d7a950f1a (REQ-224 r2, D-SCOPE2) bumped it: stored run counts no longer carry open_n
     old = {"v": 4, "log": "l", "acted": "a", "closed": "c", "changes": None, "actions": {}, "stamp_us": 0, "people": [], "numbers": {},
            "runs": [], "names": [], "columns": []}
     assert shell_facts.facts_problem(old) == "the latest run kept its counts in an older shape", \

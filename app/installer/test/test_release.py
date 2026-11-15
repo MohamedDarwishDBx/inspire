@@ -156,6 +156,16 @@ class BuildTest(unittest.TestCase):
             release.build(str(app), str(assets), str(self.tmp / "bare-out"), support.VERSION)
         self.assertIn("must pin its assets on one INSPIRE_NOTEBOOK_ASSETS line, it has 0", str(caught.exception))
 
+    def test_a_release_refuses_an_upload_set_that_lacks_any_pinned_notebook_asset(self):
+        # REQ-298: every pin the notebook carries must be in the assets the release uploads, including the prompt templates.
+        pinned = {"app_shell": {"file": "notebook/app_shell.b64", "sha256": "a" * 64, "size": 1},
+                  "prompts": {"file": "notebook/prompts.json", "sha256": "b" * 64, "size": 2}}
+        listed = [{"file": "notebook/app_shell.b64", "sha256": "a" * 64, "size": 1}]
+        with self.assertRaises(SystemExit) as caught:
+            release.check_notebook_assets(pinned, listed)
+        self.assertIn("prompts (notebook/prompts.json)", str(caught.exception))
+        release.check_notebook_assets(pinned, listed + [{"file": "notebook/prompts.json", "sha256": "b" * 64, "size": 2}])
+
     def test_the_release_leaves_the_installer_tests_and_the_release_script_out_of_the_app_zip(self):
         out = self.build(extra={"installer/test/test_x.py": b"x", "installer/release.py": b"x",
                                 "installer/__pycache__/inspire_setup.cpython-312.pyc": b"x", "backend/.DS_Store": b"x"})
