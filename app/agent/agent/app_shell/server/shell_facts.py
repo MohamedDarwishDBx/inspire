@@ -4,7 +4,7 @@ import re
 
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 TABLE_PART = re.compile(r"^[^`.\x00-\x1f]{1,255}$")
-FACTS_VERSION = 5
+FACTS_VERSION = 6
 FACTS_COLUMN = "run_facts"
 ACTED_SUFFIX = "_acted"
 RUN_LOG_SUFFIX = "_run_log"
@@ -524,15 +524,36 @@ def acted_source(acted: str, columns: list) -> str:
             f"a.`valid_from`) UNION ALL SELECT {plain} FROM q)")
 
 
+SNOOZE_NAME = "snooze_until"
+
+
+def open_work_sql(names, today: str, alias: str = "") -> str:
+    """The one open-work predicate: the current, not deleted row, in an open status, flagged ok, not held back, and not snoozed
+    past today. Each part applies only when the result table has its column. The scope line, the KPIs marked open_work and
+    the Actions line read this expression; the Work list applies the same rule to its own CTE columns (window_conditions)."""
+    p = f"{alias}." if alias else ""
+    parts = [f"{p}`is_current`", f"{p}`change_source` <> 'delete'"]
+    if "action_status" in names:
+        parts.append(f"COALESCE({p}`action_status`, '{NEW}') IN ({sql_list(OPEN_STATUSES)})")
+    if DATA_QUALITY_FLAG in names:
+        parts.append(f"COALESCE(({flagged_ok_sql(names, alias=alias)}), FALSE)")
+    if "held_back" in names:
+        parts.append(f"NOT COALESCE({p}`held_back`, FALSE)")
+    if SNOOZE_NAME in names:
+        parts.append(f"({p}`{SNOOZE_NAME}` IS NULL OR CAST({p}`{SNOOZE_NAME}` AS DATE) <= {today})")
+    return " AND ".join(parts)
+
+
 def action_cells(alias: str) -> dict:
+    """Done and resolved cells per record. Open work is not counted here: it is open_work_sql, read live, because a snooze
+    wakes on a date and an incremental fact never sees that change."""
     live = f"{alias}.`change_source` <> 'delete'"
     done = f"{live} AND {alias}.`action_status` = '{DONE}'"
-    return {"open_n": f"CASE WHEN {live} AND {alias}.`is_current` AND {alias}.`action_status` IN ({sql_list(OPEN_STATUSES)}) THEN 1 ELSE 0 END",
-            "done_n": f"CASE WHEN {done} THEN 1 ELSE 0 END",
+    return {"done_n": f"CASE WHEN {done} THEN 1 ELSE 0 END",
             "resolved_n": f"CASE WHEN {done} AND (NOT {alias}.`is_current` OR {alias}.`action_outcome` = '{RESOLVED}') THEN 1 ELSE 0 END"}
 
 
-ACTION_NUMBERS = ("open_n", "done_n", "resolved_n")
+ACTION_NUMBERS = ("done_n", "resolved_n")
 
 
 def action_counts_sql(source: str) -> str:

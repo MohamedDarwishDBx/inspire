@@ -112,7 +112,8 @@ export const withDemoDecisions = (page, list, filters = {}) => {
   if (!list || !Array.isArray(list.rows) || !keys.length) return list;
   const listed = new Map(list.rows.map((r) => [String(r.record_key), r]));
   const moved = keys.filter((k) => (listed.has(k) ? !CLOSED_STATUSES.includes(listed.get(k)._inspire_status) : !filtered(filters))).length;
-  const summary = list.summary && moved ? { ...list.summary, open: Math.max(0, (list.summary.open ?? 0) - moved), done: (list.summary.done ?? 0) + moved } : list.summary;
+  const summary = list.summary && moved ? { ...list.summary, ...(list.summary.open == null ? {} : { open: Math.max(0, list.summary.open - moved) }),
+    done: (list.summary.done ?? 0) + moved } : list.summary;  // open is absent when the list was not counted by status
   return { ...list, ...(summary ? { summary } : {}), demo_moved: moved, rows: list.rows.map((r) => (decided[String(r.record_key)] ? { ...r, ...decided[String(r.record_key)] } : r)) };
 };
 export const getRecords = async (body) => withDemoDecisions(body?.page, await json('POST', 'records', body), body?.filters);
