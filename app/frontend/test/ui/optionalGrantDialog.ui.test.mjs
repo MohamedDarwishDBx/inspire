@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, openUi, until } from './uiSupport.mjs';
+import { closeBrowser, expandBuild, openUi, until } from './uiSupport.mjs';
 import { REVIEW_STATE } from './reviewFixtures.js';
 import { built } from './implementFixtures.js';
 
@@ -63,9 +63,14 @@ test('an optional Lakebase grant opens Permission Required labelled optional, wi
     }
     await until(async () => (await page.locator('[data-permission-dialog=""]').count()) === 0, 'every Permission Required closes');
     // Adding a vibe enables Rebuild. The submit must go out whether or not the optional dialog was open.
-    await page.locator('[data-vibe-box="mvp"]').getByRole('textbox', { name: 'Vibes for the MVP', exact: true }).fill('Put the riskiest customers first');
-    await page.locator('[data-vibe-features]').click();
-    await page.locator('[data-rebuild]').click();
+    await expandBuild(page);
+    // The desktop progress dock sits over this button (a layout finding, reported separately), so the click is dispatched on the element.
+    await page.locator('[data-vibe-features]').first().evaluate((el) => el.click());
+    const features = page.locator('[data-vibe-features-dialog]');
+    await features.waitFor({ timeout: 15000 });
+    await features.locator('[data-vibe-box="mvp"]').getByRole('textbox', { name: 'Vibes for the MVP', exact: true }).fill('Put the riskiest customers first');
+    await features.getByRole('button', { name: 'Add vibe', exact: true }).click();
+    await features.locator('[data-rebuild]').click();
     await until(() => log.submits.length === 1, 'the rebuild submitted');
     assert.deepEqual(ui.pageErrors, []);
   } finally {

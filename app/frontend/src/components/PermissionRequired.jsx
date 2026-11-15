@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import ModalDialog from './ModalDialog';
 import { grantAsk } from '../lib/permissionBus';
 
 const BUTTON = 'inline-flex h-8 items-center justify-center px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle';
@@ -32,26 +33,24 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
     }
     setStatus(copied ? 'Copied' : 'Select and copy');
   };
+  const buttons = (
+    <>
+      <button type="button" onClick={copy} className={BUTTON}>{status === 'Copied' ? 'Copied' : 'Copy'}</button>
+      {onRetry && <button type="button" onClick={onRetry} className={BUTTON}>Try again</button>}
+      {onStart && <button type="button" onClick={onStart} className={BUTTON}>Start anyway</button>}
+    </>
+  );
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="permission-required-title" data-permission-dialog=""
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-lg space-y-3 rounded-xl border border-border bg-surface p-5 shadow-xl">
-        <h2 id="permission-required-title" className="text-base font-bold text-text-primary">Permission Required</h2>
-        {(permissions || []).map((p) => (
-          <div key={[...p.statements, ...(p.instructions || [])].join('|')} className="space-y-2">
-            {p.why && <p className="text-sm text-text-secondary">{p.why}</p>}
-            <p className="text-sm text-text-primary">{grantAsk(p)}</p>
-          </div>
-        ))}
-        <pre ref={block} data-permission-statements="" className="whitespace-pre-wrap break-all rounded-md bg-bg-subtle p-3 font-mono text-xs text-text-primary">{text}</pre>
-        {status === 'Select and copy' && <p role="status" className="text-xs text-text-secondary">Select and copy: the statements are selected above.</p>}
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <button type="button" onClick={copy} className={BUTTON}>{status === 'Copied' ? 'Copied' : 'Copy'}</button>
-          {onRetry && <button type="button" onClick={onRetry} className={BUTTON}>Try again</button>}
-          {onStart && <button type="button" onClick={onStart} className={BUTTON}>Start anyway</button>}
-          <button type="button" onClick={onClose} className={BUTTON}>Close</button>
+    <ModalDialog titleId="permission-required-title" title="Permission Required" onClose={onClose} overlayAttrs={{ 'data-permission-dialog': '' }}
+      footer={buttons}>
+      {(permissions || []).map((p) => (
+        <div key={[...p.statements, ...(p.instructions || [])].join('|')} className="space-y-2">
+          {p.why && <p className="text-sm text-text-secondary">{p.why}</p>}
+          <p className="text-sm text-text-primary">{grantAsk(p)}</p>
         </div>
-      </div>
-    </div>
+      ))}
+      <pre ref={block} data-permission-statements="" className="whitespace-pre-wrap break-all rounded-md bg-bg-subtle p-3 font-mono text-xs text-text-primary">{text}</pre>
+      {status === 'Select and copy' && <p role="status" className="text-xs text-text-secondary">Select and copy: the statements are selected above.</p>}
+    </ModalDialog>
   );
 }

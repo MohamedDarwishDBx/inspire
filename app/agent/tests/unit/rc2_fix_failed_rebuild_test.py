@@ -7,6 +7,8 @@ saves each live definition first (live=...), and _implement_restore_live_views p
 import logging
 import re
 
+import pytest
+
 VIEW = "inspire_kinds_rc7._inspire.inspire_kinds_rc7__inspire_sales_transactions__n01_u01__implement_scope"
 REASONS = "inspire_kinds_rc7._inspire.inspire_walk_v153_e2e_n01_u01_n01_u01_results__signal__n01_u01__implement_scope"
 SOURCE = "inspire_kinds_rc7._inspire.inspire_kinds_rc7__sales_transactions_raw"
@@ -138,3 +140,10 @@ def test_a_name_that_is_not_a_view_is_never_rewritten(agent_ns):
         assert "is not a view" in str(error)
     else:
         raise AssertionError("a table under a scope view name must refuse the rewrite, not replace the table")
+
+
+def test_a_saved_definition_is_put_back_under_the_owned_view_name_and_a_non_view_refuses(agent_ns):
+    restore = agent_ns["scope_view_restore_sql"]
+    assert restore(VIEW, LIVE_V6) == LIVE_V6_REPLACE, "the statement keeps the saved column list and query, under the owned view name"
+    with pytest.raises(ValueError, match="is not a view"):
+        restore(VIEW, "CREATE TABLE `inspire_kinds_rc7`.`_inspire`.`x` (a INT)")
