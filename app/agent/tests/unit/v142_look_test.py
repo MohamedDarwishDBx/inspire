@@ -255,7 +255,7 @@ def test_scopes_the_workspace_will_not_give_block_a_per_user_app(agent_ns, sdk_s
     undone = [m for lvl, m in inst.logger.records if m.startswith("[IMPLEMENT-UNDO]")]
     if undo:
         assert calls[-1][2]["user_api_scopes"] == []
-        assert undone == ["[IMPLEMENT-UNDO] N01-U01: the App build failed after Inspire had saved changes, so Inspire gave the App "
+        assert undone == ["[IMPLEMENT-UNDO] N01-U01: the Agentic App build failed after Inspire had saved changes, so Inspire gave the Agentic App "
                           f"churn-desk back its user authorization scopes (none): {str(raised.value)[:300]}"]
     else:
         assert undone == [], "a refused scope change leaves nothing to undo"
@@ -267,7 +267,7 @@ def test_scopes_that_cannot_be_given_back_stop_the_build_and_say_so(agent_ns, sd
     inst, context, calls, imported = _deploy_inspire(agent_ns, [existing, held, held, RuntimeError("PERMISSION_DENIED: no CAN MANAGE")])
     with pytest.raises(agent_ns["ImplementBlocked"]) as raised:
         inst._implement_deploy_app(_user_context(agent_ns, context), "churn-desk", SHELL_FILES, READS, poll_s=0)
-    assert str(raised.value).startswith("the App build failed after Inspire had saved changes (the App churn-desk shows each person only")
+    assert str(raised.value).startswith("the Agentic App build failed after Inspire had saved changes (the Agentic App churn-desk shows each person only")
     assert str(raised.value).endswith("and Inspire could not undo them: the App churn-desk still holds the user authorization scopes "
                                       "genie; before this build it held none: PERMISSION_DENIED: no CAN MANAGE")
     assert imported == [] and not any(c[1].endswith("/deployments") for c in calls)

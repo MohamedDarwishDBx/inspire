@@ -83,7 +83,7 @@ def choices(raw, cap: int, problems: list, what: str) -> list:
         out.append({"id": ident(item.get("id")), "label": plain(item.get("label"), LABEL_CHARS) or ident(item.get("id")),
                     "detail": plain(item.get("detail"), WHY_CHARS), "ask": plain(item.get("ask"), ASK_CHARS)})
     if len(items) > cap:
-        problems.append(f"a {what} takes at most {cap} options")
+        problems.append(f"a {what} takes at most {cap} {'option' if cap == 1 else 'options'}")
     return out
 
 

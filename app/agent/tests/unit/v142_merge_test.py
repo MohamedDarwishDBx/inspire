@@ -115,7 +115,7 @@ def test_merge_targets_access_and_look_normalize_and_bad_ones_are_rejected(agent
     for changes, needle in (({"merge": {"alert": "x"}}, "outputs.merge.alert is not one of dashboard, genie_space, app"),
                             ({"merge": {"dashboard": "a/b?c"}}, "outputs.merge.dashboard 'a/b?c' must name an existing Inspire dashboard"),
                             ({"merge": {"genie_space": "x" * 65}}, "must name an existing Inspire Genie Agent"),
-                            ({"merge": {"app": "Bad_App"}}, "outputs.merge.app 'Bad_App' must name an existing Inspire App"),
+                            ({"merge": {"app": "Bad_App"}}, "outputs.merge.app 'Bad_App' must name an existing Inspire Agentic App"),
                             ({"merge": "sales-desk"}, "outputs.merge must be an object"),
                             ({"app_access": "everyone"}, "choose who the App reads its data as"),
                             ({"app_look": {"layout": "grid"}}, "the App layout 'grid' is not one Inspire offers; pick one of sidebar, tabs, home")):
@@ -646,7 +646,7 @@ def test_a_look_or_backend_edit_of_an_app_whose_pages_fail_todays_checks_is_rebu
     fields = inst._implement_app(context, None)
     note = ("App: its pages no longer passed Inspire's checks (page n01_u01: the page has 2 charts; it needs 3 to 8; page n01_u01: "
             "kpi:revenue failed: TABLE_OR_VIEW_NOT_FOUND), so Genie rebuilt them with the new look and data backend")
-    assert made == ["N01-U01"] and asked == [("runner", "App")], "Genie rebuilds the App instead of refusing the edit"
+    assert made == ["N01-U01"] and asked == [("runner", "Agentic App")], "Genie rebuilds the Agentic App instead of refusing the edit"
     assert len(checks) == 3 and len(inst.deployed) == 1, (
         "the restyled pages are checked, then the held pages as they are, which passed, so the restyle caused the problems; then the "
         "rebuilt App is checked and deployed")
@@ -666,7 +666,7 @@ def test_a_look_only_edit_of_an_app_inspire_cannot_read_is_rebuilt_by_genie(agen
     inst._genie_runner_factory = lambda uc: made.append(uc) or "runner"
     context["restyle"] = ["app"]
     inst._implement_app(context, None)
-    assert made == ["N01-U01"] and seen["label"] == "App" and len(seen["deployed"]) == 1
+    assert made == ["N01-U01"] and seen["label"] == "Agentic App" and len(seen["deployed"]) == 1
 
 
 def _page_runner(ns):
@@ -777,7 +777,7 @@ def test_a_use_case_taken_out_of_an_app_says_its_old_page_stays_there(agent_ns, 
                                     asset_status={"app": {"state": "ready", "merged_into": "sales-desk"}})
     fields = inst._implement_app(context, None)
     assert seen["deployed"][0][0] == "churn-desk"
-    assert "App: this use case is now part of the App churn-desk; the App sales-desk keeps what Inspire built there before" in \
+    assert "Agentic App: this use case is now part of the Agentic App churn-desk; the Agentic App sales-desk keeps what Inspire built there before" in \
         fields["_notes"][0]
     assert not any("is now part of" in w for w in fields.get("_warnings") or []), "the move is a note, not a warning"
     inst, context, seen = _app_flow(agent_ns, tmp_path / "own", assets={"app": "churn-desk-old"})
@@ -941,7 +941,7 @@ def test_an_output_another_use_case_still_holds_is_never_deleted(agent_ns, name,
             lambda asset_id, key, holders, status: taken.append((asset_id, [h["use_case_id"] for h in holders])) or {
                 "state": "released", "note": "its part is out"})
     outcome = inst._implement_delete_output(name, asset, (5150, "N01-U01", 3))
-    label = {"dashboard": "Dashboard", "genie_space": "Genie Agent", "app": "App"}[name]
+    label = {"dashboard": "Dashboard", "genie_space": "Genie Agent", "app": "Agentic App"}[name]
     assert taken == [(asset, ["N01-U07"])], "only this use case's part is taken out, and only the use case still holding it keeps it"
     assert outcome["state"] == "released" and outcome["stays_for"] == ["N01-U07"] and outcome["taken_out_of"] == asset
     assert ("DELETE", path) not in inst.calls and inst.emitted[-1][2:4] == ("its part is out; it stays for use case N01-U07", "ended_success")
@@ -977,7 +977,7 @@ def test_sharing_a_merged_app_names_the_use_case_whose_sharing_decides(agent_ns)
     inst._implement_access_rows = lambda table, warnings=None: None
     inst._implement_grant = lambda *a: None
     warnings = inst._implement_share("N01-U01", "main.inspire.churn_out", spec, {"app": "sales-desk"}, None)
-    assert ("Sharing App: sales-desk belongs to use case N01-U07, so Inspire did not share it with planners; that use case's sharing "
+    assert ("Sharing Agentic App: sales-desk belongs to use case N01-U07, so Inspire did not share it with planners; that use case's sharing "
             "decides who opens it") in warnings
     moved = {"app": {"state": "ready", "merged_into": "other-desk"}}
     assert any(w.startswith("Sharing App: sales-desk belongs to use case N01-U07") for w in

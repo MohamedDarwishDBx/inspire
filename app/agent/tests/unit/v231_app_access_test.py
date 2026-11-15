@@ -238,10 +238,10 @@ def test_banner_and_genie_call_the_same_server_action_and_render_the_same_compon
     assert agent.count("self.shell.app_access(") == 1 and "GRANT " not in agent
     assert core.count("def app_access(") == 1 and core.count('f"GRANT ') == 1
     assert re.search(r'route == \("POST", "access"\)\:\s*\n\s*return 200, self\.app_access\(headers, data\)', core)
-    web = {name: open(os.path.join(WEB, name), encoding="utf-8").read() for name in ("ui.jsx", "AgentParts.jsx", "api.js")}
+    web = {name: open(os.path.join(WEB, name), encoding="utf-8").read() for name in ("ui.jsx", "AgentParts.jsx", "PermissionDialog.jsx", "api.js")}
     assert web["api.js"].count("'access'") == 1
-    assert "export function AccessActions(" in web["ui.jsx"] and "<AccessActions" in web["ui.jsx"]
-    assert "<AccessActions" in web["AgentParts.jsx"] and "appAccess(" not in web["AgentParts.jsx"]
+    assert "export function AccessActions(" in web["ui.jsx"] and "<AccessActions" in web["PermissionDialog.jsx"]
+    assert "<AccessActions" not in web["AgentParts.jsx"] and "appAccess(" not in web["AgentParts.jsx"]
     assert sum(src.count("appAccess(") for src in web.values()) == sum(src.count("appAccess(") for src in (web["ui.jsx"], web["api.js"]))
     assert json.dumps(shell_agent.TOOLS["app_access"]["parameters"]) == json.dumps({"type": "object", "properties": {}})
 

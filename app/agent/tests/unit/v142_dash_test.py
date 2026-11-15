@@ -120,7 +120,7 @@ def test_the_dashboard_is_built_from_the_page_spec_and_the_app_reuses_it_without
         "the App page says why Ask Genie is off when this use case has no Genie Agent"
     assert len(seen["checked"]) == 2, "the App still runs its own files at the default filters before it deploys"
     steps = [(e["step_name"], e["status"]) for e in inst.emitted if e["step_name"] == "App"]
-    assert steps == [("App", "started"), ("App", "ended_success")]
+    assert steps == [("Agentic App", "started"), ("Agentic App", "ended_success")]
     assert "no second Genie round" in next(e["message"] for e in inst.emitted if e["step_name"] == "App")
 
 
