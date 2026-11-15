@@ -6401,15 +6401,27 @@ def trends_query(page: dict, names: set, now: datetime.datetime, since: datetime
 
 
 
+UNIT_MAX = 24
+ESTIMATE_TAG = re.compile(r"\[\s*estimate\b|\(\s*estimate\b", re.IGNORECASE)
+
+
+def plain_unit(text) -> str:
+    """REQ-306: a unit is a short plain word. An estimate tag, a bracket, a dotted table path or a sentence is never a unit."""
+    text = " ".join(str(text or "").split())
+    if not text or len(text) > UNIT_MAX or ESTIMATE_TAG.search(text) or re.search(r"[\[\]():.=_]", text):
+        return ""
+    return text
+
+
 def impact_of(summary) -> dict:
     s = summary or {}
     kind = str(s.get("impact_kind") or "").strip().lower()
     currency = " ".join(str(s.get("currency") or "").split())
     if kind not in IMPACT_KINDS:
-        return {"kind": "money", "unit": currency} if not currency or currency in MONEY_CODES else {"kind": "number", "unit": currency}
+        return {"kind": "money", "unit": currency} if not currency or currency in MONEY_CODES else {"kind": "number", "unit": plain_unit(currency)}
     if kind == "money":
         return {"kind": kind, "unit": currency if currency in MONEY_CODES else ""}
-    return {"kind": kind, "unit": " ".join(str(s.get("impact_unit") or "").split())}
+    return {"kind": kind, "unit": plain_unit(s.get("impact_unit"))}
 
 
 def impact_unit(summary) -> str:

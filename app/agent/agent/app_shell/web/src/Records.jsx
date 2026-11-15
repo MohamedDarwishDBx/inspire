@@ -30,7 +30,8 @@ import { BatchesDialog, BulkBar, CaughtUp, ChoiceSelect, ConflictNote, HelpDialo
 import { recordName, recordSentenceName,
   DRAFT_LABEL, ACT_LIMIT, CHOICE_COLUMN, CLOSED_STATUSES, DONE, HELD, NOTE_CHARS, PAGE_SIZES, REASON_CHARS, UNEXPLAINED, actionForm, actionProblem, actionValues, pageChoices, pickChoice, statusKind, OPEN_STATUSES, isOpenStatus, choiceLabel, closingChoices, isDefaultChoice, QUICK_CLOSE,
   aiValue, askQuestions, changeBadge, doneText, dueText, explainContext, heldBack, heldText, impactText, initials, isOverdue, keptText, leftText, matchOf,
-  missingSince, NOT_IN_RUN, notInRunText, overdueFirst, pageText, recordCurrency, recordKeyOf, recordRef, recordView, recordsText, savingText, statusClass,
+  missingSince, NOT_IN_RUN, notInRunText, overdueFirst, pageText, recordCurrency, recordKeyOf, recordRef, recordView, recordsText, savingText, savingView, statusClass,
+  actionPhrase, recordHeading, goalLine,
   statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf, WAKE_WORD, WAKE_ASK, WOKE, snoozeOf,
   isStaleRecord, closedText, closedBatchOf, undoBatchOf, undoWordOf, UNDO_CLOSE, isClosed, skippedText, READ_ONLY, READ_ONLY_KEPT, READ_ONLY_THEIRS,
   CLOSED_PICK, ACCEPTED, UNDO_ACCEPT, UNDO_ACCEPT_ASK, UNACCEPTED, IN_PROGRESS, suggestionOf, acceptable, uncheckedWhy, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
@@ -62,7 +63,7 @@ function savingOf(view, row, model) {
   if (!view.saving || !model) return view.saving;
   if (row?._inspire_money == null) return model.changed ? { ...view.saving, note: LATER } : view.saving;
   const shown = moneyOf(model, row, unitOf(model), kindOf(model));
-  return { text: savingText(shown.amount, unitOf(model), kindOf(model)), formula: shown.formula || view.saving.formula };
+  return savingView(savingText(shown.amount, unitOf(model), kindOf(model)), shown.formula || view.saving.formula);
 }
 
 export function reasonsOf(value) {
@@ -258,9 +259,17 @@ function ActionPanel({ action, owners, pageId, reason, owner, closing, unit, kin
   );
 }
 
-function Why({ view, row, meta, explain, title, genieBusy }) {
+/** REQ-302: Explain answers inside the drawer, under the flag reason. It never opens another panel. */
+export function ExplainedAnswer({ explained }) {
+  if (!explained) return null;
+  if (explained.state === 'busy') return <p className="explained" role="status" data-explained="busy">Genie is explaining this record.</p>;
+  if (explained.state === 'failed') return <p className="explained" role="status" data-explained="failed">Genie could not explain this record. Try Explain again.</p>;
+  return <div className="explained" data-explained="done">{String(explained.text).split(/\n+/).filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}</div>;
+}
+
+function Why({ view, row, meta, explain, title, genieBusy, explained }) {
   const reasons = meta.reasons ? reasonsOf(row[meta.reasons]).slice(0, 8) : [];
-  const button = explain && <ExplainButton title={title} busy={genieBusy} onClick={explain} />;
+  const button = explain && <ExplainButton title={title} busy={genieBusy || explained?.state === 'busy'} onClick={explain} />;
   return (
     <section className="sec" aria-label="Why it is flagged">
       <h3><GenieMark size={13} />Why it is flagged</h3>
@@ -268,6 +277,7 @@ function Why({ view, row, meta, explain, title, genieBusy }) {
       {view.evidence.length > 0 && <ul className="ev">{view.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>}
       {reasons.length > 0 && <div className="reasons">{reasons.map((t) => <span key={t} className="chip chip--static">{t}</span>)}</div>}
       {view.explanation && button && <div className="why-x">{button}</div>}
+      <ExplainedAnswer explained={explained} />
     </section>
   );
 }
@@ -343,7 +353,16 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
   const owner = (current ? current.action_owner : row?._inspire_owner) || '';
   const due = tracker && current ? dueText(current.action_due, current.action_status) : null;
   const segment = row && meta.sublabel ? addedParts(row[meta.label], [row[meta.sublabel]])[0] : '';
-  const explain = genieOn(app, pageId) && onExplain ? () => onExplain('record', title, explainContext(meta, log.data, row, unit, kind)) : null;
+  const [explained, setExplained] = useState(null);
+  const explainKey = useRef(linkKey);
+  explainKey.current = linkKey;
+  useEffect(() => { setExplained(null); }, [linkKey]);
+  const explain = genieOn(app, pageId) && onExplain ? () => {
+    setExplained({ state: 'busy' });
+    Promise.resolve(onExplain('record', title, explainContext(meta, log.data, row, unit, kind), { inPlace: true })).then((answer) => {
+      if (explainKey.current === linkKey) setExplained(answer?.text ? { state: 'done', text: answer.text } : { state: 'failed' });
+    });
+  } : null;
   const ask = (question) => {
     const recordKey = String(log.data?.record_key ?? recordKeyOf(row) ?? row?.[meta.key] ?? '');
     onClose();
@@ -368,15 +387,18 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
     if (focusOwner && acting) ownerInput.current?.focus();
   }, [focusOwner, acting]);
   const details = recordDetails(meta, row, unit, kind);
+  const heading = recordHeading(actionPhrase(useCase?.title), title);
+  const goal = goalLine(useCase?.question);
   const shown = (
-    <dialog ref={ref} className={`drawer panel ${dock ? 'drawer--docked' : ''}`} aria-label={row ? title : 'Record'} data-closed={closed ? '' : undefined}
+    <dialog ref={ref} className={`drawer panel ${dock ? 'drawer--docked' : ''}`} aria-label={row ? heading : 'Record'} data-closed={closed ? '' : undefined}
       open={dock ? !!row : undefined} onClick={(e) => { if (!dock && e.target === ref.current) onClose(); }}
       onKeyDown={dock ? (e) => { if (e.key === 'Escape' && !e.defaultPrevented && e.target.closest('dialog') === e.currentTarget) { e.preventDefault(); onClose(); } } : undefined}>
       {row && (
         <div className="dr">
           <header className="panel-h">
             <div>
-              <h2>{title}</h2>
+              <h2>{heading}</h2>
+              {goal && <p className="goal" data-goal>{goal}</p>}
               <div className="panel-meta">
                 {useCase?.title && <span className="ucn" style={hueVars(useCase.hue || 'blue')}><i />{useCase.title}</span>}
                 {segment && <span>{segment}</span>}
@@ -409,7 +431,7 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                 {saving.note && <div className="fx">{saving.note}</div>}
               </section>
             )}
-            <Why view={view} row={row} meta={meta} explain={explain} title={title} genieBusy={genieBusy} />
+            <Why view={view} row={row} meta={meta} explain={explain} title={title} genieBusy={genieBusy} explained={explained} />
             {view.confidence && (
               <section className="sec" aria-label="How sure the AI is">
                 <h3><GenieMark size={13} />How sure the AI is</h3>
