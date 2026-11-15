@@ -1,4 +1,5 @@
 import json
+import re
 
 from v142_genie_test import COLUMNS, LATEST, ORDERS, RESULT, _rich_space
 
@@ -16,12 +17,16 @@ class _Frame:
 
 
 class _Spark:
+    """Rows as the summary table holds them, latest first. A run filter in the SQL keeps only that run, as the real query does."""
+
     def __init__(self, rows):
         self.rows, self.statements = rows, []
 
     def sql(self, text):
         self.statements.append(text)
-        return _Frame(self.rows)
+        match = re.search(r"CAST\(run_id AS STRING\) = '([^']*)'", text)
+        rows = [r for r in self.rows if match is None or r["run_id"] == match.group(1)]
+        return _Frame(rows if match else rows[:1])
 
 
 def _columns(*extra):
@@ -65,15 +70,26 @@ def test_a_full_data_build_carries_no_scope_sentence(agent_ns):
     assert "First run sample" not in _instruction_text(space)
 
 
-def test_the_latest_run_scope_is_read_from_the_run_log_the_run_wrote(agent_ns):
-    row = {"run_segments": json.dumps([{"column": "region", "values": ["EU"]}, SCOPED]), "run_tables": json.dumps(RUN_TABLES)}
+def test_the_build_scope_is_read_from_the_run_the_build_used(agent_ns):
+    row = {"run_id": "101", "run_segments": json.dumps([{"column": "region", "values": ["EU"]}, SCOPED]),
+           "run_tables": json.dumps(RUN_TABLES)}
     spark = _Spark([row])
-    scope, tables = agent_ns["implement_latest_run_scope"](spark, RESULT, "uc-7")
+    scope, tables = agent_ns["implement_build_run_scope"](spark, RESULT, "uc-7", 101)
     assert scope == SCOPED and tables == RUN_TABLES
-    assert "WHERE use_case_id = 'uc-7'" in spark.statements[0]
+    assert "WHERE use_case_id = 'uc-7' AND CAST(run_id AS STRING) = '101'" in spark.statements[0]
+
+
+def test_a_later_run_landing_in_between_does_not_replace_the_run_the_build_used(agent_ns):
+    # the later run is full data and is listed first, as ORDER BY updated_at DESC would list it
+    later = {"run_id": "202", "run_segments": json.dumps([{"column": "region", "values": ["EU"]}]), "run_tables": "[]"}
+    build = {"run_id": "101", "run_segments": json.dumps([SCOPED]), "run_tables": json.dumps(RUN_TABLES)}
+    scope, tables = agent_ns["implement_build_run_scope"](_Spark([later, build]), RESULT, "uc-7", "101")
+    assert scope == SCOPED and tables == RUN_TABLES
+    assert agent_ns["implement_build_run_scope"](_Spark([later, build]), RESULT, "uc-7", "202") == (None, [])
 
 
 def test_a_full_data_run_leaves_no_scope_to_read_and_a_missing_run_log_reads_as_none(agent_ns):
-    full = _Spark([{"run_segments": json.dumps([{"column": "region", "values": ["EU"]}]), "run_tables": "[]"}])
-    assert agent_ns["implement_latest_run_scope"](full, RESULT, "uc-7") == (None, [])
-    assert agent_ns["implement_latest_run_scope"](_Spark([]), RESULT, "uc-7") == (None, [])
+    full = _Spark([{"run_id": "101", "run_segments": json.dumps([{"column": "region", "values": ["EU"]}]), "run_tables": "[]"}])
+    assert agent_ns["implement_build_run_scope"](full, RESULT, "uc-7", 101) == (None, [])
+    assert agent_ns["implement_build_run_scope"](_Spark([]), RESULT, "uc-7", 101) == (None, [])
+    assert agent_ns["implement_build_run_scope"](_Spark([]), RESULT, "uc-7", None) == (None, [])

@@ -5559,6 +5559,7 @@
   "languages": {
    "English": {
     "code": "en",
+    "reasons": {"forecast_not_yet": "No forecast yet: the forecast starts after the last date in the data ({through})", "forecast_no_date": "No forecast yet for these dates", "no_rows_dated": "No rows for these dates: the data ends on {through}", "no_rows": "No rows match these filters"},
     "sep": ", ",
     "ui": {
      "skip": "Skip",
@@ -5644,6 +5645,7 @@
    },
    "Arabic": {
     "code": "ar",
+    "reasons": {"forecast_not_yet": "لا توجد توقعات بعد: يبدأ التوقع بعد آخر تاريخ في البيانات ({through})", "forecast_no_date": "لا توجد توقعات بعد لهذه التواريخ", "no_rows_dated": "لا توجد صفوف لهذه التواريخ: تنتهي البيانات في {through}", "no_rows": "لا توجد صفوف تطابق عوامل التصفية هذه"},
     "sep": "، ",
     "ui": {
      "skip": "تخطي",
@@ -5716,6 +5718,7 @@
    },
    "Spanish": {
     "code": "es",
+    "reasons": {"forecast_not_yet": "Aún no hay pronóstico: el pronóstico empieza después de la última fecha de los datos ({through})", "forecast_no_date": "Aún no hay pronóstico para estas fechas", "no_rows_dated": "No hay filas para estas fechas: los datos terminan el {through}", "no_rows": "No hay filas que coincidan con estos filtros"},
     "sep": ", ",
     "ui": {
      "skip": "Omitir",
@@ -5788,6 +5791,7 @@
    },
    "French": {
     "code": "fr",
+    "reasons": {"forecast_not_yet": "Pas encore de prévision : elle commence après la dernière date des données ({through})", "forecast_no_date": "Pas encore de prévision pour ces dates", "no_rows_dated": "Aucune ligne pour ces dates : les données s'arrêtent au {through}", "no_rows": "Aucune ligne ne correspond à ces filtres"},
     "sep": ", ",
     "ui": {
      "skip": "Passer",
@@ -5860,6 +5864,7 @@
    },
    "German": {
     "code": "de",
+    "reasons": {"forecast_not_yet": "Noch keine Prognose: Die Prognose beginnt nach dem letzten Datum in den Daten ({through})", "forecast_no_date": "Noch keine Prognose für diese Daten", "no_rows_dated": "Keine Zeilen für diese Daten: Die Daten enden am {through}", "no_rows": "Keine Zeilen für diese Filter"},
     "sep": ", ",
     "ui": {
      "skip": "Überspringen",
@@ -5932,6 +5937,7 @@
    },
    "Portuguese": {
     "code": "pt",
+    "reasons": {"forecast_not_yet": "Ainda não há previsão: a previsão começa depois da última data nos dados ({through})", "forecast_no_date": "Ainda não há previsão para estas datas", "no_rows_dated": "Não há linhas para estas datas: os dados terminam em {through}", "no_rows": "Nenhuma linha corresponde a estes filtros"},
     "sep": ", ",
     "ui": {
      "skip": "Saltar",
@@ -6004,6 +6010,7 @@
    },
    "Italian": {
     "code": "it",
+    "reasons": {"forecast_not_yet": "Nessuna previsione per ora: la previsione inizia dopo l'ultima data nei dati ({through})", "forecast_no_date": "Nessuna previsione per queste date", "no_rows_dated": "Nessuna riga per queste date: i dati finiscono il {through}", "no_rows": "Nessuna riga corrisponde a questi filtri"},
     "sep": ", ",
     "ui": {
      "skip": "Salta",
@@ -6076,6 +6083,7 @@
    },
    "Chinese (Mandarin)": {
     "code": "zh",
+    "reasons": {"forecast_not_yet": "暂无预测：预测从数据中的最后日期之后开始（{through}）", "forecast_no_date": "这些日期暂无预测", "no_rows_dated": "这些日期没有记录：数据截止到 {through}", "no_rows": "没有符合这些筛选条件的记录"},
     "sep": "、",
     "ui": {
      "skip": "跳过",
@@ -6148,6 +6156,7 @@
    },
    "Japanese": {
     "code": "ja",
+    "reasons": {"forecast_not_yet": "まだ予測がありません。予測はデータの最終日より後から始まります（{through}）", "forecast_no_date": "これらの日付にはまだ予測がありません", "no_rows_dated": "これらの日付の行はありません。データは {through} までです", "no_rows": "これらの絞り込み条件に一致する行はありません"},
     "sep": "、",
     "ui": {
      "skip": "スキップ",
@@ -6220,6 +6229,7 @@
    },
    "Korean": {
     "code": "ko",
+    "reasons": {"forecast_not_yet": "아직 예측이 없습니다. 예측은 데이터의 마지막 날짜 이후부터 시작합니다({through})", "forecast_no_date": "이 날짜에는 아직 예측이 없습니다", "no_rows_dated": "이 날짜에는 행이 없습니다. 데이터는 {through}까지입니다", "no_rows": "이 필터에 맞는 행이 없습니다"},
     "sep": ", ",
     "ui": {
      "skip": "건너뛰기",
@@ -6292,6 +6302,7 @@
    },
    "Hindi": {
     "code": "hi",
+    "reasons": {"forecast_not_yet": "अभी कोई पूर्वानुमान नहीं: पूर्वानुमान डेटा की आखिरी तारीख के बाद शुरू होता है ({through})", "forecast_no_date": "इन तारीखों के लिए अभी कोई पूर्वानुमान नहीं", "no_rows_dated": "इन तारीखों की कोई पंक्ति नहीं: डेटा {through} पर खत्म होता है", "no_rows": "इन फ़िल्टर से मेल खाने वाली कोई पंक्ति नहीं"},
     "sep": ", ",
     "ui": {
      "skip": "छोड़ें",
@@ -6364,6 +6375,7 @@
    },
    "Russian": {
     "code": "ru",
+    "reasons": {"forecast_not_yet": "Прогноза пока нет: прогноз начинается после последней даты в данных ({through})", "forecast_no_date": "Прогноза пока нет для этих дат", "no_rows_dated": "Нет строк за эти даты: данные заканчиваются {through}", "no_rows": "Нет строк, подходящих под эти фильтры"},
     "sep": ", ",
     "ui": {
      "skip": "Пропустить",
@@ -6436,6 +6448,7 @@
    },
    "Swedish": {
     "code": "sv",
+    "reasons": {"forecast_not_yet": "Ingen prognos ännu: prognosen börjar efter det sista datumet i datan ({through})", "forecast_no_date": "Ingen prognos ännu för dessa datum", "no_rows_dated": "Inga rader för dessa datum: datan slutar {through}", "no_rows": "Inga rader matchar dessa filter"},
     "sep": ", ",
     "ui": {
      "skip": "Hoppa över",
@@ -6508,6 +6521,7 @@
    },
    "Danish": {
     "code": "da",
+    "reasons": {"forecast_not_yet": "Ingen prognose endnu: prognosen starter efter den sidste dato i dataene ({through})", "forecast_no_date": "Ingen prognose endnu for disse datoer", "no_rows_dated": "Ingen rækker for disse datoer: dataene slutter {through}", "no_rows": "Ingen rækker matcher disse filtre"},
     "sep": ", ",
     "ui": {
      "skip": "Spring over",
@@ -6580,6 +6594,7 @@
    },
    "Norwegian": {
     "code": "nb",
+    "reasons": {"forecast_not_yet": "Ingen prognose ennå: prognosen starter etter siste dato i dataene ({through})", "forecast_no_date": "Ingen prognose ennå for disse datoene", "no_rows_dated": "Ingen rader for disse datoene: dataene slutter {through}", "no_rows": "Ingen rader samsvarer med disse filtrene"},
     "sep": ", ",
     "ui": {
      "skip": "Hopp over",
@@ -6652,6 +6667,7 @@
    },
    "Finnish": {
     "code": "fi",
+    "reasons": {"forecast_not_yet": "Ennustetta ei vielä ole: ennuste alkaa datan viimeisen päivämäärän jälkeen ({through})", "forecast_no_date": "Ennustetta ei vielä ole näille päiville", "no_rows_dated": "Ei rivejä näille päiville: data päättyy {through}", "no_rows": "Ei rivejä, jotka vastaavat näitä suodattimia"},
     "sep": ", ",
     "ui": {
      "skip": "Ohita",
@@ -6724,6 +6740,7 @@
    },
    "Polish": {
     "code": "pl",
+    "reasons": {"forecast_not_yet": "Prognozy jeszcze nie ma: prognoza zaczyna się po ostatniej dacie w danych ({through})", "forecast_no_date": "Prognozy jeszcze nie ma dla tych dat", "no_rows_dated": "Brak wierszy dla tych dat: dane kończą się {through}", "no_rows": "Żaden wiersz nie pasuje do tych filtrów"},
     "sep": ", ",
     "ui": {
      "skip": "Pomiń",
@@ -6796,6 +6813,7 @@
    },
    "Romanian": {
     "code": "ro",
+    "reasons": {"forecast_not_yet": "Nu există încă prognoză: prognoza începe după ultima dată din date ({through})", "forecast_no_date": "Nu există încă prognoză pentru aceste date", "no_rows_dated": "Niciun rând pentru aceste date: datele se termină la {through}", "no_rows": "Niciun rând nu corespunde acestor filtre"},
     "sep": ", ",
     "ui": {
      "skip": "Omite",
@@ -6868,6 +6886,7 @@
    },
    "Ukrainian": {
     "code": "uk",
+    "reasons": {"forecast_not_yet": "Прогнозу поки немає: прогноз починається після останньої дати в даних ({through})", "forecast_no_date": "Прогнозу поки немає для цих дат", "no_rows_dated": "Немає рядків за ці дати: дані закінчуються {through}", "no_rows": "Немає рядків, що відповідають цим фільтрам"},
     "sep": ", ",
     "ui": {
      "skip": "Пропустити",
@@ -6940,6 +6959,7 @@
    },
    "Dutch": {
     "code": "nl",
+    "reasons": {"forecast_not_yet": "Nog geen voorspelling: de voorspelling begint na de laatste datum in de data ({through})", "forecast_no_date": "Nog geen voorspelling voor deze datums", "no_rows_dated": "Geen rijen voor deze datums: de data eindigt op {through}", "no_rows": "Geen rijen voldoen aan deze filters"},
     "sep": ", ",
     "ui": {
      "skip": "Overslaan",
@@ -7012,6 +7032,7 @@
    },
    "Indonesian": {
     "code": "id",
+    "reasons": {"forecast_not_yet": "Belum ada prakiraan: prakiraan dimulai setelah tanggal terakhir dalam data ({through})", "forecast_no_date": "Belum ada prakiraan untuk tanggal ini", "no_rows_dated": "Tidak ada baris untuk tanggal ini: data berakhir pada {through}", "no_rows": "Tidak ada baris yang cocok dengan filter ini"},
     "sep": ", ",
     "ui": {
      "skip": "Lewati",
@@ -7084,6 +7105,7 @@
    },
    "Malay": {
     "code": "ms",
+    "reasons": {"forecast_not_yet": "Belum ada ramalan: ramalan bermula selepas tarikh terakhir dalam data ({through})", "forecast_no_date": "Belum ada ramalan untuk tarikh ini", "no_rows_dated": "Tiada baris untuk tarikh ini: data tamat pada {through}", "no_rows": "Tiada baris yang sepadan dengan penapis ini"},
     "sep": ", ",
     "ui": {
      "skip": "Langkau",
@@ -7156,6 +7178,7 @@
    },
    "Tamil": {
     "code": "ta",
+    "reasons": {"forecast_not_yet": "இன்னும் முன்கணிப்பு இல்லை: தரவில் உள்ள கடைசி தேதிக்குப் பின் முன்கணிப்பு தொடங்கும் ({through})", "forecast_no_date": "இந்தத் தேதிகளுக்கு இன்னும் முன்கணிப்பு இல்லை", "no_rows_dated": "இந்தத் தேதிகளுக்கு வரிசைகள் இல்லை: தரவு {through} வரை உள்ளது", "no_rows": "இந்த வடிகட்டிகளுக்குப் பொருந்தும் வரிசைகள் இல்லை"},
     "sep": ", ",
     "ui": {
      "skip": "தவிர்",
