@@ -14,7 +14,7 @@ GRANT_SQL = 'GRANT CREATE ON DATABASE databricks_postgres TO "b2b3b070-1da5-45c3
 
 def test_a_raw_missing_view_error_reads_as_plain_words(agent_ns):
     text = agent_ns["implement_status_error"](RAW)
-    assert text == "a table it reads is not there now, so it cannot be built; press Try again to build it again", text
+    assert text == "a table it reads is not there now, so it cannot be built; press Try again", text  # one source: IMPLEMENT_TRY_AGAIN
     for bad in ("TABLE_OR_VIEW_NOT_FOUND", "[", "inspire_kinds_rc7", "__implement_scope", "__v9", "cannot be found", "GRANT", "stays live"):
         assert bad not in text, bad
     assert internal_hits(text) == []

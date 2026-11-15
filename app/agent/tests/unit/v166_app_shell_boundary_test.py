@@ -551,6 +551,7 @@ def test_an_error_the_shell_raises_after_reading_a_row_comes_back_without_the_ro
     class Shell:
         def __init__(self, root, **kwargs):
             self.factory = kwargs["sp_factory"]
+            self.pages = []  # the real Shell always carries its pages; the App check reads them for REQ-237 page names
             if stage == "start":
                 stop(self.factory)
 
