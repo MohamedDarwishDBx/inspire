@@ -330,7 +330,8 @@ def test_a_failed_build_says_why_for_each_ask_and_fails_only_its_own_part(agent_
 
     inst._implement_app = denied
     _llm(inst)
-    assert _run(inst, _vibed(previous, ["app:page:n01_u01"], **{"app:page:n01_u01_vibes": PAGE_VIBES})) == "ready_with_warnings"
+    assert _run(inst, _vibed(previous, ["app:page:n01_u01"], **{"app:page:n01_u01_vibes": PAGE_VIBES})) == "failed", \
+        "the version is failed, not ready: its App is not published (REQ-252). The per-part records below are unchanged"
     final = inst.updates[-1]
     assert "App not published: PERMISSION_DENIED: User does not have CAN MANAGE on app churn-desk" in final["status_message"]
     page = final["asset_status"]["app:page:n01_u01"]
