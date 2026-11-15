@@ -73,7 +73,7 @@ def test_a_pareto_whose_bars_are_one_record_each_goes_back_to_the_builder(tmp_pa
         "page n01_u05: chart drivers groups 30 rows into 30 bars by ai_cat_rule at the default filters, so nearly every bar is one "
         "record and the chart shows no concentration; " + shell_sql.CATEGORY_GROUPING]
     counted = [sql for sql, _params, _limit in ws.sql if sql.startswith("SELECT COUNT(*) AS n, COUNT(DISTINCT x) AS k")]
-    assert len(counted) == 1 and "`ai_cat_rule` AS x" in counted[0] and "CAST(`as_of_date` AS DATE) BETWEEN" in counted[0]
+    assert len(counted) == 1 and "`ai_cat_rule` AS x" in counted[0] and "TRY_CAST(`as_of_date` AS DATE) BETWEEN" in counted[0]
     assert "[CONCENTRATION-CHECK FIRED]" in capsys.readouterr().out
 
 

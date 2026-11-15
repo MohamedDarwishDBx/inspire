@@ -221,7 +221,7 @@ def test_the_genie_query_at_the_apps_default_window_matches_the_app_and_the_boun
 
     spark = Spark()
     values = agent_ns["implement_genie_default_values"](spark, FILTER_PAGE, shell_sql)
-    assert spark.statements and "MIN(CAST(`event_month` AS DATE))" in spark.statements[0], "the bounds are read on each sync, as the App's check reads them"
+    assert spark.statements and "MIN(TRY_CAST(`event_month` AS DATE))" in spark.statements[0], "the bounds are read on each sync, as the App's check reads them"
     assert values == shell_sql.default_values(FILTER_PAGE, {"ticket_month": ("2025-01-01", "2025-06-30")})
     assert values, "a default window is set for the page's date filter"
     app = _app_value_bound(FILTER_PAGE, "results", values, ROWS)

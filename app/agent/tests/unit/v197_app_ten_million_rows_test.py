@@ -675,7 +675,7 @@ def test_the_date_bounds_read_together_equal_each_filter_read_alone_on_a_real_po
     sql, params = shell_sql.bounds_together_query(DATED_PAGE, idents)
     assert sql.count("FROM (SELECT * FROM main.ops.facts_out) AS d") == 1 and sql.count("FROM (SELECT valid_to, action_due") == 1, \
         "each dataset is scanned once for every date filter that reads it"
-    assert sql.count("MIN(CAST(") == 4, "a column two filters read is read once"
+    assert sql.count("MIN(TRY_CAST(") == 4, "a column two filters read is read once"
     (together,) = engine["rows"](sql, params)
     for i, ident in enumerate(idents):
         (alone,) = engine["rows"](*shell_sql.bounds_query(DATED_PAGE, ident))
