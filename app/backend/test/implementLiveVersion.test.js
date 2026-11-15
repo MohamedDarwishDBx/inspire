@@ -119,7 +119,7 @@ test('a first build whose App crashed still shows its App when no App has ever s
   const I = require('../lib/inspireImplement');
   const failedFirst = [{ session_id: 's1', use_case_id: 'UC1', spec_version: 1, status: 'failed', app_name: 'churn-desk', app_url: 'https://churn.example.test',
     updated_at: '2026-11-15T04:00:00Z', spec_json: { use_case_name: 'Churn', outputs: { app: true } }, asset_status: { app: { state: 'failed', spec_version: 1 } } }];
-  assert.equal(I.liveAppOf(failedFirst), null, 'nothing has built, so no App has served');
+  assert.deepEqual(I.liveAppOf(failedFirst), { name: 'churn-desk', url: 'https://churn.example.test', version: 1 }, 'D-LIVE2: no App has served, so the newest build\'s App is the one shown');
   assert.equal(I.liveCarriedAssets(failedFirst).app, 'churn-desk', 'the newest App is shown');
 });
 
