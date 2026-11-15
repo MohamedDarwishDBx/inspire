@@ -20,18 +20,33 @@ EMPTY_SHOWN = {"now": 0, "before": None}
 def test_a_zero_with_no_rows_behind_it_says_why_and_shows_no_number_on_a_forecast_page():
     shown = shell_sql.kpi_missing(FORECAST_PAGE, EMPTY_SHOWN, 0, THROUGH)
     assert shown["now"] is None
-    assert shown["empty"] == ("No forecast yet: the forecast starts after the last date in the data (2016-02-07)")
+    assert shown["empty"]["en"] == "No forecast yet: the forecast starts after the last date in the data (2016-02-07)"
 
 
 def test_a_zero_with_no_rows_behind_it_says_the_data_ends_on_a_date_on_any_other_page():
     shown = shell_sql.kpi_missing(PLAIN_PAGE, EMPTY_SHOWN, 0, THROUGH)
     assert shown["now"] is None
-    assert shown["empty"] == "No rows for these dates: the data ends on 2016-02-07"
+    assert shown["empty"]["en"] == "No rows for these dates: the data ends on 2016-02-07"
 
 
 def test_a_zero_with_no_known_last_date_still_says_why():
-    assert shell_sql.kpi_missing(FORECAST_PAGE, EMPTY_SHOWN, 0, "")["empty"] == "No forecast yet for these dates"
-    assert shell_sql.kpi_missing(PLAIN_PAGE, EMPTY_SHOWN, 0, "")["empty"] == "No rows match these filters"
+    assert shell_sql.kpi_missing(FORECAST_PAGE, EMPTY_SHOWN, 0, "")["empty"]["en"] == "No forecast yet for these dates"
+    assert shell_sql.kpi_missing(PLAIN_PAGE, EMPTY_SHOWN, 0, "")["empty"]["en"] == "No rows match these filters"
+
+
+def test_the_reason_is_carried_in_every_app_language_with_the_date_filled_in_and_a_translated_forecast_reason():
+    reasons = shell_sql.kpi_empty_text(FORECAST_PAGE, THROUGH)
+    languages = shell_sql.kinds_registry()["tour"]["languages"]
+    assert set(reasons) == {lang["code"] for lang in languages.values()}
+    assert "2016-02-07" in reasons["en"] and "{through}" not in reasons["en"]
+    assert reasons["fr"].startswith("Pas encore de prévision") and "2016-02-07" in reasons["fr"]
+    assert reasons["ar"] != reasons["en"] and "2016-02-07" in reasons["ar"]
+
+
+def test_a_reason_without_a_date_has_no_placeholder_left_in_any_language():
+    for page in (FORECAST_PAGE, PLAIN_PAGE):
+        for text in shell_sql.kpi_empty_text(page, "").values():
+            assert "{through}" not in text
 
 
 def test_a_measured_zero_with_rows_behind_it_stays_a_zero_with_no_reason():
@@ -80,5 +95,5 @@ def test_page_data_gives_a_zero_kpi_with_no_rows_behind_it_a_reason_and_keeps_a_
                          user_factory=lambda h, t: ws)
     out = s.page_data({}, PAGE["id"], {})
     assert out["kpis"][kpi["id"]]["now"] is None
-    assert out["kpis"][kpi["id"]]["empty"].startswith(("No rows", "No forecast"))
+    assert out["kpis"][kpi["id"]]["empty"]["en"].startswith(("No rows", "No forecast"))
     assert out["kpis"][measured["id"]]["now"] == 0 and "empty" not in out["kpis"][measured["id"]]

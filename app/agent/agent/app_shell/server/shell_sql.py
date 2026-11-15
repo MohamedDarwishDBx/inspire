@@ -3091,12 +3091,16 @@ def kpi_rows_query(page: dict, ident: str, values: dict) -> tuple:
     return f"SELECT COUNT(*) AS n FROM ({sql}) AS d{where} LIMIT 1", params.items
 
 
-def kpi_empty_text(page: dict, through: str = "") -> str:
-    """Why a KPI with no rows behind it has no number, in plain words. On a forecast page the reason is the forecast's start."""
+def kpi_empty_text(page: dict, through: str = "") -> dict:
+    """Why a KPI with no rows behind it has no number, in plain words, in every App language: {language code: text}. The words are the
+    tour registry's per-language `reasons` in kinds.json. On a forecast page the reason is the forecast's start."""
     if plan_contract(page) == "forecast":
-        return (f"No forecast yet: the forecast starts after the last date in the data ({through})" if through
-                else "No forecast yet for these dates")
-    return f"No rows for these dates: the data ends on {through}" if through else "No rows match these filters"
+        key = "forecast_not_yet" if through else "forecast_no_date"
+    else:
+        key = "no_rows_dated" if through else "no_rows"
+    languages = (kinds_registry().get("tour") or {}).get("languages") or {}
+    return {str(lang.get("code")): str(lang["reasons"][key]).replace("{through}", through)
+            for lang in languages.values() if isinstance(lang, dict) and isinstance(lang.get("reasons"), dict) and key in lang["reasons"]}
 
 
 def kpi_missing(page: dict, shown: dict, rows: int, through: str = "") -> dict:

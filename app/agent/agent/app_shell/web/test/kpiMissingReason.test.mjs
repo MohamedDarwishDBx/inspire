@@ -1,6 +1,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { appInfo, idle, openApp, pageData, serveDist } from './harness.mjs';
 
 let served;
@@ -15,7 +18,7 @@ const KPIS = [
   { id: 'next_day', label: 'Trips forecast next day', dataset: 'records', expression: 'COUNT(*)', format: 'integer', good: 'neutral', compare: true },
 ];
 
-async function open(items) {
+async function open(items, options = {}) {
   const routes = {
     page: ({ route, json, seen }) => {
       const body = route.request().postDataJSON();
@@ -24,7 +27,7 @@ async function open(items) {
       return json(200, { ...data, kpis: { ...data.kpis, total_loss: { now: 1234567, before: 1100000 }, next_day: items }, errors: {} });
     },
   };
-  const opened = await openApp(browser, served.base, appInfo({}, 1, { kpis: KPIS }), { routes });
+  const opened = await openApp(browser, served.base, appInfo({}, 1, { kpis: KPIS }), { routes, ...options });
   await opened.page.waitForFunction(() => document.querySelectorAll('.kpi .kpi-v').length === 3);
   return opened;
 }
@@ -32,7 +35,7 @@ async function open(items) {
 const tile = (page) => page.locator('.kpi').nth(2);
 
 test('a forecast KPI with no rows behind it shows no number and says why, instead of a bare 0', async () => {
-  const { page, context } = await open({ now: null, before: null, empty: REASON });
+  const { page, context } = await open({ now: null, before: null, empty: reasonsFor('2016-02-07') });
   await idle(page);
   assert.equal(await tile(page).locator('.kpi-v').innerText(), 'Not recorded');
   assert.equal(await tile(page).locator('.kpi-s').innerText(), REASON);
@@ -45,5 +48,27 @@ test('a measured zero with rows behind it stays a 0 with no reason line', async 
   await idle(page);
   assert.equal(await tile(page).locator('.kpi-v').innerText(), '0');
   assert.equal(await tile(page).locator('[data-empty-reason]').count(), 0);
+  await context.close();
+});
+
+// The App's words for each language come from kinds.json's tour registry, the same file the server reads.
+const KINDS = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'kinds.json'), 'utf8'));
+const LANGUAGES = Object.values(KINDS.tour.languages);
+const fill = (text, through) => text.replace('{through}', through);
+const reasonsFor = (through) => Object.fromEntries(LANGUAGES.map((l) => [l.code, fill(l.reasons.forecast_not_yet, through)]));
+
+test('a non-English browser reads the forecast reason in its own language, from the App registry', async () => {
+  const french = LANGUAGES.find((l) => l.code === 'fr').reasons.forecast_not_yet.replace('{through}', '2016-02-07');
+  const { page, context } = await open({ now: null, before: null, empty: reasonsFor('2016-02-07') }, { locale: 'fr-FR' });
+  await idle(page);
+  assert.equal(await tile(page).locator('[data-empty-reason]').innerText(), french);
+  assert.notEqual(french, REASON, 'the French text is not the English one');
+  await context.close();
+});
+
+test('a browser in a language the App does not carry reads the English reason', async () => {
+  const { page, context } = await open({ now: null, before: null, empty: reasonsFor('2016-02-07') }, { locale: 'xx-YY' });
+  await idle(page);
+  assert.equal(await tile(page).locator('[data-empty-reason]').innerText(), REASON);
   await context.close();
 });
