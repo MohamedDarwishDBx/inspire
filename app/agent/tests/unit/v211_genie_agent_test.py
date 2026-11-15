@@ -166,7 +166,7 @@ def test_a_turn_never_runs_more_than_six_tools_and_then_answers_without_tools(tm
 def test_an_unrelated_question_is_refused_by_the_rule_before_any_model_call_and_no_tool_runs(tmp_path, question):
     s, ws, _made = agent_shell(tmp_path)
     turn = ask(s, question)
-    assert turn == dict(turn, state="done", answer="This is not related to this use case.", refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith("This is not related to this use case.") and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
     assert ws.llm.bodies == [] and ws.genie == [] and ws.queries(" OFFSET ") == []
 
 
@@ -175,7 +175,7 @@ def test_an_unrelated_free_text_question_is_refused_after_one_cheap_check_and_no
     llm = FakeLLM(related=lambda body: False)
     s, ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, question)
-    assert turn == dict(turn, state="done", answer="This is not related to this use case.", refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith("This is not related to this use case.") and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
     assert len(llm.bodies) == 1 and llm.bodies[0]["max_tokens"] == shell_agent.TOPIC_TOKENS and "tools" not in llm.bodies[0]
     check = llm.bodies[0]["messages"]
     assert check[0]["content"] == shell_agent.TOPIC_SYSTEM and check[1]["content"].startswith("<data>") and question in check[1]["content"]

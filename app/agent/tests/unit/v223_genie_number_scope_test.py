@@ -45,7 +45,7 @@ def test_a_genie_count_that_disagrees_with_the_page_kpi_shows_the_page_value_and
     script = [tool_call("ask_genie", {"question": "How many items are on the list?"}), said("Genie found 95 items on the list.")]
     turn, ws = turn_for(tmp_path, script, ws_class=GenieCounts, counted=95)
     assert ws.genie, "Genie was asked"
-    assert turn["answer"] == (f"The page shows Items on the list 120 for {ITEMS_SCOPE}; Genie counted 95 for every row of every run."
+    assert turn["answer"] == (f"The page shows Items on the list 120 for {ITEMS_SCOPE}; Genie counted 95 across all rows."
                               "\n\nGenie found 95 items on the list.")
 
 
@@ -55,10 +55,10 @@ def test_a_genie_count_that_agrees_with_the_page_is_no_clash_and_only_gets_its_s
     assert turn["answer"] == f"Genie found 120 items on the list.\n\nItems on the list 120 counts {ITEMS_SCOPE}."
 
 
-def test_a_genie_number_about_another_subject_raises_no_clash_and_gets_what_genie_counted(tmp_path):
+def test_a_genie_number_about_another_subject_raises_no_clash_and_no_note_when_it_counts_all_rows(tmp_path):
     script = [tool_call("ask_genie", {"question": "Which region lost the most?"}), said("East lost the most: 95.")]
     turn, _ws = turn_for(tmp_path, script, question="Which region loses the most?", ws_class=GenieCounts, counted=95)
-    assert turn["answer"] == "East lost the most: 95.\n\nGenie counted 95 for every row of every run."
+    assert turn["answer"] == "East lost the most: 95."
 
 
 def test_a_genie_number_the_answer_does_not_state_gets_nothing_attached(tmp_path):
@@ -67,10 +67,10 @@ def test_a_genie_number_the_answer_does_not_state_gets_nothing_attached(tmp_path
     assert turn["answer"] == "East lost the most."
 
 
-def test_a_genie_agent_answer_passed_through_names_what_genie_counted(tmp_path):
+def test_a_genie_agent_answer_passed_through_gets_no_note_when_it_counts_all_rows(tmp_path):
     s, _ws, _made = agent_shell(tmp_path, ws=GenieCounts(95))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
-    assert status == 200 and msg["text"] == "There are 95 items.\n\nGenie counted 95 for every row of every run."
+    assert status == 200 and msg["text"] == "There are 95 items."
     (tmp_path / "rows").mkdir()
     s, _ws, _made = agent_shell(tmp_path / "rows", ws=AgentWorkspace(genie_text="East lost the most: 120."))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
@@ -96,7 +96,7 @@ def test_a_short_number_counts_only_when_the_answer_names_the_kpi():
     numbers = [{"label": "Open bills", "value": 7, "scope": "Region: East"}]
     assert shell_agent.number_scopes("Call 7 people.", "", numbers, []) == ([], [])
     assert shell_agent.number_scopes("There are 7 open bills.", "", numbers, [])[1] == [
-        "Open bills 7 counts every row of every run; Region: East."]
+        "Open bills 7 counts Region: East."]
 
 
 def test_a_scope_the_answer_already_states_is_not_repeated():

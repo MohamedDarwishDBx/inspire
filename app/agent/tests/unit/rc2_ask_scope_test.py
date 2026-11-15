@@ -63,7 +63,7 @@ def test_the_live_question_reaches_the_answer_not_the_refusal_even_when_the_mode
     llm = FakeLLM([said("Franchise A led with the most sales last month.")], related=lambda body: False)
     s = live_shell(tmp_path, llm)
     turn = ask(s, LIVE_QUESTION, page=sales_page()["id"])
-    assert turn["refused"] is False and turn["answer"] != shell_agent.OFF_TOPIC
+    assert turn["refused"] is False and not turn["answer"].startswith(shell_agent.OFF_TOPIC)
     assert llm.bodies == llm.main_calls(), "the scoped columns decide the live question, so the model topic check never runs"
 
 
@@ -89,7 +89,7 @@ def test_an_off_scope_question_with_no_scoped_word_is_refused_by_the_model_check
     llm = FakeLLM([said("A has 4.")], related=lambda body: False)
     s = live_shell(tmp_path, llm)
     turn = ask(s, question, page=sales_page()["id"])
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
     assert llm.main_calls() == [] and len(llm.bodies) == 1
 
 
@@ -101,7 +101,7 @@ def test_a_question_naming_a_table_outside_the_scope_is_refused_even_when_the_mo
     llm = FakeLLM([said("A has 4.")], related=lambda body: True)
     s = live_shell(tmp_path, llm)
     turn = ask(s, question, page=sales_page()["id"])
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
     assert llm.main_calls() == [] and llm.bodies == []
 
 
@@ -131,7 +131,7 @@ def test_a_select_star_dataset_gets_its_real_columns_from_the_app_read(tmp_path)
     llm = FakeLLM([said("Franchise A led with the most sales last month.")], related=lambda body: False)
     s = live_shell(tmp_path, llm, select_star=True)
     turn = ask(s, LIVE_QUESTION, page=sales_page()["id"])
-    assert turn["refused"] is False and turn["answer"] != shell_agent.OFF_TOPIC
+    assert turn["refused"] is False and not turn["answer"].startswith(shell_agent.OFF_TOPIC)
     assert llm.bodies == llm.main_calls(), "SELECT * names no columns; the App's own column read supplies franchise and TotalPrice to the rule"
 
 
@@ -158,7 +158,7 @@ def test_the_weather_must_exclude_still_refuses_on_a_select_star_page(tmp_path, 
     llm = FakeLLM([said("A has 4.")], related=lambda body: False)
     s = live_shell(tmp_path, llm, select_star=True)
     turn = ask(s, question, page=sales_page()["id"])
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
     assert llm.main_calls() == [] and len(llm.bodies) == 1
 
 
@@ -195,9 +195,9 @@ def test_the_ask_survives_a_failed_column_read_and_decides_by_the_rest(tmp_path,
     turn = ask(s, LIVE_QUESTION, page=sales_page()["id"])
     assert turn["state"] == "done" and "Traceback" not in json.dumps(turn) and turn.get("error") in (None, "")
     if model_says:
-        assert turn["refused"] is False and turn["answer"] != shell_agent.OFF_TOPIC
+        assert turn["refused"] is False and not turn["answer"].startswith(shell_agent.OFF_TOPIC)
     else:
-        assert turn["refused"] is True and turn["answer"] == shell_agent.OFF_TOPIC
+        assert turn["refused"] is True and turn["answer"].startswith(shell_agent.OFF_TOPIC)
     assert llm.bodies[0]["max_tokens"] == shell_agent.TOPIC_TOKENS, "the failed read leaves the model check to decide"
     assert len(llm.bodies) == (2 if model_says else 1)
 
@@ -207,7 +207,7 @@ def test_a_failed_read_still_refuses_weather_with_no_exception(tmp_path, monkeyp
     llm = FakeLLM([said("A has 4.")], related=lambda body: False)
     s = live_shell(tmp_path, llm, select_star=True)
     turn = ask(s, "What is the weather in Paris?", page=sales_page()["id"])
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
 
 
 FORECAST_RESULT = "inspire_kinds_rc7._inspire.supply_forecast_out"
@@ -238,7 +238,7 @@ def test_a_forecast_page_question_about_the_build_source_table_is_related_with_n
     llm = FakeLLM([said("There are 42 sales transactions in total.")], related=lambda body: False)
     s = forecast_shell(tmp_path, llm, SCOPE_SOURCES)
     turn = ask(s, SALES_QUESTION, page=forecast_page()["id"])
-    assert turn["refused"] is False and turn["answer"] != shell_agent.OFF_TOPIC
+    assert turn["refused"] is False and not turn["answer"].startswith(shell_agent.OFF_TOPIC)
     assert llm.bodies == llm.main_calls(), "the App's own scope sources name sales_transactions, so the rule decides with no model call"
 
 
@@ -246,7 +246,7 @@ def test_a_forecast_page_question_about_a_source_table_it_does_not_have_is_still
     llm = FakeLLM([said("ok")], related=lambda body: False)
     s = forecast_shell(tmp_path, llm, [])
     turn = ask(s, SALES_QUESTION, page=forecast_page()["id"])
-    assert turn["refused"] is True and turn["answer"] == shell_agent.OFF_TOPIC
+    assert turn["refused"] is True and turn["answer"].startswith(shell_agent.OFF_TOPIC)
 
 
 @pytest.mark.parametrize("question", ["What is the weather in Paris?", "What is the weather in Paris last month?"])
@@ -254,7 +254,7 @@ def test_the_weather_must_exclude_stays_refused_on_the_forecast_page_with_scope_
     llm = FakeLLM([said("A has 4.")], related=lambda body: False)
     s = forecast_shell(tmp_path, llm, SCOPE_SOURCES)
     turn = ask(s, question, page=forecast_page()["id"])
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
     assert llm.main_calls() == [] and len(llm.bodies) == 1
 
 
@@ -288,5 +288,5 @@ def test_the_weather_must_exclude_stays_refused_with_the_full_source_list(tmp_pa
     llm = FakeLLM([said("A has 4.")], related=lambda body: False)
     s = forecast_shell(tmp_path, llm, FULL_SOURCES)
     turn = ask(s, question, page=forecast_page()["id"])
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
     assert llm.main_calls() == [] and len(llm.bodies) == 1

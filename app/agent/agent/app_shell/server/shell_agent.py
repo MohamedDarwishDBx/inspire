@@ -74,6 +74,8 @@ DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DATA_STALE_DAYS = 7
 
 OFF_TOPIC = "This is not related to this use case."
+ALL_ROWS = "every row of every run"
+SCOPE_EXAMPLES = 3
 NO_MODEL = ("Genie answers with SQL from its Genie Agent only: this workspace serves no chat model the App can use, so Genie cannot "
             "change the view or act on records from the chat.")
 STEP_LIMIT = f"Genie stopped after {MAX_STEPS} steps. Ask a narrower question to go further."
@@ -548,7 +550,7 @@ def run_scope(sql) -> str:
     current = "current rows only" if any(CURRENT_ROW.search(where) for where in wheres) else ""
     if current and run:
         return f"{current}, {run}"
-    return current or run or "every row of every run"
+    return current or run or ALL_ROWS
 
 
 def sql_scope(sql) -> str:
@@ -600,7 +602,8 @@ def number_scopes(answer: str, question: str, key_numbers: list, genie: list) ->
         value, label = number_of(item.get("value")), str(item.get("label") or item.get("id") or "").strip()
         if value is None or not label:
             continue
-        page_scope = f"{item.get('counts') or 'every row of every run'}; {item.get('scope') or 'every row the page reads, with no filter'}"
+        counts = str(item.get("counts") or "")
+        page_scope = "; ".join(part for part in (counts if counts not in ("", ALL_ROWS) else "", item.get("scope") or "every row the page reads, with no filter") if part)
         asked = " ".join([question, answer] + [str(g.get("question") or "") for g in genie]).casefold()
         clash = None
         for result in reversed(genie if label.casefold() in asked else []):
@@ -610,7 +613,7 @@ def number_scopes(answer: str, question: str, key_numbers: list, genie: list) ->
                 break
         if clash:
             clashes.append(f"The page shows {label} {kpi_shown(item, value)} for {page_scope}; Genie counted "
-                           f"{kpi_shown(item, clash[1])} for {sql_scope(clash[0].get('sql'))}.")
+                           f"{counted_text(item, clash[1], clash[0].get('sql'))}.")
         elif states(answer, value, label) and page_scope.casefold() not in answer.casefold():
             stated.append((label.casefold() in answer.casefold(), f"{label} {kpi_shown(item, value)} counts {page_scope}."))
     if clashes:
@@ -621,11 +624,44 @@ def number_scopes(answer: str, question: str, key_numbers: list, genie: list) ->
     return [], notes + ([counted] if counted else [])
 
 
+def counted_text(item: dict, value: float, sql) -> str:
+    scope = sql_scope(sql)
+    return f"{kpi_shown(item, value)} across all rows" if scope == ALL_ROWS else f"{kpi_shown(item, value)} for {scope}"
+
+
 def genie_note(answer: str, result: dict) -> str:
     value = genie_value(result)
-    if value is None or not states(answer, value, ""):
+    if value is None or not states(answer, value, "") or sql_scope(result.get("sql")) == ALL_ROWS:
         return ""
     return f"Genie counted {kpi_shown({}, value)} for {sql_scope(result.get('sql'))}."
+
+
+def plain_name(name) -> str:
+    """A table or column name in words a business user reads: sales_transactions and TotalPrice become sales transactions and total price."""
+    text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", str(name or "").split(".")[-1])
+    return " ".join(re.sub(r"[_\-]+", " ", text).lower().split())
+
+
+def scope_examples(sources, kpis=None) -> list:
+    """Two or three questions this use case can answer, taken from its own measure and its source table and columns."""
+    out = []
+    label = " ".join(str((next(iter(kpis or []), None) or {}).get("label") or "").split()).lower()
+    if label:
+        out.append(f"How many {label} are there?")
+    named = next((s for s in sources or [] if s.get("tables")), None)
+    if named:
+        noun = plain_name(named["tables"][0])
+        out.append(f"How many {noun} are there in total?")
+        columns = [c for c in named.get("columns") or [] if not re.search(r"(id|key|code)$", str(c), re.I)]
+        if columns:
+            out.append(f"Which {plain_name(columns[0])} has the most {noun}?")
+    return list(dict.fromkeys(out))[:SCOPE_EXAMPLES]
+
+
+def refusal_text(examples) -> str:
+    if not examples:
+        return OFF_TOPIC + " Ask about this use case's data, its page or its records."
+    return OFF_TOPIC + " I can answer questions about this use case's data, for example:\n" + "\n".join(f"- {q}" for q in examples)
 
 
 def with_scopes(answer: str, clashes: list, notes: list) -> str:
@@ -1470,6 +1506,10 @@ class Agent:
             if found:
                 source["columns"] = [cut(c, TOPIC_NAME_CHARS) for c in found[:TOPIC_SOURCE_COLUMNS]]
 
+    def refusal(self, job: dict) -> str:
+        sources = app_scope_sources(self.shell.settings) + page_sources(job["page"])
+        return refusal_text(scope_examples(sources, job["page"].get("kpis")))
+
     def context(self, job: dict, ws, who: str) -> dict:
         page, headers = job["page"], job["headers"]
         out = {"app": self.shell.app_title(), "page": {"id": page["id"], "title": page.get("title"), "question": page.get("question"),
@@ -1560,7 +1600,7 @@ class Agent:
         page, ws, question = job["page"], job["ws"], job["question"]
         who = turn.who
         if not self.on_topic(ws, who, turn, job):
-            turn.refused, turn.answer = True, OFF_TOPIC
+            turn.refused, turn.answer = True, self.refusal(job)
             return
         names = self.tools_for(page)
         system = SYSTEM.format(app=self.shell.app_title(), title=page.get("title") or page["id"], data_note=DATA_NOTE, brief=BRIEF,
@@ -1582,6 +1622,8 @@ class Agent:
                 turn.answer = self.final_answer(ws, who, turn, job, messages, cut_lines(message.get("content") or "", ANSWER_CHARS)) or (
                     stop or "Genie had nothing to add.")
                 turn.refused = turn.answer.strip() == OFF_TOPIC
+                if turn.refused:
+                    turn.answer = self.refusal(job)
                 turn.next = [] if turn.refused else self.next_steps(page, turn, turn.spoken or turn.answer)
                 if stop and stop not in turn.answer:
                     turn.answer = f"{turn.answer}\n\n{stop}"
