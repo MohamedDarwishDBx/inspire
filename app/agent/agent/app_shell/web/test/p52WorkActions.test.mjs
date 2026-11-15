@@ -80,6 +80,20 @@ test('a snoozed row offers Wake now; the confirm repeats the word, the request c
   }
 });
 
+test('a list sorted by a column still shows Wake now on a snoozed row, and the sorted request asks for the list with its sort', async () => {
+  const { page, context, state } = await openWork([SNOOZED]);
+  try {
+    await page.locator('[data-row-wake]').waitFor({ timeout: 10000 });
+    const asked = state.lists.length;
+    await page.locator('.th-sort', { hasText: 'Rank' }).click();
+    await until(() => state.lists.slice(asked).some((b) => b.sort));
+    await page.locator('[data-row-wake]').waitFor({ timeout: 10000 });
+    assert.equal((await page.locator('[data-row-wake]').innerText()).trim(), 'Wake now');
+  } finally {
+    await context.close();
+  }
+});
+
 test('a row that is not snoozed offers no Wake now', async () => {
   const { page, context } = await openWork([{ ...SNOOZED, _inspire_snooze: null }]);
   try {
