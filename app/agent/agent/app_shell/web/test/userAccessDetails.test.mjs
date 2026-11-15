@@ -38,11 +38,11 @@ test('the waiting card of a user-authorization App shows the viewer the exact gr
     access: ({ json }) => json(200, { tables: [{ table: VIEW, owner: 'data-eng', grants: GRANTS, you_can_grant: false }],
       can_grant: false, sql: GRANTS.map((g) => `${g};`).join('\n'), seen: 'seen-1' }),
   };
-  const { page, context } = await openApp(browser, served.base, appInfo({ auth: 'user' }, 1, {}), { width: 1440, height: 900, ready: '[data-waiting-for-access]', routes });
+  const { page, context } = await openApp(browser, served.base, appInfo({ auth: 'user' }, 1, {}), { width: 1440, height: 900, ready: '[data-permission-dialog]', routes });
   try {
-    const card = page.locator('[data-waiting-for-access]');
+    const card = page.locator('[data-permission-dialog]');
     await card.waitFor({ timeout: 20000 });
-    await page.locator('[data-waiting-details]').evaluate((d) => { d.open = true; });
+    await page.locator('[data-permission-advanced]').evaluate((d) => { d.open = true; });
     const text = await card.innerText();
     for (const grant of GRANTS) assert.ok(text.includes(grant), `the card shows: ${grant}\n${text}`);
     assert.ok(text.includes(VIEWER), 'the grant names the viewer');
