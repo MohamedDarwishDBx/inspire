@@ -976,7 +976,10 @@ async function recordLaunch(host, token, record) {
     return { recorded: true };
   } catch (err) {
     console.warn(`launch record write failed for run ${record.runId}: ${err.message}`);
-    return { recorded: false, failed: true, note: `Inspire could not record who launched this run (${err.message}), so only App managers can cancel it` };
+    // An answer the warehouse gave (a refused or failed statement) means the insert did not land. Only a write whose answer was lost
+    // (the bound fired and the statement was cancelled, or the network dropped) may have landed.
+    const ambiguous = err.code === 'SQL_CANCELLED' || /^Cannot reach/.test(String(err.message || ''));
+    return { recorded: false, failed: true, ambiguous, note: `Inspire could not record who launched this run (${err.message}), so only App managers can cancel it` };
   }
 }
 
@@ -988,9 +991,8 @@ async function recordLaunchOrStop(host, token, record) {
   if (launch.recorded || !launch.failed) return launch;
   launch = await recordLaunch(host, token, record);
   if (launch.recorded || !launch.failed) return launch;
-  // The insert may have landed even though its answer failed. Stop the run only when the ledger has no row for it.
-  const recorded = await launchRecordedFor(host, token, record.runId);
-  if (recorded !== false) {
+  // Only a write whose answer was lost may have landed (see recordLaunch). Then the ledger decides: a row, or a lookup that cannot answer, keeps the run.
+  if (launch.ambiguous && (await launchRecordedFor(host, token, record.runId)) !== false) {
     return { ...launch, warning: `Inspire started run ${record.runId} but could not confirm its record, so it did not stop the run. Cancel it from the App managers if it is not wanted` };
   }
   const stopped = await dbFetch(host, token, '/api/2.1/jobs/runs/cancel', {

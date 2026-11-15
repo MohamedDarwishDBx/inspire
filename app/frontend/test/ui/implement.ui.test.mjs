@@ -849,7 +849,8 @@ test('a version whose run stopped reads as Stopped with the reason and the run, 
     state: { life_cycle_state: 'TERMINATED', result_state: 'CANCELED', state_message: 'Run cancelled' } };
   const ui = await openUi('implement', { ...STUDIO_STATE, history: [stopped, built()], implementRun: run });
   const { page } = ui;
-  const why = 'the run building v2 ended (Stopped: Run cancelled) while v2 was still filling. Rebuild in Vibe/Add/Remove Features submits a new version.';
+  // REQ-231 (950f54476): no Stop record in the control log, so the CANCELED run reads as stopped outside Inspire, never by a person.
+  const why = 'the run building v2 ended (stopped outside Inspire) while v2 was still filling. Rebuild in Vibe/Add/Remove Features submits a new version.';
   try {
     await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
     await expandBuild(page);
