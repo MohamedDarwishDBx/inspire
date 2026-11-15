@@ -6364,6 +6364,14 @@ def stake_measure(item) -> bool:
     return item.get("format") == "currency" or str(item.get("label") or "").strip().lower().endswith(" at stake")
 
 
+def exception_measure(item) -> bool:
+    """A chart measure that counts what the rule flagged: a stake measure, or a count the App labels Exceptions (REQ-290: an
+    Exceptions count is the rule's own output, so the flat-chart check reads it when no run summary is readable). A tested-records
+    count, such as 'Exceptions tested', is not one."""
+    words = str(item.get("label") or "").strip().lower().split()
+    return stake_measure(item) or (bool(words) and words[0] in ("exception", "exceptions") and "tested" not in words)
+
+
 def _digest_money(amount: str, currency: str, kept: bool) -> str:
     unit = f", {sql_text(' ' + currency)}" if str(currency or "").strip() else ""
     return f"concat(format_number(COALESCE({amount}, 0), 0){unit})" if kept else "'Not measured yet'"

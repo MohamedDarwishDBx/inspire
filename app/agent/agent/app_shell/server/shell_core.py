@@ -3940,15 +3940,15 @@ class Shell:
 
     def rule_finds_nothing(self, page: dict, chart: dict, ws, who=None, every_measure: bool = False) -> bool:
         """True when the rule has no exception in the whole scope (no filter applied). The check (every_measure=False) decides from the
-        rule's own output: the records the run flagged. Without a run summary it falls back to the chart's stake measures only
-        (shell_sql.stake_measure), so a tested-records count never reads as an exception. The zero-state panel (every_measure=True)
-        keeps the strict reading: every measure must be zero, so 'none found' never sits over records that were tested."""
+        rule's own output: the records the run flagged. Without a run summary it falls back to the chart's exception measures
+        (shell_sql.exception_measure: stake and Exceptions counts), so a tested-records count never reads as an exception. The zero-state
+        panel (every_measure=True) keeps the strict reading: every measure must be zero, so 'none found' never sits over records that were tested."""
         measures = list(enumerate(chart.get("y") or []))
         if not every_measure:
             flagged = self.flagged_records(ws, who, page)
             if flagged is not None:
                 return flagged == 0
-            checked = [i for i, y in measures if shell_sql.stake_measure(y)]
+            checked = [i for i, y in measures if shell_sql.exception_measure(y)]
             if not checked:
                 return False
         else:
