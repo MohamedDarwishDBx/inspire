@@ -3215,7 +3215,7 @@ export function implementState(latest, notebook = null) {
   }
   if (s) {
     if (['ready', 'ready_with_warnings'].includes(s) && unreliableHold(latest)) {
-      return { group: 'held', label: UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp', hold: 'untrusted', published: untrustedAppPublished(latest) };
+      return { group: 'held', label: UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp', hold: 'untrusted' };
     }
     if (appReadsOf(latest)) return { group: 'held', label: APP_READS_LABEL, tone: 'warning', kind: 'mvp', hold: 'other' };
     if (['ready', 'ready_with_warnings'].includes(s) && undeliveredOutputs(latest).length) return { group: 'held', label: UNDELIVERED_LABEL, tone: 'warning', kind: 'mvp', hold: 'other' };

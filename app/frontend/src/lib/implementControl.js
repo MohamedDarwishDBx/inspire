@@ -231,7 +231,7 @@ export function buildSummary(items) {
     held: held.length,
     vibeHeld: held.filter((item) => item.state.hold === 'vibe').length,
     untrusted: untrusted.length,
-    untrustedPublished: untrusted.filter((item) => item.state.published).length,
+    untrustedPublished: untrusted.filter(appOf).length,
     heldOther: held.filter((item) => item.state.hold === 'other').length,
     unmet: unmet.length,
     unmetPublished: unmet.filter(appOf).length,
