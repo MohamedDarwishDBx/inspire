@@ -1212,8 +1212,8 @@ function registerImplementRoutes(app, deps) {
     if (record.objects) {
       const granted = (principals || []).map((p) => {
         const statements = left.flatMap((t) => t.grants.filter((g) => I.appReadGrantFor(g, p)));
-        return PM.permissionRequired({ statements, principal: p, why: `${p} opens the App ${record.app_name || ''} and reads its data with its own access, `
-          + 'so it needs these grants. Ask your data owner to run them, then click Try again.' });
+        return PM.permissionRequired({ statements, principal: p,
+          why: `${I.opensAppSentence(p, record.app_name || '')} Ask your data owner to run them, then click Try again.` });
       }).filter(Boolean);
       // A user-authorization App reads a source table directly: its viewers get the App's views, never the raw table. The App must be
       // rebuilt to read through a view; nothing here is a grant to run.

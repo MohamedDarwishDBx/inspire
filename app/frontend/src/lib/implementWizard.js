@@ -2957,7 +2957,7 @@ export function appReadsChoices(reads) {
   const permission = appReadsPermission(reads);
   return [
     { id: 'grant', label: APP_READS_GRANT, detail: 'Inspire runs exactly the grants listed here as you, then checks the App again. It works when you own the data or hold MANAGE on it.' },
-    { id: 'copy', label: `See the grant to send to ${owners}`, detail: `Permission Required lists the commands. ${owners} runs them, then you press ${APP_READS_CHECK}.`, permissions: permission ? [permission] : [] },
+    { id: 'copy', label: 'See the grant', detail: `Permission Required lists the commands. ${owners} runs them, then you press ${APP_READS_CHECK}.`, permissions: permission ? [permission] : [] },
     { id: 'check', label: APP_READS_CHECK, detail: 'Inspire checks again whether the App can read its data, for example after your data owner grants it.' },
   ];
 }

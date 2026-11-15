@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, openUi, goToStep } from './uiSupport.mjs';
+import { closeBrowser, openUi, goToStep, until } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -35,18 +35,19 @@ function appCannotRead() {
   };
 }
 
-test('the App read refusal shows one plain sentence, and its grant SQL sits under Details, never in the sentence (REQ-041)', async () => {
+test('the App read refusal shows one plain sentence; its grant SQL is in the Permission Required payload, never in the sentence or Details (REQ-041, REQ-131, REQ-260)', async () => {
   const { state } = appCannotRead();
   const { page, close } = await openUi('wizard', state);
   try {
     await goToStep(page, 'Data');
     const panel = page.getByRole('region', { name: 'App read access', exact: true });
     await panel.waitFor({ timeout: 15000 });
-    const details = panel.locator('[data-technical-details]');
-    assert.ok(await details.count() >= 1, 'the grant SQL is held under a Details disclosure');
-    const sentence = (await panel.innerText()).split('\nDetails')[0].trim();
-    assert.doesNotMatch(sentence, /GRANT |PERMISSION_DENIED/, 'no GRANT line or raw error in the visible sentence');
-    assert.match(await details.evaluateAll((els) => els.map((el) => el.textContent).join('\n')), /GRANT /, 'the grant SQL is under Details');
+    assert.equal(await panel.locator('[data-technical-details]').count(), 0, 'no grant SQL under Details (REQ-260)');
+    const sentence = (await panel.innerText()).trim();
+    assert.doesNotMatch(sentence, /GRANT |PERMISSION_DENIED/, 'no GRANT line or raw error in the visible sentence (must-exclude)');
+    // the statements reach the one Permission Required channel for this session (permissionBus keeps the shown list)
+    await until(async () => (await page.evaluate(() => JSON.parse(sessionStorage.getItem('inspire.permissionStatementsShown') || '[]')))
+      .some((g) => /^GRANT /.test(g)), 'the grant SQL reaches Permission Required (must-keep)');
   } finally {
     await close();
   }

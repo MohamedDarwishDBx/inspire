@@ -237,8 +237,10 @@ test('a done build with unread tables reads as action needed, and its finish sta
   assert.ok(!clean.notes.includes(W.APP_READS_LABEL));
   const choices = W.appReadsChoices(W.appReadsOf(held));
   assert.deepEqual(choices.map((c) => c.id), ['grant', 'copy', 'check']);
-  assert.equal(choices[1].label, 'Copy the grant SQL to send to data-eng');
-  assert.equal(choices[1].sql, RECORDED.map((g) => `${g};`).join('\n'));
+  // Round 3 decision 3 (REQ-131, REQ-260): the owner's chooser opens the Permission Required dialog; its SQL is the entry's statements
+  assert.equal(choices[1].label, 'See the grant to send to data-eng');
+  assert.equal(choices[1].sql, undefined, 'no separate SQL copy path');
+  assert.deepEqual(choices[1].permissions[0].statements, RECORDED);
   assert.match(W.appReadsText(W.appReadsOf(held), 'riverside-assets'), /App riverside-assets cannot read this table, so its pages show no data from it/);
   assert.doesNotMatch(W.appReadsText(W.appReadsOf(held)), /build (it )?again|rebuild/i);
 });

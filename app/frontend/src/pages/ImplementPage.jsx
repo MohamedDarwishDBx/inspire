@@ -1478,7 +1478,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
         <div className="min-w-0 space-y-1 text-warning-fg">
           <p className="text-[13px] font-semibold">{readsLeft.tables.length ? APP_READS_HEADING : APP_READS_CLEARED}</p>
           {readsLeft.tables.length > 0 && !readsLeft.viewers && <p>{appReadsText(readsLeft, latest?.app_name || '')}</p>}
-          {readsLeft.tables.length > 0 && <p>Ask your admin to grant access. The exact commands are in Permission Required.</p>}
+          {readsLeft.tables.length > 0 && <p>{`Ask ${appReadsOwners(readsLeft)} to grant access. The exact commands are in Permission Required.`}</p>}
           {readsLeft.tables.length > 0 && readsLeft.viewers && (
             <ul aria-label="Viewers who still need access" data-viewer-rows="" className="list-disc ps-5 space-y-0.5">
               {viewerRows(readsLeft).map((r) => <li key={`${r.viewer}|${r.table}`} data-viewer-row={r.viewer}>{`Ask your admin to grant ${r.viewer} access to ${appReadsName(r.table)}`}</li>)}
@@ -1488,12 +1488,6 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
             <ul aria-label="Tables the App cannot read" data-table-rows="" className="list-disc ps-5 space-y-0.5">
               {tableRows(readsLeft).map((r) => <li key={r.table} data-table-row={r.table}>{appReadsName(r.table)}</li>)}
             </ul>
-          )}
-          {(readsResult?.permissions?.length > 0 || mustActPermissions.length > 0) && (
-            <button type="button" data-see-grant="" onClick={() => raisePermissions(readsResult?.permissions?.length ? readsResult.permissions : mustActPermissions, {}, { explicit: true })}
-              className="inline-flex h-7 items-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-semibold text-text-primary hover:bg-bg-subtle">
-              See the grant
-            </button>
           )}
         </div>
       </div>
@@ -1516,10 +1510,24 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
         <button type="button" data-app-publish="" onClick={rerun} disabled={rerunBusy}
           className="rounded-md border border-warning/40 px-2.5 py-1 text-[12px] font-medium text-warning-fg hover:bg-warning-bg/70 disabled:opacity-60">Publish now</button>
       )}
-      {readsLeft.tables.length > 0 && (
-        <ChoiceList heading={FAILURE_CHOICES_HEADING} choices={appReadsChoices(readsLeft).filter((c) => c.id !== 'grant' || readsLeft.canGrant === true)} mark="data-app-reads-choice" tone="text-warning-fg"
-          disabled={readsBusy !== ''} busy={readsBusy} onPick={pickReads} />
-      )}
+      {readsLeft.tables.length > 0 && (() => {
+        // REQ-082: one primary action that fits the person's rights (Grant access, else See the grant in Permission Required); Check again stays quiet.
+        const choices = appReadsChoices(readsLeft);
+        const primary = choices.find((c) => c.id === (readsLeft.canGrant === true ? 'grant' : 'copy'));
+        const check = choices.find((c) => c.id === 'check');
+        return (
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" data-app-reads-primary={primary.id} disabled={readsBusy !== ''} onClick={() => pickReads(primary)}
+              className="inline-flex h-8 items-center justify-center gap-1.5 px-3 rounded-lg whitespace-nowrap text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle disabled:opacity-50">
+              {readsBusy === primary.id ? <Loader2 size={12} className="animate-spin" /> : null} {primary.label}
+            </button>
+            <button type="button" data-app-reads-choice={check.id} disabled={readsBusy !== ''} onClick={() => pickReads(check)}
+              className="text-xs text-text-secondary underline underline-offset-2 hover:text-text-primary disabled:opacity-50">
+              {check.label}
+            </button>
+          </div>
+        );
+      })()}
     </section>
   );
 

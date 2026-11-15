@@ -15,5 +15,6 @@ export default function PermissionHost() {
     });
   }), []);
   if (!open) return null;
-  return <PermissionRequired permissions={open.permissions} onRetry={open.retry} onStart={open.onStart} onClose={() => setOpen(null)} />;
+  const start = open.onStart ? () => { setOpen(null); open.onStart(); } : undefined;
+  return <PermissionRequired permissions={open.permissions} onRetry={open.retry} onStart={start} onClose={() => setOpen(null)} />;
 }

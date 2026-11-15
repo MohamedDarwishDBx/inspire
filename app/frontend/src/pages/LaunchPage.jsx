@@ -65,7 +65,7 @@ import { counted } from '../lib/plural';
 import { catalogListNote, pickedScope, scopeSummary, typedCatalog, wholeCatalogsAfterChildRemoval } from '../lib/catalogList';
 import { SAMPLE_CATALOG, applySampleCopies, isSampleEntry, samplesTarget, scopesAfterSampleCopies, validCopyTarget } from '../lib/samplesCopy';
 import { DISCOVERY_AI_ENHANCED, DISCOVERY_MODE_TEXT, DISCOVERY_BADGE, DISCOVERY_PRIVACY, DISCOVERY_RECOMMENDED, DISCOVERY_STANDARD, discoveryTypeOf } from '../lib/discoveryType';
-import PermissionRequired from '../components/PermissionRequired';
+import { raisePermissions } from '../lib/permissionBus';
 import { withStartDeadline } from '../lib/startDeadline';
 
 /* ─── Constants — notebook v1.2.0 widget `05_use_cases_quality` ─── */
@@ -759,7 +759,6 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   ], [strategicContextText, customPriorities, strategyBase]);
 
   // Launch
-  const [permissionDialog, setPermissionDialog] = useState(null);
   const handleLaunch = async () => {
     if (launchBlock) return setLaunchError(launchBlock);
     if (!outputCheck.ready)
@@ -806,7 +805,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       }), { label: 'The launch check' });
       if (Array.isArray(check.permissions) && check.permissions.length) {
         setLaunching(false);
-        setPermissionDialog({ permissions: check.permissions, onStart: () => { setPermissionDialog(null); setLaunching(true); startRun(); } });
+        raisePermissions(check.permissions, { onStart: () => { setLaunching(true); startRun(); } }, { explicit: true });
         return;
       }
     } catch (err) {
@@ -827,7 +826,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       });
       const copies = data.copies || [];
       const failed = data.failed || [];
-      if (Array.isArray(data.permissions) && data.permissions.length) setPermissionDialog({ permissions: data.permissions });
+      if (Array.isArray(data.permissions) && data.permissions.length) raisePermissions(data.permissions);
       const picks = applySampleCopies({ catalogs: selectedCatalogs, schemas: selectedSchemas, tables: selectedTables }, { destination: data.destination, copies, failed });
       setSelectedCatalogs(picks.catalogs);
       setWholeCatalogs((p) => p.filter((c) => picks.catalogs.includes(c)));
@@ -1008,9 +1007,6 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
 
   return (
     <>
-      {permissionDialog && (
-        <PermissionRequired permissions={permissionDialog.permissions} onStart={permissionDialog.onStart} onClose={() => setPermissionDialog(null)} />
-      )}
     <div className="max-w-5xl mx-auto px-6 py-8">
       {/* Page Header */}
       <div className="mb-8">
