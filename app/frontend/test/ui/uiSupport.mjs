@@ -377,9 +377,9 @@ export async function pollNow(page, route = '/api/inspire/implement/status', eve
 }
 
 const STEP_HOLDING = {
-  'Who uses the App': 'Who uses the App and storage', 'Page storage': 'Who uses the App and storage', 'Run it': 'First run', 'Schedule': 'First run',
-  'Use case': 'Data & results', Data: 'Data & results', Results: 'Data & results', Summary: 'Review & build', 'What to build': 'What to deliver', Delivery: 'What to deliver', App: 'Who uses the App and storage', 'App placement': 'Where it lives', 'App access': 'Who uses the App and storage',
-  'App features': 'Who uses the App and storage', 'App pages': 'Where it lives', 'App look': 'App look', Measure: 'Measure', 'Keep it fresh': 'First run', Vibes: 'Review & build',
+  'Who uses the App': 'Where it lives', 'Page storage': 'Where it lives', 'Who uses the App and storage': 'Where it lives', 'Run it': 'First run', 'Schedule': 'First run',
+  'Use case': 'Data & results', Data: 'Data & results', Results: 'Data & results', Summary: 'Review & build', 'What to build': 'What to deliver', Delivery: 'What to deliver', App: 'Where it lives', 'App placement': 'Where it lives', 'App access': 'Where it lives',
+  'App features': 'Where it lives', 'App pages': 'Where it lives', 'App look': 'Where it lives', Measure: 'Measure', 'Keep it fresh': 'First run', Vibes: 'Review & build',
 };
 const exactly = (label) => {
   const body = label === 'Data & results' ? 'Data(?: & results)?' : label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -766,7 +766,7 @@ export function stubMoney(path, answerOf, calls) {
 }
 
 export async function goToStorage(page) {
-  await goToStep(page, 'Who uses the App and storage');
+  await goToStep(page, 'Where it lives');
   await openFolded(page, 'Page storage');
   return page.getByRole('group', { name: 'How fast do the App\'s pages open?' });
 }

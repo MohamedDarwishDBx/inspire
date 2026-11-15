@@ -6,7 +6,7 @@ test.after(closeBrowser);
 
 const OWNER = ['owner', 'example.com'].join('@');
 const ME = { me: { userName: OWNER, displayName: 'Owner' } };
-const STEPS = ['What to deliver', 'Data & results', 'First run', 'Measure', 'Where it lives', 'Who uses the App and storage', 'App look', 'Review & build'];
+const STEPS = ['What to deliver', 'Data & results', 'First run', 'Measure', 'Where it lives', 'Review & build'];
 const stepLabels = async (page) => (await page.locator('[data-wizard-header] ol li').allTextContents()).map((l) => l.replace(/^\d+\. /, '').trim());
 const viewports = [{ width: 1280, height: 800 }, { width: 1440, height: 900 }];
 const snap = async (page, name) => {
@@ -25,7 +25,7 @@ test('the step count reads the same total on every step for a fixed scope', asyn
     const count = async () => (await page.locator('.sr-only', { hasText: /^Step \d+ of \d+$/ }).first().textContent()).trim();
     const totals = [];
     totals.push(await count());
-    for (const step of ['Data & results', 'Measure', 'Where it lives', 'Who uses the App and storage', 'Review & build', 'What to deliver']) {
+    for (const step of ['Data & results', 'Measure', 'Where it lives', 'Review & build', 'What to deliver']) {
       await goToStep(page, step);
       totals.push(await count());
     }

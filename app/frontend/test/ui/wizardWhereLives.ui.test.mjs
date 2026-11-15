@@ -24,8 +24,8 @@ test('What to deliver only picks what gets built, Where it lives places the App 
 
     const labels = await stepLabels(page);
     const at = (label) => labels.indexOf(label);
-    assert.ok(at('What to deliver') === 0 && at('Where it lives') === at('Measure') + 1 && at('Who uses the App and storage') === at('Where it lives') + 1,
-      `What to deliver first, then Where it lives after Measure, then Who uses the App and storage: ${labels.join(' | ')}`);
+    assert.ok(at('What to deliver') === 0 && at('Where it lives') === at('Measure') + 1 && labels.filter((l) => l === 'Where it lives').length === 1 && !labels.includes('Who uses the App and storage') && !labels.includes('App look'),
+      `What to deliver first, then Where it lives after Measure, which holds every App panel (REQ-002): ${labels.join(' | ')}`);
 
     await goToStep(page, 'Where it lives');
     await page.getByRole('radio', { name: /^One App per use case/ }).waitFor();
@@ -40,7 +40,8 @@ test('What to deliver only picks what gets built, Where it lives places the App 
       'with the App unticked, Where it lives and Page storage are skipped too');
     await page.getByRole('checkbox', { name: /^App / }).check();
 
-    await goToStep(page, 'Who uses the App and storage');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'Who sees which rows');
     await page.getByRole('region', { name: 'App access' }).waitFor();
     assert.equal(await storage(page).count(), 0, 'the storage choice stays folded under its Change line until opened (must-exclude)');
     await openFolded(page, 'Page storage');

@@ -8,7 +8,7 @@ import { BUILD_IT, assertOneBadgeOnDefault, choicesShown, closeBrowser, goToMeas
 test.after(closeBrowser);
 
 const ME = { me: { userName: OWNER, displayName: 'Owner' } };
-const WITH_APP = ['1. What to deliver', '2. Data & results', '3. Data groups', '4. First run', '5. Measure', '6. Where it lives', '7. Who uses the App and storage', '8. App look', '9. Review & build'];
+const WITH_APP = ['1. What to deliver', '2. Data & results', '3. Data groups', '4. First run', '5. Measure', '6. Where it lives', '7. Review & build'];
 const NO_APP = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Review & build'];
 const next = (page) => page.getByRole('button', { name: 'Next' }).click();
 const builtLine = (page) => page.locator('[data-built-sentence]').innerText();

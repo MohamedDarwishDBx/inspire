@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assertOneBadgeOnDefault, choicesShown, closeBrowser, goToMeasureImpact, goToStep, onStep, openFolded, openRow, openUi, settleChoices } from './uiSupport.mjs';
-import { APP_LOOK_STEP, APP_LOOK_TABS, APP_STEP, MEASURE_LABEL, WHERE_LABEL } from '../../src/lib/implementWizard.js';
+import { APP_LOOK_TABS, MEASURE_LABEL, WHERE_LABEL } from '../../src/lib/implementWizard.js';
 
 const OWNER = ['owner', 'example.com'].join('@');
 const DATED = [{ column_name: 'order_id', data_type: 'STRING', ordinal_position: 1 }, { column_name: 'order_date', data_type: 'DATE', ordinal_position: 2 }];
@@ -16,14 +16,14 @@ async function auditEveryStep(page, { look = true } = {}) {
   for (const [label, impact] of visits) {
     await goToStep(page, label);
     if (impact) await goToMeasureImpact(page, impact);
-    if (label === APP_STEP.label) await page.getByText('Finding the Apps Inspire built').waitFor({ state: 'detached' });
+    if (label === WHERE_LABEL) await page.getByText('Finding the Apps Inspire built').waitFor({ state: 'detached' });
     // Folds open one at a time now (opening one folds the other), so each closed section is opened in turn and audited.
     const folds = await page.locator('[data-wizard-body] button[aria-expanded="false"][aria-label^="Change "]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label').replace(/^Change /, '')));
     // The section already open on arrival is audited first, then each closed one.
     for (const fold of [null, ...new Set(folds)]) {
       if (fold) await openFolded(page, fold);
       await settleChoices(page);
-      const tabs = label === APP_LOOK_STEP.label && look ? APP_LOOK_TABS.map((t) => t.label) : [null];
+      const tabs = label === WHERE_LABEL && look ? APP_LOOK_TABS.map((t) => t.label) : [null];
       for (const tab of tabs) {
         if (tab) await page.getByRole('tab', { name: tab, exact: true }).click();
         const shown = await choicesShown(page);

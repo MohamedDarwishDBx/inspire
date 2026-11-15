@@ -833,7 +833,7 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
     assert.equal((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), false, 'joining an App keeps its sign-in, so there is no Who uses the App step (must-exclude)');
     await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await page.getByLabel('App name').waitFor();
-    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), (await stepLabels(page)).join(', '));
+    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Where it lives$/.test(s.trim())), (await stepLabels(page)).join(', '));
     assert.equal(await policy(page, /^One App per business domain/).isChecked(), true);
     assert.equal(await placeStep(page).getByRole('radiogroup', { name: 'How Inspire organizes Apps' }).locator('[data-recommended]').count(), 1);
     assert.equal(await page.getByLabel('App name').inputValue(), 'inspire-acme-customer', 'the new App is named for the business and the domain');
@@ -855,7 +855,7 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
     assert.equal((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), false, 'joining an App keeps its sign-in, so there is no Who uses the App step (must-exclude)');
     await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await page.getByLabel('App name').waitFor();
-    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), (await stepLabels(page)).join(', '));
+    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Where it lives$/.test(s.trim())), (await stepLabels(page)).join(', '));
     await policy(page, /^One App per use case/).check();
     await goToStep(page, 'App access');
     await openFolded(page, 'Who sees which rows');
@@ -919,7 +919,7 @@ test('a new use case joins the App made for its domain by default, the badge sit
     assert.equal((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), false, 'joining an App keeps its sign-in, so there is no Who uses the App step (must-exclude)');
     await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await page.getByLabel('App name').waitFor();
-    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), (await stepLabels(page)).join(', '));
+    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Where it lives$/.test(s.trim())), (await stepLabels(page)).join(', '));
     assert.equal(await page.getByLabel('App name').inputValue(), 'inspire-acme-customer-2', 'a new App never takes the name of one Inspire built');
     await asks.quiet(800);
     await page.clock.resume();

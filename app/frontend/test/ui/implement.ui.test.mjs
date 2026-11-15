@@ -73,7 +73,7 @@ function submittedSpec(made) {
 test('the wizard opens on Use case with no MVP or notebook choice, Deliver ticks the App and Genie Agent, drops the App step while the App is unticked, and All Good, Build it Now launches one run', async () => {
   const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' } });
   const { page, made } = ui;
-  const withApp = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Who uses the App and storage', '7. App look', '8. Review & build'];
+  const withApp = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Review & build'];
   try {
     await goToStep(page, 'Data');
     await stepsAre(page, withApp);
@@ -1857,7 +1857,7 @@ test('a use case with no MVP offers to start one, reads no result table, and the
     await goToStep(never.page, 'Data');
     assert.equal(await never.page.locator('[data-wizard-header] h2').innerText(), HARNESS_USE_CASE.Name);
     const header = never.page.locator('[data-wizard-header]');
-    for (const label of ['First run', 'Measure', 'Where it lives', 'Who uses the App and storage', 'App look']) {
+    for (const label of ['First run', 'Measure', 'Where it lives', ]) {
       if (label !== 'Data') await goToStep(never.page, label);
       assert.equal(await header.getByRole('heading', { level: 2 }).innerText(), HARNESS_USE_CASE.Name, label);
       assert.doesNotMatch(await header.innerText(), /\bID\b|N01-U01/, `${label}: the header shows no use case id (must-exclude)`);
@@ -2008,7 +2008,7 @@ test('with a Genie Code route, the wizard walks the MVP steps and no note shows'
   const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' } });
   try {
     await goToStep(ui.page, 'Data');
-    await stepsAre(ui.page, ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Who uses the App and storage', '7. App look', '8. Review & build']);
+    await stepsAre(ui.page, ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Review & build']);
     assert.equal(await ui.page.getByRole('note', { name: GENIE_CODE_OFF_TITLE }).count(), 0);
   } finally {
     await ui.close();
