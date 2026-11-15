@@ -1208,6 +1208,11 @@ export function useCaseSchemaTags({ sessionId, useCaseId, businessName, inspireD
   };
 }
 
+// REQ-131, REQ-260: picking Its own schema raises its CREATE SCHEMA grant once, when the fallback entry is there (no raise on load).
+export function ownSchemaPickPermission(place, ownSchema) {
+  return place === 'own' && ownSchema?.permission?.statements?.length ? ownSchema.permission : null;
+}
+
 export function ownSchemaFallbackNote(catalog, me = '') {
   const who = String(me || '').trim() ? `\`${String(me).trim()}\`` : 'you';
   return `You cannot create schemas in ${catalog}, so this use case's tables go to the Inspire database schema. For a schema of its own, `
@@ -2934,10 +2939,6 @@ export function appReadsOwners(reads) {
   return joinWords([...new Set((reads?.tables || []).map((t) => t.owner).filter((o) => o && !o.includes('@')))]) || 'your data owner';
 }
 
-export function appReadsSql(reads) {
-  return [...new Set((reads?.tables || []).flatMap((t) => t.grants))].map((g) => `${g};`).join('\n');
-}
-
 export function appReadsText(reads, appName = '') {
   const count = (reads?.tables || []).length;
   const tables = count === 1 ? 'this table' : `${count} tables`;
@@ -2945,11 +2946,18 @@ export function appReadsText(reads, appName = '') {
     + 'Inspire could not grant the access itself, because it does not own that data.';
 }
 
+// REQ-131, REQ-260: the grant commands an owner runs are the Permission Required dialog's payload, the one copy path for GRANT SQL.
+export function appReadsPermission(reads) {
+  const statements = [...new Set((reads?.tables || []).flatMap((t) => t.grants || []))];
+  return statements.length ? { statements, instructions: [], principal: appReadsOwners(reads), why: 'Your data owner runs these commands, then you press Check again.' } : null;
+}
+
 export function appReadsChoices(reads) {
   const owners = appReadsOwners(reads);
+  const permission = appReadsPermission(reads);
   return [
     { id: 'grant', label: APP_READS_GRANT, detail: 'Inspire runs exactly the grants listed here as you, then checks the App again. It works when you own the data or hold MANAGE on it.' },
-    { id: 'copy', label: `Copy the grant SQL to send to ${owners}`, detail: `${owners} runs it in the SQL editor, then you press ${APP_READS_CHECK}.`, sql: appReadsSql(reads) },
+    { id: 'copy', label: `See the grant to send to ${owners}`, detail: `Permission Required lists the commands. ${owners} runs them, then you press ${APP_READS_CHECK}.`, permissions: permission ? [permission] : [] },
     { id: 'check', label: APP_READS_CHECK, detail: 'Inspire checks again whether the App can read its data, for example after your data owner grants it.' },
   ];
 }
