@@ -8,46 +8,35 @@ test.after(closeBrowser);
 
 const ROOT = new URL('../../../', import.meta.url);
 
-// REQ-143: the Build progress drawer pushes the page aside. It takes a column beside the use case pane, so the pane narrows
-// with the drawer open and nothing of the card is covered: every visible action button stays clickable at 1280, 1440 and 1920.
-test('REQ-143 the Build progress drawer pushes the page aside: the use case card stays clear of it and its buttons stay clickable at 1280x800, 1440x900 and 1920x1080', async () => {
+// REQ-143: the Genie progress drawer overlays the Build page. The page keeps its full width when the drawer opens.
+test('REQ-143 the Build progress drawer overlays the page: the use case pane keeps its width with the drawer open, at 1440x900 and 1920x1080', async () => {
   const ui = await openUi('implement', STUDIO_STATE);
   const { page } = ui;
   try {
     await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
-    for (const [width, height] of [[1280, 800], [1440, 900], [1920, 1080]]) {
+    for (const [width, height] of [[1440, 900], [1920, 1080]]) {
       await page.setViewportSize({ width, height });
       const card = page.locator('[data-progress-card]');
       const dialog = page.locator('[data-progress-dock] [data-progress-panel] [role="dialog"]');
-      if (width === 1280) assert.equal(await card.getAttribute('data-progress-open'), 'false', 'page load keeps the drawer closed');
+      if (width === 1440) assert.equal(await card.getAttribute('data-progress-open'), 'false', 'page load keeps the drawer closed');
       if (await card.getAttribute('data-progress-open') === 'false') await card.locator('[data-progress-show]').click();
       await dialog.waitFor();
       assert.equal(await card.getAttribute('data-progress-open'), 'true', `Show progress opens the drawer at ${width}px`);
+      const paddingEnd = await page.locator('[data-implement-page]').evaluate((el) => getComputedStyle(el).paddingRight);
+      assert.equal(paddingEnd, '24px', `the page does not reserve a column for the drawer at ${width}px (padding-right ${paddingEnd})`);
+      const openPane = await page.locator('[data-use-case-pane]').boundingBox();
       const dock = await page.locator('[data-progress-dock]').evaluate((el) => getComputedStyle(el).position);
-      assert.notEqual(dock, 'fixed', `the drawer takes a column in the page, it is not fixed over it (position ${dock})`);
-      const pane = await page.locator('[data-use-case-pane]').boundingBox();
+      assert.equal(dock, 'fixed', 'the drawer is fixed over the page');
       const box = await dialog.boundingBox();
-      assert.ok(pane.x + pane.width <= box.x + 1, `the use case pane ends before the drawer starts at ${width}px (pane ends ${Math.round(pane.x + pane.width)}, drawer starts ${Math.round(box.x)})`);
-      const buttons = page.locator('[data-use-case-pane] button:visible');
-      const covered = [];
-      for (let i = 0; i < await buttons.count(); i += 1) {
-        const button = buttons.nth(i);
-        await button.scrollIntoViewIfNeeded();
-        const r = await button.boundingBox();
-        const hit = await page.evaluate(([x, y]) => {
-          const el = document.elementFromPoint(x, y);
-          return el ? { tag: el.tagName, inButton: Boolean(el.closest('button')) } : null;
-        }, [r.x + r.width / 2, r.y + r.height / 2]);
-        covered.push({ label: (await button.textContent()).trim().slice(0, 40), clickable: Boolean(hit?.inButton) && r.x + r.width <= width + 1 });
-      }
-      assert.ok(covered.length > 0, 'the use case card has action buttons');
-      assert.deepEqual(covered.filter((b) => !b.clickable), [], `every action button on the card is visible and clickable at ${width}px`);
+      assert.ok(openPane.x + openPane.width > box.x, `the drawer sits over the use case pane at ${width}px`);
       await dialog.getByRole('button', { name: 'Close', exact: true }).click();
       await dialog.waitFor({ state: 'detached' });
+      const closedPane = await page.locator('[data-use-case-pane]').boundingBox();
+      assert.ok(Math.abs(openPane.width - closedPane.width) <= 1,
+        `the use case pane is as wide with the drawer open (${Math.round(openPane.width)}px) as closed (${Math.round(closedPane.width)}px) at ${width}px`);
       await page.locator('[data-progress-show]').click();
       await dialog.waitFor();
     }
-    assert.deepEqual(ui.pageErrors, []);
   } finally {
     await ui.close();
   }
@@ -100,4 +89,54 @@ test('REQ-146 the Best-of-Best short-list label counts only the use cases that m
   assert.ok(agent.includes("'meets' if len(use_cases) == 1 else 'meet'} the quality bar, not more than"), 'the short-list label says the quality bar');
   const nb = JSON.parse(readFileSync(new URL('dbx_inspire_ai_agent.ipynb', ROOT), 'utf8'));
   assert.ok(nb.cells.some((c) => c.cell_type === 'code' && c.source.join('').includes("'meet'} the quality bar, not more than")), 'the label is in a code cell');
+});
+
+// REQ-143 (Amr, verbatim: "Genie progress overlay the page not push it to the side"): the Build progress drawer overlays the page at
+// every width. Opening it never squeezes the page: the page box and every card's x position stay the same, the drawer closes with
+// its Close button and with Escape, and after it closes the card's Vibe/Add button is clickable.
+test('REQ-143 the Build progress drawer overlays the page at 1024, 1280, 1440 and 1920: opening it never squeezes the page, and it closes by Close and Escape', async () => {
+  const ui = await openUi('implement', STUDIO_STATE);
+  const { page } = ui;
+  const boxes = () => page.evaluate(() => {
+    const at = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width)]; };
+    const pane = document.querySelector('[data-use-case-pane]');
+    return {
+      page: at(document.querySelector('[data-implement-page]')),
+      pane: pane ? at(pane) : null,
+      cards: [...document.querySelectorAll('[data-use-case-pane] [data-asset-tile], [data-use-case-pane] button:not([disabled])')]
+        .filter((el) => el.getClientRects().length > 0).map((el) => at(el)[0]),
+    };
+  });
+  const dialog = page.locator('[data-progress-dock] [data-progress-panel] [role="dialog"]');
+  try {
+    await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
+    for (const [width, height] of [[1024, 700], [1280, 800], [1440, 900], [1920, 1080]]) {
+      await page.setViewportSize({ width, height });
+      const card = page.locator('[data-progress-card]');
+      if (await card.getAttribute('data-progress-open') === 'true') await card.locator('[data-progress-show]').click();
+      await page.locator('[data-progress-card][data-progress-open="false"]').waitFor();
+      const closed = await boxes();
+      await card.locator('[data-progress-show]').click();
+      await dialog.waitFor();
+      const open = await boxes();
+      assert.deepEqual(open.page, closed.page, `the page box is not squeezed at ${width}px (closed ${closed.page}, open ${open.page})`);
+      assert.deepEqual(open.pane, closed.pane, `the use case pane keeps its box at ${width}px (closed ${closed.pane}, open ${open.pane})`);
+      assert.deepEqual(open.cards, closed.cards, `every card keeps its x position at ${width}px`);
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await dialog.waitFor({ state: 'detached' });
+      await card.locator('[data-progress-show]').click();
+      await dialog.waitFor();
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'detached', timeout: 5000 });
+      const vibe = page.locator('[data-use-case-pane]').getByRole('button', { name: /^Vibe\/Add/ }).first();
+      assert.ok(await vibe.count() > 0, 'the card has a Vibe/Add button');
+      await vibe.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+      const r = await vibe.boundingBox();
+      const hit = await vibe.evaluate((el, [x, y]) => el.contains(document.elementFromPoint(x, y)), [r.x + r.width / 2, r.y + r.height / 2]);
+      assert.equal(hit, true, `after the drawer closes, the Vibe/Add button is clickable at ${width}px`);
+    }
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
 });
