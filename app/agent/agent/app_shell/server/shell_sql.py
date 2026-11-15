@@ -2574,15 +2574,16 @@ def _condition(kind, target: str, value, params) -> list:
     low, high = (value.get(edge) for edge in RANGE_EDGES[kind])
     cast = "DATE" if kind == "date_range" else "DOUBLE"
     shown = str if kind == "date_range" else (lambda v: repr(float(v)))
+    read = _read_date(target) if kind == "date_range" else f"CAST({target} AS DOUBLE)"
     if kind == "date_range" and low and high:
         start, end = sorted((str(low), str(high)))
-        return [f"CAST({target} AS DATE) BETWEEN {params.add(start, 'DATE')} AND {params.add(end, 'DATE')}"]
+        return [f"{read} BETWEEN {params.add(start, 'DATE')} AND {params.add(end, 'DATE')}"]
     if low not in (None, "") and high not in (None, ""):
-        return [f"CAST({target} AS {cast}) BETWEEN {params.add(shown(low), cast)} AND {params.add(shown(high), cast)}"]
+        return [f"{read} BETWEEN {params.add(shown(low), cast)} AND {params.add(shown(high), cast)}"]
     if low not in (None, ""):
-        return [f"CAST({target} AS {cast}) >= {params.add(shown(low), cast)}"]
+        return [f"{read} >= {params.add(shown(low), cast)}"]
     if high not in (None, ""):
-        return [f"CAST({target} AS {cast}) <= {params.add(shown(high), cast)}"]
+        return [f"{read} <= {params.add(shown(high), cast)}"]
     return []
 
 
@@ -3552,9 +3553,32 @@ def column_options_query(page: dict, table, column: str, search: str = "", limit
     return _choice_query(page, [(dataset, column)], search, limit)
 
 
+def _read_date(target: str) -> str:
+    """One date read of a quoted column: a date, a timestamp (its day) or a date-like string. Text that is not a date reads as NULL,
+    never as a query error, so one stray value cannot fail a bounds read, a scope probe or a filter's WHERE."""
+    return f"TRY_CAST({target} AS DATE)"
+
+
+def date_value(column: str) -> str:
+    return _read_date(quote(column))
+
+
 def bounds_query(page: dict, ident: str) -> tuple:
     sql, params = bounds_together_query(page, [ident])
     return f"SELECT low_0 AS low, high_0 AS high FROM ({sql}) AS t", params
+
+
+def filter_scope_query(page: dict, ident: str) -> tuple:
+    """The rows a filter reads over its whole scope, and how many of those rows hold a value its control shows: a date for a date filter
+    (the same date_value its bounds read, over the same datasets), a choice for a choice filter (the same read its options make).
+    No filter is applied, so zero rows means the scope is empty and zero values means its column holds none."""
+    f = _item(page, "filters", ident)
+    if f.get("type") == "date_range":
+        reads = [(dataset, date_value(column)) for dataset, column in f["columns"].items()]
+    else:
+        reads = [(dataset, f"CAST({quote(f['columns'][dataset])} AS STRING)") for dataset in filter_value_datasets(f)]
+    parts = [f"SELECT COUNT(*) AS n_rows, COUNT({read}) AS n_values FROM ({_dataset(page, dataset)}) AS d" for dataset, read in reads]
+    return f"SELECT SUM(n_rows) AS n_rows, SUM(n_values) AS n_values FROM ({' UNION ALL '.join(parts)}) AS s", []
 
 
 def bounds_together_query(page: dict, idents: list) -> tuple:
@@ -3565,7 +3589,7 @@ def bounds_together_query(page: dict, idents: list) -> tuple:
             if (dataset, column) not in spots:
                 at = reads.setdefault(dataset, [])
                 n = len(spots)
-                at.append(f"MIN(CAST({quote(column)} AS DATE)) AS l{n}, MAX(CAST({quote(column)} AS DATE)) AS h{n}")
+                at.append(f"MIN({date_value(column)}) AS l{n}, MAX({date_value(column)}) AS h{n}")
                 spots[(dataset, column)] = (f"b{list(reads).index(dataset)}", n)
             alias, n = spots[(dataset, column)]
             lows.append(f"{alias}.l{n}")

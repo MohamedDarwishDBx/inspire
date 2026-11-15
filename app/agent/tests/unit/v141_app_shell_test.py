@@ -251,7 +251,7 @@ def test_records_options_bounds_and_defaults():
     sql, _ = shell_sql.options_query(PAGE, "category")
     assert " UNION " not in sql and "main.pricing.loss_trend" not in sql and "LIMIT 500" in sql
     sql, _ = shell_sql.bounds_query(PAGE, "run_date")
-    assert "low_0 AS low" in sql and "MIN(CAST(`as_of_date` AS DATE))" in sql
+    assert "low_0 AS low" in sql and "MIN(TRY_CAST(`as_of_date` AS DATE))" in sql
     assert shell_sql.default_values(PAGE, {"run_date": ("2024-01-05", "2026-10-15")}) == {
         "run_date": {"from": "2025-11-01", "to": "2026-10-15"}}
     assert shell_sql.default_values(PAGE, {}) == {}
@@ -647,6 +647,8 @@ def test_check_names_every_broken_or_empty_tile(tmp_path):
     def shape(sql):
         if "low_0 AS low" in sql:
             return None
+        if sql.startswith("SELECT SUM(n_rows)"):
+            return [{"n_rows": 2, "n_values": 2}]
         if sql.startswith("SELECT v FROM"):
             return []
         if "'now' AS period" in sql:
@@ -659,7 +661,7 @@ def test_check_names_every_broken_or_empty_tile(tmp_path):
 
     problems, _ws = checked(tmp_path, shape)
     for f in ("category", "channel", "region"):
-        assert f"page n01_u05: filter {f} found no values to pick" in problems
+        assert f"page n01_u05: filter {f} found no values to pick although 2 of its 2 rows hold one" in problems
     for k in ("total_loss", "loss_rate", "items"):
         assert f"page n01_u05: KPI {k} has no value at the default filters" in problems
     for c in ("loss_trend", "by_category", "channel_mix", "pareto"):
@@ -827,18 +829,18 @@ def test_a_tile_whose_table_the_app_cannot_read_names_the_grant_and_other_tiles_
     assert call(owned, "GET", "app")[1]["no_access"] == {"main.pricing.items": "data-eng"}, "only tables the App still lists as unread"
 
 
-def test_check_flags_a_date_filter_with_no_dates_and_a_failed_filter(tmp_path):
+def test_check_notes_a_date_filter_whose_column_holds_no_dates_and_flags_a_failed_filter(tmp_path):
     def shape(sql):
         if "low_0 AS low" in sql:
             return [{"low": None, "high": None}]
+        if sql.startswith("SELECT SUM(n_rows)"):
+            return [{"n_rows": 4, "n_values": 0}]
         if sql.startswith("SELECT v FROM") and "`region`" in sql:
             return shell_db.QueryError("PERMISSION_DENIED")
         return None
 
     problems, _ws = checked(tmp_path, shape)
-    assert "page n01_u05: date filter run_date found no dates" in problems
-    assert "page n01_u05: filter region failed: PERMISSION_DENIED" in problems
-    assert len(problems) == 2
+    assert problems == ["page n01_u05: filter region failed: PERMISSION_DENIED"], "a date column with no dates is a note, not a failure"
 
 
 def _embed():

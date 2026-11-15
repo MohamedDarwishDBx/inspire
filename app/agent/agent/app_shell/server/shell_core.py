@@ -4252,11 +4252,28 @@ class Shell:
             return None
         return {"charts": sorted(item["id"] for item in drawn), "rows_checked": checked}
 
-    def filter_scope_empty(self, page: dict, ident: str, ws) -> bool:
-        """True when a dataset the filter reads holds no row in its whole scope, so the filter has no values because nothing matched."""
-        spec = next((f for f in page.get("filters") or [] if f.get("id") == ident), {})
-        names = list((spec.get("columns") or {}).keys())
-        return bool(names) and self.dataset_empty(page, names[0], ws)
+    def filter_scope(self, page: dict, ident: str, ws) -> tuple:
+        """(rows, values) of a page filter's whole scope with no filter applied: the rows it reads and how many hold a date or a choice
+        value, read by the same expression its bounds or options read (shell_sql.filter_scope_query)."""
+        sql, params = shell_sql.filter_scope_query(page, ident)
+        row = (self.run(ws, None, sql, params, 1).get("rows") or [{}])[0]
+        return int(row.get("n_rows") or 0), int(row.get("n_values") or 0)
+
+    def unset_filter(self, page: dict, f: dict, where: str, ws) -> tuple:
+        """(kind, text) for a date or choice filter the App could not fill. A scope with no rows, or a column with no dates or values in
+        its rows, is a note: the data has nothing to show, which is not a publish failure. Dates or values the scope holds that the
+        bounds or options did not return are a failure: a read bug."""
+        date = f["type"] == "date_range"
+        label = f"date filter {f['id']}" if date else f"filter {f['id']}"
+        rows, values = self.filter_scope(page, f["id"], ws)
+        if not rows:
+            return CHECK_NOTE, (f"{where}: {label} finds nothing because its data holds no rows in its whole scope "
+                                "(zero matches, not a filter problem)")
+        noun = "dates" if date else "values to pick"
+        if not values:
+            readable = "values that read as dates" if date else "values to pick"
+            return CHECK_NOTE, f"{where}: {label} finds nothing because its column has no {readable} in its {rows} rows (not a filter problem)"
+        return CHECK_FAILED, f"{where}: {label} found no {noun} although {values} of its {rows} rows hold one"
 
     def dataset_empty(self, page: dict, name: str, ws, who=None) -> bool:
         """True when the dataset holds no row in its whole scope, with no filter applied."""
@@ -4391,18 +4408,13 @@ class Shell:
                     found.append(filter_problem(f"{where}: filter {f['id']}", f["error"]))
                 elif f["type"] == "date_range":
                     if f.get("low") is None or f.get("high") is None:
-                        if self.filter_scope_empty(page, f["id"], probe.ws):
-                            found.append((CHECK_NOTE, f"{where}: date filter {f['id']} finds no dates because its data holds no rows "
-                                                      f"in its whole scope (zero matches, not a filter problem)"))
+                        kind, text = self.unset_filter(page, f, where, probe.ws)
+                        found.append((kind, text))
+                        if kind == CHECK_NOTE:
                             continue
-                        failed([f"{where}: date filter {f['id']} found no dates"])
                     bounds[f["id"]] = (f.get("low"), f.get("high"))
                 elif not f.get("options"):
-                    if self.filter_scope_empty(page, f["id"], probe.ws):
-                        found.append((CHECK_NOTE, f"{where}: filter {f['id']} has no values to pick because its data holds no rows "
-                                                  f"in its whole scope (zero matches, not a filter problem)"))
-                    else:
-                        failed([f"{where}: filter {f['id']} found no values to pick"])
+                    found.append(self.unset_filter(page, f, where, probe.ws))
                 elif len(f["options"]) < 2:
                     single.append(f"{f['id']} ({f['options'][0]})")
                 else:
