@@ -95,9 +95,9 @@ export function useFreshness({ page, onRefreshed, onRun, onSeeChanged, showThrou
 }
 
 export function FreshBar({ freshness, children }) {
-  const { fresh, now, busy, ask, showThrough, why, reason } = freshness;
+  const { fresh, now, busy, ask, showThrough, builtAt, why, reason } = freshness;
   const writing = useWrite().busy;
-  const text = bannerText(fresh, now, showThrough);
+  const text = bannerText(fresh, now, showThrough, builtAt);
   if (!fresh || !text) return children;
   const state = fresh.active ? activeState(fresh.active) : runState('queued');
   return (

@@ -43,6 +43,7 @@ function jobRoutes(first, onRefresh) {
 
 const open = (routes, options = {}, info = appInfo()) => openApp(browser, served.base, info, { clock: NOW, ...options, routes });
 const banner = (page) => page.locator('.ph .fresh');
+const PUBLISHED = ' · App published Oct 26, 10:00 AM UTC'; // REQ-257 D-UPDATED: the App build time shows beside the refresh time
 const detail = (page) => page.locator('.ph .fresh-d');
 const throughs = async (page) => (`${await page.locator('.top').innerText()} ${await page.locator('.ph').innerText()}`.match(/data through/gi) || []).length;
 
@@ -160,7 +161,7 @@ test('the header says when the use case was last updated, with Refresh now besid
   const { routes } = jobRoutes(IDLE, () => {});
   const { page, seen, context } = await open(routes);
   await banner(page).waitFor();
-  assert.equal(await banner(page).locator('.fresh-t').innerText(), 'Data refreshed Oct 27, 07:30 AM UTC');
+  assert.equal(await banner(page).locator('.fresh-t').innerText(), `Data refreshed Oct 27, 07:30 AM UTC${PUBLISHED}`);
   assert.match(await page.locator('.ph-meta').innerText(), /^Data through Oct 15, 2026(: the source has no newer rows)? · /);
   assert.equal(await throughs(page), 1);
   const button = page.getByRole('button', { name: 'Refresh now' });
@@ -213,7 +214,7 @@ test('a page without a job shows when its result table changed, and Refresh now 
   const { state, routes } = jobRoutes(fresh, () => {});
   const { page, seen, context } = await open(routes);
   await banner(page).waitFor();
-  assert.equal(await banner(page).locator('.fresh-t').innerText(), 'Data refreshed Oct 24, 06:00 AM UTC');
+  assert.equal(await banner(page).locator('.fresh-t').innerText(), `Data refreshed Oct 24, 06:00 AM UTC${PUBLISHED}`);
   assert.equal(await throughs(page), 1);
   const button = page.getByRole('button', { name: 'Refresh now' });
   assert.equal(await button.isDisabled(), true);
@@ -229,7 +230,7 @@ test('a page without a date filter, or whose filters fail, says how far the data
     const { page, seen, context } = await open({ ...routes, filters });
     await banner(page).waitFor();
     await page.waitForFunction(() => !/Reading the data range/.test(document.querySelector('.ph-meta')?.textContent || 'Reading the data range'));
-    assert.equal(await banner(page).locator('.fresh-t').innerText(), 'Data refreshed Oct 27, 07:30 AM UTC · data through Oct 26, 2026');
+    assert.equal(await banner(page).locator('.fresh-t').innerText(), `Data refreshed Oct 27, 07:30 AM UTC · data through Oct 26, 2026${PUBLISHED}`);
     assert.doesNotMatch(await page.locator('.ph-meta').innerText(), /data through|Reading the data range/i);
     assert.equal(await throughs(page), 1);
     assert.deepEqual(real(seen.errors), []);
@@ -240,7 +241,7 @@ test('a page without a date filter, or whose filters fail, says how far the data
 test('the default page with no job and no run says it was not updated and why it cannot be', async () => {
   const { page, seen, context } = await openApp(browser, served.base, appInfo());
   await banner(page).waitFor();
-  assert.equal(await banner(page).locator('.fresh-t').innerText(), 'Data not refreshed yet');
+  assert.equal(await banner(page).locator('.fresh-t').innerText(), `Data not refreshed yet${PUBLISHED}`);
   assert.equal(await page.getByRole('button', { name: 'Refresh now' }).isDisabled(), true);
   assert.equal(await page.locator('.fresh-why').innerText(), NO_JOB.reason);
   await page.emulateMedia({ media: 'print' });
@@ -281,7 +282,7 @@ test('Refresh now starts the job, says it is refreshing all the data, then reloa
   await page.locator('.toast.is-on').waitFor();
   assert.equal(await page.locator('.toast .toast-t').innerText(), 'Refreshed');
   await until(() => seen.pages.length > loads);
-  assert.equal(await banner(page).locator('.fresh-t').innerText(), 'Data refreshed Oct 27, 09:30 AM UTC');
+  assert.equal(await banner(page).locator('.fresh-t').innerText(), `Data refreshed Oct 27, 09:30 AM UTC${PUBLISHED}`);
   assert.equal(await page.getByRole('button', { name: 'Refresh now' }).isEnabled(), true);
   const stopped = state.polls;
   await page.clock.fastForward(30000);
@@ -305,7 +306,7 @@ test('a refresh that fails says why', async () => {
   assert.equal(await page.locator('.toast').evaluate((el) => el.classList.contains('toast--error')), true);
   assert.equal(await page.locator('.fresh-note').innerText(), 'The latest run failed: Table not found');
   assert.equal(await page.locator('.fresh-note').getAttribute('data-tone'), 'bad');
-  assert.equal(await banner(page).locator('.fresh-t').innerText(), 'Data refreshed Oct 27, 07:30 AM UTC', 'the failed run is not the update');
+  assert.equal(await banner(page).locator('.fresh-t').innerText(), `Data refreshed Oct 27, 07:30 AM UTC${PUBLISHED}`, 'the failed run is not the update');
   await idle(page);
   assert.equal(seen.pages.length, loads, 'a failed refresh changed no data, so the page does not reload');
   assert.deepEqual(seen.errors, []);
@@ -315,7 +316,7 @@ test('a refresh that fails says why', async () => {
 test('the header names how the latest run ended for every end the server sends, a lost run inside Inspire among them', async () => {
   const at = '2026-10-27T08:00:30Z';
   const ends = [
-    [{ ...LAST }, null, 'Data refreshed Oct 27, 07:30 AM UTC'],
+    [{ ...LAST }, null, `Data refreshed Oct 27, 07:30 AM UTC${PUBLISHED}`],
     [{ ...LAST, run_id: '102', started: at, result: 'failed', message: 'Table not found' }, 'The latest run failed: Table not found', 'bad'],
     [{ ...LAST, run_id: '103', started: at, result: 'canceled', message: 'Canceled by Dana' }, 'The latest run was stopped before it finished: Canceled by Dana', 'fact'],
     [{ ...LAST, run_id: '104', started: at, result: 'skipped', message: '' }, 'The job skipped the latest run, most often because another run of it was still going', 'fact'],

@@ -819,7 +819,7 @@ test('a low confidence record says so, an older table shows only what it has, an
   await done.page.locator('.cell-t').first().click();
   await done.page.locator('dialog.drawer .dr-act').waitFor();
   assert.equal(await done.page.locator('dialog.drawer .done').innerText(), 'Marked done. A later run found it resolved.');
-  assert.deepEqual(await done.page.locator('dialog.drawer .panel-f > button').allInnerTexts(), ['Close']);
+  assert.deepEqual(await done.page.locator('dialog.drawer .panel-f > button').allInnerTexts(), ['Reopen', 'Close'], 'a done record offers Reopen in its drawer (REQ-057, REQ-289 replaces the old no-buttons rule)');
   assert.equal(await done.page.getByLabel('Give to someone').count(), 0);
   assert.deepEqual([...low.errors, ...old.errors, ...done.errors], []);
   await done.context.close();

@@ -18,6 +18,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .fresh-pt.is-late{color:var(--amber-ink)}
 .top .fresh-t{display:flex;min-width:0;max-width:260px}
 .fresh-tx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* REQ-289: the page header's banner carries the App publish time too. On a phone it takes its own line and wraps, so its tools keep the next line. */
+.ph .fresh-t{display:flex;align-items:flex-start;min-width:0;max-width:100%}
+@container app (max-width: 560px){.ph .fresh{flex:1 1 100%;min-width:0}.ph .fresh-tx{white-space:normal}.head-more-menu{left:0;right:auto}}
 .top .fresh-busy{flex-wrap:nowrap;min-width:0;max-width:280px;overflow:hidden}
 .card.nothing-fix{display:block;margin-top:14px;padding:16px 18px}
 .nothing-fix h2{margin:0 0 4px;font-size:15.5px}
