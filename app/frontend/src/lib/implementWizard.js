@@ -16,6 +16,8 @@ import {
 export { allowedRule, allowedText, widgetProblems, widgetSetProblems, widgetValueProblem };
 
 export const START_MVP_LABEL = 'Start Use Case MVP with Genie';
+// REQ-273: an MVP whose publish failed (or is not published) opens the wizard again with its last choices, without uninstalling.
+export const CHANGE_CHOICES_LABEL = 'Change choices and build again';
 export const VIBE_FEATURES_LABEL = 'Vibe/Add/Remove Features';
 export const OPEN_ALL_SETTINGS = 'Open all settings';
 

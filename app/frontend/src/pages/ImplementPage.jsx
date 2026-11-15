@@ -8,7 +8,7 @@ import {
   statusChip, statusReason, statusDetails, nextSpecFrom, retryableOutputs, lostTables, lostTablesText, genieQuestions, appStatusRows, editedNotebook,
   runProfileText, runStopped, cancelledByUser, versionActive, historyStatus, implementGroups, notebookRunEnded, notebookStatus, START_MVP_LABEL, IMPLEMENT_ACTIVE_STATUSES, IMPLEMENT_UNINSTALLED,
   vibesPreview, canBuildAgain, buildAgainChanges, buildAgainHint, resultTableMoveNote, IMPLEMENT_DONE_STATUSES, builtVersion, vibePreviousChoices, liveVersionForVibes, appVersionLines,
-  vibesProblems, OPEN_ALL_SETTINGS, VIBE_FEATURES_LABEL, DATA_STOP_HINT, dataStopped, shownStatusMessage,
+  vibesProblems, OPEN_ALL_SETTINGS, VIBE_FEATURES_LABEL, CHANGE_CHOICES_LABEL, DATA_STOP_HINT, dataStopped, shownStatusMessage,
   swapParts,
   failureChoices, stoppedChoices, genieNotebookRequest, FAILURE_CHOICES_HEADING, FAILURE_ROUNDS_HEADING, TERMINAL_STOP_HINT, TERMINAL_NEEDS_CHANGE,
   unreliableHold, olderBuildNote, UNRELIABLE_REBUILD_NOTE, isAppUpdate, APP_UPDATED_TEXT, appReadsOf, appObjectsOf, appReadsChoices, appReadsText, appReadsOwners, viewerRows, tableRows, APP_READS_HEADING, APP_READS_CLEARED, protectionStopOf, protectionChoices, abacGrantText, grantGapPermissions, grantFailurePermissions, liveSourceNow, liveProtection, liveReads,
@@ -971,6 +971,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   const spec = latest?.spec_json || {};
   const widgets = Array.isArray(status?.rerun_widgets) ? status.rerun_widgets : [];
   const active = versionActive(latest, stalled);
+  // REQ-273: a built MVP whose latest build is not published (failed, stopped, held) gets Change choices and build again; a published MVP keeps its card.
+  const unpublished = built && !active && !IMPLEMENT_DONE_STATUSES.includes(String(latest?.status || ''));
   const missing = lostTables(latest, rerunError);
   const edited = latest?.status === 'failed' ? editedNotebook(latest) : null;
   const reason = missing.length || edited ? '' : statusReason(latest, stalled);
@@ -1870,6 +1872,11 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
                 className={`${vibes.length ? PRIMARY_BUTTON : OUTLINE_BUTTON} ${vibes.length > 0 && !active ? 'edit-mvp-invite' : ''}`}>
                 <Pencil size={13} /> {vibeFeaturesLabel(vibes)}
               </button>
+              {unpublished && (
+                <button type="button" data-change-choices="" onClick={() => onEdit(null, live)} className={PRIMARY_BUTTON}>
+                  <Sparkles size={13} /> {CHANGE_CHOICES_LABEL}
+                </button>
+              )}
               <button type="button" disabled={active || submitBusy} title={active ? 'Wait for this run to finish' : undefined} onClick={() => setUninstalling(true)} className={DANGER_BUTTON}>
                 <Trash2 size={13} /> Uninstall all
               </button>
