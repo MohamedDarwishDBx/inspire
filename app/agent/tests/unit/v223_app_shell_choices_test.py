@@ -133,9 +133,10 @@ def _counts(page, body=None):
                                       shell_sql.status_choices(page))
 
 
-def test_the_counts_read_the_stored_choice_then_the_note_then_the_only_choice_of_a_status():
+def test_the_counts_read_the_stored_choice_then_the_note_and_never_a_custom_choice_from_a_status_alone():
+    # REQ-285: a status with one custom choice (Wrong flag) no longer implies it; only a stored choice or its note names a custom choice.
     got = _counts(_own())
-    assert got["choices"] == {"reprice": 1, "keep": 1, "drop": 2, "wrong": 1}, got
+    assert got["choices"] == {"reprice": 0, "keep": 1, "drop": 2, "wrong": 0}, got
     assert got["statuses"]["Done"] == 4 and got["open"] == 2 and got["all"] == 7
 
 
@@ -169,7 +170,9 @@ def test_the_status_text_names_the_picked_choice_or_the_only_choice_of_a_status(
     page = _own()
     assert shell_sql.status_text(page, {"action_status": "Done", "action_choice": "drop"}) == "Drop the item"
     assert shell_sql.status_text(page, {"action_status": "Done"}) == "Done"
-    assert shell_sql.status_text(page, {"action_status": "Dismissed"}) == "Wrong flag"
+    # REQ-285: a status-only change names its status, never the custom Wrong flag choice it did not pick
+    assert shell_sql.status_text(page, {"action_status": "Dismissed"}) == "Not an issue"
+    assert shell_sql.status_text(page, {"action_status": "Dismissed", "action_choice": "wrong"}) == "Wrong flag"
     assert shell_sql.status_text(_page(), {"action_status": "Dismissed"}) == "Not an issue"
     assert shell_sql.status_text(_page(), {}) == "New"
 

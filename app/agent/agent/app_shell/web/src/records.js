@@ -29,9 +29,12 @@ export const pageChoices = (app, pageId) => statusChoices((app?.pages || []).fin
 export const statusChoices = (page) => (Array.isArray(page?.statuses) && page.statuses.length ? page.statuses : DEFAULT_CHOICES);
 export function choiceOf(choices, status, id) {
   const same = (choices || []).filter((c) => c.status === (status || NEW));
-  return same.find((c) => c.id === id) || (same.length === 1 ? same[0] : null);
+  // REQ-285: a status change never reads as a custom choice (Merge), so only a default choice stands in for its status.
+  return same.find((c) => c.id === id) || (same.length === 1 && isDefaultChoice(same[0]) ? same[0] : null);
 }
 export const rowChoice = (choices, row) => choiceOf(choices, row?._inspire_status || row?.action_status, row?._inspire_choice ?? row?.[CHOICE_COLUMN]);
+/** REQ-285: the custom choice a row stores (null for a status-only change), the id that names an undo word. */
+export const rowChoiceId = (row) => row?._inspire_choice ?? row?.[CHOICE_COLUMN] ?? null;
 export const choiceLabel = (choices, row) => rowChoice(choices, row)?.label || statusLabel(row?._inspire_status || row?.action_status || NEW);
 export const closingChoices = (choices) => (choices || []).filter((c) => !isOpenStatus(c.status));
 export const QUICK_CLOSE = { done: ['Mark done', 'done'], dismissed: ['Not an issue', 'dismiss'], could_not: ['Could not fix', 'could-not-fix'] };
