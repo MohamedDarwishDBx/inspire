@@ -3,7 +3,7 @@ import { permanentPickProblem } from '../lib/pickProblem';
 import { withStartDeadline } from '../lib/startDeadline';
 import { nameOfUseCase } from '../lib/useCaseFields';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MONEY_PARTS } from '../lib/moneyParts.js';
+import { moneyPartsOf } from '../lib/moneyParts.js';
 import { defaultMoneyRule, moneySummaryOf } from '../lib/moneyDefaults.js';
 import { valueEstimateOf } from '../lib/v130UseCase.js';
 import { Check, Loader2, NotebookPen, X, ChevronLeft, ChevronRight, LayoutDashboard, Sparkles, AppWindow, Bell, Lock, UserRound, KeyRound } from 'lucide-react';
@@ -436,7 +436,7 @@ function CheckLine({ check, label }) {
   );
 }
 
-const MONEY_PART_LABEL = { method: 'How the value is measured', direction: 'Which movement counts', currency: 'Currency', window: 'Periods and statuses', off: 'Turn it off', kpi: 'Target KPI', holdout: 'Hold back' };
+const MONEY_PART_LABEL = { method: 'How the value is measured', direction: 'Which movement counts', sign: 'Which records are gains', currency: 'Currency', window: 'Periods and statuses', off: 'Turn it off', kpi: 'Target KPI', holdout: 'Hold back' };
 
 export default function ImplementWizard({
   uc,
@@ -572,7 +572,7 @@ export default function ImplementWizard({
   const stepIndex = stepIndexOf(steps, step);
   const stepId = steps[stepIndex].id;
   const shows = (panel) => steps[stepIndex].panels.includes(panel);
-  const moneyParts = [...(spec.money?.off ? ['off'] : [...MONEY_PARTS.filter((p) => p !== 'off'), 'off']), ...MEASURE_IMPACT_PARTS];
+  const moneyParts = [...(spec.money?.off ? ['off'] : moneyPartsOf(spec.money?.rule)), ...MEASURE_IMPACT_PARTS];
   const moneyActive = Math.min(moneyPart, moneyParts.length - 1);
   // The money reads are cached per request, so a section that remounts reads its rates and preview once, not again.
   const postRef = useRef(apiPostJson);
@@ -2044,7 +2044,7 @@ export default function ImplementWizard({
                             </SettingRow>
                           </div>
                         ) : spec.money ? (
-                          <MoneyRuleEditor part={p} value={spec.money} sample={scopeProfile.profile?.money_sample || null} table={scopeProfile.profile?.table || ''} columns={scopeProfile.profile?.money_columns || []} api={moneyApi.current} onChange={(money) => { setSpec((prev) => withMoneyRule(prev, money)); if (Boolean(money?.off) !== Boolean(spec.money?.off)) setMoneyPart(money?.off ? 0 : MONEY_PARTS.indexOf('off')); }} />
+                          <MoneyRuleEditor part={p} value={spec.money} sample={scopeProfile.profile?.money_sample || null} table={scopeProfile.profile?.table || ''} columns={scopeProfile.profile?.money_columns || []} api={moneyApi.current} onChange={(money) => { setSpec((prev) => withMoneyRule(prev, money)); if (Boolean(money?.off) !== Boolean(spec.money?.off)) setMoneyPart(money?.off ? 0 : moneyPartsOf(money?.rule).indexOf('off')); }} />
                         ) : (
                           <p className="text-[12px] text-text-secondary">Reading this table to pre-fill the money rule</p>
                         )}
