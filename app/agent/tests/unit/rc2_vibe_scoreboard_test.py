@@ -23,7 +23,7 @@ UNTITLED = {"id": "other", "type": "bar", "title": "Stock on hand by site", "x":
 FILTER = {"id": "franchise", "type": "multi_select", "label": "Franchise", "columns": {"sales": "franchise"}}
 PAGE = {"id": PAGE_ID, "title": "Silent franchise sales monitor", "question": "Which franchises went quiet?",
         "charts": [CHART], "filters": [FILTER]}
-SERVED_OK = {PAGE_ID: {"franchise": {"label": "Franchise", "problem": ""}}}
+SERVED_OK = {PAGE_ID: {"filters": {"franchise": {"label": "Franchise", "problem": ""}}, "columns": {}}}
 
 
 def _chart_check(value):
@@ -76,7 +76,7 @@ def test_a_filter_missing_from_the_served_meta_is_not_done_even_though_the_spec_
 
 
 def test_a_filter_the_served_app_lists_with_an_error_is_not_done(agent_ns):
-    served = {PAGE_ID: {"franchise": {"label": "Franchise", "problem": "it is served with an error: TABLE_OR_VIEW_NOT_FOUND"}}}
+    served = {PAGE_ID: {"filters": {"franchise": {"label": "Franchise", "problem": "it is served with an error: TABLE_OR_VIEW_NOT_FOUND"}}}}
     status, evidence = _fact(agent_ns, {"kind": "filter", "value": "franchise"}, PAGE, served)
     assert status == "missing" and "TABLE_OR_VIEW_NOT_FOUND" in evidence
 
@@ -144,3 +144,139 @@ def test_the_published_status_names_one_unmet_ask_for_the_filter(agent_ns):
     text = agent_ns["implement_unmet_published_text"](unmet, 2)
     assert text.startswith("v2 is published with 1 unmet ask")
     assert "filter on franchise" in text
+
+
+import ast  # noqa: E402
+import json  # noqa: E402
+
+from v120_artifacts_support import FakeSpark  # noqa: E402
+from v140_implement_test import _inspire  # noqa: E402
+
+NOTEBOOK = os.path.join(ROOT, "agent", "dbx_inspire_ai_agent.ipynb")
+RECORDS_PAGE = {"id": PAGE_ID, "title": "Silent franchise sales monitor", "question": "Which franchises went quiet?",
+                "records": {"id": "records", "columns": [{"column": "priority_tier", "label": "Priority tier"}]}, "tables": [],
+                "charts": [], "kpis": []}
+PRIORITY_OK = {PAGE_ID: {"filters": {}, "columns": {"records": {"priority_tier": {"label": "Priority tier", "problem": ""}}}}}
+
+
+class _ShellSql:
+    """The shell's column-filter listing for the fixture: the shown column is priority_tier, the spec filters are not read here."""
+
+    def list_column_filters(self, node):
+        return []
+
+    def list_shown(self, node):
+        return ["priority_tier"]
+
+    def table_column_filters(self, held):
+        return []
+
+    def table_shown(self, held):
+        return ["priority_tier"]
+
+
+def _column_gate(agent_ns, value, served, page=RECORDS_PAGE):
+    return agent_ns["implement_vibes_gate"]({"kind": "column_filter", "value": value}, page, None, "App page fixture_page",
+                                            {"served": served, "shell_sql": _ShellSql()})
+
+
+def test_a_column_filter_the_served_list_shows_is_met(agent_ns):
+    assert _column_gate(agent_ns, "priority_tier", PRIORITY_OK)[0] is True
+
+
+def test_a_column_filter_the_served_app_lacks_is_unmet_even_when_the_spec_has_it(agent_ns):
+    ok, reason = _column_gate(agent_ns, "priority_tier", {PAGE_ID: {"filters": {}, "columns": {"records": {}}}})
+    assert ok is False and "no table on the built App page" in reason and "priority_tier" in reason
+
+
+def test_a_served_column_filter_with_an_error_is_unmet(agent_ns):
+    served = {PAGE_ID: {"filters": {}, "columns": {"records": {"priority_tier": {"label": "x", "problem": "it is served with an error: boom"}}}}}
+    ok, reason = _column_gate(agent_ns, "priority_tier", served)
+    assert ok is False and "priority_tier" in reason
+
+
+def test_a_column_filter_whose_page_was_not_read_is_unchecked(agent_ns):
+    ok, reason = _column_gate(agent_ns, "priority_tier", {})
+    assert ok is False and reason.startswith(agent_ns["IMPLEMENT_VIBES_UNCHECKED"])
+
+
+def test_a_named_table_column_filter_is_judged_on_that_table_only(agent_ns):
+    served = {PAGE_ID: {"filters": {}, "columns": {"records": {}, "fix_plan": {"priority_tier": {"label": "x", "problem": ""}}}}}
+    page = dict(RECORDS_PAGE, tables=[{"id": "fix_plan", "title": "Fix plan"}])
+    gate = agent_ns["implement_vibes_gate"]
+    assert gate({"kind": "column_filter", "value": "priority_tier"}, page, ["fix_plan"], "App page fixture_page",
+                {"served": served, "shell_sql": _ShellSql()})[0] is True
+    assert gate({"kind": "column_filter", "value": "priority_tier"}, page, ["records"], "App page fixture_page",
+                {"served": served, "shell_sql": _ShellSql()})[0] is False
+
+
+def test_the_served_page_meta_keeps_page_filters_and_each_column_holder(agent_ns):
+    meta = {"filters": [{"id": "franchise", "type": "multi_select", "label": "Franchise", "options": ["North"]}],
+            "columns": {"list": [{"column": "priority_tier", "label": "Priority tier", "options": ["Act now"]},
+                                 {"column": "channel", "label": "Channel", "lazy": True, "options": []}],
+                        "tables": {"fix_plan": [{"column": "status", "label": "Status", "options": []}]}}}
+    page = agent_ns["implement_served_page"](meta, shell_core.served_filter_problem)
+    assert page["filters"] == {"franchise": {"label": "Franchise", "problem": ""}}
+    assert page["columns"]["records"]["priority_tier"]["problem"] == ""
+    assert page["columns"]["records"]["channel"]["problem"] == ""
+    assert page["columns"]["fix_plan"]["status"]["problem"] == "it is served with no options"
+
+
+def test_a_dashboard_filter_is_drawn_only_when_the_saved_definition_has_its_widget(agent_ns):
+    page = {"id": PAGE_ID, "title": "t", "question": "q", "kpis": [], "charts": [], "tables": [],
+            "filters": [{"id": "franchise", "type": "multi_select", "label": "Franchise", "columns": {"sales": "franchise"}}]}
+    saved = {"datasets": [], "pages": [{"name": "overview", "layout": [{"widget": {"name": "filter_0"}}]}]}
+    absent = {"datasets": [], "pages": [{"name": "overview", "layout": []}]}
+    drawn = agent_ns["implement_dashboard_drawn"](page, saved)
+    assert [f["id"] for f in drawn["filters"]] == ["franchise"]
+    assert agent_ns["implement_dashboard_drawn"](page, absent)["filters"] == []
+
+
+def test_the_app_check_stores_the_served_meta_before_the_gate_runs():
+    with open(NOTEBOOK, encoding="utf-8") as handle:
+        cells = json.load(handle)["cells"]
+    tree = ast.parse("".join("".join(c["source"]) for c in cells if c["cell_type"] == "code"))
+    deploys = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "deploy"
+               and [a.arg for a in n.args.args] == ["work", "page", "gate"]]
+    checked = [d for d in deploys if any(isinstance(c, ast.Attribute) and c.attr == "_implement_page_check" for c in ast.walk(d))]
+    assert checked, "the App deploy closure must run the page check"
+    for deploy in checked:
+        calls = sorted((c.lineno, c.func.attr if isinstance(c.func, ast.Attribute) else getattr(c.func, "id", ""))
+                       for c in ast.walk(deploy) if isinstance(c, ast.Call))
+        names = [name for _line, name in calls]
+        assert names.index("_implement_page_check") < names.index("gate"), names
+
+
+def test_the_served_tool_reads_the_stash_without_rerunning_the_check(agent_ns):
+    inst = _inspire(agent_ns, FakeSpark())
+    inst._implement_app_served = {PAGE_ID: {"filters": {}, "columns": {}}}
+    inst._implement_app_check = lambda *a, **k: (_ for _ in ()).throw(AssertionError("the check must not run again"))
+    assert inst._implement_app_served_tool() == {PAGE_ID: {"filters": {}, "columns": {}}}
+
+
+def test_a_missing_stash_reruns_the_check_to_read_the_served_meta(agent_ns):
+    inst = _inspire(agent_ns, FakeSpark())
+    inst._implement_app_served = None
+    inst._implement_app_check_args = ("work", {}, {}, "warehouse")
+    calls = []
+
+    def fake_check(*args):
+        calls.append(args)
+        inst._implement_app_served = {PAGE_ID: {"filters": {}, "columns": {}}}
+        return []
+
+    inst._implement_app_check = fake_check
+    assert inst._implement_app_served_tool() == {PAGE_ID: {"filters": {}, "columns": {}}}
+    assert calls == [("work", {}, {}, "warehouse")]
+
+
+def test_a_failed_on_demand_read_is_unchecked_not_an_exception(agent_ns):
+    inst = _inspire(agent_ns, FakeSpark())
+    inst._implement_app_served = None
+    inst._implement_app_check_args = ("work", {}, {}, "warehouse")
+
+    def boom(*args):
+        raise RuntimeError("the App could not be loaded")
+
+    inst._implement_app_check = boom
+    assert inst._implement_app_served_tool() == {}
