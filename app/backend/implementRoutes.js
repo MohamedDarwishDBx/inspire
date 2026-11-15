@@ -1210,17 +1210,17 @@ function registerImplementRoutes(app, deps) {
 
   function appReadsPermissions(left, record, principals, app) {
     if (record.objects) {
+      // REQ-300: one plain reason per grantee; the dialog says the copy line once, so no entry repeats an ask.
       const granted = (principals || []).map((p) => {
         const statements = left.flatMap((t) => t.grants.filter((g) => I.appReadGrantFor(g, p)));
-        return PM.permissionRequired({ statements, principal: p,
-          why: `${I.opensAppSentence(p, record.app_name || '')} Ask your data owner to run them, then click Try again.` });
+        return PM.permissionRequired({ statements, principal: p, why: I.opensAppSentence(p, record.app_name || '') });
       }).filter(Boolean);
       // A user-authorization App reads a source table directly: its viewers get the App's views, never the raw table. The App must be
-      // rebuilt to read through a view; nothing here is a grant to run.
+      // rebuilt to read through a view; nothing here is a grant to run, so the sentence is a plain step and never copied (REQ-300, REQ-301).
       const direct = record.mode === 'user' && (record.sources || []).length ? record.sources : [];
       const rebuild = direct.length ? [PM.permissionRequired({ principal: record.app_name || '', instructions: [
-        `The App ${record.app_name || ''} reads ${direct.join(', ')} directly. A user-authorization App does not give its viewers access to a source table, `
-        + 'so they see only its own views. Rebuild the App so it reads through its views, then click Try again.'] })] : [];
+        `The App ${record.app_name || ''} reads ${direct.join(', ')} directly, so its viewers cannot see that data. `
+        + 'Rebuild the App to read through its views, then click Try again.'] })] : [];
       return [...granted, ...rebuild].filter(Boolean);
     }
     // The same statements the card and Check again show: the live plan's grants, never a second list.
