@@ -4582,7 +4582,7 @@ def _current_cte(context: dict, extra=()) -> str:
     join, actions = context["join"], context["actions"]
     mapped = f", CAST({quote(join)} AS STRING) AS `_inspire_join`" if join != "record_key" else ""
     owned = (f", `action_owner` AS `_inspire_owner`, `action_status` AS `_inspire_status`, {context.get('choice') or 'CAST(NULL AS STRING)'} "
-             "AS `_inspire_choice`" + (f", {SNOOZE_EXTRA}" if context.get("snoozed") else "")) if actions else ""
+             "AS `_inspire_choice`") if actions else ""
     explained = "".join(f", CAST({quote(n)} AS STRING) AS {quote(ai_alias(n))}" for n in context["ai"])
     more = "".join(f", {e}" for e in [*extra, f"CAST({quote(KEPT_SINCE)} AS TIMESTAMP) AS `_inspire_missing`", *context.get("money", [])])
     held = context.get("floor") or {}
@@ -4602,10 +4602,9 @@ def _current_on(context: dict, alias: str) -> str:
 
 def _current_join(context: dict, alias: str) -> tuple:
     columns = ["c.`_inspire_key`", "c.`_inspire_version`"] + (["c.`_inspire_owner`", "c.`_inspire_status`", "c.`_inspire_choice`"]
-                                                               + (["c.`_inspire_snooze`"] if context.get("snoozed") else [])
                                                                if context["actions"] else [])
     money = ["c.`_inspire_money`", "c.`_inspire_fx`"] if context.get("money") else []
-    windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else [])
+    windowed = (list(WINDOW_PICKED) + ["c.`_inspire_snooze`"] + (["c.`_inspire_held`"] if context.get("held") else [])
                 + (["c.`_inspire_ok`", "c.`_inspire_flag`"] if context.get("checked") else [])) if context.get("windowed") else []
     joined = " JOIN" if (context.get("floor") or {}).get("on") == "c" else " LEFT JOIN"
     return (f"{joined} c ON {_current_on(context, alias)}",
@@ -4617,7 +4616,8 @@ def _floored(floor: dict, alias: str) -> str:
 
 
 def _window_extra(context: dict) -> list:
-    return list(WINDOW_EXTRA) + (["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else []) + (
+    return list(WINDOW_EXTRA) + ([SNOOZE_EXTRA] if context.get("windowed") else []) + (
+        ["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else []) + (
         [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`", "CAST(`data_quality_flag` AS STRING) AS `_inspire_flag`"]
         if context.get("checked") else [])
 
@@ -4677,9 +4677,16 @@ def list_queries(page: dict, values: dict, request: dict, context: dict, editor:
     if context.get("closes_inline") is not None:
         ctes.update(inline_closes_ctes(context))
         late, joined = late + [f"cz.`{name}`" for name in INLINE_CLOSE_COLUMNS], f"{joined} LEFT JOIN cz ON cz.`{INLINE_CLOSE_KEY}` = {shown}.`_inspire_key`"
+    if context.get("snoozed") and context["actions"] and not context.get("windowed"):
+        # Wake now needs the snooze date on every page row. It is read for the page rows only (the same way the change decorations are),
+        # never added to the full-list current CTE, and a windowed list already picks it from c above.
+        ctes["sn"] = (f"SELECT DISTINCT u.`record_key` AS `_inspire_sk`, CAST(u.`{SNOOZE_COLUMN}` AS DATE) AS `_inspire_snooze` "
+                      f"FROM {context.get('current') or context['table']} AS u JOIN {shown} AS p ON p.`_inspire_key` = u.`record_key` "
+                      "WHERE u.`is_current` AND u.`change_source` <> 'delete'")
+        joined, late = f"{joined} LEFT JOIN sn AS sn ON sn.`_inspire_sk` = {shown}.`_inspire_key`", late + ["sn.`_inspire_snooze`"]
     outer = f"SELECT {', '.join([f'{shown}.*'] + late)} FROM {shown}{joined}"
     counting = dict(ctes, f=plan["plain"]) if plan["plain"] else ctes
-    out = {"rows": (f"{_with(ctes, ['d', 'c', 'r', 'n', 'l0', 'o0', 'p0', 'f', 'w', 's', 'k', 'l', 'o', 'p', 'cz'])} {outer} ORDER BY {order}",
+    out = {"rows": (f"{_with(ctes, ['d', 'c', 'r', 'n', 'l0', 'o0', 'p0', 'f', 'w', 's', 'k', 'l', 'o', 'p', 'cz', 'sn'])} {outer} ORDER BY {order}",
                     params.items),
            "total": (f"{_with(counting, counted)} {capped_count('f')}", counted_params)}
     if request.get("treatments") and context.get("treatments"):
@@ -4793,8 +4800,6 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
         conditions.append(f"l.`_inspire_ch` IN ({wanted})" if logged_changes(context)
                           else f"(l.`_inspire_lk` IS NOT NULL AND (o.`_inspire_ok` IS NULL OR {_moved(context)}))")
         early |= {"c", "h"}
-    if context.get("snoozed") and context["actions"]:
-        early.add("c")
     filtering = set(early)
     if request["sort"] in ACTION_SORTS or money_sort:
         early.add("c")
