@@ -12,10 +12,13 @@ test('the permission checklist asks for the Inspire schema volume privileges the
     { inspireDatabase: 'main._inspire', context: 'launch' },
   );
   assert.equal(out.isPermissionIssue, true);
-  const schemaGrant = out.adminBullets.find((b) => b.includes('ON SCHEMA `main`.`_inspire`') && b.includes('CREATE TABLE'));
-  assert.ok(schemaGrant, out.adminBullets.join('\n'));
-  assert.match(schemaGrant, /CREATE TABLE, MODIFY, SELECT, CREATE VOLUME, READ VOLUME, WRITE VOLUME ON SCHEMA/);
-  assert.match(out.adminEmailText, /WRITE VOLUME ON SCHEMA `main`\.`_inspire`/);
+  // REQ-131, REQ-260: the GRANT SQL is in the Permission Required entry the dialog copies, never in the inline checklist or the admin text
+  const schemaGrant = out.permissions[0].statements.find((s) => s.includes('ON SCHEMA `main`.`_inspire`') && s.includes('CREATE TABLE'));
+  assert.ok(schemaGrant, out.permissions[0].statements.join('\n'));
+  assert.match(schemaGrant, /^GRANT CREATE TABLE, MODIFY, SELECT, CREATE VOLUME, READ VOLUME, WRITE VOLUME ON SCHEMA `main`\.`_inspire` TO /);
+  assert.ok(!out.adminBullets.some((b) => /GRANT /.test(b)), 'no GRANT in the inline checklist');
+  assert.doesNotMatch(out.adminEmailText, /GRANT /, 'no GRANT in the admin text');
+  assert.match(out.adminEmailText, /Permission Required dialog/);
 });
 
 test('the API error parser reads error, message and error_message, stringifies a structured one, and keeps any other text as it is', async () => {

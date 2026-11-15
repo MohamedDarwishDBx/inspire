@@ -72,9 +72,12 @@
       "id": "grant_statement",
       "pattern": "\\bGRANT\\s+(?:USE|CREATE|SELECT|MODIFY|MANAGE|READ|EXECUTE|ALL)\\b",
       "flags": "",
+      "dialog_exempt": true,
       "why": "REQ-260: a GRANT SQL command (upper case, as Databricks prints it) shows only inside the Permission Required dialog; prose 'grant' is not matched"
     }
   ],
+  "dialog_marker": "PERMISSION_DIALOG",
+  "_dialog_marker_about": "REQ-131, REQ-137, REQ-260: a term with dialog_exempt is not copy on a source line that carries dialog_marker. That line is a producer whose statements the Permission Required dialog copies (permissionBus raise, or permissionRequired in the backend). Every other line with the term fails the gate.",
   "run_output_files": [
     "components/ResultsInsights.jsx",
     "pages/MonitorPage.jsx",

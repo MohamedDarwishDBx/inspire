@@ -27,9 +27,10 @@ function readStatements(name, principal) {
   const parts = String(name || '').replace(/`/g, '').split('.');
   if (!who || parts.length < 1 || parts.length > 3 || parts.some((p) => !p)) return [];
   const [catalog, schema, table] = parts;
-  const grants = [`GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${who}\``];
-  if (schema) grants.push(`GRANT USE SCHEMA ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${who}\``);
-  if (table) grants.push(`GRANT SELECT ON TABLE \`${catalog}\`.\`${schema}\`.\`${table}\` TO \`${who}\``);
+  // PERMISSION_DIALOG: these statements go to the Permission Required dialog, which copies them (REQ-131, REQ-260)
+  const grants = [`GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${who}\``]; // PERMISSION_DIALOG
+  if (schema) grants.push(`GRANT USE SCHEMA ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${who}\``); // PERMISSION_DIALOG
+  if (table) grants.push(`GRANT SELECT ON TABLE \`${catalog}\`.\`${schema}\`.\`${table}\` TO \`${who}\``); // PERMISSION_DIALOG
   return [...new Set(grants)];
 }
 

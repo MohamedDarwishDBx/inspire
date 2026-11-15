@@ -328,8 +328,8 @@ def test_sharing_grants_the_source_tables_the_dashboard_reads_and_names_the_gran
     assert warnings == [
         "Sharing: planners may not be able to read the result table, which the dashboard and the Genie Agent read with the "
         "credentials of each viewer: Inspire cannot grant this access, because it "
-        "neither owns nor holds MANAGE on it. If planners does not have it yet, ask your data owner to run: GRANT SELECT ON TABLE "
-        "`main`.`s`.`customers` TO `planners`"]
+        "neither owns nor holds MANAGE on it. If planners does not have it yet, ask your data owner to grant it: "
+        "the commands are in Permission Required"]
     assert inst.looked.count(RESULT) == 1, "the result table is planned once"
 
 

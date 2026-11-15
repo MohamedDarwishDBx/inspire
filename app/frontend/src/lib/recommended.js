@@ -90,7 +90,7 @@ export function resultPlaceBlocks(ownSchema, ownTable, inspireTable, catalog = '
   const blocks = {};
   if (!ownTable || ownSchema?.place === 'inspire') {
     blocks.own = blockOf(ownTable ? 'Inspire cannot create a schema of its own here.' : 'There is no schema of its own to name here.',
-      ownSchema?.note || (catalog ? `GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO <you>` : ''));
+      ownSchema?.note || (catalog ? `Ask your data owner to give you CREATE SCHEMA on ${catalog}. The exact command is in Permission Required.` : ''));
   }
   if (!inspireTable) blocks.inspire = blockOf('There is no Inspire database to hold it.');
   return blocks;

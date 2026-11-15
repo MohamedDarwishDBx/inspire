@@ -3066,7 +3066,7 @@ function outputAccess(rows, name, options = {}) {
   const readable = accessPlan(name, list, '', options);
   const app = missing ? { ok: false, detail: `a new App cannot read the table: ${missing}` }
     : readable.gaps.length
-      ? { ok: false, detail: appAccessMessage(table, readable.gaps, readable.me), permission: appAccessPermission(readable.gaps, readable.me) }
+      ? { ok: false, detail: appAccessMessage(table, readable.gaps), permission: appAccessPermission(readable.gaps, readable.me) }
       : { ok: true, detail: `Inspire can give a new App read access to ${table}` };
   return { table, exists, identity, write, grant, app };
 }
@@ -3521,27 +3521,26 @@ function gapList(gaps) {
 
 function accessGapMessage(who, gaps) {
   const it = gaps.length === 1 ? 'it' : 'them';
-  const statements = gaps.map((g) => grantSql(g, who)).join('; ');
   return `${who} may not be able to read the result table: Inspire cannot grant ${gaps.length === 1 ? 'this access' : 'these accesses'}, because it `
-    + `neither owns nor holds MANAGE on ${it}. If ${who} does not have ${it} yet, ask your data owner to run: ${statements}`;
+    + `neither owns nor holds MANAGE on ${it}. If ${who} does not have ${it} yet, ask your data owner to grant ${it}: the commands are in Permission Required`;
 }
 
 function appAccessPermission(gaps, me = '') {
   const principal = me ? `\`${me}\`` : 'the identity Inspire runs as';
-  const statements = gaps.map((g) => `GRANT MANAGE ON ${g.level.toUpperCase()} ${g.object} TO ${principal}`);
+  const statements = gaps.map((g) => `GRANT MANAGE ON ${g.level.toUpperCase()} ${g.object} TO ${principal}`); // PERMISSION_DIALOG
   return { statements, principal: me || 'the identity Inspire runs as', why: 'The new App needs MANAGE to share this table, so Inspire can give it read access.' };
 }
 
-function appAccessMessage(table, gaps, me = '') {
-  const inspire = me ? `\`${me}\`` : 'the identity Inspire runs as';
-  const statements = gaps.map((g) => `GRANT MANAGE ON ${g.level.toUpperCase()} ${g.object} TO ${inspire}`).join('; ');
+function appAccessMessage(table, gaps) {
   const one = gaps.length === 1;
+  // the places the grant is missing on, in plain words (the App tile names them the same way)
+  const places = [...new Set(gaps.map((g) => g.level))].map((level) => `on the ${level}`).join(' and ');
   const shared = gaps.length && gaps.every((g) => IMPLEMENT_TRAVERSE_PRIVILEGES.includes(g.privilege))
-    ? `, or ${gaps.map((g) => grantSql(g, IMPLEMENT_ALL_USERS)).join('; ')}, which ${one ? 'opens' : 'open'} no data by ${one ? 'itself' : 'themselves'}`
+    ? `, or give all account users the same access, which ${one ? 'opens' : 'open'} no data by ${one ? 'itself' : 'themselves'}`
     : '';
   return `a new App could not read the result table: its service principal needs ${gaps.length === 1 ? 'this access' : 'these accesses'}, which not all `
     + `account users have, and Inspire can grant ${one ? 'it' : 'them'} only with MANAGE or ownership. `
-    + `Ask your data owner to run: ${statements}${shared}; or choose a result table in a catalog and schema Inspire manages`;
+    + `Ask your data owner to grant ${one ? 'it' : 'them'} ${places}: the commands are in Permission Required${shared}; or choose a result table in a catalog and schema Inspire manages`;
 }
 
 function principalNames(principals) {

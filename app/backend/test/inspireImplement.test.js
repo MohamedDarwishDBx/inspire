@@ -769,25 +769,31 @@ test('a grant statement renders one need for one principal, as the agent does', 
   assert.equal(I.grantSql(GAP_CATALOG, 'planners'), 'GRANT USE CATALOG ON CATALOG `main` TO `planners`');
 });
 
-test('access gap messages match the agent word for word', () => {
+test('access gap messages match the agent word for word, and name the Permission Required dialog instead of inline GRANT SQL (REQ-260)', () => {
   assert.equal(I.accessGapMessage('bob@x', [GAP_CATALOG]),
     'bob@x may not be able to read the result table: Inspire cannot grant this access, because it '
-    + 'neither owns nor holds MANAGE on it. If bob@x does not have it yet, ask your data owner to run: '
-    + 'GRANT USE CATALOG ON CATALOG `main` TO `bob@x`');
+    + 'neither owns nor holds MANAGE on it. If bob@x does not have it yet, ask your data owner to grant it: the commands are in Permission Required');
   assert.equal(I.accessGapMessage('bob@x', [GAP_CATALOG, { ...GAP_SCHEMA, owner: '' }]),
     'bob@x may not be able to read the result table: Inspire cannot grant these accesses, because it neither owns nor holds MANAGE on them. If bob@x does not have them yet, '
-    + 'ask your data owner to run: GRANT USE CATALOG ON CATALOG `main` TO `bob@x`; GRANT USE SCHEMA ON SCHEMA `main`.`inspire` TO `bob@x`');
+    + 'ask your data owner to grant them: the commands are in Permission Required');
   assert.equal(I.appAccessMessage(ACCESS_TABLE, [GAP_CATALOG, GAP_SCHEMA], 'inspire-sp'),
     'a new App could not read the result table: its service principal needs these accesses, which not all account users have, and Inspire can grant them only '
-    + 'with MANAGE or ownership. Ask your data owner to run: GRANT MANAGE ON CATALOG `main` TO `inspire-sp`; GRANT MANAGE ON SCHEMA '
-    + '`main`.`inspire` TO `inspire-sp`, or GRANT USE CATALOG ON CATALOG `main` TO `account users`; GRANT USE SCHEMA ON SCHEMA '
-    + '`main`.`inspire` TO `account users`, which open no data by themselves; or choose a result table in a catalog and schema '
-    + 'Inspire manages');
-  assert.ok(I.appAccessMessage(ACCESS_TABLE, [GAP_CATALOG], '').includes(
-    'TO the identity Inspire runs as, or GRANT USE CATALOG ON CATALOG `main` TO `account users`, which opens no data by itself; or choose'));
-  const withSelect = I.appAccessMessage(ACCESS_TABLE, [GAP_CATALOG, { ...NEED_SELECT, owner: 'data-eng' }], 'inspire-sp');
-  assert.ok(withSelect.includes('GRANT MANAGE ON TABLE `main`.`inspire`.`churn_out` TO `inspire-sp`; or choose'));
-  assert.ok(!withSelect.includes('account users`'), 'SELECT for every account user would open the data, so it is never offered');
+    + 'with MANAGE or ownership. Ask your data owner to grant them on the catalog and on the schema: the commands are in Permission Required, or give all account users the same access, '
+    + 'which open no data by themselves; or choose a result table in a catalog and schema Inspire manages');
+  assert.ok(I.appAccessMessage(ACCESS_TABLE, [GAP_CATALOG]).includes(
+    'on the catalog: the commands are in Permission Required, or give all account users the same access, which opens no data by itself; or choose'));
+  const withSelect = I.appAccessMessage(ACCESS_TABLE, [GAP_CATALOG, { ...NEED_SELECT, owner: 'data-eng' }]);
+  assert.ok(withSelect.includes('Ask your data owner to grant them on the catalog and on the table: the commands are in Permission Required; or choose'));
+  assert.ok(!withSelect.includes('give all account users'), 'SELECT for every account user would open the data, so it is never offered');
+  for (const message of [I.accessGapMessage('bob@x', [GAP_CATALOG]), I.appAccessMessage(ACCESS_TABLE, [GAP_CATALOG, GAP_SCHEMA], 'inspire-sp')]) {
+    assert.doesNotMatch(message, /GRANT /, 'a GRANT is never in the prose (REQ-260)');
+  }
+});
+
+test('the access statements the Permission Required dialog copies are complete (must-keep, REQ-131)', () => {
+  const app = I.appAccessPermission([GAP_CATALOG, GAP_SCHEMA], 'inspire-sp');
+  assert.deepEqual(app.statements, [
+    'GRANT MANAGE ON CATALOG `main` TO `inspire-sp`', 'GRANT MANAGE ON SCHEMA `main`.`inspire` TO `inspire-sp`']);
 });
 
 test('output access tells up front whether a new App could read the table, and sharing warns per principal', () => {

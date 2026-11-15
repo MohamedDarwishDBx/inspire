@@ -39,6 +39,7 @@ import {
   resultPlaceOf,
   useCaseSchemaTags as schemaTagsOf,
   ownSchemaFallbackNote,
+  ownSchemaGrantPermission,
   defaultSpecFromUseCase,
   specFromLatest,
   tablesOf,
@@ -262,6 +263,7 @@ import {
   nextStepAfter,
   APP_LOOK_DEFAULT,
 } from '../lib/implementWizard';
+import { raisePermissions } from '../lib/permissionBus';
 import {
   bestAppAccess, bestAppBackend, bestHeldApp, bestAppOption, bestAppPolicy, bestAppTarget, bestFreshness, bestHoldout, bestKpi, bestLook,
   bestOutput, bestReplaceEdits, isBest,
@@ -967,6 +969,8 @@ export default function ImplementWizard({
         }).catch((e) => {
           setSpec((prev) => withResultTable(prev, resultTableParts(inspireTable)));
           setOwnSchema((prev) => ({ ...(prev || {}), place: 'inspire', create: false }));
+          // REQ-131, REQ-260: the refused CREATE SCHEMA grant opens in Permission Required; the note names it in plain words
+          raisePermissions([ownSchemaGrantPermission(own.catalog, context?.me?.username)]);
           setPlaceNote(`${ownSchemaFallbackNote(own.catalog, context?.me?.username)} ${failureReasonOf(e)}`);
           setOutputCheck(null);
           setSchemaJob({ state: 'failed', text: `${ownSchemaFallbackNote(own.catalog, context?.me?.username)} ${failureReasonOf(e)}` });
