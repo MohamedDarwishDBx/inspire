@@ -21,10 +21,10 @@ test('Run it is gone: its schedule lives in the First run step, which every MVP 
   assert.equal(steps.find((s) => s.id === 'data').panels.includes('fresh'), false, 'Data & results no longer holds the schedule');
 });
 
-test('Where it lives holds every App panel in order: place, pages, access, features, storage and look (REQ-002)', () => {
+test('Where it lives holds every App panel in order: place, pages, access, features, experience, storage and look (REQ-002)', () => {
   const steps = wizardSteps('mvp', APP_SPEC, WITH_APP_AND_SCOPE);
   const where = steps.find((s) => s.id === 'where');
-  assert.deepEqual(where.panels, ['app_place', 'app_pages', 'app_access', 'app_features', 'app_storage', 'app_look']);
+  assert.deepEqual(where.panels, ['app_place', 'app_pages', 'app_access', 'app_features', 'app_experience', 'app_storage', 'app_look']); // REQ-001 / D-EXP: the experience choice is its own screen
   assert.equal(steps.some((s) => s.id === 'app' || s.id === 'app_storage' || s.id === 'app_look'), false, 'no separate App, Page storage or App look step (must-exclude)');
 });
 

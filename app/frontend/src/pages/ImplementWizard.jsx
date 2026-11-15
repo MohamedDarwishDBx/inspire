@@ -2144,6 +2144,11 @@ export default function ImplementWizard({
           </Advanced>
         )}
 
+        {foldLine('app_experience', APP_EXPERIENCE_QUESTION, APP_EXPERIENCE_CHOICES.find((c) => c.id === (spec.outputs.app_options.experience || experienceDefault(spec)))?.label || '')}
+        {shows('app_experience') && isOpenSection('app_experience') && (
+          <AppExperienceStep spec={spec} onOption={(key, value) => setSpec((prev) => withAppOption(prev, key, value))} />
+        )}
+
         {foldLine('app_pages', 'Pages', `${Object.values(appScreensOf(spec)).filter(Boolean).length} of ${APP_SCREENS.length} pages on`)}
         {shows('app_pages') && isOpenSection('app_pages') && (
           <AppPagesStep spec={spec} look={look} view={lookView} onView={setLookView} open={advanced.app_pages} onToggle={() => toggleAdvanced('app_pages')}
@@ -3083,18 +3088,6 @@ function AppFeaturesStep({ spec, onOption, best = {} }) {
             </div>
           ))}
         </div>
-        <div role="radiogroup" aria-label={APP_EXPERIENCE_QUESTION} data-choice="app-experience" className="pt-1 space-y-1">
-          <p className="text-[12px] font-medium text-text-primary">{APP_EXPERIENCE_QUESTION}</p>
-          {APP_EXPERIENCE_CHOICES.map((c) => (
-            <label key={c.id} className="flex items-start gap-2 text-[11px] cursor-pointer">
-              <input type="radio" name="app-experience" value={c.id} className="mt-0.5" checked={(options.experience || experienceDefault(spec)) === c.id} onChange={() => onOption('experience', c.id)} />
-              <span>
-                <span className="font-medium text-text-primary">{c.label}</span>
-                <span className="text-text-secondary">: {c.blurb}</span>
-              </span>
-            </label>
-          ))}
-        </div>
         <details className="text-[11px] text-text-secondary">
           <summary className="cursor-pointer select-none font-medium">What every App offers</summary>
           <div className="mt-1 space-y-1">
@@ -3103,6 +3096,27 @@ function AppFeaturesStep({ spec, onOption, best = {} }) {
           </div>
         </details>
       </fieldset>
+    </section>
+  );
+}
+
+// REQ-001: the experience is its own panel of Where it lives, so it is never on screen beside the features checklist (D-EXP).
+function AppExperienceStep({ spec, onOption }) {
+  const options = spec.outputs.app_options;
+  return (
+    <section className="space-y-4" aria-label={APP_EXPERIENCE_QUESTION}>
+      <div role="radiogroup" aria-label={APP_EXPERIENCE_QUESTION} data-choice="app-experience" className="space-y-1">
+        <p className="text-[12px] font-medium text-text-primary">{APP_EXPERIENCE_QUESTION}</p>
+        {APP_EXPERIENCE_CHOICES.map((c) => (
+          <label key={c.id} className="flex items-start gap-2 text-[11px] cursor-pointer">
+            <input type="radio" name="app-experience" value={c.id} className="mt-0.5" checked={(options.experience || experienceDefault(spec)) === c.id} onChange={() => onOption('experience', c.id)} />
+            <span>
+              <span className="font-medium text-text-primary">{c.label}</span>
+              <span className="text-text-secondary">: {c.blurb}</span>
+            </span>
+          </label>
+        ))}
+      </div>
     </section>
   );
 }

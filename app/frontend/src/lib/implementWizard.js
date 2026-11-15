@@ -42,7 +42,7 @@ export const CHANGE_LABEL = 'Change';
 
 const DELIVERY_STEP = { id: 'delivery', label: DELIVERY_LABEL, sections: ['use_it', 'app_owners', 'alert'], advanced: ['app_owners', 'alert'], panels: ['delivery'] };
 // Where it lives holds every App panel (REQ-002): where, pages, who uses it, what people can do, storage and look.
-export const APP_PANELS = ['app_place', 'app_pages', 'app_access', 'app_features', 'app_storage', 'app_look'];
+export const APP_PANELS = ['app_place', 'app_pages', 'app_access', 'app_features', 'app_experience', 'app_storage', 'app_look'];
 const WHERE_STEP = { id: 'where', label: WHERE_LABEL, sections: APP_PANELS, advanced: [], panels: APP_PANELS };
 const DATA_STEP = { id: 'data', label: DATA_RESULTS_LABEL, sections: ['use_case', 'data', 'configure', 'results'], advanced: ['data', 'configure', 'results'], panels: ['data', 'results'] };
 export const GROUPING_STEP = { id: 'grouping', label: 'Data groups', sections: ['grouping'], advanced: [], panels: ['grouping'] };
@@ -86,7 +86,7 @@ export const NOTEBOOK_STEPS = [
 
 const STEP_ALIASES = {
   use_case: DATA_STEP.id, choose: DATA_STEP.id, review: SUMMARY_STEP.id, measure: MEASURE_STEP.id, vibes: SUMMARY_STEP.id,
-  settings: SUMMARY_STEP.id, app_place: WHERE_STEP.id, app_access: WHERE_STEP.id, app_features: WHERE_STEP.id, app_storage: WHERE_STEP.id, app_look: WHERE_STEP.id, app: WHERE_STEP.id,
+  settings: SUMMARY_STEP.id, app_place: WHERE_STEP.id, app_access: WHERE_STEP.id, app_features: WHERE_STEP.id, app_experience: WHERE_STEP.id, app_storage: WHERE_STEP.id, app_look: WHERE_STEP.id, app: WHERE_STEP.id,
   results: DATA_STEP.id, app_pages: WHERE_STEP.id, [MEASURE_IMPACT_PART]: MEASURE_STEP.id, fresh: FIRST_RUN_STEP.id, schedule: FIRST_RUN_STEP.id, run: FIRST_RUN_STEP.id,
 };
 export const opensOnImpact = (focus) => IMPACT_FOCUS.includes(focus?.step);

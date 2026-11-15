@@ -87,7 +87,7 @@ test('Vibes sit on Summary, the last step: Deliver asks for no vibes, the step h
     assert.equal(await panel.getByRole('group', { name: /^What happens to v/ }).count(), 0, 'a first build has no version before to keep or remove');
     await wizardBox(page).fill('');
     assert.equal(await panel.locator('[data-vibes-skipped]').textContent(),
-      'Not picked in What to deliver, so not built: the Dashboard, the App and the Alert.');
+      'Not picked in What to deliver, so not built: the Dashboard, the Agentic App and the Alert.'); // D-LABEL209
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), ONE_BOX, 'the box has the focus');
     for (const dark of [false, true]) {
       await page.evaluate((on) => document.documentElement.classList.toggle('dark', on), dark);
@@ -338,7 +338,7 @@ test('each asset drawer holds only its own card, the asks each part was built wi
 
     await openFeatures(page);
     assert.deepEqual(await featuresHeld(page, 'Dashboard'), [['held', 'Dashboard: \u201cMake the trend weekly\u201d']]);
-    assert.deepEqual(await featuresHeld(page, 'App'), [['held', 'App: \u201cDark header\u201d']]);
+    assert.deepEqual(await featuresHeld(page, 'Agentic App'), [['held', 'Agentic App: \u201cDark header\u201d']]); // D-LABEL209
     assert.equal(await page.locator('[data-vibe-features-dialog]').getByRole('list', { name: 'Asks the Genie Agent holds', exact: true }).count(), 0,
       'an output that holds no ask lists none');
     assert.equal(await features(page).getAttribute('data-collected'), '0', 'opening the box collects nothing');
