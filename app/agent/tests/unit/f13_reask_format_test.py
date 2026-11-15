@@ -140,3 +140,52 @@ def test_a_fallback_the_label_could_not_fit_is_not_counted_as_carried(ns):
                                             reask=lambda misses: [None] * len(misses))
     assert stats["fallback"] == 0, "the label did not fit, so this name is not counted as carrying it"
     assert "Tokyo Tidbits" not in use_cases[0]["Name"]
+
+
+LONG_UNLABELLED = [{"No": "1", "Name": "Rank Customers by Future Value and Tier", "Primary Table": USE_CASE_ORDERS}]
+
+
+def _refused_label_re_ask(misses):
+    """The label gate's re-ask is refused, so the label gate leaves the name for the length gate."""
+    return [None] * len(misses)
+
+
+def _gates_then_fired(ns, length_answer):
+    """Runs the label gate, the name-length gate (through the real re-ask parser), then the FIRED count as the Final Gate does."""
+    use_cases = [dict(uc) for uc in LONG_UNLABELLED]
+    stats = ns["ensure_data_filter_labels"](use_cases, lambda uc: [], LABEL, ns["INSPIRE_TABLE_SCOPES"], reask=_refused_label_re_ask)
+    stub = _Stub(answers=[length_answer])
+    ns["ensure_name_lengths"](use_cases, reask=lambda misses: ns["reask_data_filter_names"](
+        stub, misses, LABEL, step_name=ns["NAME_LENGTH_REASK_STEP"]))
+    counted = ns["count_label_in_final_names"](stats, use_cases, LABEL)
+    return use_cases, counted, ns["data_filter_label_line"](counted, LABEL)
+
+
+def test_the_length_gate_renames_a_name_to_carry_the_label_and_the_fired_count_follows_the_final_name(ns):
+    """The length gate re-asks a 7-word name and the answer carries the label. The FIRED count is taken from the final names."""
+    labelled = json.dumps([{"Ref": "0", "Name": "Rank Tokyo Tidbits Customers by Value"}])
+    use_cases, counted, line = _gates_then_fired(ns, labelled)
+    final_carrying = sum(1 for uc in use_cases if LABEL in uc["Name"])
+    assert use_cases[0]["Name"] == "Rank Tokyo Tidbits Customers by Value"
+    assert counted["carried_final"] == final_carrying == 1, "the count matches the final names, not the label gate's sum"
+    assert "after the fix 1 of 1 carry it" in line, line
+    assert "0 of 1 names carried the label" in line, "what the names carried when generated is unchanged"
+
+
+def test_a_length_re_ask_that_drops_the_label_is_counted_as_not_carrying_it(ns):
+    """A length re-ask that drops the label is refused by the label rule, so the final name lacks the label and the count says 0."""
+    unlabelled = json.dumps([{"Ref": "0", "Name": "Rank Customers by Future Value"}])
+    use_cases, counted, line = _gates_then_fired(ns, unlabelled)
+    final_carrying = sum(1 for uc in use_cases if LABEL in uc["Name"])
+    assert LABEL not in use_cases[0]["Name"]
+    assert counted["carried_final"] == final_carrying == 0, "the line never reports a label the final name does not carry"
+    assert "after the fix 0 of 1 carry it" in line, line
+
+
+def test_the_final_gate_recounts_the_fired_line_after_the_length_gate():
+    """Wiring: the FIRED count is recounted after ensure_name_lengths and before the proof lines are written."""
+    from _agentload import agent_source
+    source = agent_source()
+    after_lengths = source[source.index("name_length_stats = ensure_name_lengths("):]
+    recount = after_lengths.index("count_label_in_final_names(label_stats, final_consolidated_use_cases")
+    assert recount < after_lengths.index("log_name_fix_lines(self.logger, label_stats")
