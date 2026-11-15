@@ -68,3 +68,11 @@ test('a scope on a table the picks do not read is not sent', async () => {
   const text = T.launchTableScopeText({ [COPY]: SCOPE, [OTHER_COPY]: SCOPE }, { catalogs: [], schemas: [], tables: [COPY] }, '');
   assert.deepEqual(Object.keys(JSON.parse(text)), [COPY]);
 });
+
+// The server side of the same path: the copy sits under the destination schema the launch picks, so its scope is kept.
+test('the backend keeps the scope of a copied table when the copy destination schema is the picked location', () => {
+  const jobParams = require('../lib/inspireJobParams');
+  const params = { '01_uc_metadata': DESTINATION, '17_table_scope': JSON.stringify({ [COPY]: SCOPE, use_case_label: 'Japan and US' }) };
+  const kept = jobParams.validateTableScopeParams(params);
+  assert.deepEqual(Object.keys(JSON.parse(kept['17_table_scope'])), [COPY, 'use_case_label']);
+});
