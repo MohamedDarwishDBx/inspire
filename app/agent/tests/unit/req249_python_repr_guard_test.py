@@ -93,3 +93,41 @@ def test_the_explanation_check_flags_a_dump_in_the_ai_text(agent_ns):
     assert "evidence reads as a Python object dump" in labels
     test_sql = dict((label, test) for label, test, _detail in checks)["explanation reads as a Python object dump"]
     assert f"RLIKE {agent_ns['inspire_sql_literal'](agent_ns['INSPIRE_PYTHON_REPR'])}" in test_sql, "the check tests the repr pattern"
+
+
+def test_a_guard_refusal_is_a_notebook_fault_so_genie_rebuilds_it(agent_ns):
+    """The write runs inside the notebook job, so its refusal must reach Genie as a notebook repair, not as a platform error."""
+    frame = _Frame([("ai_facts", "string")], [{"ai_facts": DUMP}])
+    with pytest.raises(ValueError) as error:
+        agent_ns["inspire_require_no_python_repr"](frame, "the result frame for main.s.out")
+    assert agent_ns["implement_failure_origin"](error.value) == "notebook", "must-send-back: Genie rebuilds the notebook"
+
+
+def test_an_unrelated_app_error_is_not_a_notebook_fault(agent_ns):
+    """must-exclude: only the guard's refusal is a notebook fault; any other error keeps its platform origin."""
+    assert agent_ns["implement_failure_origin"](RuntimeError("the App could not be created: quota exceeded")) != "notebook"
+
+
+class _Session:
+    def __init__(self):
+        self.sql_calls = []
+
+    def createDataFrame(self, rows, schema):
+        return _Frame([("summary", "string")], [{"summary": rows[0][0]}])
+
+    def sql(self, text):
+        self.sql_calls.append(text)
+        return []
+
+
+def test_the_summary_store_refuses_a_dump_before_the_merge(agent_ns):
+    session = _Session()
+    with pytest.raises(ValueError, match="summary of run"):
+        agent_ns["inspire_store_summary"](session, "main.s.out", "run1", "2026-11-01", DUMP, "")
+    assert not any(text.lstrip().startswith("MERGE") or " MERGE INTO " in text for text in session.sql_calls), "must-fail: no merge"
+
+
+def test_the_summary_store_keeps_a_plain_summary(agent_ns):
+    session = _Session()
+    agent_ns["inspire_store_summary"](session, "main.s.out", "run1", "2026-11-01", PLAIN, "")
+    assert any("MERGE INTO" in text for text in session.sql_calls), "must-pass: a plain summary is merged"
