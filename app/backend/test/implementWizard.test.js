@@ -203,7 +203,8 @@ test('each Full MVP step runs the checks of every section it shows, and only tho
   assert.equal(w.RUN_STEP, undefined, 'Run it is gone: its schedule sits in First run (must-exclude)');
   assert.equal(w.SETTINGS_STEP, undefined, 'Team capacity and the use case settings are set in the App, never in the wizard');
   const all = [...w.wizardSteps('mvp', { outputs: { app: true } }, { grouping: true, firstRun: true }), ...w.NOTEBOOK_STEPS];
-  assert.deepEqual([...new Set(all.flatMap((s) => s.sections))].sort(), ['alert', 'app_access', 'app_features', 'app_look', 'app_owners', 'app_pages', 'app_place', 'app_storage', 'configure', 'data', 'first_run', 'fresh', 'grouping', 'holdout', 'kpi', 'results', 'schedule', 'use_case', 'use_it', 'vibes']);
+  // REQ-265: the Measure step checks the money rule (Gains only needs a sign), so 'money' is a checked section.
+  assert.deepEqual([...new Set(all.flatMap((s) => s.sections))].sort(), ['alert', 'app_access', 'app_features', 'app_look', 'app_owners', 'app_pages', 'app_place', 'app_storage', 'configure', 'data', 'first_run', 'fresh', 'grouping', 'holdout', 'kpi', 'money', 'results', 'schedule', 'use_case', 'use_it', 'vibes']);
   assert.equal(all.some((s) => s.sections.includes('settings') || s.sections.includes('capacity')), false, 'no step checks settings or capacity (must-exclude)');
   for (const s of all) assert.ok(s.advanced.every((a) => s.sections.includes(a)), s.id);
   assert.deepEqual(w.BUILD_STEP_IDS, ['delivery', 'where', 'summary']);

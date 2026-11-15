@@ -95,7 +95,8 @@ test('Data & results holds the table place; First run holds Keep it fresh; Measu
   const results = steps.find((s) => s.id === 'data');
   assert.deepEqual(results.sections.filter((x) => x === 'results'), ['results'], 'the result table is on Data & results');
   assert.equal(steps.some((s) => s.id === 'run'), false, 'Run it is gone');
-  assert.deepEqual(steps.find((s) => s.id === 'stake').sections, ['kpi', 'holdout']);
+  // REQ-265: the Measure step checks the money rule first, so Gains only with no sign stops the build (decided).
+  assert.deepEqual(steps.find((s) => s.id === 'stake').sections, ['money', 'kpi', 'holdout']);
   assert.deepEqual(steps.find((s) => s.id === 'stake').panels, ['stake'], 'Measure holds Measure impact');
   assert.deepEqual(results.panels, ['data', 'results'], 'Keep it fresh is not on Data & results');
   assert.deepEqual(steps.find((s) => s.id === 'first_run').panels, ['first_run', 'fresh', 'schedule'], 'Keep it fresh and its schedule sit in First run');
