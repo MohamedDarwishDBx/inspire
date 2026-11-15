@@ -78,16 +78,33 @@ test('the backend keeps the scope of a copied table when the copy destination sc
 });
 
 // Two samples tables with one table name in different schemas: their copies must not share a name, and each scope stays on its own copy.
-// A copy name is schema__table. Pairs that differ only by where the underscores fall stay distinct, and a pair that lands on one name is refused.
-test('a readable copy name, distinct underscore pairs, and a refusal for the pair that lands on one name', () => {
+// A copy name is schema__table. A schema with a double underscore or an end underscore is refused, so every copyable (schema, table)
+// pair has its own name.
+test('a readable copy name, and a schema that would make the name ambiguous is refused with the reason', () => {
   const impl = require('../lib/inspireImplement');
   assert.equal(impl.sampleCopyTable('samples.bakehouse.sales_franchises'), 'bakehouse__sales_franchises');
-  const dest = { catalog: 'inspire_kinds_rc7', schema: '_inspire' };
-  assert.equal(impl.sampleCopyClash(['samples.a_b.c', 'samples.a.b_c'], dest), '', 'a_b + c and a + b_c stay distinct');
-  assert.notEqual(impl.sampleCopyTable('samples.a_b.c'), impl.sampleCopyTable('samples.a.b_c'));
-  const clash = impl.sampleCopyClash(['samples.a__b.c', 'samples.a.b__c'], dest);
-  assert.equal(clash, 'samples.a__b.c and samples.a.b__c would both copy to inspire_kinds_rc7._inspire.a__b__c. Copy one of them on its own.');
-  assert.equal(impl.sampleCopyClash(['samples.a.b__c', 'samples.a.b__c'], dest), '', 'the same table twice is not a clash');
+  assert.equal(impl.sampleCopyRefusal('samples.a_b.c'), '', 'a single underscore in a schema is fine');
+  assert.equal(impl.sampleCopyRefusal('samples.a.b__c'), '', 'a double underscore in a table is fine: the first "__" ends the schema');
+  assert.equal(impl.sampleCopyRefusal('samples.a__b.c'),
+    'samples.a__b.c cannot be copied: its schema name has a double underscore or ends in an underscore, so its copy name would not be unambiguous.');
+  assert.match(impl.sampleCopyRefusal('samples.a_.c'), /^samples\.a_\.c cannot be copied/);
+});
+
+test('every copyable (schema, table) pair over a small alphabet has its own copy name', () => {
+  const impl = require('../lib/inspireImplement');
+  const words = ['a', '_', 'a_', 'a__', '_a', 'ab', 'a_b', 'a__b', '__'];
+  const seen = new Map();
+  let copyable = 0;
+  for (const schema of words) for (const table of words) {
+    const source = `samples.${schema}.${table}`;
+    if (impl.sampleCopyRefusal(source)) continue;
+    copyable += 1;
+    const name = impl.sampleCopyTable(source);
+    assert.equal(seen.has(name), false, `${source} and ${seen.get(name)} share ${name}`);
+    seen.set(name, source);
+  }
+  // Copyable schemas here: a, _a, ab, a_b (4). Refused: '_' and 'a_' (end underscore), 'a__b' and '__' (double underscore). 4 x 9 tables.
+  assert.equal(copyable, 4 * 9);
 });
 
 test('the statement and the returned copy name come from one helper, so they name the same table', () => {
