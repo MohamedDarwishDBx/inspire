@@ -30,6 +30,11 @@ PARTS = {"app:page:n01_u01": {"state": "ready", "spec_version": 2, "title": "Chu
          "dashboard:by_region": {"state": "ready", "spec_version": 2, "title": "Customers by region"}}
 
 
+# The served App's page meta, as the App check stores it before the vibe gate runs (REQ-214). These tests stub the App build, so the
+# check never runs; without this the region filter ask has no served App to be judged against.
+SERVED_APP = {"n01_u01": {"filters": {"region": {"label": "Region", "problem": ""}}, "columns": {"records": {}}, "shown": None}}
+
+
 def _llm(inst, splits=SPLITS, verdict=("done", "Customers at risk")):
     seen = []
 
@@ -183,6 +188,7 @@ def test_try_again_rebuilds_only_the_missed_asks_on_top_of_the_built_part_and_ke
     inst, previous = _locked(agent_ns, {"app:page:n01_u01_vibes": PAGE_VIBES},
                              lambda s: [{"asset_snapshots": json.dumps(saved)}] if s.startswith("SELECT asset_snapshots") else [])
     inst.local_log_output_dir = str(tmp_path)
+    inst._implement_app_served = SERVED_APP
     done = {"ask": "Keep the region filter", "status": "done", "evidence": "filter region"}
     missed = {"ask": "Add a count of customers at risk", "status": "missing", "evidence": "no KPI counts them"}
     split = {"text": PAGE_VIBES, "asks": SPLITS[PAGE_VIBES]}
@@ -243,6 +249,7 @@ def test_the_genie_round_starts_from_the_saved_part_when_one_is_given(agent_ns, 
 def test_every_built_output_and_part_gets_its_own_record_and_only_a_missed_ask_warns_it(agent_ns, tmp_path):
     inst, previous = _locked(agent_ns)
     inst.local_log_output_dir = str(tmp_path)
+    inst._implement_app_served = SERVED_APP
     _carrying(inst, dict(PARTS, **{"dashboard:old_chart": {"state": "ready", "spec_version": 2, "title": "Gone now"}}))
     inst._implement_runner = lambda uc: "genie"
     inst._implement_dashboard, inst._implement_app = _built("dashboard", PAGE), _built("app", PAGE)

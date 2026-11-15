@@ -191,6 +191,8 @@ def test_the_real_app_check_splits_on_lakebase_and_names_everything_on_delta(age
     calls = []
 
     class Shell:
+        pages = []  # the served App's pages; an App with none has no served read (the real Shell always sets this)
+
         def __init__(self, *a, **k):
             pass
 

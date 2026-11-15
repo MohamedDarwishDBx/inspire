@@ -1032,12 +1032,19 @@ def _checked(ns, tmp_path, app_yaml, build_env=ENV):
                                                  "2026-10-28T00:00:00Z", {"app_access": "sp", "app_backend": "lakebase"},
                                                  admin="builder"), backend=held["backend"])
     files = dict(out["files"], **{"app.yaml": app_yaml, core.SETTINGS_FILE: json.dumps(settings)})
-    original = core.Shell.checked
+    original = {name: getattr(core.Shell, name) for name in ("checked", "speed", "filters", "records")}
     core.Shell.checked = lambda shell, headers: seen.update(env=shell.env, endpoint=shell.lakebase.endpoint) or []
+    # The App reads Lakebase in three more places before a verdict: the timing probe (speed), the served page filters and the served
+    # decision-list rows (both REQ-214). This test judges only the endpoint the App is given, so those reads are stubbed here and
+    # nothing reaches the credential endpoint or a database.
+    core.Shell.speed = lambda shell, headers: {}
+    core.Shell.filters = lambda shell, headers, ident, probe=None: {"filters": [], "columns": {}}
+    core.Shell.records = lambda shell, headers, data, probe=None: {"rows": []}
     try:
         problems = inst._implement_app_check(str(tmp_path / "work"), files, modules, "wh1", build_env)
     finally:
-        core.Shell.checked = original
+        for name, value in original.items():
+            setattr(core.Shell, name, value)
     return problems, seen
 
 
