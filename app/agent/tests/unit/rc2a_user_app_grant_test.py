@@ -109,3 +109,70 @@ def test_the_notebook_offers_exactly_the_grants_the_backend_offers_for_each_obje
     assert len(cases) >= 3
     for case in cases:
         assert agent_ns["implement_scope_grant_statements"](case["view"], case["principal"]) == case["statements"], case
+
+
+# REQ-268: the audience of a user-authorization App is granted on the deploy pass and again after the share. Each pass lists its refused
+# principal once; a later pass that runs clean drops the entry the earlier pass wrote.
+AUDIENCE_SELECT = f"GRANT SELECT ON TABLE `{CATALOG}`.`{SCHEMA_NAME}`.`orders_scope_view` TO `admins`"
+AUDIENCE_METADATA = f"GRANT READ METADATA ON TABLE `{CATALOG}`.`{SCHEMA_NAME}`.`orders_scope_view` TO `admins`"
+
+
+def _audience_pass(obj, permissions):
+    return obj._implement_app_audience_grants("riverside-assets", [VIEW], "", permissions)
+
+
+def test_a_refused_audience_group_is_listed_once_however_many_passes_refuse_it(agent_ns):
+    spark = FakeSpark(refuse=["TO `admins`"])
+    obj = _build(agent_ns, spark)
+    obj._implement_api = lambda method, path, query=None, **kw: APP_ACL
+    permissions = []
+    _audience_pass(obj, permissions)
+    _audience_pass(obj, permissions)
+    entries = [p for p in permissions if p["principal"] == "admins"]
+    assert len(entries) == 1, permissions
+    assert entries[0]["statements"] == [AUDIENCE_SELECT, AUDIENCE_METADATA]
+
+
+def test_a_later_pass_that_grants_the_audience_group_drops_the_entry_an_earlier_pass_wrote(agent_ns):
+    spark = FakeSpark(refuse=["TO `admins`"])
+    obj = _build(agent_ns, spark)
+    obj._implement_api = lambda method, path, query=None, **kw: APP_ACL
+    permissions = []
+    _audience_pass(obj, permissions)
+    assert [p["principal"] for p in permissions] == ["admins"]
+    spark.refuse = ()
+    _audience_pass(obj, permissions)
+    assert [p for p in permissions if p["principal"] == "admins"] == [], permissions
+
+
+# REQ-268 sweep: a Genie space or dashboard publish rewrites the live scope views the App reads, which drops their grants. The App's
+# readers are granted again after that publish, through the same principal path.
+def test_a_genie_or_dashboard_publish_grants_a_user_app_audience_again_on_the_views_it_rewrote(agent_ns):
+    spark = FakeSpark()
+    obj = _build(agent_ns, spark)
+    obj._implement_api = lambda method, path, query=None, **kw: APP_ACL
+    status = {"app": {"access_mode": "user", "views": [VIEW], "reasons_view": REASONS}}
+    assert obj._implement_regrant_app_readers({}, status, "riverside-assets") == []
+    assert f"GRANT SELECT ON TABLE `{CATALOG}`.`{SCHEMA_NAME}`.`orders_scope_view` TO `{ANA}`" in spark.statements
+    assert f"GRANT SELECT ON TABLE `{CATALOG}`.`{SCHEMA_NAME}`.`reasons_scope_view` TO `admins`" in spark.statements
+
+
+def test_a_service_principal_app_is_granted_its_own_views_again_through_its_client_id(agent_ns):
+    spark = FakeSpark()
+    obj = _build(agent_ns, spark)
+    obj._implement_api = lambda method, path, query=None, **kw: {"service_principal_client_id": "sp-1"}
+    status = {"app": {"access_mode": "sp", "views": [VIEW], "reasons_view": ""}}
+    assert obj._implement_regrant_app_readers({}, status, "riverside-assets") == []
+    assert spark.statements == [f"GRANT USE CATALOG ON CATALOG `{CATALOG}` TO `sp-1`", f"GRANT USE SCHEMA ON SCHEMA `{CATALOG}`.`{SCHEMA_NAME}` TO `sp-1`",
+                                f"GRANT SELECT ON TABLE `{CATALOG}`.`{SCHEMA_NAME}`.`orders_scope_view` TO `sp-1`",
+                                f"GRANT READ METADATA ON TABLE `{CATALOG}`.`{SCHEMA_NAME}`.`orders_scope_view` TO `sp-1`"]
+
+
+def test_no_app_or_no_views_means_nothing_is_granted_again(agent_ns):
+    spark = FakeSpark()
+    obj = _build(agent_ns, spark)
+    obj._implement_api = lambda method, path, query=None, **kw: APP_ACL
+    assert obj._implement_regrant_app_readers({}, {"app": {"access_mode": "user", "views": [VIEW]}}, "") == []
+    assert obj._implement_regrant_app_readers({}, {"app": {"access_mode": "user", "views": []}}, "riverside-assets") == []
+    assert obj._implement_regrant_app_readers({}, {}, "riverside-assets") == []
+    assert spark.statements == []
