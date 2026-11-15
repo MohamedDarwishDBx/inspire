@@ -132,7 +132,8 @@ test('with the App picked the wizard reads Data, Data groups, First run, Results
     assert.equal(await page.getByRole('region', { name: 'App access' }).count(), 0, 'and access on Who uses the App (must-exclude)');
     await onePerQuestion(page, 'App pages');
     await shot(page, '08-app-pages', false);
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await onePerQuestion(page, 'App look');
     await goToStep(page, 'First run');
     await openFolded(page, 'Keep it fresh');

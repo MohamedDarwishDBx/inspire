@@ -81,7 +81,8 @@ test('What to deliver is the first step, Data and results is one page, and Where
     assert.equal(await page.getByRole('region', { name: 'App pages' }).count(), 0, 'Who uses the App no longer holds the pages');
     await snap(page, 'restructure-who');
 
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+
     await openFolded(page, 'App look');
     await page.getByRole('region', { name: 'App look' }).waitFor();
     await snap(page, 'restructure-look');

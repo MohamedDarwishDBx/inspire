@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, dataToResults, openAdvanced, openUi, onStep, startMvp, toAppAccess, goToStep, goToMeasureImpact } from './uiSupport.mjs';
+import { closeBrowser, dataToResults, goToMeasureImpact, goToStep, onStep, openAdvanced, openFolded, openUi, startMvp, toAppAccess } from './uiSupport.mjs';
 
 const OWNER = ['owner', 'example.com'].join('@');
 const PAT = ['pat', 'example.com'].join('@');
@@ -35,7 +35,8 @@ function submittedSpec(made) {
 async function throughApp(page) {
   await toAppAccess(page);
   await page.getByRole('region', { name: 'App access' }).getByRole('radio', { name: /^Internal data/ }).check();
-  await goToStep(page, 'App look');
+  await goToStep(page, 'Where it lives');
+  await openFolded(page, 'App look');
 }
 
 test('a build left alone holds back 10% to measure impact and sends no App owners', async () => {

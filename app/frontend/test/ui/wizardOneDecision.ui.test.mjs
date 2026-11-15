@@ -178,7 +178,7 @@ test('App pages sit on Where it lives with the App placement, and App look is a 
     assert.equal(labels.includes('App pages'), false, 'App pages is no step of its own (must-exclude)');
     await page.getByRole('region', { name: 'App pages' }).waitFor();
     assert.equal(await page.getByRole('tab', { name: 'Palette', exact: true }).count(), 0, 'the look is not on the pages step (must-exclude)');
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
     await openFolded(page, 'App look');
     await page.getByText('How should the App look?', { exact: true }).waitFor();
     assert.equal(await page.getByRole('region', { name: 'App pages' }).count(), 0, 'the pages are not on the look step (must-exclude)');

@@ -470,7 +470,15 @@ export async function toSummary(page) {
   await nextUntil(page, 'Review & build');
 }
 
+// The App panels are folds of Where it lives (REQ-002): reaching one by its old step name also opens its fold.
+const APP_FOLD = { 'App access': 'Who sees which rows', 'Who uses the App': 'Who sees which rows', 'Who uses the App and storage': 'Who sees which rows',
+  'App features': 'What people can do', 'App pages': 'Pages', 'App look': 'App look' };
 export async function goToStep(page, part) {
+  await goToStepOnScreen(page, part);
+  if (APP_FOLD[part]) await openFolded(page, APP_FOLD[part]);
+}
+
+async function goToStepOnScreen(page, part) {
   const label = stepHolding(part);
   const current = page.locator('[aria-current="step"]');
   await current.waitFor({ timeout: 15000 });
