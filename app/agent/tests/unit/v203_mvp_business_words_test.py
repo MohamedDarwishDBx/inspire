@@ -37,7 +37,7 @@ def test_the_shell_maps_every_statistics_code_the_rule_names_to_the_same_words(a
 
 def test_every_header_label_and_record_name_goes_through_the_one_formatter():
     assert "label: plainWords(c.label)" in _read("DataTable.jsx")
-    assert "label: answerLabel(c.name)" in _read("Genie.jsx")
+    assert "label: answerLabel(c.name)" in _read("genieAnswerView.js")  # f65ef7861 moved the Genie answer table into genieAnswerView.js
     assert "const chart = plainChart(given);" in _read("charts.js")
     assert "kpiText(kpi, data)" in _read("Kpis.jsx") and "wholeFormat(kpi.format, kpi.label, kpi.unit, kpi.id)" in _read("format.js")
     records = _read("Records.jsx")

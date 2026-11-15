@@ -42,3 +42,17 @@ def test_the_proof_scans_the_sources_it_claims_to_scan():
     assert len(scanned) >= 60, len(scanned)
     assert any(p.endswith("translations.json") for p in scanned) and any(p.endswith(".ipynb") for p in scanned)
     assert any(p.endswith("prompts.json") for p in scanned)
+
+
+
+def test_the_publisher_renames_the_retired_label_in_every_case_and_leaves_value_at_stake_alone():
+    # D-208 (REQ-208): the published ledger quotes asks, so the publisher applies the rename the product applied.
+    import sys
+    scripts = os.path.join(ROOT, "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import ledger_publish as lp  # noqa: E402
+
+    text, counts = lp.sanitize("Money at Stake, money at stake, MONEY AT STAKE and value at stake stay.")
+    assert text == "Value at Stake, value at stake, Value AT STAKE and value at stake stay.", text
+    assert counts.get("retired label (D-208)") == 3, counts

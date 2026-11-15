@@ -24,6 +24,8 @@ PUBLIC_DOC_HOSTS = ("docs.databricks.com", "learn.microsoft.com/azure/databricks
 
 # ---- leak patterns (shared with the gate) -------------------------------------------------------------------------
 LONG_NUMBER = re.compile(r"\d{12,}")
+# D-208 (REQ-208): the retired label "Money at stake" reads "Value at stake" in every published quote, case kept.
+RETIRED_STAKE = re.compile(r"money(?=\s+at\s+stake)", re.IGNORECASE)
 UUID_LIKE = re.compile(r"\b[0-9a-f]{8}-(?:[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{4}-[0-9a-f]{4}-\.\.\.|\.\.\.)")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 HOME_PATH = re.compile(r"(?:/Users/|/home/|/private/tmp/|/tmp/|~/)[^\s,;)\]\"'`|]*")
@@ -105,6 +107,7 @@ def sanitize(text):
         if old in text:
             counts["paraphrased ask"] = counts.get("paraphrased ask", 0) + text.count(old)
             text = text.replace(old, new)
+    text = swap(RETIRED_STAKE, lambda m: "Value" if m.group(0)[0].isupper() else "value", "retired label (D-208)", text)
     text = swap(CUSTOMER, "a customer", "customer name", text)
     text = swap(SCRATCH_APP, "the scratch App", "scratch App name", text)
     text = swap(SCRATCH_WORKSPACE, "the scratch workspace", "scratch workspace name", text)
