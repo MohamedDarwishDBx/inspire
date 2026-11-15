@@ -105,7 +105,7 @@ test('reported issues that could not load read one plain sentence with the code 
     await error.getByRole('button', { name: 'Try again' }).click();
     await panel.locator('[data-issue="f1"]').waitFor({ timeout: 15000 });
     assert.equal(await panel.locator('[data-issues-error]').count(), 0);
-    assert.deepEqual(ui.pageErrors.filter((e) => !/status of 500/.test(e)), [], 'the refused list read is the only console error');
+    assert.deepEqual(ui.pageErrors.filter((e) => !/status of 403/.test(e)), [], 'the refused list read (403, REQ-314) is the only console error');
     assert.ok(ui.pageErrors.length > 0, 'the list read was refused before Try again');
   } finally {
     await ui.close();

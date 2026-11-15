@@ -25,7 +25,10 @@ test('steps fold one at a time: the first section opens, Next folds it and opens
     assert.equal(await folded(page, 'What people can do'), 0, 'Next opens the following section');
     await next(page);
     assert.equal(await folded(page, 'What people can do'), 1);
-    assert.equal(await folded(page, 'Page storage'), 0, 'the storage section opens last');
+    assert.equal(await folded(page, 'How people start in the App'), 0, 'the App experience screen opens after features (REQ-328, D-EXP)');
+    await next(page);
+    assert.equal(await folded(page, 'How people start in the App'), 1);
+    assert.equal(await folded(page, 'Page storage'), 0, 'the storage section opens after the experience screen');
     await shot(page, 'fold-app-storage', false);
   } finally {
     await page.close();
