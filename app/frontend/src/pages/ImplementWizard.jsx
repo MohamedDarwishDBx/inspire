@@ -815,6 +815,9 @@ export default function ImplementWizard({
   const placeSettled = !spec.outputs.app || (targets !== null && (placeSet === 'default' || placeSet === 'person'));
   const features = preflight?.features || context?.features || ALL_FEATURES;
   const blocks = useMemo(() => outputBlocks(features, outputCheck, context?.assets, preflight), [features, outputCheck, context?.assets, preflight]);
+  // The verdict is dropped while a check runs (no stale reason shows), but an output it blocked stays locked until the new verdict lands.
+  const [blockedAtVerdict, setBlockedAtVerdict] = useState({});
+  useEffect(() => { if (!checksBusy) setBlockedAtVerdict(blocks); }, [checksBusy, blocks]);
   const appRefusal = appAccessRefusalOf(outputCheck, preflight);
   const extras = { columnsByTable, widgets: context?.widgets || [], trainsModel, mergeTargets: targets, held: context?.assets || {}, appLook: look, built, placeSettled,
     lakebase, warehouses, kpiOptions, settings: settingsList, sourceTables, scopeSteps: stepScope, scopeProfile: scopeProfile.profile, outputBlocks: blocks };
@@ -1812,6 +1815,7 @@ export default function ImplementWizard({
                   const noAppAccess = item.id === 'app' && !context?.assets?.app && Boolean(appRefusal);
                   const block = blocks[item.id];
                   const cannot = Boolean(block);
+                  const lockedWhileChecking = checksBusy && Boolean(blockedAtVerdict[item.id]);
                   const tileChecks = (TILE_CHECKS[item.id] || []).map((k) => [k, preflight?.checks?.[k]])
                     .filter(([, v]) => v && !v.ok && on);
                   const mergeable = on && item.id !== 'app' && MERGE_OUTPUTS.includes(item.id) && !held[item.id];
@@ -1821,7 +1825,7 @@ export default function ImplementWizard({
                     <div key={item.id} data-output={item.id} data-blocked={cannot ? '' : undefined} className={`border rounded-lg p-3 space-y-2 ${on ? 'border-db-red/50 bg-db-red-50/40' : 'border-border'} ${cannot && !on ? 'border-dashed bg-bg cursor-not-allowed' : ''}`}>
                       <div className="relative">
                         <label className="flex items-start gap-3 cursor-pointer">
-                          <input type="checkbox" value={item.id} className="mt-0.5" checked={on} disabled={cannot && !on} onChange={(e) => toggleOutput(item.id, e.target.checked)} />
+                          <input type="checkbox" value={item.id} className="mt-0.5" checked={on} disabled={(cannot || lockedWhileChecking) && !on} onChange={(e) => toggleOutput(item.id, e.target.checked)} />
                           <span className="flex-1">
                             <span className="flex items-center gap-2 text-sm font-semibold text-text-primary">
                               <Icon size={14} /> {item.label}

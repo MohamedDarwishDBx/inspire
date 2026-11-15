@@ -634,6 +634,7 @@ test('Where results live offers its own schema, falls back to the Inspire databa
     await schema.locator('option[value="mvp"]').waitFor({ state: 'attached' });
     await schema.selectOption('mvp');
     const withoutApp = page.waitForResponse((r) => r.url().includes('/api/inspire/implement/preflight?') && ['app_name', 'merge_app'].every((k) => new URL(r.url()).searchParams.get(k) === ''));
+    withoutApp.catch(() => {}); // a failure before the await must surface as its own error, not as the page closing under this wait
     await goToStep(page, 'What to build');
     await page.locator('[data-blocked-reason="app"]').waitFor({ timeout: 15000 });
     await until(async () => !(await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).isChecked()), 'the App Inspire cannot build is turned off on Delivery, in view');

@@ -27,11 +27,12 @@ after(async () => {
   served?.close();
 });
 
-const compact = (page) => page.locator('[data-waiting-compact]');
+// REQ-310/311/313: the waiting view is the inline Permission Required dialog (compact), never a plain card.
+const compact = (page) => page.locator('[data-permission-dialog].perm-dialog-inline');
 
 async function assertCompact(page) {
   await compact(page).first().waitFor({ timeout: 15000 });
-  const text = await compact(page).first().innerText();
+  const text = await compact(page).first().locator('p').first().innerText();
   assert.match(text, /^The App cannot read the tables this page uses yet, so its numbers and records stay empty until access is granted\./);
   assert.match(text, new RegExp(NO_ACCESS_CARD));
   assert.doesNotMatch(text, /@/, 'no internal email');

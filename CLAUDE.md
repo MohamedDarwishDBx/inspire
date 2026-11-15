@@ -19,7 +19,7 @@ These rules apply to every session in this repository. This file is public. It h
 
 ## 2. Requirements ledger (the single source of truth for what we owe)
 
-**`docs/requirements/ledger.md` is the single source of truth for every ask.** Nothing else tracks what is owed. Chat history, handover notes and memory are not the ledger.
+**`app/docs/requirements/ledger.md` is the single source of truth for every ask.** Nothing else tracks what is owed. Chat history, handover notes and memory are not the ledger.
 
 The rules:
 
@@ -32,11 +32,11 @@ The rules:
 7. **The publisher produces the public file.** The coordinator keeps the working copy outside the repo. After every change to the working copy, run:
 
    ```
-   python3 scripts/ledger_publish.py --ledger <working copy> --scope <scope file>
-   python3 scripts/ledger_publish.py --check
+   python3 app/scripts/ledger_publish.py --ledger <working copy> --scope <scope file>
+   python3 app/scripts/ledger_publish.py --check
    ```
 
-   The publisher is deterministic and sanitizes every row: 12-plus digit numbers become `<id>`, workspace hosts and non-public URLs are removed, emails become `<email>`, home paths become generic, customer names become "a customer", scratch App and catalog names become generic, and insults are rewritten and marked "(paraphrased)". Never hand-edit `docs/requirements/ledger.md`. Change the working copy and re-run.
+   The publisher is deterministic and sanitizes every row: 12-plus digit numbers become `<id>`, workspace hosts and non-public URLs are removed, emails become `<email>`, home paths become generic, customer names become "a customer", scratch App and catalog names become generic, and insults are rewritten and marked "(paraphrased)". Never hand-edit `app/docs/requirements/ledger.md`. Change the working copy and re-run.
 8. **Hand-off.** The ledger opens with a Hand-off section that lists the HANDOFF rows and the in-scope rows that are not DONE, grouped by area. Whoever picks the work up starts there. To take a row, add a lane line to its row, change its state to BUILDING with the owner, and cite the REQ id in every commit and brief.
 9. **One coordinator.** Exactly one session coordinates a project at a time. After a resume or an interruption, check for another live session on the same work before dispatching anything. Two coordinators on one ledger produce two versions of the truth.
 

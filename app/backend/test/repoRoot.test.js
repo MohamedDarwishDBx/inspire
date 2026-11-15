@@ -4,10 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const REPO = path.resolve(__dirname, '..', '..', '..');
-const ROOT_FILES = ['LICENSE', 'README.md', 'inspire_installer.py'];
+// CLAUDE.md is the one extra root file: Amr asked for the repo's CLAUDE.md at the root (2026-11-15).
+const ROOT_FILES = ['CLAUDE.md', 'LICENSE', 'README.md', 'inspire_installer.py'];
 const ROOT_DOT_FILES = new Set(['.git', '.gitignore', '.gitattributes', '.github']);
 
-test('the repo root holds only the installer, the README and the LICENSE, with everything else in app/', () => {
+test('the repo root holds only the installer, the README, the LICENSE and CLAUDE.md, with everything else in app/', () => {
   const entries = fs.readdirSync(REPO).filter((name) => !ROOT_DOT_FILES.has(name)).sort();
   assert.deepEqual(entries, [...ROOT_FILES, 'app'].sort());
   assert.ok(fs.statSync(path.join(REPO, 'app')).isDirectory());

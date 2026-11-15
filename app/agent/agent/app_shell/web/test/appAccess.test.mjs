@@ -118,8 +118,9 @@ test('Genie answers why there is no data with the banner\'s own buttons, and its
     await page.getByRole('button', { name: 'Send' }).click();
     const card = page.locator('[data-confirm="access"] [data-access-actions]');
     await card.waitFor();
-    const banner = page.locator('[data-permission-dialog] [data-access-actions]');
-    const labels = (el) => el.getByRole('button').evaluateAll((bs) => bs.map((b) => b.textContent.trim()));
+    // REQ-313: the Genie card is itself an inline permission dialog, so the banner is the page-level dialog only (not .perm-dialog-inline).
+    const banner = page.locator('[data-permission-dialog]:not(.perm-dialog-inline) [data-access-actions]');
+    const labels = (el) => el.locator('button').evaluateAll((bs) => bs.map((b) => b.textContent.trim()));
     assert.deepEqual(await labels(card), await labels(banner), 'Genie shows the banner\'s own buttons');
     assert.equal(grants(state).length, 0);
     await card.getByRole('button', { name: 'Grant access with my permissions' }).click();
