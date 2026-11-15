@@ -394,7 +394,8 @@ function eliteAssessmentOf(raw) {
 
 function deepSuggestionOf(useCase) {
   const columns = R.groupByColumns(useCase && useCase.suggested_group_by);
-  if (!R.groupingApplies(useCase && useCase.analytics_technique) || !columns.length) return null;
+  if (!R.groupingApplies(useCase && useCase.analytics_technique) || R.fitsOneModel(useCase && useCase.analytics_technique, useCase && useCase.use_case_kind)
+    || !columns.length) return null;
   return { columns, record_level: str(useCase.record_level).trim() || null };
 }
 
@@ -493,7 +494,7 @@ function bySize(list) {
   return list.sort((a, b) => b.records - a.records || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
 }
 
-function profileView({ table, technique, columns, candidates, stats, sample, values, paths, time, days, joined = [], deep = [], groupBy = [], readAt, subject = '' }) {
+function profileView({ table, technique, kind = '', columns, candidates, stats, sample, values, paths, time, days, joined = [], deep = [], groupBy = [], readAt, subject = '' }) {
   const records = num(stats.records);
   const standalone = R.standaloneRecords(technique);
   const picked = profiledColumns(stats, candidates);
@@ -507,7 +508,7 @@ function profileView({ table, technique, columns, candidates, stats, sample, val
   const named = keptNames.filter((n) => !heavy.has(n) && namedIn(subject, n));
   const discovered = keptColumns(deep, keptNames, heavy);
   const bySubject = !discovered && named.length > 0;
-  const oneModel = R.fitsOneModel(technique);
+  const oneModel = R.fitsOneModel(technique, kind);
   const recommended = oneModel ? [] : discovered || (bySubject ? [named[0]] : R.recommendation(profiles.filter((p) => keptNames.includes(p.column) && !heavy.has(p.column)), nests));
   const grouped = keptColumns(groupBy, keptNames) || recommended;
   const shown = kept.map((p) => {
@@ -532,7 +533,7 @@ function profileView({ table, technique, columns, candidates, stats, sample, val
     ? R.suggestedGroups([...byValue.keys()].map((value) => ({ value, records: combos.find((c) => c.path.join(R.GROUP_SEPARATOR) === value).records })))
       .map((g) => ({ ...g, parts: grouped.map((column, i) => partOf(column, byValue.get(g.value)[i])) }))
     : R.suggestedGroups(sizes).map((g) => ({ ...g, parts: [partOf(finest, g.value)] }));
-  const applies = R.groupingApplies(technique);
+  const applies = R.groupingApplies(technique) || oneModel;
   const qualifies = applies && recommended.length > 0;
   const via = time && time.column && time.via ? { table: str(time.via.table), key: str(time.via.key), date: str(time.via.date) } : null;
   const timeColumn = time && time.column && !(via && num(stats.recent_keys) > R.SCOPE_VIA_KEYS_MAX) ? str(time.column) : null;
