@@ -168,7 +168,7 @@ export function AgentExtras({ message, genie, rating = true }) {
       <NextSteps message={message} genie={genie} />
       <ViewUndo message={message} onUndo={() => genie.undoView(k, message.n)} />
       {message.confirm?.kind === 'access'
-        ? <div className="ag-confirm" data-confirm="access"><WaitingForAccess waiting={accessWaiting(message.confirm.access)} /></div>
+        ? <div className="ag-confirm" data-confirm="access"><WaitingForAccess waiting={accessWaiting(message.confirm.access)} compact /></div>
         : <ConfirmCard confirm={message.confirm} write={confirmWrite(k, message.n)} onConfirm={() => genie.confirm(k, message.n)} onCancel={() => genie.cancel(k, message.n)}
           onUndo={() => genie.undoSaved(k, message.n)} />}
       {rating && <Rate message={message} onRate={(r) => genie.rate(k, message.n, r)} />}

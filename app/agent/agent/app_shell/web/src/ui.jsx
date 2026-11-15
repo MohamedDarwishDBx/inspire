@@ -306,17 +306,20 @@ export function Popover({ anchor, onClose, children, label, role = 'dialog', wid
   useLayoutEffect(() => {
     if (!anchor || !ref.current) return;
     const place = () => {
-      const a = anchor.getBoundingClientRect();
+      // The anchor is clamped into the viewport first: a button scrolled below the fold must not drop its menu below the screen.
+      const r = anchor.getBoundingClientRect();
+      const top = Math.min(Math.max(r.top, 8), window.innerHeight - 8);
+      const bottom = Math.min(Math.max(r.bottom, 8), window.innerHeight - 8);
       const w = ref.current.offsetWidth;
       const h = ref.current.scrollHeight;
-      const roomBelow = window.innerHeight - 8 - (a.bottom + 6);
-      const roomAbove = a.top - 6 - 8;
+      const roomBelow = window.innerHeight - 8 - (bottom + 6);
+      const roomAbove = top - 6 - 8;
       const below = h <= roomBelow || roomBelow >= roomAbove;
-      const room = Math.max(below ? roomBelow : roomAbove, 120);
+      // Above the anchor the popover is pinned by its bottom edge, so its real height can never push it under the anchor.
       setAt({
-        top: below ? a.bottom + 6 : a.top - 6 - Math.min(h, room),
-        left: Math.max(8, Math.min(window.innerWidth - w - 8, a.left)),
-        room,
+        ...(below ? { top: bottom + 6 } : { bottom: window.innerHeight - top + 6 }),
+        left: Math.max(8, Math.min(window.innerWidth - w - 8, r.left)),
+        room: Math.max(below ? roomBelow : roomAbove, 0),
       });
     };
     const moved = (e) => { if (!ref.current?.contains(e.target)) place(); };
@@ -338,7 +341,7 @@ export function Popover({ anchor, onClose, children, label, role = 'dialog', wid
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
   }, [anchor, onClose]);
   return createPortal(
-    <div ref={ref} className="pop" role={role} aria-label={label} style={{ top: at.top, left: at.left, width, maxHeight: at.room }}>{children}</div>,
+    <div ref={ref} className="pop" role={role} aria-label={label} style={{ top: at.top, bottom: at.bottom, left: at.left, width, maxHeight: at.room }}>{children}</div>,
     anchor?.closest('dialog[open]') || document.body,
   );
 }
