@@ -15,7 +15,7 @@ import shell_core  # noqa: E402
 
 VIBE_CHART = "Add a bar chart of total sales by franchise for the last 30 days"
 VIBE_FILTER = "a filter on franchise"
-PAGE_ID = "n02_u01"
+PAGE_ID = "fixture_page"
 CHART = {"id": "franchise_sales", "type": "bar", "title": "Total sales by franchise for the last 30 days",
          "x": {"column": "franchise", "label": "Franchise"}, "y": {"column": "sales_amount", "label": "Sales"}}
 UNTITLED = {"id": "other", "type": "bar", "title": "Stock on hand by site", "x": {"column": "site", "label": "Site"},
@@ -30,7 +30,7 @@ def _chart_check(value):
     return {"kind": "column", "value": value}
 
 
-def _fact(agent_ns, check, page, served="absent", label="App page n02_u01"):
+def _fact(agent_ns, check, page, served="absent", label="App page fixture_page"):
     kwargs = {} if served == "absent" else {"served": served}
     return agent_ns["implement_vibes_fact"](check, page, label, ("bar",), None, None, **kwargs)
 
@@ -38,7 +38,7 @@ def _fact(agent_ns, check, page, served="absent", label="App page n02_u01"):
 def _checked(agent_ns, check, page, served="absent", chart_types=("bar",)):
     kwargs = {} if served == "absent" else {"served": served}
     ask = {"ask": VIBE_FILTER, "check": check, "keep": False, "where": ""}
-    return agent_ns["implement_vibes_checked"](ask, "app:page:" + PAGE_ID, page, {}, None, None, "App page n02_u01", chart_types,
+    return agent_ns["implement_vibes_checked"](ask, "app:page:" + PAGE_ID, page, {}, None, None, "App page fixture_page", chart_types,
                                               None, **kwargs)
 
 
@@ -115,3 +115,32 @@ def test_the_served_problem_is_empty_only_for_a_filter_with_options_and_no_error
     assert shell_core.served_filter_problem({"id": "d", "type": "date_range", "low": "2020", "high": "2026"}) == ""
     assert shell_core.served_filter_problem({"id": "d", "type": "date_range", "low": None, "high": None}) == \
         "it is served with no dates"
+
+
+def test_a_title_naming_the_measure_counts_only_when_the_chart_measures_it(agent_ns):
+    unrelated = dict(CHART, title="Total sales by franchise for the last 30 days",
+                     y={"column": "units", "label": "Units"})
+    assert _fact(agent_ns, _chart_check("total sales"), dict(PAGE, charts=[unrelated]))[0] == "missing"
+
+
+def test_a_filter_bar_ask_that_resolves_to_the_filter_bar_checks_the_served_meta(agent_ns):
+    seen = agent_ns["implement_page_seen"](PAGE)
+    ask = {"ask": "a filter on franchise", "check": {"kind": "filter", "value": "franchise"}, "keep": False, "where": ""}
+    missing = agent_ns["implement_vibes_checked"](ask, "app:page:" + PAGE_ID, PAGE, seen, None, None, "App page fixture_page",
+                                                  ("bar",), None, {PAGE_ID: {}})
+    done = agent_ns["implement_vibes_checked"](ask, "app:page:" + PAGE_ID, PAGE, seen, None, None, "App page fixture_page",
+                                               ("bar",), None, SERVED_OK)
+    assert missing[0] == "missing" and "no filter on franchise" in missing[1]
+    assert done[0] == "done"
+
+
+def test_the_published_status_names_one_unmet_ask_for_the_filter(agent_ns):
+    checks = [({"kind": "chart_type", "value": "bar"}, PAGE, {PAGE_ID: {}}), ({"kind": "filter", "value": "franchise"}, PAGE, {PAGE_ID: {}})]
+    unmet = []
+    for n, (check, page, served) in enumerate(checks, 1):
+        status, evidence = _checked(agent_ns, check, page, served)
+        if status != "done":
+            unmet.append({"requirement": VIBE_FILTER, "evidence": evidence, "part": "app", "where": "", "rounds": 0})
+    text = agent_ns["implement_unmet_published_text"](unmet, 2)
+    assert text.startswith("v2 is published with 1 unmet ask")
+    assert "filter on franchise" in text
