@@ -3713,8 +3713,8 @@ def test_a_genie_code_install_failure_fails_only_the_outputs_genie_builds(agent_
                                                                       f"{agent_ns['IMPLEMENT_NOT_DONE_NEXT']}"), "an unpublished dashboard is failed, with the next step"
     assert final["asset_status"].pop("target_kpi")["source"] == "evaluated", "the version records the KPI it tracks"
     assert final["asset_status"].pop("built_with") == agent_ns["implement_build_stamp"](), "the version records the release it was built with"
-    assert final["asset_status"] == {"dashboard": {"state": "failed", "error": reason, "spec_version": 3},
-                                     "genie_space": {"state": "failed", "error": reason, "spec_version": 3},
+    assert final["asset_status"] == {"dashboard": {"state": "failed", "error": agent_ns["implement_status_error"](reason), "spec_version": 3},
+                                     "genie_space": {"state": "failed", "error": agent_ns["implement_status_error"](reason), "spec_version": 3},
                                      "app": {"state": "ready", "spec_version": 2},
                                      "alert": {"check_state": "OK", "state": "ready", "spec_version": 3, "title": "N01-U01 Predict churn"},
                                      "notebook": notebook,
