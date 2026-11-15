@@ -27,8 +27,8 @@ test('only family C techniques fit one model, read from kinds.json (must-exclude
 test('a segmentation profile recommends no column, lists only the whole data, and says why in plain words', () => {
   const d = GP.profileView(base('Segmentation'));
   assert.deepEqual([d.one_model, d.applies, d.qualifies, d.recommended, d.recommended_by, d.columns], [true, true, false, [], '', []]);
-  assert.equal(d.reason, 'Inspire fits one model across all of main.sales.orders for Segmentation, so the whole data is one group. Splitting it into groups '
-    + 'would need one registered model per group, and Inspire registers one model per use case, so choosing columns is refused when the use case is built.');
+  // REQ-266: the Data groups step says plainly what the whole data is; no refusal wording on any step.
+  assert.equal(d.reason, 'Inspire fits one model across all of main.sales.orders for Segmentation, so the whole data is one group.');
   const choices = groupingChoices(d, ['region', 'all']).map((c) => c.value);
   assert.deepEqual(choices, ['all'], 'the Run page offers no column for a one-model kind, whatever the widget lists');
 });

@@ -452,8 +452,7 @@ function overLimitText(over) {
 function reasonOf({ technique, qualifies, standalone, recommended, table, groups, records, over, bySubject = false, oneModel = false }) {
   const named = str(technique).trim() || 'this use case';
   if (oneModel) {
-    return `Inspire fits one model across all of ${table} for ${named}, so the whole data is one group. Splitting it into groups would need `
-      + 'one registered model per group, and Inspire registers one model per use case, so choosing columns is refused when the use case is built.';
+    return `Inspire fits one model across all of ${table} for ${named}, so the whole data is one group.`;
   }
   if (qualifies && bySubject) {
     return `Inspire recommends ${recommended.join(', then ')} because the use case names ${recommended[recommended.length - 1]}, and that column splits `

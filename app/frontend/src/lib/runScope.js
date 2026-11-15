@@ -420,7 +420,9 @@ export function groupingNothingText(profile, choices) {
   if (!isMap(profile) || (Array.isArray(choices) ? choices : []).length > 1) return '';
   if (profileRecords(profile) === 0) return `${text(profile.table) || 'The main table'} holds no records yet, so there is nothing to split and nothing to pick here.`;
   const reason = groupingReasonText(profile) || 'No column splits the data into fair groups, so Inspire models the whole data as one group.';
-  return `${/[.!?]$/.test(reason) ? reason : `${reason}.`} There is nothing else to pick here.`;
+  const sentence = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+  // A one-model use case says plainly that the whole data is one group; this step never carries a refusal or "nothing else to pick".
+  return profile.one_model === true ? sentence : `${sentence} There is nothing else to pick here.`;
 }
 
 export function groupingExampleText(profile) {
