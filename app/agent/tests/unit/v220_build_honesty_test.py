@@ -68,7 +68,7 @@ def test_the_build_writes_the_delivery_record_and_puts_its_lead_first():
     assert "asset_status[IMPLEMENT_DELIVERY] = implement_delivery(asked, asset_status, held_outputs, key[2])" in source
     assert "told = implement_undelivered_lines(asset_status)" in source
     assert 'said_status = "; ".join(p for p in (undelivered, implement_compose([w for w in warnings if w not in told])) if p)' in source
-    assert "status_message=(said_status or (" in source and '"Done", said_status if warnings else' in source
+    assert "status_message=(said_status or (" in source and '"Done", said_status if status != "ready" else' in source
 
 
 def test_a_failure_already_named_in_the_lead_is_not_repeated(agent_ns):

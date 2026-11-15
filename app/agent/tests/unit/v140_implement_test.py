@@ -3704,12 +3704,13 @@ def test_a_genie_code_install_failure_fails_only_the_outputs_genie_builds(agent_
                                         (5150, "N01-U01", 3))
     reason = f"Genie Code could not be installed: {INSTALL_ERROR.format(version=agent_ns['__AGENT_VERSION__'])}"
     notebook = _left_by(2)["notebook"]
-    assert status == "ready_with_warnings" and installs == ["N01-U01"], "Genie Code is tried once, and only what it builds fails"
+    assert status == "failed" and installs == ["N01-U01"], "Genie Code is tried once, and a dashboard that did not publish is failed, not ready"
     assert inst.updates[0]["status"] == "filling" and inst.updates[0]["asset_status"] == dict(live, notebook=notebook), \
         "the version records the live outputs' state before it builds, so a failure part-way never hides them"
     final = inst.updates[-1]
-    assert final["status"] == "ready_with_warnings" and final["status_message"] == (f"Genie Agent not built: {agent_ns['implement_short_reason'](reason)}; "
-                                                                      f"Dashboard not published: {agent_ns['implement_short_reason'](reason)}")
+    assert final["status"] == "failed" and final["status_message"] == (f"Genie Agent not built: {agent_ns['implement_short_reason'](reason)}; "
+                                                                      f"Dashboard not published: {agent_ns['implement_short_reason'](reason)}; "
+                                                                      f"{agent_ns['IMPLEMENT_UNPUBLISHED_NEXT']}"), "an unpublished dashboard is failed, with the next step"
     assert final["asset_status"].pop("target_kpi")["source"] == "evaluated", "the version records the KPI it tracks"
     assert final["asset_status"].pop("built_with") == agent_ns["implement_build_stamp"](), "the version records the release it was built with"
     assert final["asset_status"] == {"dashboard": {"state": "failed", "error": reason, "spec_version": 3},
@@ -4870,8 +4871,9 @@ def test_genie_fill_widgets_take_core_ranges_and_flag_unreadable_ones(agent_ns):
     problems = agent_ns["normalize_genie_fill_widgets"](result, core)
     assert {w["name"]: w["allowed"] for w in result["widgets"] if isinstance(w, dict)} == {
         "act_now_share": "0 to 1", "segment": "", "lookback_months": "whole number, 1 to 120", "window": ""}
-    assert problems == ["widget window has allowed 'a month or so', which is not one of Inspire's range forms "
-                        "('0 to 1', 'at least 1', 'at most 5', 'above 0 and below 1', 'whole number, 1 to 10', or empty for any value)"]
+    assert problems == ["widget window has an allowed range Inspire cannot read, which is not one of Inspire's range forms "
+                        "('0 to 1', 'at least 1', 'at most 5', 'above 0 and below 1', 'whole number, 1 to 10', or empty for any value): "
+                        "write allowed for window as one of those forms that holds its default 30, in place of the text a month or so"]
     honest = {"widgets": [{"name": "holdout_fraction", "type": "text", "default": "0.2", "allowed": "greater than 0 and less than 1"}]}
     assert agent_ns["normalize_genie_fill_widgets"](honest, core) == [], "an exclusive range Genie states is read, not sent back to repair"
     assert honest["widgets"][0]["allowed"] == "above 0 and below 1"
