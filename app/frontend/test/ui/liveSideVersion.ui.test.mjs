@@ -72,3 +72,37 @@ test('without a kept App the Build page names no side App and the newest App as 
     await ui.close();
   }
 });
+
+// REQ-241 (D-LIVE): the App card's Versions panel uses the same live rule as the Build page: the kept v6 serves the live App name, the side App v8 is not live.
+const SIDE_V8 = { ...LIVE, app: ready(8), kept: { state: 'kept', assets: [keptApp(6, 8)] } };
+
+test('the App Versions panel marks the kept v6 Live and the side v8 as not live yet', async () => {
+  const ui = await openBuild([versionRow(8, { change_classes: 'vibe', assets: SIDE_V8 }), versionRow(6, { assets: { ...LIVE, app: ready(6) } }), versionRow(5)]);
+  try {
+    const versions = (await openAsset(ui.page, 'app')).getByRole('region', { name: 'Versions', exact: true });
+    const live = versions.locator('[data-live-version]');
+    await live.getByText('Live', { exact: true }).waitFor({ timeout: 15000 });
+    assert.equal(await live.getAttribute('data-version'), '6', 'the kept v6 serves the live App name');
+    assert.equal(await versions.locator('[data-live-version]').count(), 1, 'only one version is Live');
+    const side = versions.locator('[data-side-version]');
+    assert.equal(await side.getAttribute('data-version'), '8');
+    assert.equal((await side.textContent()).includes('Side App (not live yet)'), true, 'the side App is labelled not live');
+    assert.equal((await side.textContent()).includes('Live'), false, 'the side App is never labelled Live');
+    assert.equal(await versions.locator('[data-version="8"]').count(), 1, 'v8 is listed once');
+    assert.equal(await versions.locator('[data-version="8"] button').count(), 0, 'the side App is not a roll back target');
+  } finally {
+    await ui.close();
+  }
+});
+
+test('a normal rebuild with no side App marks the newest App version Live', async () => {
+  const ui = await openBuild([versionRow(3), versionRow(2), versionRow(1)]);
+  try {
+    const versions = (await openAsset(ui.page, 'app')).getByRole('region', { name: 'Versions', exact: true });
+    await versions.locator('[data-live-version]').getByText('Live', { exact: true }).waitFor({ timeout: 15000 });
+    assert.equal(await versions.locator('[data-live-version]').getAttribute('data-version'), '3');
+    assert.equal(await versions.locator('[data-side-version]').count(), 0, 'no side App when nothing is kept');
+  } finally {
+    await ui.close();
+  }
+});
