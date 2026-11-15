@@ -14,6 +14,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from _agentload import agent_source, load_agent_namespace
+from _nbload import prompt_templates
 
 KEY = "USE_CASE_GENIE_CODE_INSTRUCTION_GEN_PROMPT"
 SECTIONS = ("## 1. Goal", "## 2. Data", "## 3. Parameters", "## 4. Readiness Check", "## 5. Build Steps",
@@ -102,6 +103,7 @@ def test_E_stop_rule_and_definition_of_done_are_explicit(ns):
 
 
 def test_F_deployed_notebook_carries_the_redesigned_prompt():
-    src = agent_source()
+    # The prompt templates left the notebook for the pinned prompts asset (REQ-298), so the deployed text is the notebook plus its assets.
+    src = "\n".join([agent_source(), *prompt_templates().values()])
     assert "Genie Code reads ONLY this instruction" in src and "GENIE SLOT" not in src
     assert "3 PARTS (A-C)" not in src

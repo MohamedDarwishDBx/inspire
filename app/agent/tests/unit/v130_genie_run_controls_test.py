@@ -10,6 +10,7 @@ import types
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from v120_artifacts_support import FakeSpark
 from v120_genie_support import build_inspire, make_uc
 
 FAMILIES = {"A": "Classification", "B": "Anomaly Detection", "C": "Clustering", "D": "Recommendation", "E": "Forecasting",
@@ -39,7 +40,8 @@ def _controls(agent_ns, technique="Classification"):
     _inst, _uc, nb = _notebook(agent_ns, technique)
     source = _text(nb["cells"][-1])
     definitions, call = source.rstrip().rsplit("\n", 1)
-    ns = {}
+    # A records First run counts its table at resolve time (REQ-292 round 2, D-AUTO), so the notebook's `spark` must answer that COUNT.
+    ns = {"spark": FakeSpark(responder=lambda s: [{"n": 5000}] if s.startswith("SELECT COUNT(*) AS n FROM") else None)}
     exec(compile(definitions, "run_controls", "exec"), ns)
     return ns, call
 

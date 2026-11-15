@@ -218,7 +218,8 @@ def notebook_cells(path=None):
         out.append((cell.get("cell_type"), "".join(src) if isinstance(src, list) else str(src)))
     # The prompt templates left the notebook for the pinned prompts asset (notebook/prompts.json). They are appended as one
     # non-code cell after the notebook's own cells, so index-addressed readers keep their positions and text scanners still see them.
-    out.append((PROMPT_CELL_TYPE, "\n".join(prompt_templates(path).values())))
+    if _pinned_assets_line(nb) is not None:
+        out.append((PROMPT_CELL_TYPE, "\n".join(prompt_templates(path).values())))
     if fp is not None:
         _CELL_CACHE[fp] = list(out)
     return out
@@ -227,11 +228,26 @@ def notebook_cells(path=None):
 PROMPT_CELL_TYPE = "prompt_assets"
 
 
+def _pinned_assets_line(nb):
+    """The `INSPIRE_NOTEBOOK_ASSETS = {...}` line of a parsed notebook, or None when it pins no assets.
+
+    A release notebook from before the assets moved out (a vendored reference) keeps its prompts inline and pins nothing,
+    so there is no prompts asset to append for it.
+    """
+    for cell in nb.get("cells", []):
+        src = cell.get("source", [])
+        for item in (src if isinstance(src, list) else str(src).splitlines(True)):
+            if item.startswith("INSPIRE_NOTEBOOK_ASSETS = "):
+                return item
+    return None
+
+
 def asset_path(name, path=None):
     """The repo file the notebook pins for one asset (`notebook_pins` entry, relative to the repo root)."""
     with open(path or AGENT_NB, encoding="utf-8") as fh:
-        lines = json.load(fh)["cells"][1]["source"]
-    line = next(item for item in lines if item.startswith("INSPIRE_NOTEBOOK_ASSETS = "))
+        line = _pinned_assets_line(json.load(fh))
+    if line is None:
+        raise AssertionError(f"{path or AGENT_NB} pins no notebook assets, so it has no {name!r} asset")
     return os.path.join(ROOT, json.loads(line[len("INSPIRE_NOTEBOOK_ASSETS = "):])[name]["repo"])
 
 
