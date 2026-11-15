@@ -426,7 +426,7 @@ export async function openFolded(page, what) {
   if (await change.count()) await change.click();
 }
 
-// Money at stake opens one part at a time (the others are one line each). Opens the part with this title: Change <title> when it is a
+// Value at stake opens one part at a time (the others are one line each). Opens the part with this title: Change <title> when it is a
 // folded line, otherwise Next through the parts before it, as a person would.
 export async function moneyPart(page, title) {
   const header = page.locator('[data-money-current] [data-money-part] p').first();
@@ -437,7 +437,7 @@ export async function moneyPart(page, title) {
     if (await change.count()) { await change.click(); return; }
     await page.locator('[data-money-next]').click();
   }
-  throw new Error(`Money at stake has no open "${title}" part`);
+  throw new Error(`Value at stake has no open "${title}" part`);
 }
 
 export async function openAllRows(page) {

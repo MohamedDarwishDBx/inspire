@@ -93,13 +93,13 @@ def test_the_money_model_reads_the_formula_its_arithmetic_and_the_latest_value_o
 
 
 @pytest.mark.parametrize("changes,problem", [
-    ({"value_assumptions": None}, "the money at stake formula of this use case names no assumption"),
-    ({"value_assumptions": "not json"}, "the money at stake formula of this use case names no assumption"),
-    ({"value_expression": None}, "the notebook was built before the App could work out the money again; build its money at stake formula again with Vibe/Add/Remove Features on Inspire's Build page"),
-    ({"value_expression": "units * PRICE * KEEP; DROP TABLE x"}, "the money at stake arithmetic cannot be read: '; DROP TABLE x' is not a number"),
-    ({"value_expression": "units * PRICE * KEEP * secret_column"}, "the money at stake arithmetic names secret_column, which is neither"),
-    ({"value_expression": "entity_label * PRICE * KEEP"}, "the money at stake arithmetic names entity_label, which is neither"),
-    ({"value_expression": "sleep(units) * PRICE"}, "the money at stake arithmetic cannot be read: sleep( ) is not greatest( ) or least( )"),
+    ({"value_assumptions": None}, "the value at stake formula of this use case names no assumption"),
+    ({"value_assumptions": "not json"}, "the value at stake formula of this use case names no assumption"),
+    ({"value_expression": None}, "the notebook was built before the App could work out the money again; build its value at stake formula again with Vibe/Add/Remove Features on Inspire's Build page"),
+    ({"value_expression": "units * PRICE * KEEP; DROP TABLE x"}, "the value at stake arithmetic cannot be read: '; DROP TABLE x' is not a number"),
+    ({"value_expression": "units * PRICE * KEEP * secret_column"}, "the value at stake arithmetic names secret_column, which is neither"),
+    ({"value_expression": "entity_label * PRICE * KEEP"}, "the value at stake arithmetic names entity_label, which is neither"),
+    ({"value_expression": "sleep(units) * PRICE"}, "the value at stake arithmetic cannot be read: sleep( ) is not greatest( ) or least( )"),
 ])
 def test_arithmetic_the_app_cannot_trust_keeps_the_money_the_run_wrote(changes, problem):
     model = shell_sql.money_model(_summary(**changes), _fields(), [{"name": "PRICE", "value": 99.0}])

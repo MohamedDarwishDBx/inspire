@@ -462,7 +462,7 @@ def test_the_weekly_email_opens_with_the_latest_run_and_reports_what_people_acte
     week = impact.shell_sql.digest_query(impact.TABLE, fields, label="entity_label", use_case="N01-U05", impact={"kind": "money", "unit": "USD"},
                                          since="CAST('2026-10-06' AS DATE)", status_table="main.pricing.loss_desk_out_summary")
     rows = ws.run_sql("wh1", week, [])["rows"]
-    assert [(r["figure"], r["amount"]) for r in rows][:3] == [("Latest run", status[0]), ("Money at stake now (estimated)", "1,550 USD"),
+    assert [(r["figure"], r["amount"]) for r in rows][:3] == [("Latest run", status[0]), ("Value at stake now (estimated)", "1,550 USD"),
                                                               ("Acted on this week", "1,250 USD")]
     assert rows[0]["how"] == status[1]
     assert rows[2]["how"] == "3 records people marked fixed or could not fix this week, with this much at stake on them when they did"
@@ -480,7 +480,7 @@ def test_the_weekly_email_says_what_its_new_rows_mean_and_the_build_hands_it_the
                                              [{"user_name": "owner@example.com"}], {}, "")
     assert ("Latest run: whether the last run gives a list to act on, and if not, why: Not reliable yet or Nothing to act on yet, "
             "with the reason.") in body["custom_description"]
-    assert ("Acted on this week: the money at stake on the records people marked fixed or could not fix this week, when they did."
+    assert ("Acted on this week: the value at stake on the records people marked fixed or could not fix this week, when they did."
             ) in body["custom_description"]
     from _agentload import agent_source
     assert 'status_table=context.get("summary_table") or ""' in agent_source()

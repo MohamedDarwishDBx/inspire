@@ -40,16 +40,16 @@ test('one formatter shows every amount in its unit: money only with a currency, 
   assert.equal(savingText(12, ''), '12');
   assert.equal(savingText(1200, 'USD'), '$1,200');
   assert.deepEqual([stakeName('hours'), stakeName('USD'), stakeName(''), stakeName('late shipments')],
-    ['Hours at stake', 'Money at stake', 'Money at stake', 'Late shipments at stake']);
+    ['Hours at stake', 'Value at stake', 'Value at stake', 'Late shipments at stake']);
   assert.deepEqual([stakeNameOf(['hours', 'hours']), stakeNameOf(['hours', 'USD']), stakeNameOf([]), stakeNameOf(['USD', 'EUR'])],
-    ['Hours at stake', 'At stake', 'Money at stake', 'Money at stake'], 'two currencies are still money');
+    ['Hours at stake', 'At stake', 'Value at stake', 'Value at stake'], 'two currencies are still money');
   assert.deepEqual([unitOf({ unit: 'hours', currency: '' }), unitOf({ currency: 'EUR' }), unitOf(null)], ['hours', 'EUR', '']);
 });
 
 test('one helper names what is at stake in the KPI unit with its own capitals, and amount when a use case puts nothing at stake', () => {
   assert.deepEqual([stakeWords('hours'), stakeWords('MWh'), stakeWords('USD'), stakeWords(''), stakeWords(' late  shipments ')],
-    ['hours at stake', 'MWh at stake', 'money at stake', 'money at stake', 'late shipments at stake']);
-  assert.deepEqual([stakeName('MWh'), stakeName('hours'), stakeName('EUR')], ['MWh at stake', 'Hours at stake', 'Money at stake']);
+    ['hours at stake', 'MWh at stake', 'value at stake', 'value at stake', 'late shipments at stake']);
+  assert.deepEqual([stakeName('MWh'), stakeName('hours'), stakeName('EUR')], ['MWh at stake', 'Hours at stake', 'Value at stake']);
   assert.ok(savedFormula('5 MWh', 1, '', 'MWh').startsWith('The MWh at stake each fix had'), 'a unit keeps its capitals in a sentence');
   assert.ok(measuredFigure(ENTRY, 'MWh').formula.includes(': MWh at stake when fixed minus'));
   const bare = { ...ENTRY, money: false };
@@ -67,7 +67,7 @@ test('the KPI kind decides money: FTE, SKU and KWH show their unit, USD, EUR and
   assert.deepEqual([wholeMoney(1234.5, 'USD', 'money'), wholeMoney(1234.5, 'EUR', 'money'), wholeMoney(1234.5, 'AED', 'money'), wholeMoney(1234.5, 'USD')],
     ['$1,235', '€1,235', 'AED 1,235', '$1,235']);
   assert.deepEqual([stakeName('FTE', 'number'), stakeName('SKU'), stakeName('USD'), stakeName('', 'money'), stakeName('', 'count'), stakeName('TOP', 'count')],
-    ['FTE at stake', 'SKU at stake', 'Money at stake', 'Money at stake', 'Count at stake', 'TOP at stake']);
+    ['FTE at stake', 'SKU at stake', 'Value at stake', 'Value at stake', 'Count at stake', 'TOP at stake']);
   assert.equal(wholeMoney(5, 'TOP', 'count'), '5 TOP', 'a stored kind wins over a unit spelled like a currency code');
   assert.deepEqual([isMoney('FTE'), isMoney('USD'), isMoney(''), isMoney('USD', 'hours'), isMoney('', 'money')], [false, true, true, false, true]);
   const fte = { run: { ...HOURS_RUN, unit: 'FTE', impact_kind: 'number', impact_unit: 'FTE' } };
@@ -114,7 +114,7 @@ test('a use case counted in hours never shows money, and a money use case still 
   for (const text of [JSON.stringify(hours), JSON.stringify(measured), JSON.stringify(figuresOf(ENTRY, 'hours'))]) {
     assert.ok(!/\$|[Mm]oney at stake/.test(text), 'a productivity use case is never priced in money');
   }
-  assert.equal(estimatedFigure(ENTRY, 'USD').how, 'Money at stake on the 10 open records flagged Act now or Review, added up');
+  assert.equal(estimatedFigure(ENTRY, 'USD').how, 'Value at stake on the 10 open records flagged Act now or Review, added up');
 });
 
 test('the page unit comes from the run summary, the things to fix and the saved tile follow it, and the runs say it too', () => {
@@ -130,7 +130,7 @@ test('the page unit comes from the run summary, the things to fix and the saved 
     { n01: { run: HOURS_RUN } }, 'saved', '');
   assert.equal(tile.value, '18 hours');
   assert.ok(tile.sub.startsWith('Hours at stake when fixed') && tile.formula.startsWith('The hours at stake each fix had'));
-  assert.equal(savedFormula('$5', 1, ''), 'The money at stake each fix had when it was fixed, less what a later run still finds, added up over the 1 fix a later run confirmed = $5');
+  assert.equal(savedFormula('$5', 1, ''), 'The value at stake each fix had when it was fixed, less what a later run still finds, added up over the 1 fix a later run confirmed = $5');
   const run = { could_save: 40, to_fix: 2, unit: 'hours', currency: '' };
   assert.equal(couldSaveRunFormula(run), 'Hours at stake on its 2 things to fix in Act now and Review, added up when the run ended = 40 hours');
   assert.equal(foundText(run).split('.')[0], '2 things to fix that could save 40 hours');

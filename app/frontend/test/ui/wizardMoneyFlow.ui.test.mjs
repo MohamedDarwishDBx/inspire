@@ -21,7 +21,7 @@ const withStubs = async (page) => {
 const summaryOf = (page, part) => page.locator(`[data-money-part="${part}"] [data-fold-line]`).textContent();
 const isVisible = (page, sel) => page.locator(sel).evaluateAll((els) => els.some((e) => e.getClientRects().length > 0));
 
-test('Money at stake opens the first section, folds each section into a summary on Next, and the default rule needs no edit', async () => {
+test('Value at stake opens the first section, folds each section into a summary on Next, and the default rule needs no edit', async () => {
   const ui = await openUi('wizard', ME, '', { init: withStubs });
   const { page } = ui;
   try {

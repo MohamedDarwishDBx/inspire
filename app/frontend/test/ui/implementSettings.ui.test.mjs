@@ -11,7 +11,7 @@ const NO_LAKEBASE = { 'GET /api/2.0/postgres/projects': [{ projects: [] }, 200] 
 
 test.after(closeBrowser);
 
-// Money at stake has its own Next per section; the footer Next is the last one on the page.
+// Value at stake has its own Next per section; the footer Next is the last one on the page.
 const next = (page) => page.getByRole('button', { name: 'Next' }).last().click();
 const footerErrors = (page) => page.locator('[role="alert"] p').allTextContents();
 const advanced = (page, what = 'delivery settings') => page.getByRole('button', { name: new RegExp(`^(Change|Close) ${what}$`) });

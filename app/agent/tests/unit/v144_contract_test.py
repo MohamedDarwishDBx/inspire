@@ -754,7 +754,7 @@ def test_a_table_with_money_at_stake_clusters_on_it_alone_so_the_first_records_r
     columns = agent_ns["implement_cluster_columns"]
     staked = CLUSTER_SCHEMA + [("Value_At_Stake", "double")]
     assert columns(FILTERED, staked) == ["Value_At_Stake"], \
-        "the list opens on the largest money at stake, and each extra key spreads those records over more files"
+        "the list opens on the largest value at stake, and each extra key spreads those records over more files"
     assert columns(FILTERED, CLUSTER_SCHEMA + [("value_at_stake", "array<double>")]) == ["as_of_date", "region", "segment_or_item", "channel"], \
         "a stake Delta keeps no statistics on is no clustering key"
 

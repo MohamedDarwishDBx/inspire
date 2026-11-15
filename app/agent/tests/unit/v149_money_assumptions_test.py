@@ -52,7 +52,7 @@ def test_the_expression_reads_numbers_names_signs_and_two_functions_into_sql(age
     ("margin_lost_week * WEEKS_LEFT * KEEP_RATE * UNKNOWN", "UNKNOWN in VALUE_AT_STAKE_EXPRESSION is neither a numeric column"),
     ("margin_lost_week * WEEKS_LEFT", "must name the same assumption constants as VALUE_AT_STAKE_FORMULA, so the App shows every "
                                       "assumption that changes the money: only the formula names KEEP_RATE"),
-    ("WEEKS_LEFT * KEEP_RATE * 10", "names no column of the rows, so every record would have the same money at stake"),
+    ("WEEKS_LEFT * KEEP_RATE * 10", "names no column of the rows, so every record would have the same value at stake"),
 ])
 def test_an_expression_inspire_cannot_read_or_that_hides_an_assumption_is_refused(agent_ns, text, problem):
     value, formula = _parsed(agent_ns, text)
@@ -71,7 +71,7 @@ def test_the_expression_is_required_only_when_the_formula_names_an_assumption(ag
     value, formula = _parsed(agent_ns, None)
     expression, problems = agent_ns["inspire_value_expression"](value, SCHEMA, formula)
     assert expression is None and len(problems) == 1
-    assert problems[0].startswith("the notebook has no VALUE_AT_STAKE_EXPRESSION, so the App cannot work out the money at stake again "
+    assert problems[0].startswith("the notebook has no VALUE_AT_STAKE_EXPRESSION, so the App cannot work out the value at stake again "
                                   "when someone changes WEEKS_LEFT, KEEP_RATE")
     old = dict(value, expression_required=False)
     assert agent_ns["inspire_value_expression"](old, SCHEMA, formula) == (None, []), \
@@ -197,13 +197,13 @@ def test_a_run_uses_the_assumptions_people_changed_in_the_app(agent_ns):
     assert spark.statements[1] == "DESCRIBE TABLE `main`.`inspire`.`churn_out_assumptions`"
     assert "WHERE use_case_id = 'N01-U01') WHERE nth = 1" in spark.statements[2]
     assert printed == [
-        "Money at stake: KEEP_RATE is 0.4 for this run, as pat.lee set it in the App on 2026-10-24T09:00:00 (the notebook's value is 0.5)",
-        "Money at stake: WEEKS_LEFT is 10 for this run, as sam.ortiz set it in the App on 2026-10-25T09:00:00 (the notebook's value is 12)",
-        "Money at stake: the App holds a value for GONE_RATE, which this notebook does not define as a number, so this run leaves it out",
-        "Money at stake: the App holds a value for run_use_case, which this notebook does not define as a number, so this run leaves it out"]
+        "Value at stake: KEEP_RATE is 0.4 for this run, as pat.lee set it in the App on 2026-10-24T09:00:00 (the notebook's value is 0.5)",
+        "Value at stake: WEEKS_LEFT is 10 for this run, as sam.ortiz set it in the App on 2026-10-25T09:00:00 (the notebook's value is 12)",
+        "Value at stake: the App holds a value for GONE_RATE, which this notebook does not define as a number, so this run leaves it out",
+        "Value at stake: the App holds a value for run_use_case, which this notebook does not define as a number, so this run leaves it out"]
     broken, printed = _latest(EDITS, fail="SELECT name"), []
     assert agent_ns["inspire_apply_assumptions"](broken, TABLE, "N01-U01", dict(scope), printed.append) == {}
-    assert printed == ["Money at stake: Inspire could not read the assumptions people changed in the App from "
+    assert printed == ["Value at stake: Inspire could not read the assumptions people changed in the App from "
                        "main.inspire.churn_out_assumptions, so this run uses the notebook's own values: PERMISSION_DENIED: SELECT name"]
     assert agent_ns["inspire_apply_assumptions"](None, TABLE, "N01-U01", dict(scope), printed.append) == {}
     for formula in (None, "{margin_lost_week:money} margin lost", "{margin_lost_week:money} x {run_use_case}"):
@@ -222,7 +222,7 @@ def test_main_sets_the_changed_assumptions_before_the_use_case_runs(agent_ns):
     ns["inspire_main"](dbu=dbu, out=printed.append)
     assert seen == {"weeks": 10, "keep": 0.4}
     exit_text = next(text for kind, text in (p for p in printed if isinstance(p, tuple)))
-    assert "Money at stake: WEEKS_LEFT is 10 for this run" in exit_text, "the change is in the run's printed log"
+    assert "Value at stake: WEEKS_LEFT is 10 for this run" in exit_text, "the change is in the run's printed log"
     assert ns["spark"].statements[0].startswith("CREATE TABLE IF NOT EXISTS `main`.`inspire`.`n01_u01")
 
 

@@ -388,15 +388,15 @@ def test_the_build_records_whether_the_old_rows_belong_to_its_kpi(agent_ns):
 def test_the_value_at_stake_part_is_named_in_the_kpi_s_unit_and_money_only_for_a_money_kpi(agent_ns):
     words, label = agent_ns["inspire_stake_words"], agent_ns["implement_asset_label"]
     assert [words(None), words(MONEY_IMPACT), words(HOURS_IMPACT), words({"kind": "count", "unit": "late shipments"}),
-            words({"kind": "percent", "unit": ""})] == ["amount at stake", "money at stake", "hours at stake",
+            words({"kind": "percent", "unit": ""})] == ["amount at stake", "value at stake", "hours at stake",
                                                        "late shipments at stake", "percent at stake"]
     assert [label("value_formula", HOURS_IMPACT), label("value_formula", MONEY_IMPACT), label("value_formula"),
-            label("ai_reasoning", HOURS_IMPACT)] == ["hours at stake formula", "money at stake formula", "amount at stake formula",
+            label("ai_reasoning", HOURS_IMPACT)] == ["hours at stake formula", "value at stake formula", "amount at stake formula",
                                                      "AI reasoning"]
     assert agent_ns["implement_part"]("value_formula", HOURS_IMPACT) == ("notebook", "hours at stake formula")
     long = {**VALID["outputs"], "value_formula_vibes": "v" * 2001}
     validate = agent_ns["validate_implement_spec"]
-    for impact, named in ((HOURS_IMPACT, "hours"), (MONEY_IMPACT, "money"), (None, "amount")):
+    for impact, named in ((HOURS_IMPACT, "hours"), (MONEY_IMPACT, "value"), (None, "amount")):
         assert validate(dict(VALID, outputs=long), impact=impact)[1] == [
             f"the {named} at stake formula vibes are 2,001 characters; at most 2,000 are allowed"], impact
     spec = _spec(agent_ns, outputs={**VALID["outputs"], "value_formula_vibes": "a" * 1990})[0]

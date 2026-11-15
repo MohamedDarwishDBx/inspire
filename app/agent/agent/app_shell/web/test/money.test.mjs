@@ -96,8 +96,8 @@ test('each record formula fills in the record numbers and the assumptions as the
   assert.deepEqual(moneyOf(MODEL, { _inspire_money: 7500, _inspire_fx: '500.0', value_at_stake: 5000 }),
     { amount: 7500, currency: 'USD', text: '$7,500', formula: '500 units lost x 30 USD a unit x 50% kept = 7,500 USD' });
   assert.equal(ruleText(MODEL), '[units] units lost x 30 USD a unit x 50% kept');
-  assert.equal(sumFormula([{ label: 'A', money: 10, currency: 'USD' }, { label: 'B', money: 5, currency: 'EUR' }, { label: 'C', money: null }], 'Money at stake'),
-    'Money at stake: A $10 + B €5 = $10 + €5. Open a record to see how its money is worked out.');
+  assert.equal(sumFormula([{ label: 'A', money: 10, currency: 'USD' }, { label: 'B', money: 5, currency: 'EUR' }, { label: 'C', money: null }], 'Value at stake'),
+    'Value at stake: A $10 + B €5 = $10 + €5. Open a record to see how its money is worked out.');
 });
 
 test('a use case with nothing to fix always says why, from the run or from what the App sees', () => {
@@ -121,10 +121,10 @@ test('every money number on a use case dashboard and on Performance shows its fo
   const { page, seen: app, context } = await openApp(browser, served.base, INFO(), { width: 1440, routes: { ...routes(seen), impact: ({ json }) => json(200, impact) }, hash: '#/n01_u05/dashboard' });
   const save = page.locator('[data-tile="save"] .kpi-v');
   await page.waitForFunction(() => document.querySelector('[data-tile="save"] .kpi-v')?.textContent === '$8,850');
-  assert.equal(await tipOf(page, save), 'Money at stake on the 2 things to fix, added up: Blue denim jacket $7,500 + Wool coat $1,350 = '
+  assert.equal(await tipOf(page, save), 'Value at stake on the 2 things to fix, added up: Blue denim jacket $7,500 + Wool coat $1,350 = '
     + '$8,850. Open a record to see how its money is worked out.');
   const saved = page.locator('[data-tile="saved"] .kpi-v');
-  assert.match(await tipOf(page, saved), /^The money at stake each fix had when it was fixed, less what a later run still finds, added up over the \d+ fixes? a later run confirmed = \$[\d,]+$/);
+  assert.match(await tipOf(page, saved), /^The value at stake each fix had when it was fixed, less what a later run still finds, added up over the \d+ fixes? a later run confirmed = \$[\d,]+$/);
   await page.locator('[data-rail="performance"]').click();
   const measured = page.locator('[data-promised-delivered] [data-figure="measured"] .fx-n');
   await measured.waitFor();
@@ -137,9 +137,9 @@ test('an owner reads how the money is worked out, changes an assumption with a n
   const seen = {};
   const { page, seen: app, context } = await openApp(browser, served.base, INFO(), { width: 1440, routes: routes(seen) });
   await page.goto(`${served.base}#/n01_u05/dashboard`);
-  const card = page.getByRole('region', { name: 'How the money at stake is worked out' });
+  const card = page.getByRole('region', { name: 'How the value at stake is worked out' });
   await card.waitFor();
-  assert.equal(await card.locator('.rule').innerText(), 'Each record: units units lost x 30 USD a unit x 50% kept = its money at stake.');
+  assert.equal(await card.locator('.rule').innerText(), 'Each record: units units lost x 30 USD a unit x 50% kept = its value at stake.');
   assert.deepEqual(await card.locator('tbody tr').evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('td')].slice(0, 3).map((td) => td.innerText))),
     [['Price', '30 USD', `${OWNER}, Oct 23, 2026`], ['Keep', '50%', 'As the notebook set it']]);
   assert.equal(await card.locator('.tiers').innerText(), 'Act now from $5,000 at stake, Review from $1,000, every other record Monitor. A changed assumption moves records between these tiers on the next update.');
@@ -170,7 +170,7 @@ test('the money card asks Genie with its rule, its tiers and each assumption as 
     'genie/message': ({ json }) => json(200, { state: 'done', text: 'Genie answered.', sql: 'SELECT 1', columns: [], rows: [], truncated: false }) };
   const { page, seen: app, context } = await openApp(browser, served.base, INFO(), { width: 1440, routes: { ...routes(seen), ...asks } });
   await page.goto(`${served.base}#/n01_u05`);
-  const card = page.getByRole('region', { name: 'How the money at stake is worked out' });
+  const card = page.getByRole('region', { name: 'How the value at stake is worked out' });
   await card.waitFor();
   const found = await page.evaluate(askAudit, ASK_GROUPS);
   assert.deepEqual([found.missing, found.hidden], [[], []]);
@@ -181,17 +181,17 @@ test('the money card asks Genie with its rule, its tiers and each assumption as 
   assert.deepEqual([explain[0].kind, explain[0].context.fields], ['text', { Assumption: 'Price', Value: '30 USD', 'Set by the run': '20 USD',
     'Last change': `${OWNER}, Oct 23, 2026`, Why: 'list price' }]);
   await page.locator('.msg-sql').first().waitFor({ timeout: 15000 });
-  await card.getByRole('button', { name: 'Ask Genie about How the money at stake is worked out', exact: true }).click();
+  await card.getByRole('button', { name: 'Ask Genie about How the value at stake is worked out', exact: true }).click();
   await page.locator('form.ask-box .sugg').first().click();
   await until(() => explain.length === 2);
   assert.equal(explain[1].kind, 'text');
-  assert.equal(explain[1].context.hint, `Each record: ${ruleText(MODEL)} = its money at stake. Act now from $5,000 at stake, Review from $1,000, every other record Monitor.`
+  assert.equal(explain[1].context.hint, `Each record: ${ruleText(MODEL)} = its value at stake. Act now from $5,000 at stake, Review from $1,000, every other record Monitor.`
     + ' A changed assumption moves records between these tiers on the next update.');
   assert.deepEqual(explain[1].context.fields, { Price: '30 USD', Keep: '50%' });
   await page.locator('.msg-sql').nth(1).waitFor({ timeout: 15000 });
-  await card.getByRole('button', { name: 'Fold How the money at stake is worked out', exact: true }).click();
+  await card.getByRole('button', { name: 'Fold How the value at stake is worked out', exact: true }).click();
   await page.locator('section.money--folded').waitFor();
-  assert.equal(await page.locator('section.money--folded').getByRole('button', { name: 'Ask Genie about How the money at stake is worked out', exact: true }).count(), 1);
+  assert.equal(await page.locator('section.money--folded').getByRole('button', { name: 'Ask Genie about How the value at stake is worked out', exact: true }).count(), 1);
   assert.deepEqual(app.errors, []);
   await context.close();
 });
@@ -235,7 +235,7 @@ test('the money panel fits a phone: the assumptions table scrolls inside its car
   const seen = {};
   const { page, seen: app, context } = await openApp(browser, served.base, INFO(), { width: 390, routes: routes(seen) });
   await page.goto(`${served.base}#/n01_u05`);
-  const card = page.getByRole('region', { name: 'How the money at stake is worked out' });
+  const card = page.getByRole('region', { name: 'How the value at stake is worked out' });
   await card.locator('tbody tr').first().waitFor();
   assert.equal(await card.locator('.tbl-wrap > table').count(), 1);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 0, 'the page never scrolls sideways');
@@ -249,9 +249,9 @@ test('a formula of only the record\u2019s own numbers lists no assumption and ne
     recomputes: false, changed: false, assumptions: [] };
   const { page, seen: app, context } = await openApp(browser, served.base, INFO(), { width: 1440, routes: routes(seen, { ...MONEY, model: own, history: [] }) });
   await page.goto(`${served.base}#/n01_u05`);
-  const card = page.getByRole('region', { name: 'How the money at stake is worked out' });
+  const card = page.getByRole('region', { name: 'How the value at stake is worked out' });
   await card.waitFor();
-  assert.equal(await card.locator('.rule').innerText(), 'Each record: units units lost = its money at stake.');
+  assert.equal(await card.locator('.rule').innerText(), 'Each record: units units lost = its value at stake.');
   assert.equal(await card.locator('tbody tr').count(), 0);
   assert.equal(await card.locator('.tiers').innerText(), 'Act now from $5,000 at stake, Review from $1,000, every other record Monitor.');
   assert.deepEqual(app.errors, []);
@@ -263,7 +263,7 @@ test('the tiers of a use case that holds records back say what held back means',
   const held = 'Held back records were flagged Act now or Review but are kept off the to fix list on purpose.';
   const { page, seen: app, context } = await openApp(browser, served.base, INFO(), { width: 1440, routes: routes(seen, { ...MONEY, held }) });
   await page.goto(`${served.base}#/n01_u05`);
-  const card = page.getByRole('region', { name: 'How the money at stake is worked out' });
+  const card = page.getByRole('region', { name: 'How the value at stake is worked out' });
   await card.waitFor();
   assert.equal(await card.locator('.tiers').innerText(), 'Act now from $5,000 at stake, Review from $1,000, every other record Monitor. A changed assumption moves records between these tiers on the next update. '
     + held);
@@ -276,7 +276,7 @@ test('someone who is not an owner sees the assumptions and why they cannot chang
   const money = { ...MONEY, editable: false, why: 'Only the owners of this use case can change its assumptions' };
   const { page, seen: app, context } = await openApp(browser, served.base, INFO(), { width: 1440, routes: routes(seen, money) });
   await page.goto(`${served.base}#/n01_u05`);
-  const card = page.getByRole('region', { name: 'How the money at stake is worked out' });
+  const card = page.getByRole('region', { name: 'How the value at stake is worked out' });
   await card.waitFor();
   assert.equal(await card.getByRole('button', { name: /^Change/ }).count(), 0);
   assert.equal(await card.locator('.why').innerText(), 'You cannot change these assumptions here: only the owners of this use case can change its assumptions.');
@@ -322,7 +322,7 @@ test('a value outside the range the notebook declared cannot be saved from the m
     ? { ...a, low: 0.2, high: 0.9, setting: { name: 'KEEP', kind: 'percent', low: 0.2, high: 0.9, allowed: '0.2 to 0.9' } } : a)) } };
   const { page, seen: app, context } = await openApp(browser, served.base, INFO(), { width: 1440, routes: routes(seen, ranged) });
   await page.goto(`${served.base}#/n01_u05`);
-  const card = page.getByRole('region', { name: 'How the money at stake is worked out' });
+  const card = page.getByRole('region', { name: 'How the value at stake is worked out' });
   await card.waitFor();
   await card.getByRole('button', { name: 'Change Keep' }).click();
   const input = card.locator('input[name="assumption_KEEP"]');
