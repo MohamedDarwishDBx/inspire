@@ -32,3 +32,17 @@ test('a required grant has a short heading for its grantee, never the repeated A
   assert.equal(grantAsk({ statements: [GRANT] }), 'For your admin');
   assert.doesNotMatch(grantAsk({ statements: [GRANT], principal: 'x' }), /Ask your admin/);
 });
+
+// AUTO-4: folder Share and CLI steps copy on their own (Copy steps), apart from the GRANT statements (Copy).
+import { copyStepsText } from '../src/lib/permissionBus.js';
+
+test('Copy steps copies the steps only: the Share step and the CLI line, never a GRANT or a plain note', () => {
+  const permissions = [{
+    statements: [GRANT],
+    steps: ['In Workspace, open /Workspace/x > Share, add app with Can Edit', "databricks api patch /api/2.0/permissions/directories/1 --json '{}'"],
+    instructions: ['Rebuild the App to read through its views, then click Try again.'],
+    principal: 'app',
+  }];
+  assert.equal(copyStepsText(permissions), permissions[0].steps.join('\n'));
+  assert.equal(copyStepsText([{ statements: [GRANT], principal: 'app' }]), '');
+});

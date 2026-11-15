@@ -2337,7 +2337,7 @@ async function refuseRunAgain(req, res, response) {
     ? [`In Databricks, open job ${jobId} > Permissions, and add ${who} with Can view`,
       `databricks api patch /api/2.0/permissions/jobs/${jobId} --json '{"access_control_list":[{"user_name":"${who}","permission_level":"CAN_VIEW"}]}'`]
     : [`In Databricks, find the job of run ${runId} and give ${who} Can view on it`];
-  const permission = permissionRequired({ instructions: steps, principal: who,
+  const permission = permissionRequired({ steps, principal: who,
     why: `Inspire reads run ${runId} with your own sign-in, and your sign-in cannot view its job.` });
   return PM_ERROR.sendFailure(res, 403, message, { permissions: [permission] });
 }
