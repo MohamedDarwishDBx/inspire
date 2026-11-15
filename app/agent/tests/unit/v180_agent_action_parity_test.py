@@ -44,7 +44,9 @@ def test_every_registry_app_action_is_reachable_through_the_agent():
 
 
 def test_the_agent_offers_the_full_registry_and_nothing_else():
-    assert set(shell_agent.ACTIONS) | set(shell_agent.ACTIONS_APP) == set(shell_actions.REGISTRY)
+    internal = {a.id for a in shell_actions.REGISTRY.values() if not a.agent}
+    assert internal == {"update"}, "the record panel's free edit is the only internal action, and the Work page uses it"
+    assert set(shell_agent.ACTIONS) | set(shell_agent.ACTIONS_APP) == set(shell_actions.REGISTRY) - internal
 
 
 def test_the_web_offers_every_agent_record_action_it_can_prepare():

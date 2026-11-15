@@ -25,6 +25,7 @@ class Action:
     route: str = RECORD_ROUTE
     writes: bool = True
     scope: str = RECORD
+    agent: bool = True  # False: an internal action the record panel uses; the agent does not offer it
 
 
 REGISTRY = {a.id: a for a in (
@@ -36,12 +37,14 @@ REGISTRY = {a.id: a for a in (
     Action("reopen", "Reopen"),
     Action("override", "Override with a reason", ("status", "reason")),
     Action("add_note", "Add note", ("note",)),
+    Action("update", "Update the record", agent=False),
     Action("set_target", "Set target", ("value",), route="settings/save", scope=APP),
     Action("create_alert", "Create alert", ("watch", "schedule"), route="alerts/save", scope=APP),
     Action("run_again", "Run again", (), route="settings/run", scope=APP),
 )}
 
-RECORD_ACTIONS = tuple(a.id for a in REGISTRY.values() if a.scope == RECORD)
+RECORD_ACTIONS = tuple(a.id for a in REGISTRY.values() if a.scope == RECORD and a.agent)
+WRITE_ACTIONS = tuple(a.id for a in REGISTRY.values() if a.scope == RECORD and a.writes)
 APP_ACTIONS = tuple(a.id for a in REGISTRY.values() if a.scope == APP)
 
 
@@ -58,12 +61,36 @@ def _text(raw: dict, field: str, what: str) -> str:
     return value.strip()
 
 
+def action_for_values(values) -> str:
+    """The registry action a record write's values name: the Work page and the record panel send values, not an action id.
+    Done is exactly a status of Done, snooze is exactly a snooze date, and any other change is the panel's free update."""
+    if isinstance(values, dict) and values == {"action_status": shell_sql.DONE}:
+        return "done"
+    if isinstance(values, dict) and list(values) == ["snooze_until"]:
+        return "snooze"
+    return "update"
+
+
+def record_body(name, raw, today) -> dict:
+    """The values records/act writes for a record write. The one builder every record write goes through: the web's record
+    panel, the Work page and the agent. `update` is the panel's free edit: its values pass through to the tracker's own checks."""
+    if name not in REGISTRY or REGISTRY[name].scope != RECORD:
+        raise ValueError(f"action is one of {', '.join(WRITE_ACTIONS)}")
+    if not REGISTRY[name].writes:
+        raise ValueError(f"{name} writes nothing; the records stay as they are")
+    return record_values(name, raw, today)
+
+
 def record_values(name: str, raw: dict, today) -> dict:
     """The values records/act writes for a record action. reopen and skip are handled by the caller."""
+    if name == "update":
+        if not isinstance(raw, dict) or not raw:
+            raise ValueError("send the action values to change, as an object of column name to value")
+        return dict(raw)
     if name == "done":
         return {"action_status": shell_sql.DONE}
     if name == "snooze":
-        until = raw.get("until")
+        until = raw.get("until", raw.get("snooze_until"))
         if not isinstance(until, str) or not DATE.match(until):
             raise ValueError("a snooze needs a date as YYYY-MM-DD; ask the person until when")
         return {"snooze_until": until}

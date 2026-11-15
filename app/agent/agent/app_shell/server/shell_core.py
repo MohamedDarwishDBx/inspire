@@ -18,6 +18,7 @@ import shell_alerts
 import shell_db
 import shell_facts
 import shell_pg
+import shell_actions
 import shell_sql
 from shell_db import HttpError, QueryError, Workspace, error_body, normalize_host, stamp_of
 from shell_redact import inspire_parse_time, inspire_redact_text
@@ -2661,11 +2662,10 @@ class Shell:
         try:
             self.write_saved(ws, shell_sql.threads_table(page), sql, params)
         except HttpError as error:
-            if not NO_TABLE.search(str(error.message)):
-                raise
-            writer = self.decision_writer(ws)
-            self.execute(writer, shell_sql.threads_create_sql(page), [], 1, delta=True)
-            self.write_saved(ws, shell_sql.threads_table(page), sql, params)
+            if NO_TABLE.search(str(error.message)):
+                raise HttpError(409, f"Nothing was saved: {shell_sql.threads_table(page)} does not exist yet; the App creates it when it is published "
+                                     f"with its other companion tables, so {shell_sql.rebuild_action('the use case')}")
+            raise
         return {"thread_id": thread, "saved": True}
 
     def app_access(self, headers: dict, data: dict) -> dict:
@@ -3591,7 +3591,7 @@ class Shell:
 
     def setting_change(self, headers: dict, data: dict) -> tuple:
         page = self.page(data.get("page"))
-        refusal = self.owner_refusal(headers, page, SETTING_WORDS)
+        refusal = self.setting_refusal(headers, page)
         if refusal:
             raise HttpError(403, refusal)
 
@@ -4555,7 +4555,12 @@ class Shell:
         editor = self.editor(headers)
         keys, seen, match = self.act_target(data)
         similar = None if data.get("similar") is None else self.match_target(data["similar"], "similar")
-        values = shell_sql.action_values(data.get("values"), self.now().date(), shell_sql.status_choices(page))
+        try:
+            name = data.get("action") or shell_actions.action_for_values(data.get("values"))
+            built = shell_actions.record_body(name, data.get("values"), self.now().date())
+        except ValueError as error:
+            raise HttpError(400, shell_sql.error_text(error)) from error
+        values = shell_sql.action_values(built, self.now().date(), shell_sql.status_choices(page))
         treatment = treatment_of(page, data, values)
         request = data.get("request_id")
         if request is not None and not shell_sql.BATCH_ID.match(str(request)):
@@ -5312,6 +5317,21 @@ class Shell:
 
     def may_run(self, headers: dict, page: dict) -> bool:
         return bool(self.job_of(page)) and not self.inside and not self.requester(headers, page)[2]
+
+    def app_change_refusal(self, headers: dict, page: dict, action: str) -> str:
+        """Why this person may not make this app change, by the same checks the change's own route runs. "" means allowed."""
+        if action == "set_target":
+            return self.setting_refusal(headers, page)
+        if action == "run_again":
+            return self.requester(headers, page)[2]
+        if action == "create_alert":
+            state = self.alerts.status()
+            return "" if state["on"] else (state["reason"] or "alerts are off for this App")
+        raise ValueError(f"{action} is not an app action")
+
+    def setting_refusal(self, headers: dict, page: dict) -> str:
+        """The refusal settings/save gives (setting_change runs the same owner check before it touches a setting)."""
+        return self.owner_refusal(headers, page, SETTING_WORDS) or ""
 
     def requester(self, headers: dict, page: dict) -> tuple:
         names = [str(headers.get(h) or "").strip() for h in IDENTITY_HEADERS]

@@ -97,6 +97,9 @@ class Shell:
     def page(self, ident):
         return self.pages[ident]
 
+    def app_change_refusal(self, headers, page, action):
+        return ""
+
 
 def test_an_app_action_confirm_card_names_its_route_and_writes_nothing_itself():
     agent = shell_agent.Agent.__new__(shell_agent.Agent)
@@ -109,7 +112,7 @@ def test_propose_app_action_puts_a_confirm_card_on_the_turn():
     agent = shell_agent.Agent.__new__(shell_agent.Agent)
     agent.shell = Shell()
     turn = shell_agent.Turn("who", "p")
-    out = agent.tool_propose_app_action(turn, {"page": agent.shell.page("p")}, {"action": "set_target", "value": 10})
+    out = agent.tool_propose_app_action(turn, {"page": agent.shell.page("p"), "headers": {}}, {"action": "set_target", "value": 10})
     assert turn.confirm["route"] == "settings/save" and turn.confirm["body"]["value"] == 10.0
     assert "nothing is changed" in out["waiting"]
 

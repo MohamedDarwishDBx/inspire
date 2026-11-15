@@ -76,6 +76,8 @@ DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DATA_STALE_DAYS = 7
 
 BRIEF_ROWS = 3
+# The use case kinds that show one of the chart families in KIND_CHARTS (kind ids come from kinds.json).
+PAGE_KIND_FAMILY = {"anomaly": "outlier", "forecast": "forecast", "segmentation": "segment"}
 NAMED_KEYS = 200
 AGENT_CHIPS = ("Tell me what to do", "What is the value at stake?", "Why should I act on the top record?",
                "Draft a message for the top record", "Show the top records as a table")
@@ -163,7 +165,7 @@ DRAFT_DIGITS = re.compile(r"\d+(?:[.,]\d+)*")
 DRAFT_FALLBACK = "so this draft is built from the record fields"
 DRAFT_NO_MODEL = f"No chat model is available to this App, {DRAFT_FALLBACK}."
 
-ACTIONS = {a.id: a.label for a in shell_actions.REGISTRY.values() if a.scope == shell_actions.RECORD}
+ACTIONS = {a.id: a.label for a in shell_actions.REGISTRY.values() if a.scope == shell_actions.RECORD and a.agent}
 ACTIONS_APP = {a.id: a.label for a in shell_actions.REGISTRY.values() if a.scope == shell_actions.APP}
 VIEW_KINDS = ("filter", "range", "clear_filters", "column_filter", "sort", "chart", "navigate", "open_record")
 SWAPPABLE = ("bar", "horizontal_bar", "stacked_bar", "line", "area", "stacked_area")
@@ -1753,7 +1755,6 @@ class Agent:
                 names += ["propose_action", "offer_actions"]
         if self.shell.settings.get("unread"):
             names.append("app_access")
-        names.append("propose_app_action")  # the app's own route checks who may change the target, alerts or the run
         return names
 
     def converse(self, turn: Turn, job: dict) -> None:
@@ -1763,6 +1764,8 @@ class Agent:
             turn.refused, turn.answer = True, self.refusal(job)
             return
         names = self.tools_for(page) + (["render_answer"] + self.show_tools(page) if job.get("agentic") else [])
+        if self.offered_app_actions(job):
+            names.append("propose_app_action")
         if job.get("agentic"):
             system = AGENT_SYSTEM.format(app=self.shell.app_title(), title=page.get("title") or page["id"])
         else:
@@ -1897,7 +1900,8 @@ class Agent:
         return {"rendered": len(blocks), "problems": problems}
 
     def tool_show_chart(self, turn: Turn, job: dict, args: dict) -> dict:
-        raw = [dict({"type": "chart"}, chart_id=args.get("chart_id"), kind=args.get("kind"), highlight_keys=args.get("highlight_keys") or [])]
+        kind = args.get("kind") or PAGE_KIND_FAMILY.get(str(job["page"].get("kind") or ""), "")
+        raw = [dict({"type": "chart"}, chart_id=args.get("chart_id"), kind=kind, highlight_keys=args.get("highlight_keys") or [])]
         blocks, problems = self.put_block(turn, job, raw, self.named_versions(job, raw))
         return {"shown": bool(blocks), "problems": problems}
 
@@ -1926,7 +1930,8 @@ class Agent:
     def briefing(self, headers: dict, ident) -> dict:
         """The landing: the open records that matter most, ranked by the decision list's own order (value at stake first)."""
         page = self.shell.page(ident)
-        chips = list(AGENT_CHIPS) + [str(q) for q in page.get("questions") or [] if isinstance(q, str)]
+        kind_chip = [str(page["kind_question"])] if page.get("kind_question") else []
+        chips = kind_chip + list(AGENT_CHIPS) + [str(q) for q in page.get("questions") or [] if isinstance(q, str)]
         if not page.get("records"):
             return {"page": page["id"], "total": 0, "tickets": [], "actions": [], "chips": chips}
         ws, _who = self.shell.workspace(headers)
@@ -2122,9 +2127,15 @@ class Agent:
         except ValueError as error:
             raise HttpError(400, shell_sql.error_text(error)) from error
 
+    def offered_app_actions(self, job: dict) -> list:
+        """The app changes this person may make, by the same checks their routes run. A change they may not make is never offered."""
+        return [a for a in shell_actions.APP_ACTIONS if not self.shell.app_change_refusal(job["headers"], job["page"], a)]
+
     def tool_propose_app_action(self, turn: Turn, job: dict, args: dict) -> dict:
         if turn.confirm is not None:
             raise ValueError("one change waits for the person's confirmation already; wait for it")
+        if args.get("action") not in self.offered_app_actions(job):
+            raise ValueError("this person cannot make that change to the App, so it is not offered")
         turn.confirm = self.app_confirm(job["page"], args.get("action"), args)
         return {"waiting": "the person sees a card that names the change and decides; nothing is changed yet"}
 

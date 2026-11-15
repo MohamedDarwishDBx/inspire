@@ -16,11 +16,8 @@ def test_the_threads_live_in_their_own_companion_table_of_the_result_table():
     assert shell_sql.threads_table(PAGE) == "`main`.`loss`.`out_agent_threads`"
 
 
-def test_the_create_statement_names_every_column_and_is_idempotent():
-    sql = shell_sql.threads_create_sql(PAGE)
-    assert sql.startswith("CREATE TABLE IF NOT EXISTS")
-    for column in shell_sql.THREAD_COLUMNS:
-        assert f"`{column}`" in sql, column
+def test_the_table_is_not_created_on_the_first_save_any_more():
+    assert not hasattr(shell_sql, "threads_create_sql"), "the App's publish step creates the table, not the first save"
 
 
 def test_a_saved_turn_writes_its_own_person_and_thread_as_parameters_not_text():

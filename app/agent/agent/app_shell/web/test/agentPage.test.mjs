@@ -160,3 +160,26 @@ test('saved conversations list the person\'s threads, and a thread opens to its 
     await context.close();
   }
 });
+
+test('an outlier page shows its kind question as the first chip, and clicking it asks that question', async () => {
+  const info = appInfo(AGENTIC);
+  const pageId = info.pages[0].id;
+  const kindQuestion = 'Which values break their expected range, and which ones need someone to look?';
+  const asked = [];
+  const routes = {
+    'agent/briefing': ({ json }) => json(200, { ...briefing(pageId), chips: [kindQuestion, 'Tell me what to do'] }),
+    'agent/ask': ({ json, route }) => { asked.push(route.request().postData()); return json(200, { turn_id: 'e'.repeat(32), state: 'done', steps: [], answer: '', blocks: [{ type: 'text', markdown: 'Two values are outside the range.' }], confirm: null, refused: false, offers: null, next: [], conversation_id: '', actions: [], model: 'x', genie: null }); },
+  };
+  const { page, seen, context } = await openApp(browser, served.base, info, { routes, hash: `#/${pageId}/agent`, ready: '[data-agent-page]' });
+  try {
+    const chip = page.locator('.agp-chips button').first();
+    assert.equal((await chip.innerText()).trim(), kindQuestion);
+    await chip.click();
+    await until(() => asked.length === 1, 5000);
+    assert.match(asked[0], /break their expected range/);
+    await page.locator('[data-block="text"]').waitFor({ timeout: 10000 });
+    assert.deepEqual(seen.errors.filter((e) => !/favicon|Failed to load resource/.test(e)), [], 'no page errors');
+  } finally {
+    await context.close();
+  }
+});
