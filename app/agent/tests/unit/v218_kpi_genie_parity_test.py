@@ -246,7 +246,9 @@ def _sync_inst(agent_ns, current, status=None, page=KPI_PAGE):
     inst._implement_genie_read = lambda space_id: {"title": "Desk", "space": copy.deepcopy(current)}
     inst._implement_patch_asset = lambda name, asset_id, body, **kw: patched.append((name, asset_id, json.loads(body["serialized_space"]), kw))
     inst._implement_asset_lock = lambda *a: contextlib.nullcontext()
-    context = {"uc_id": "N01-U03", "key": (5150, "N01-U03", 3), "assets": {"genie_space": "01f0space"}, "page_spec": page,
+    # The page's own SQL names no Table Scope view, so the build's scopes are empty here (REQ-202: the sync renames to live names).
+    inst._implement_build_scopes = lambda context: {}
+    context = {"uc_id": "N01-U03", "use_case": {"No": "N01-U03"}, "key": (5150, "N01-U03", 3), "assets": {"genie_space": "01f0space"}, "page_spec": page,
                "asset_status": status or {"genie_space": {"state": "ready", "spec_version": 3},
                                           "app": {"state": "ready", "spec_version": 3, "snapshot": True}}}
     return inst, context, patched
