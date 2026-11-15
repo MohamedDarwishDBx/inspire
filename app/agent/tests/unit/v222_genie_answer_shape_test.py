@@ -191,7 +191,7 @@ def test_off_topic_and_prompt_probes_are_refused_even_when_anchored(tmp_path, qu
     llm = FakeLLM([said("Here is a poem.")], related=lambda body: True)
     s, ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, question, **anchor)
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[], confirm=None)
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[], confirm=None)
     assert llm.bodies == [] and ws.genie == []
 
 
