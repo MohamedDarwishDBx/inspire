@@ -85,7 +85,7 @@ def test_a_read_or_an_idempotent_call_is_retried_on_a_transient_error_and_a_crea
     with pytest.raises(RuntimeError, match="PERMISSION_DENIED"):
         inst._implement_api("PATCH", "/api/2.0/permissions/genie/g1", {})
     assert len(calls) == 1, "a permission error is the user's to fix, so it is not retried"
-    inst, calls = _api(agent_ns, [BUSY, BUSY, BUSY])
+    inst, calls = _api(agent_ns, [BUSY] * agent_ns["IMPLEMENT_API_ATTEMPTS"])
     with pytest.raises(RuntimeError, match="TEMPORARILY_UNAVAILABLE"):
         inst._implement_api("GET", "/api/2.0/apps/desk")
     assert len(calls) == agent_ns["IMPLEMENT_API_ATTEMPTS"]

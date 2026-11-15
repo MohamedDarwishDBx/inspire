@@ -48,6 +48,8 @@ REVIEWED = {
         ('_implement_app_settled', 'minutes'),
         ('_implement_deploy_app', 'timeout_s'),
         ('_implement_genie_loop', 'rounds'),
+        # REQ-326: the busy-round counter of the Genie loop, an integer the loop counts.
+        ('_implement_genie_loop', 'busy_rounds'),
         ('_implement_genie_smoke', 'timeout_s'),
         ('_implement_one_locked', "previous['spec_version']"),
         ('_implement_refresh_run_controls', 'len(found)'),
@@ -143,6 +145,8 @@ REVIEWED = {
         ('run_worker_judge', 'step_name'),
     },
     'person': {
+        # REQ-331: the grouping the person chose, shown back with the refused change so they can change it on the Run page.
+        ('_implement_fill_and_preview', "implement_choice_refusal(spec_nb.get('grouping'), moved)"),
         ('__init__', '_raw_operation'),
         # REQ-199: the Grouping names a vibe typed, shown back so the person can keep one of them.
         ('_implement_route_vibe', "' and '.join(named)"),
@@ -460,6 +464,8 @@ REVIEWED = {
 }
 HALF_REVIEWED = {
     ("_probe_llm_endpoint", "kind"): "the category word Inspire gave the error, never its text",
+    # REQ-326: the wait is a number Inspire computes (Retry-After or the busy backoff); the Genie text it may read is never shown.
+    ("_implement_genie_loop", "wait"): "a wait in seconds Inspire computed, never the text it was read from",
     ("_with_metadata_retries", "kind"): "the category word Inspire gave the error, never its text",
     ("smoke_render_all_prompts", "type(_re).__name__"): "the class name of the error, never its text",
     ("_score_with_split_retry", "type(exc).__name__"): "the class name of the error, never its text",
