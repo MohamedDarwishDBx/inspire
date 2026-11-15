@@ -110,9 +110,11 @@ export function useGenie(app, current, onOpen, view = null) {
       if (started.question) update(k, n - 1, { sent: started.question });
       const msg = await genieAnswer(k, started, { onStep: (step) => update(k, n, { step }), alive: () => alive.current });
       if (msg) update(k, n, { state: 'done', answer: msg, ids: started, shown: reducedMotion() ? Infinity : 0 });
+      return msg || null;
     } catch (error) {
       if (retryable(error)) retries.current[`${k}:${n}`] = () => send(k, you, start);
       update(k, n, { state: 'failed', error: error.message, calm: !!error.calm, waiting: waitingOf(error) });
+      return null;
     }
   }, []);
 
@@ -138,18 +140,20 @@ export function useGenie(app, current, onOpen, view = null) {
       if (turn.state === 'no_model') {
         setModes((m) => ({ ...m, [k]: { mode: 'genie', note: turn.error } }));
         edit(k, (t) => t.filter((m) => m.n !== n && m.n !== n - 1));
-        send(k, you, (id) => askGenie(k, you.text, id, extra.about));
-        return;
+        return send(k, you, (id) => askGenie(k, you.text, id, extra.about));
       }
       if (turn.state === 'failed') throw new Error(turn.error || 'Genie could not answer this question.');
       if (turn.conversation_id) conversations.current[k] = turn.conversation_id;
       const undo = turn.actions?.length ? viewNow.current?.apply(k, turn.actions) || null : null;
+      const answer = agentAnswer(turn);
       update(k, n, { state: 'done', turn_id: turn.turn_id, steps: turn.steps, actions: turn.actions, refused: turn.refused, undo, offers: turn.offers, next: turn.next || [],
-        confirm: turn.confirm ? { ...turn.confirm, state: 'ask' } : null, answer: agentAnswer(turn),
+        confirm: turn.confirm ? { ...turn.confirm, state: 'ask' } : null, answer,
         ids: turn.genie ? { conversation_id: turn.genie.conversation_id, message_id: turn.genie.message_id } : null, shown: reducedMotion() ? Infinity : 0 });
+      return answer;
     } catch (error) {
       if (retryable(error)) retries.current[`${k}:${n}`] = () => sendAgent(k, you, extra);
       update(k, n, { state: 'failed', error: error.message, calm: !!error.calm, waiting: waitingOf(error) });
+      return null;
     }
   }, [send]);
 
@@ -171,8 +175,7 @@ export function useGenie(app, current, onOpen, view = null) {
     const you = body.question ? { text: body.question, about: { label: body.title } } : { text: `Explain “${body.title}”`, explain: true };
     const k = genieKey(shown.current, page);
     setPinned(k);
-    if (agentOn(k)) sendAgent(k, you, { element: elementView(body) });
-    else send(k, you, (id) => explainGenie({ ...body, conversation_id: id }));
+    return agentOn(k) ? sendAgent(k, you, { element: elementView(body) }) : send(k, you, (id) => explainGenie({ ...body, conversation_id: id }));
   }, [send, sendAgent]);
 
   const changed = (pageId) => window.dispatchEvent(new CustomEvent(AGENT_CHANGED, { detail: { pageId } }));
