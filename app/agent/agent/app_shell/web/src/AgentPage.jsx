@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Blocks, { ActionRow } from './AgentBlocks.jsx';
 import { AgentSteps, ConfirmCard } from './AgentParts.jsx';
+import { PlainNote } from './ui.jsx';
 import { AGENT_ACTION_IDS, APP_ACTION_IDS, askBody, briefingBlocks } from './agentBlocks.js';
 import { actRecords, agentAsk, agentBriefing, agentFeedback, agentPrepare, agentThreadSave, agentThreads, agentTurn, agentWrite, getPage, undoRecords } from './api.js';
 
@@ -127,7 +128,7 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
 
       <section className="agp-brief" aria-label="Briefing">
         <h3>What to do first</h3>
-        {briefError && <p className="g-err" role="alert">{briefError}</p>}
+        {briefError && <PlainNote text={briefError} className="g-err" role="alert" />}
         {!briefing && !briefError && <p className="agp-meta">Loading the briefing</p>}
         {briefing && briefing.total === 0 && <p className="agp-meta">No open records on this use case.</p>}
         {briefing && shown.length > 0 && <Blocks blocks={shown} ctx={briefCtx} />}
@@ -177,7 +178,7 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
             <p className="agp-q">{item.question}</p>
             {item.turn?.steps?.length > 0 && <AgentSteps steps={item.turn.steps} />}
             {!item.turn && !item.error && <p className="agp-meta">Reading your question</p>}
-            {item.error && <p className="g-err" role="alert">{item.error}</p>}
+            {item.error && <PlainNote text={item.error} className="g-err" role="alert" />}
             {item.turn?.blocks && <Blocks blocks={item.turn.blocks} ctx={ctxFor(item)} />}
             {item.confirm && (
               <ConfirmCard confirm={item.confirm} write="work:agent"

@@ -3,6 +3,7 @@ import ChartCard from './ChartCard.jsx';
 import Markdown from './Markdown.jsx';
 import { Icon } from './icons.jsx';
 import { ConfirmCard, Rate } from './AgentParts.jsx';
+import { PlainNote } from './ui.jsx';
 import { ACTION_FIELDS, OVERRIDE_STATUSES, askText, actionLabel, chartOf, columnHeads, copyText, kpiName, multiAsk, multiValid, stakeText, ticketKey, valuesFor } from './agentBlocks.js';
 
 // Renders the typed blocks the server validated. ctx: { page, charts, ask(text), prepare(action, keys, values), confirm(c),
@@ -86,7 +87,7 @@ export function ActionRow({ keys, actions, ctx }) {
           <button type="button" className="btn btn--sm" onClick={() => start(open)}>Prepare {actionLabel(open).toLowerCase()}</button>
         </div>
       )}
-      {error && <p className="g-err" role="alert">{error}</p>}
+      {error && <PlainNote text={error} className="g-err" role="alert" />}
       {confirm && (
         <ConfirmCard confirm={confirm} write={`work:${confirm.action || 'agent'}`} onConfirm={() => ctx.confirm(confirm, patchConfirm)}
           onCancel={() => setConfirm(null)} onUndo={() => ctx.undo(confirm, patchConfirm)} />
