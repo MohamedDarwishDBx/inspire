@@ -61,6 +61,7 @@ const STATUS_FILTERS = [
 ];
 
 const MONITOR_NO_PROGRESS = 'Inspire has saved no progress for this run yet. Each step shows here as soon as it is saved.';
+const MONITOR_NO_RUN_OPEN = 'No run is open here. Start a run on Launch, or open one from Results.';
 
 export default function MonitorPage({ settings, update, sessionId, runId, launchNotes = [], launchDetails = [], onComplete, onResultsSession, onOpenImplement, onGenerateData, onRunAgain = null }) {
   const { databricksHost, token, warehouseId, inspireDatabase, showcase = '' } = settings;
@@ -166,10 +167,10 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
       if (lastRead) setPolling(false);
       setNow(Date.now());
 
-      if (warehouseId && inspireDatabase) {
+      // Without a session id the App has no run open: asking the App for "the latest session" would show an old completed run (FW1 D5).
+      if (warehouseId && inspireDatabase && sessionId) {
         try {
-          const sessQ = new URLSearchParams({ inspire_database: inspireDatabase, warehouse_id: warehouseId });
-          if (sessionId) sessQ.set('session_id', String(sessionId));
+          const sessQ = new URLSearchParams({ inspire_database: inspireDatabase, warehouse_id: warehouseId, session_id: String(sessionId) });
           const sessData = await apiFetch(`/api/inspire/session?${sessQ}`);
           if (sessData.session) {
             const sess = sessData.session;
@@ -232,6 +233,7 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
   // ── Derived display state ──
   // When no runId, derive state purely from session data
   const sessionOnly = !runId;
+  const noRunOpen = !sessionId && !runId;
   const isStaleSession = !sessionOnly && session?.completed_on && runPhase !== PHASE_TERMINATED;
   const percent = isStaleSession ? 0 : (session?.completed_percent || 0);
   const outcome = runOutcomeOf(session?.results_json);
@@ -258,7 +260,8 @@ export default function MonitorPage({ settings, update, sessionId, runId, launch
   let statusLabel = 'Initializing';
   let statusDetail = '';
   let statusDetails = [];
-  if (isPending && sessionOnly) { statusLabel = 'Waiting'; statusDetail = MONITOR_NO_PROGRESS; }
+  if (noRunOpen) { statusLabel = 'No run open'; statusDetail = MONITOR_NO_RUN_OPEN; }
+  else if (isPending && sessionOnly) { statusLabel = 'Waiting'; statusDetail = MONITOR_NO_PROGRESS; }
   else if (isPending) { statusLabel = 'Starting'; statusDetail = 'Databricks is starting the run...'; }
   else if (isRunning) { statusLabel = 'Running'; statusDetail = isStaleSession || !session ? 'Inspire is getting ready...' : `${Math.round(percent)}% complete`; }
   else if (isQuiet) { statusLabel = 'Quiet'; statusDetail = quietLine(quietSince, now); }

@@ -129,6 +129,12 @@ export function serializeTableScopes(scopes, pickedTables = [], label = '') {
   return Object.keys(out).length ? JSON.stringify(out) : '';
 }
 
+// The 17_table_scope text a launch sends. Every launch path builds it here, from the one scope state and the picks the run reads
+// (REQ-242): a scope on a table the picks read is sent, a scope on a table they do not read is not.
+export function launchTableScopeText(scopes, picks = {}, label = '') {
+  return serializeTableScopes(scopes, pickedTableNames(scopes, picks), label);
+}
+
 // The values the label is prefilled from: the values of the "is" and "is one of" row filters on the picked tables.
 export function filterValuesOf(scopes, pickedTables = []) {
   const picked = new Set(pickedTables.map(scopeKeyOf));

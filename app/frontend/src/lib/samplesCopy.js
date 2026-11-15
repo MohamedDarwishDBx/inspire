@@ -1,7 +1,21 @@
+import { scopeKeyOf } from './tableScope.js';
+
 export const SAMPLE_CATALOG = 'samples';
 export const SAMPLES_DESCRIPTIONS_SENTENCE = 'Value cannot be measured on samples, so this run reads only the table descriptions.';
 
 const unique = (names) => [...new Set(names)];
+
+// The Table Scopes follow their tables into the copies: a scope saved on samples.x is re-keyed to the copy that now holds x, so the
+// launch sends it under the name the run reads (REQ-242). A failed copy keeps its scope under the source name it was picked by.
+export function scopesAfterSampleCopies(scopes, copies) {
+  const copyOf = new Map((copies || []).map(({ source, copy }) => [scopeKeyOf(source), copy]));
+  const out = {};
+  for (const [table, entry] of Object.entries(scopes || {})) {
+    const copy = copyOf.get(scopeKeyOf(table));
+    out[copy || table] = entry;
+  }
+  return out;
+}
 
 export const isSampleEntry = (name) => String(name || '').trim().split('.')[0] === SAMPLE_CATALOG;
 
