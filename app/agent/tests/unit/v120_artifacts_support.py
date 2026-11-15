@@ -177,7 +177,13 @@ class FakeSpark:
     def createDataFrame(self, rows, schema=None):
         rows = list(rows)
         self.created.append((rows, schema))
-        names = [part.split()[0] for part in schema.split(",")] if isinstance(schema, str) else list(schema or [])
+        if isinstance(schema, str):
+            names = [part.split()[0] for part in schema.split(",")]
+        elif schema is None:
+            names = []
+        else:
+            # A pyspark StructType (the product passes one) exposes its columns as `.fields`; Spark iterates none of it.
+            names = [field.name for field in schema.fields]
         return FakeDataFrame(self, rows=rows, columns=names)
 
 

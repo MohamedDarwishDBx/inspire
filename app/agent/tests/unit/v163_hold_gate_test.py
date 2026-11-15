@@ -842,8 +842,9 @@ def test_a_re_point_that_keeps_the_asked_ask_genie_panel_publishes_and_re_points
     inst, status = _repoint_run(agent_ns, tmp_path, monkeypatch, ask, {"kind": "text", "value": "Ask Genie"})
     assert status in ("ready", "ready_with_warnings"), inst.updates[-1].get("status_message")
     [(name, deployed, _reads, space_id)] = inst.deployed
+    # REQ-258 / D7: the App's Ask Genie panel shows the use case name, never the use case id (D-NAMES: person copy).
     assert (name, space_id, json.loads(deployed["pages/n01_u01.json"])["genie"]) == ("churn-desk", "g1", {
-        "space_id": "g1", "title": "N01-U01 Predict churn"}), "the App is re-pointed after the Genie Agent is published, never at a pending one"
+        "space_id": "g1", "title": "Predict churn"}), "the App is re-pointed after the Genie Agent is published, never at a pending one"
     final = inst.updates[-1]["asset_status"]
     [entry] = [e for e in final["checklist"] if e["requirement"] == ask]
     assert entry["status"] == "met" and "held" not in final
