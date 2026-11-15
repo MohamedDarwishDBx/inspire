@@ -1906,6 +1906,31 @@ function latestRunStatement(summaryTable, useCaseId) {
   };
 }
 
+// REQ-323: the latest run of every use case in one statement. Each distinct run-summary table gets one SELECT whose window keeps the
+// newest row per use case; the SELECTs are joined with UNION ALL, so N use cases cost one warehouse call, not N.
+function latestRunsStatement(entries) {
+  const parameters = [];
+  const byTable = new Map();
+  entries.forEach((entry, index) => {
+    const name = `uc${index}`;
+    parameters.push({ name, value: str(entry.useCaseId), type: 'STRING' });
+    if (!byTable.has(entry.summaryTable)) byTable.set(entry.summaryTable, []);
+    byTable.get(entry.summaryTable).push(`:${name}`);
+  });
+  const selects = [...byTable].map(([table, names]) => 'SELECT use_case_id, CAST(not_reliable AS STRING) AS not_reliable, '
+    + 'CAST(updated_at AS STRING) AS updated_at, ROW_NUMBER() OVER (PARTITION BY use_case_id ORDER BY updated_at DESC NULLS LAST) AS run_rank '
+    + `FROM ${quoteTable(table)} WHERE use_case_id IN (${names.join(', ')})`);
+  return {
+    sql: `SELECT use_case_id, not_reliable, updated_at FROM (${selects.join(' UNION ALL ')}) AS runs WHERE run_rank = 1`,
+    parameters,
+  };
+}
+
+// REQ-323: the rows of latestRunsStatement, keyed by use case id, each shaped as latestRunFrom shapes one run.
+function latestRunsFrom(rows) {
+  return new Map((rows || []).map((row) => [str(row.use_case_id), latestRunFrom([row])]));
+}
+
 function latestRunFrom(rows) {
   const row = (rows || [])[0];
   return { not_reliable: row ? str(row.not_reliable).split(/\s+/).filter(Boolean).join(' ') : '', updated_at: row ? str(row.updated_at) : '' };
@@ -3980,6 +4005,8 @@ module.exports = {
   runSummaryTable,
   latestRunStatement,
   latestRunFrom,
+  latestRunsStatement,
+  latestRunsFrom,
   olderBuildNote,
   appShellUpdate,
   appShellUpdateRefusal,

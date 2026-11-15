@@ -2,6 +2,10 @@ const { isMissingTableError } = require('./lib/inspireFeedback');
 const { INSPIRE_DB_SHAPE, USE_CASE_ID_SHAPE, noSessionText, stepsStatement } = require('./lib/sqlInputs');
 const I = require('./lib/inspireImplement');
 const { createGenieJobGuard } = require('./lib/genieJobGuard');
+const { mapLimit } = require('./lib/mapLimit');
+
+// REQ-323: how many history rows are enriched at once.
+const HISTORY_ROW_CONCURRENCY = 8;
 const { runWithQueryTags, lookupWithRetry } = require('./lib/sqlStatements');
 const { genieNotebookJobName, latestGenieNotebookRun } = require('./lib/genieNotebookJob');
 const C = require('./lib/implementControl');
@@ -703,10 +707,11 @@ function registerImplementRoutes(app, deps) {
         const live = I.liveBuiltRow(rows);
         return Object.assign(rows[0], { live_version: live ? live.spec_version : null, live_spec_json: live ? live.spec_json : null });
       });
+      // REQ-323: the Jobs API reads run at most HISTORY_ROW_CONCURRENCY at a time; the run summary is one warehouse statement for all rows.
       const [notebook] = await Promise.all([
         latestGenieNotebookRun(fetchJsonFor(req), sid).then((run) => ({ run, error: '' }), (err) => ({ run: null, error: err.message })),
-        ...latest.map(async (row) => { row.stalled = await stalledOf(req, row); }),
-        ...latest.map((row) => latestRunOf(req, warehouseId, row, versionsByUc[row.use_case_id])),
+        mapLimit(latest, HISTORY_ROW_CONCURRENCY, async (row) => { row.stalled = await stalledOf(req, row); }),
+        latestRunsOf(req, warehouseId, latest, (id) => versionsByUc[id]),
       ]);
       res.json({ history, latest, notebook_run: notebook.run, notebook_run_error: notebook.error });
     } catch (err) {
@@ -1011,9 +1016,10 @@ function registerImplementRoutes(app, deps) {
 
   async function sourceCheckOf(req, warehouseId, useCase, spec, history) {
     if (!sourcesReadBy(spec, history)) return { refusal: null, reads: NO_READS, app_unreadable: null };
-    const sourced = await sourceAccess(req, warehouseId, I.sourceTables(spec, I.useCaseTables(useCase)));
+    // REQ-324: the App's probes and the person's read plan are independent, so they run together.
+    const tables = I.sourceTables(spec, I.useCaseTables(useCase));
+    const [sourced, reads] = await Promise.all([sourceAccess(req, warehouseId, tables), U.runReadPlan(dbFetch, req, { tables })]);
     const blocking = I.blockingMissingTables(sourced.missing, spec, useCase);
-    const reads = await U.runReadPlan(dbFetch, req, { tables: I.sourceTables(spec, I.useCaseTables(useCase)) });
     const refusal = sourced.app_unreadable
       ? Object.assign(I.badRequest(sourced.app_unreadable.text, 409), { details: { missing_tables: sourced.missing, app_unreadable: sourced.app_unreadable } })
       : blocking.length
@@ -1063,17 +1069,23 @@ function registerImplementRoutes(app, deps) {
         appName ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.0/apps/${encodeURIComponent(appName)}`) : null,
       ]);
       const warehouseName = warehouses.ok ? (warehouses.data.name || warehouseId) : warehouseId;
-      let output = null;
-      let outputError = '';
-      let moved = null;
-      try {
-        const viewed = [wantsDashboard && 'the dashboard', wantsGenie && 'the Genie Agent'];
-        moved = await movedResultTable(req, warehouseId, useCaseId, resultTable);
-        output = await checkOutput(req, warehouseId, moved ? moved.to : resultTable, useCaseId,
-          { principals, warehouseName, viewed, appWarehouse });
-      } catch (err) {
-        outputError = err.message || String(err);
-      }
+      // REQ-324: the output check and the use case and build record reads do not depend on each other, so they run together.
+      const outputStage = (async () => {
+        try {
+          const viewed = [wantsDashboard && 'the dashboard', wantsGenie && 'the Genie Agent'];
+          const moved = await movedResultTable(req, warehouseId, useCaseId, resultTable);
+          const output = await checkOutput(req, warehouseId, moved ? moved.to : resultTable, useCaseId,
+            { principals, warehouseName, viewed, appWarehouse });
+          return { output, outputError: '', moved };
+        } catch (err) {
+          return { output: null, outputError: err.message || String(err), moved: null };
+        }
+      })();
+      const [{ output, outputError, moved }, useCaseNow, historyNow] = await Promise.all([
+        outputStage,
+        loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
+        loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
+      ]);
       const outputDetail = output && (output.write.ok ? `${output.write.detail}; ${output.safety.detail}` : output.write.detail);
       const denied = !output && I.isReadDenied(outputError);
       const unchecked = denied
@@ -1088,10 +1100,6 @@ function registerImplementRoutes(app, deps) {
           : unchecked,
       };
       if (output && output.model) checks.model = output.model;
-      const [useCaseNow, historyNow] = await Promise.all([
-        loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
-        loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
-      ]);
       const sent = req.body?.spec && typeof req.body.spec === 'object' ? req.body.spec : ((historyNow[0] && historyNow[0].spec_json) || {});
       const checkSpec = I.withResultTable(sent, moved ? moved.to : (resultTable || (sent.config && sent.config.result_table) || ''));
       const verdict = await sourceCheckOf(req, warehouseId, useCaseNow, checkSpec, historyNow);
@@ -1309,15 +1317,17 @@ function registerImplementRoutes(app, deps) {
     }
   });
 
-  async function latestRunOf(req, warehouseId, row, history) {
-    if (!row) return;
-    row.older_build = I.olderBuildNote(history, buildStamp());
-    const summary = I.runSummaryTable(row);
-    if (!summary) return;
+  // REQ-323: the latest run of every row in one warehouse statement (I.latestRunsStatement), not one per use case.
+  async function latestRunsOf(req, warehouseId, rows, historyOf) {
+    for (const row of rows) if (row) row.older_build = I.olderBuildNote(historyOf(row.use_case_id), buildStamp());
+    const withRuns = rows.filter((row) => row && I.runSummaryTable(row));
+    if (!withRuns.length) return;
+    const entries = withRuns.map((row) => ({ summaryTable: I.runSummaryTable(row), useCaseId: row.use_case_id }));
     try {
-      row.latest_run = I.latestRunFrom(await sqlRows(req.dbHost, req.dbToken, warehouseId, I.latestRunStatement(summary, row.use_case_id)));
+      const byUseCase = I.latestRunsFrom(await sqlRows(req.dbHost, req.dbToken, warehouseId, I.latestRunsStatement(entries)));
+      for (const row of withRuns) row.latest_run = byUseCase.get(String(row.use_case_id)) || I.latestRunFrom([]);
     } catch (err) {
-      if (isMissingTableError(err) || I.isMissingColumnError(err)) row.latest_run = I.latestRunFrom([]);
+      if (isMissingTableError(err) || I.isMissingColumnError(err)) for (const row of withRuns) row.latest_run = I.latestRunFrom([]);
     }
   }
 
@@ -1699,7 +1709,7 @@ function registerImplementRoutes(app, deps) {
       jobId ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/list?job_id=${jobId}&limit=10`) : null,
       stalledOf(req, history[0]),
       held == null && !appUpdate ? null : personOf(req),
-      latestRunOf(req, warehouseId, history[0], history),
+      latestRunsOf(req, warehouseId, [history[0]], () => history),
       builtBy ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
     ]);
     if (history[0]) {

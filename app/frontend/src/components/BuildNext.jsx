@@ -5,6 +5,7 @@ import { AppReadAccess } from './AppReadAccess';
 import { PlainMessage } from './TechnicalDetails';
 import { raisePermissions } from '../lib/permissionBus';
 import { buildItems, buildNextOf, moneyText, nextSharingTables } from '../lib/buildNext';
+import { markBuildPending } from '../lib/implementControl';
 import { appGrantText, moneyRuleColumns, preflightParams, primaryTableOf, specForSibling } from '../lib/implementWizard';
 
 const BUILD_NOW_BUTTON = 'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white bg-db-red-solid shadow-sm shadow-db-red/20 hover:bg-db-red-solid-hover disabled:opacity-70';
@@ -143,6 +144,7 @@ export function BuildNextStep({ apiFetch, apiPostJson, inspireDatabase, warehous
         spec,
       });
       patch(row.id, { busy: false });
+      if (data?.use_case_id) markBuildPending(data.use_case_id, { name: spec.use_case_name, version: data.spec_version });
       onBuilt(data);
     } catch (e) {
       const refusal = e.body?.app_unreadable || null;

@@ -473,6 +473,8 @@ export function withAppPage(spec, id, on) {
   if (id === 'alerts') return withAppOption(spec, 'alerts', on);
   return APP_SCREENS.includes(id) ? withAppScreen(spec, id, on) : spec;
 }
+// REQ-322 (D-GENIE322): one plain line on the Agentic App card, so the Genie Agent ticked with it has a reason.
+export const APP_GENIE_NOTE = 'Ask answers questions on your data through a Genie Agent, built with it.';
 export const GENIE_FOR_APP_NOTE = "The App's own agent answers Ask. A Genie Agent is optional, and the App's agent can also use it for data.";
 export const APP_NEXT_NOTE = 'You pick where it goes on the next step.';
 export const RESULT_TABLE_MOVE_NOTE = 'Moving the table later copies its history to the new table and keeps the old one.';
@@ -1313,6 +1315,7 @@ export function defaultSpecFromUseCase(uc, { warehouseId, inspireDatabase, sessi
     },
     outputs: {
       dashboard: false,
+      // REQ-322 (D-GENIE322): the App's Ask answers data questions through the Genie Agent, so it is ticked with the App.
       genie_space: true,
       app: true,
       dashboard_name: '',
@@ -3030,6 +3033,11 @@ export const SOURCE_BUILT_IN_REFUSED_REASON = 'The App cannot read its sources y
 
 export const ACCESS_CHECKING = 'Checking access';
 export const ACCESS_UNKNOWN = 'Could not check access';
+
+// REQ-324: the checks run together in one request, so every stage named here is running at once. The server does not report stages one by one.
+export function accessCheckingText(seconds = 0) {
+  return `Checking the source tables, where results go and the App's access, ${seconds} s so far`;
+}
 
 export function accessVerdictOf({ preflight = null, error = '', busy = false, unread = null } = {}) {
   if (preflight && !busy) {

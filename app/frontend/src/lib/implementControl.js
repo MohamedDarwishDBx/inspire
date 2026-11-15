@@ -211,6 +211,28 @@ export function cardAssetLinks(latest) {
     .filter((link) => delivered.has(link.id) && /^https:\/\//i.test(link.url));
 }
 
+// REQ-323: a build submitted from this app, until the history read shows that version or newer. The store is module level, so it
+// outlives a remount of the Build page (the wizard hands over to a fresh page after submit). A build that never lands is dropped after 15 minutes.
+export const PENDING_BUILD_TTL_MS = 15 * 60 * 1000;
+const PENDING_BUILDS = new Map();
+
+export function markBuildPending(useCaseId, { name = '', version = 0 } = {}, now = Date.now()) {
+  PENDING_BUILDS.set(String(useCaseId), { at: now, name: String(name || ''), version: Number(version) || 0 });
+}
+
+export function withPendingBuilds(latest, now = Date.now()) {
+  const rows = Array.isArray(latest) ? latest : [];
+  const byId = new Map(rows.map((row) => [String(row?.use_case_id ?? ''), row]));
+  const placeholders = [];
+  for (const [id, entry] of [...PENDING_BUILDS]) {
+    const row = byId.get(id);
+    const landed = Boolean(row) && Number(row.spec_version) >= entry.version;
+    if (landed || now - entry.at > PENDING_BUILD_TTL_MS) { PENDING_BUILDS.delete(id); continue; }
+    if (!row) placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, pending: true });
+  }
+  return placeholders.length ? [...rows, ...placeholders] : rows;
+}
+
 export function buildSummary(items) {
   const list = Array.isArray(items) ? items : [];
   const mvps = list.filter((item) => item.state?.kind === 'mvp');

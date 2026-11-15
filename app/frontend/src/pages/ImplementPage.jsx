@@ -45,6 +45,7 @@ import {
   keptVersions, loadAssetFilters, saveAssetFilters,
   loadCollectedVibes, missingAsks, notDoneLines, rebuildSpec, rebuildingText, rephrasedAsk, removeChanges, removeKeptChanges, rollbackChanges, rollingBackText,
   saveCollectedVibes, statusWarnings, tryAgainChanges, uninstallChanges, vibeCards, vibeFeaturesLabel,
+  withPendingBuilds,
 } from '../lib/implementControl';
 import {
   buildingAssets, mvpScope, mvpStages, mvpProgressSummary, mvpRepairOf, feedArrivals, railProgress, sortedTo, statusProgress, steadyFeed, versionPlan, vibeChecklist,
@@ -364,7 +365,8 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
   const [listError, setListError] = useState('');
   const [buildNotes, setBuildNotes] = useState([]);
   const [buildDetails, setBuildDetails] = useState([]);
-  const [rail, setRail] = useState(NO_RAIL);
+  // REQ-323: a build submitted before this page mounted (the wizard hands over to it) still shows as queued.
+  const [rail, setRail] = useState(() => ({ ...NO_RAIL, latest: withPendingBuilds([]) }));
   const [railError, setRailError] = useState('');
   const [query, setQuery] = useState('');
   const [assetFilters, setAssetFilters] = useState(() => (filter ? assetFiltersFrom(filter.asset) : loadAssetFilters()));
@@ -375,6 +377,8 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
   const [refreshKey, setRefreshKey] = useState(0);
   const [listVersion, setListVersion] = useState(0);
   const lastNotebookRun = useRef(null);
+  // REQ-323: reads are applied in the order they were sent, so an older read never overwrites a newer one.
+  const railSeq = useRef({ sent: 0, applied: 0 });
   const [progress, setProgress] = useState({});
   const reportProgress = useCallback((id, value) => setProgress((prev) => (
     prev[id]?.percent === value.percent && prev[id]?.step === value.step ? prev : { ...prev, [id]: value })), []);
@@ -406,12 +410,16 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
   }, [apiFetch, qBase]);
 
   const loadRail = useCallback(async () => {
+    const seq = ++railSeq.current.sent;
     const data = await apiFetch(`/api/inspire/implement/history?${qBase}`);
+    if (seq < railSeq.current.applied) return;
+    railSeq.current.applied = seq;
     const run = data.notebook_run || null;
     const prev = lastNotebookRun.current;
     lastNotebookRun.current = run;
     if (notebookRunEnded(prev, run)) setListVersion((n) => n + 1);
-    setRail({ latest: data.latest || [], notebook_run: run, notebook_run_error: data.notebook_run_error || '' });
+    const latest = withPendingBuilds(data.latest || []);
+    setRail({ latest, notebook_run: run, notebook_run_error: data.notebook_run_error || '' });
     setRailError('');
   }, [apiFetch, qBase]);
 
@@ -504,6 +512,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     if (data?.use_case_id) select(data.use_case_id);
     setRefreshKey((n) => n + 1);
     if (data?.mode === 'notebook') setListVersion((n) => n + 1);
+    if (data?.use_case_id && data?.mode !== 'notebook') setRail((prev) => ({ ...prev, latest: withPendingBuilds(prev.latest || []) }));
     loadRail().catch((e) => setRailError(e.message));
   };
   const [progressDock, setProgressDock] = useState(null);
