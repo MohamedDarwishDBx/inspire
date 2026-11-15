@@ -72,12 +72,12 @@ test('with My actions on, the same control reads Select my N open and covers onl
   await context.close();
 });
 
-test('Mark my N open done is a visible button in the list header that confirms, writes only the open records assigned to the person, and offers Undo', async () => {
+test('Clear my queue is a visible button in the list header that confirms, writes only the open records assigned to the person, and offers Undo', async () => {
   const writes = [];
   const { page, context } = await openEverything(writes);
   const clear = page.locator('[data-clear-queue]');
   await clear.waitFor();
-  assert.equal((await clear.innerText()).trim(), 'Mark my 1 open done');
+  assert.equal((await clear.innerText()).trim(), 'Clear my queue', 'the decided wording (REQ-008, REQ-289)');
   await clear.click();
   assert.equal(writes.length, 0, 'opening the button writes nothing');
   await page.locator('[data-clear-confirm]').click();
