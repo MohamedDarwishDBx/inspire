@@ -4154,8 +4154,7 @@ def test_the_lost_table_message_names_every_table_and_its_reason(agent_ns):
                                                          {"table": "main.s.b", "reason": "no read access"}], "runner@example.com") == (
         "the preview cannot run because this source table is missing, so open Edit, Data step, and swap it for a table with "
         "the same role or remove it, and this run reads source tables as runner@example.com, which cannot read this source table. "
-        "Ask your data owner of that table to run: GRANT USE CATALOG ON CATALOG `main` TO `runner@example.com`; GRANT USE SCHEMA ON SCHEMA "
-        "`main`.`s` TO `runner@example.com`; GRANT SELECT ON TABLE `main`.`s`.`b` TO `runner@example.com`")
+        "Ask your data owner of that table to grant USE CATALOG, USE SCHEMA and SELECT on it to that identity")
 
 
 def _probe_inspire(ns, responder, carried_status):
@@ -4181,8 +4180,7 @@ def _probe_inspire(ns, responder, carried_status):
      "with the same role or remove it"),
     ("[INSUFFICIENT_PERMISSIONS] Insufficient privileges: User does not have SELECT on Table 'main.s.returns'.", "no read access",
      "the preview cannot run because this run reads source tables as runner@example.com, which cannot read this source table. Ask your "
-     "data owner of that table to run: GRANT USE CATALOG ON CATALOG `main` TO `runner@example.com`; GRANT USE SCHEMA ON SCHEMA `main`.`s` "
-     "TO `runner@example.com`; GRANT SELECT ON TABLE `main`.`s`.`returns` TO `runner@example.com`"),
+     "data owner of that table to grant USE CATALOG, USE SCHEMA and SELECT on it to that identity"),
 ])
 def test_a_lost_source_table_stops_the_run_before_genie_or_a_preview_and_names_the_table(agent_ns, error, reason, said):
     def responder(statement):

@@ -65,7 +65,8 @@ test('a service-principal Build keeps one row per table the App cannot read, and
     const card = page.getByRole('region', { name: CARD });
     await card.waitFor({ timeout: 15000 });
     const rows = await card.locator('[data-table-row]').allInnerTexts();
-    assert.deepEqual(rows, ['main.s.orders: needs USE CATALOG, USE SCHEMA, SELECT, READ METADATA', 'main.s.returns: needs USE CATALOG, USE SCHEMA, SELECT, READ METADATA'], 'one row per table with its grants');
+    // REQ-260: a row names the table; the grants it needs are the Permission Required dialog's copy payload
+    assert.deepEqual(rows, ['main.s.orders', 'main.s.returns'], 'one row per table');
     assert.equal(await card.locator('[data-viewer-row]').count(), 0, 'a service-principal App has no viewer rows');
     assert.deepEqual(ui.pageErrors, []);
   } finally {

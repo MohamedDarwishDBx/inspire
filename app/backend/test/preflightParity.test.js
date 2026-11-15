@@ -57,8 +57,12 @@ test('a source the App cannot read the metadata of is refused before the build i
   const detail = got.data.checks.sources.detail;
   assert.match(detail, /^The App's service principal riverside-assets cannot read the access policies of the source table, so Inspire cannot tell whether the results keep them\. The build cannot read a source table: /, detail);
   assert.doesNotMatch(detail, /\. the build /, 'the second sentence starts with a capital, never a fragment');
-  assert.match(detail, /GRANT READ METADATA ON TABLE `main`\.`s`\.`orders` TO `app-sp-2`/, 'the App grant action is named');
-  assert.match(detail, /GRANT USE SCHEMA ON SCHEMA `main`\.`s` TO `app-sp-2`/);
+  // REQ-131, REQ-260: the sentence names no GRANT; the App grant action is the check's Permission Required entry (must-keep)
+  assert.doesNotMatch(detail, /GRANT /, 'no GRANT in the detail (must-exclude)');
+  assert.deepEqual([...got.data.checks.sources.permission.statements].sort(), [
+    'GRANT READ METADATA ON TABLE `main`.`s`.`orders` TO `app-sp-2`', 'GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp-2`',
+    'GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `app-sp-2`'],
+  'the dialog payload carries the App grant action (must-keep)');
 });
 
 test('preflight passes when the App reads the table and its policies (must-exclude control)', async () => {

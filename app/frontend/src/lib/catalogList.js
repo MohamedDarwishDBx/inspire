@@ -33,7 +33,7 @@ const under = (parent) => (name) => String(name).startsWith(`${parent}.`);
 
 // What 01_uc_metadata reads. A table the person picked is read alone, whatever chips above it are still on. A schema or
 // catalog is read whole only when no table under it was picked. Tables with no picked parent are still read.
-export function pickedScope(catalogs = [], schemas = [], tables = []) {
+export function pickedScope(catalogs = [], schemas = [], tables = [], whole = catalogs) {
   const scope = { entries: [], catalogs: [], schemas: [], tables: [] };
   const add = (kind, names) => { scope[kind].push(...names); scope.entries.push(...names); };
   const placed = new Set();
@@ -43,7 +43,7 @@ export function pickedScope(catalogs = [], schemas = [], tables = []) {
     named.forEach((t) => placed.add(t));
     if (!picked.length) {
       if (named.length) add('tables', named);
-      else add('catalogs', [catalog]);
+      else if (whole.includes(catalog)) add('catalogs', [catalog]);
       continue;
     }
     for (const schema of picked) {
@@ -55,6 +55,13 @@ export function pickedScope(catalogs = [], schemas = [], tables = []) {
   const orphans = tables.filter((t) => !placed.has(t));
   if (orphans.length) add('tables', orphans);
   return scope;
+}
+
+// A catalog picked whole is also the parent that lists its schemas, so picking a schema under it keeps the catalog listed and
+// stops it being whole. When the last schema or table under it is removed, it is no longer whole. It stays listed, so its
+// schemas still show, but nothing under it is read. Only the children that were removed decide this, so a catalog never becomes whole by accident.
+export function wholeCatalogsAfterChildRemoval(whole, before, after) {
+  return whole.filter((c) => !(before.some(under(c)) && !after.some(under(c))));
 }
 
 export function scopeSummary(scope) {

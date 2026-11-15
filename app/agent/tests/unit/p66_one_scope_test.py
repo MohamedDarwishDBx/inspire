@@ -48,7 +48,7 @@ def _db():
 
 
 def _scope_row(db):
-    sql, items = shell_sql.scope_counts_query(PAGE, NAMES)
+    sql, items = shell_sql.scope_counts_query(PAGE, NAMES, TODAY)
     sql = sql.replace("`cat`.`sch`.`results`", "src").replace("cat.sch.results", "src")
     sql = sql.replace("AS STRING)", "AS TEXT)")  # sqlite reads an unknown STRING type as numeric; Databricks STRING is text
     values = {p["name"]: p["value"] for p in items}
@@ -93,7 +93,7 @@ def test_a_held_back_checked_row_never_counts_as_open():
 
 
 def test_without_the_quality_flag_there_is_no_scope_count():
-    assert shell_sql.scope_counts_query(PAGE, NAMES - {"data_quality_flag"}) is None
+    assert shell_sql.scope_counts_query(PAGE, NAMES - {"data_quality_flag"}, TODAY) is None
 
 
 PAGE_DS = dict(PAGE, datasets=[{"name": "records", "sql": "SELECT * FROM `cat`.`sch`.`results`"},

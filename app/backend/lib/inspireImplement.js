@@ -1,6 +1,7 @@
 const { appShellCatalog } = require('./appShell');
 const { IMPLEMENT_RUN_AS_PARAM, IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
 const { parseExactJson } = require('./exactJson');
+const { permissionRequired } = require('./permissions');
 const { moneyRuleProblems, moneyRuleClean } = require('./moneyRule');
 const { int64Id } = require('./int64Id');
 const { plural } = require('./plural');
@@ -3364,7 +3365,7 @@ function appUnreadableMessage(offer, job = 'build') {
   const head = `${words.who} cannot read ${count}: ${words.runs} as the App service principal ${app}, and you can read `
     + `${one ? 'this table' : 'these tables'} but the App cannot`;
   if (!offer.grants.length) return `${head}, and Inspire finds no missing grant to name: ask your data owner why the App cannot read ${one ? 'it' : 'them'}`;
-  return `${head}. ${offer.can_grant ? words.grant : 'Ask your data owner to run'}: ${offer.grants.join('; ')}`;
+  return `${head}. ${offer.can_grant ? words.grant : 'Ask your data owner to run the commands'}: the exact commands are in Permission Required`;
 }
 
 const APP_READ_GRANT = /^GRANT (USE CATALOG|USE SCHEMA|SELECT|READ METADATA) ON (CATALOG|SCHEMA|TABLE) (`[^`]+`(?:\.`[^`]+`){0,2}) TO `([^`]+)`$/;
@@ -3721,6 +3722,12 @@ function useCaseSchemaOwner(held, { inspireDatabase, useCaseId, sessionId }) {
   return sameUseCase && sameLineage ? 'ours' : 'foreign';
 }
 
+// REQ-131, REQ-260: the CREATE SCHEMA grant the own-schema fallback needs. The route carries it as the Permission Required entry; the prose names the dialog.
+function ownSchemaPermission(catalog, me) {
+  return permissionRequired({ statements: [`GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO \`${me}\``], // PERMISSION_DIALOG
+    principal: me, why: `Inspire cannot create the use case schema in ${catalog} with your sign-in.` });
+}
+
 function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessName, rows = null, unchecked = '' }) {
   const candidates = useCaseSchemaCandidates(inspireDatabase, useCaseId, sessionId, businessName);
   const own = candidates[0];
@@ -3751,7 +3758,8 @@ function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessNam
   const why = unchecked
     ? `Inspire could not check whether you can create schemas in ${base.catalog} (${unchecked}), so this use case's tables go to the Inspire database schema; pick Its own schema to try.`
     : ownSchemaFallbackNote(base.catalog, facts.me);
-  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: [note, why].filter(Boolean).join(' ') };
+  const permission = facts.me ? ownSchemaPermission(base.catalog, facts.me) : null;
+  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: [note, why].filter(Boolean).join(' '), permission };
 }
 
 function useCaseSchemaTagsSql(catalog, schema, tags) {

@@ -2917,6 +2917,14 @@ export function viewerRows(reads) {
   return rows;
 }
 
+// D-NAMES: a source table keeps its name in person copy. Inspire's own working views (…__implement_scope, …__signal, …__inspire) are named by
+// what they are, never by their generated name (REQ-260).
+const INSPIRE_WORKING_VIEW = /__(?:implement|inspire|signal)\w*$/i;
+export function appReadsName(table) {
+  const name = String(table || '');
+  return INSPIRE_WORKING_VIEW.test(name.split('.').pop() || '') ? "this use case's working copy of its data" : name;
+}
+
 // One row per table of a service-principal App: the read grants it still needs on that table.
 export function tableRows(reads) {
   return (reads?.tables || []).map((t) => ({ table: t.table, needs: [...new Set((t.grants || []).map((g) => /^GRANT (USE CATALOG|USE SCHEMA|SELECT|READ METADATA) /.exec(g)?.[1]).filter(Boolean))] }));

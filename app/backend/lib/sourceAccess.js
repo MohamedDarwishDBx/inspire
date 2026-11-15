@@ -3,6 +3,7 @@ const P = require('./requestPerson');
 const { parseExactJson } = require('./exactJson');
 const { redactSecrets } = require('./redact');
 const { runAsPerson } = require('./inspireJobParams');
+const { permissionRequired } = require('./permissions');
 
 const POLICY_PRIVILEGE_DENIED_RE = /does not have .+ on /i;
 
@@ -129,9 +130,12 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
     const rows = await Promise.all(grantable.map((t) => accessRowsOf(req, person, warehouseId, t)));
     const offer = I.appReadGrantsOffer(grantable, grantable.map((t, i) => I.accessPlan(t, rows[i], who.id, { needs: I.IMPLEMENT_SOURCE_NEEDS })), who);
     const message = I.appUnreadableMessage(offer, job);
+    // REQ-131, REQ-260: the exact GRANT statements travel as the Permission Required entry the App raises; the prose names the dialog
+    const permissions = offer.grants.length ? [permissionRequired({ statements: offer.grants, principal: who.id,
+      why: 'Inspire reads these source tables with your own access. Ask your data owner to run the commands, then check again.' })] : [];
     const opener = policyLost.length ? `${I.abacUnreadableSentence(who.name || who.id, { app: true })}. ${message.charAt(0).toUpperCase()}${message.slice(1)}` : message;
     const text = opener + (builtIn.length ? `. ${I.builtInSampleMessage(builtIn)}` : '');
-    return { missing, app_unreadable: { ...offer, builtin: builtIn, text } };
+    return { missing, app_unreadable: { ...offer, permissions, builtin: builtIn, text } };
   }
 
   async function runPersonGrants(req, token, warehouseId, statements) {

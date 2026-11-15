@@ -64,23 +64,18 @@ export function interpretUcPermissionError(message, opts = {}) {
   )];
   const browseCatalogs = metadataCatalogs.length > 0 ? metadataCatalogs : ['<metadata_catalog>'];
 
-  const principal = '`<your_user_or_group>`';
   const warehouseNote = opts.warehouseId
     ? `SQL warehouse \`${opts.warehouseId}\`: grant **Can use** in SQL Warehouses → Permissions.`
     : 'SQL warehouse selected in Settings: grant **Can use** on that warehouse.';
 
+  // The exact GRANT statements come from the server's Permission Required payload, which names the signed-in person. This helper
+  // never writes a GRANT itself: a placeholder grantee would replace the real list in the dialog (REQ-131, REQ-260).
   const adminBullets = [];
-  // REQ-131, REQ-260: the GRANT statements reach the screen only through the Permission Required dialog (permissions below).
-  const statements = [];
 
   if (opts.context === 'catalog_browse' || CATALOG_SIGNAL.test(text) || SCHEMA_SIGNAL.test(text)) {
     adminBullets.push(
       'Unity Catalog: browse metadata for the catalogs, schemas and tables you selected in Start.',
     );
-    statements.push(...browseCatalogs.flatMap((cat) => [
-      `GRANT USE CATALOG ON CATALOG \`${cat}\` TO ${principal}`, // PERMISSION_DIALOG
-      `GRANT BROWSE ON CATALOG \`${cat}\` TO ${principal}`, // PERMISSION_DIALOG
-    ]));
     adminBullets.push('If schemas/tables are listed via SQL warehouse, also ensure read access on those schemas.');
   }
 
@@ -88,13 +83,6 @@ export function interpretUcPermissionError(message, opts = {}) {
     `Inspire tracking schema (\`${inspireCatalog}.${inspireSchema || '_inspire'}\`), with the session and results tables and the run log volume:`,
     '  Use the catalog, and create the schema if it does not exist yet.',
     '  Use the schema, and create, modify, select and read or write its tables and volumes.',
-  );
-  const trackingSchema = `\`${inspireCatalog}\`.\`${inspireSchema || '_inspire'}\``;
-  statements.push(
-    `GRANT USE CATALOG ON CATALOG \`${inspireCatalog}\` TO ${principal}`, // PERMISSION_DIALOG
-    `GRANT CREATE SCHEMA ON CATALOG \`${inspireCatalog}\` TO ${principal}`, // PERMISSION_DIALOG
-    `GRANT USE SCHEMA ON SCHEMA ${trackingSchema} TO ${principal}`, // PERMISSION_DIALOG
-    `GRANT CREATE TABLE, MODIFY, SELECT, CREATE VOLUME, READ VOLUME, WRITE VOLUME ON SCHEMA ${trackingSchema} TO ${principal}`, // PERMISSION_DIALOG
   );
 
   if (WAREHOUSE_SIGNAL.test(text) || opts.context === 'launch') {
@@ -123,7 +111,6 @@ export function interpretUcPermissionError(message, opts = {}) {
     'Please grant:',
     ...adminBullets.map((b) => (b.startsWith('  ') ? b : `• ${b}`)),
     '',
-    'The exact commands are in the Permission Required dialog in Inspire. Copy them from there.',
     '',
     'After grants are applied, I will hard-refresh Inspire and try Get Started again.',
   ].join('\n');
@@ -134,9 +121,6 @@ export function interpretUcPermissionError(message, opts = {}) {
     userMessage,
     adminBullets,
     adminEmailText,
-    permissions: statements.length
-      ? [{ statements, principal: '<your_user_or_group>', why: 'Inspire needs these Unity Catalog grants to read and write its tables with your sign-in. Ask your admin to run them, then click Try again.' }]
-      : [],
     technicalDetail,
   };
 }
