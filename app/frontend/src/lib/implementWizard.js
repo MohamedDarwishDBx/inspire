@@ -2838,7 +2838,7 @@ export function statusReason(latest, stalled = null) {
   if (unreliable) {
     const heldAtBuild = latest?.asset_status?.[NOT_RELIABLE_RECORD];
     const appHeld = heldAtBuild && typeof heldAtBuild === 'object' && String(heldAtBuild.spec_version ?? '') === String(latest?.spec_version ?? '');
-    const app = appHeld && heldAtBuild.app === UNTRUSTED_APP_PUBLISHED
+    const app = untrustedAppPublished(latest)
       ? `The App is published with a ${UNTRUSTED_BANNER} banner${heldAtBuild.monitor === true ? ' and every row in Monitor' : ''} until a run passes.`
       : appHeld ? 'The App is not published until a run passes.' : `Its App pages show ${UNTRUSTED_BANNER} until a run passes.`;
     return `The latest run's results are not reliable yet: ${unreliable.replace(/[.\s]+$/, '')}. ${app} `
@@ -3176,6 +3176,14 @@ export function olderBuildNote(latest) {
   return String(latest?.older_build ?? '').trim();
 }
 
+// REQ-295: one reading of "the newest App is published, but its results are not trusted yet". The state, the reason and the Build
+// header all read it, so a published App is never called not published.
+export function untrustedAppPublished(latest) {
+  const held = latest?.asset_status?.[NOT_RELIABLE_RECORD];
+  return Boolean(held && typeof held === 'object' && String(held.spec_version ?? '') === String(latest?.spec_version ?? '')
+    && held.app === UNTRUSTED_APP_PUBLISHED);
+}
+
 export function unreliableHold(latest) {
   const run = latest?.latest_run;
   if (run && typeof run === 'object') return newestRunUnreliable(latest);
@@ -3206,13 +3214,15 @@ export function implementState(latest, notebook = null) {
     return { group: newest.group, label: `MVP v${live} live`, tone: 'success', kind: 'mvp', live, note: `Newer version ${word}${reason ? `: ${reason}` : ''}` };
   }
   if (s) {
-    if (['ready', 'ready_with_warnings'].includes(s) && unreliableHold(latest)) return { group: 'held', label: UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp' };
-    if (appReadsOf(latest)) return { group: 'held', label: APP_READS_LABEL, tone: 'warning', kind: 'mvp' };
-    if (['ready', 'ready_with_warnings'].includes(s) && undeliveredOutputs(latest).length) return { group: 'held', label: UNDELIVERED_LABEL, tone: 'warning', kind: 'mvp' };
+    if (['ready', 'ready_with_warnings'].includes(s) && unreliableHold(latest)) {
+      return { group: 'held', label: UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp', hold: 'untrusted', published: untrustedAppPublished(latest) };
+    }
+    if (appReadsOf(latest)) return { group: 'held', label: APP_READS_LABEL, tone: 'warning', kind: 'mvp', hold: 'other' };
+    if (['ready', 'ready_with_warnings'].includes(s) && undeliveredOutputs(latest).length) return { group: 'held', label: UNDELIVERED_LABEL, tone: 'warning', kind: 'mvp', hold: 'other' };
     if (['ready', 'ready_with_warnings'].includes(s) && openVibeAsks(latest).length) return { group: 'unmet', label: 'MVP vibes not met', tone: 'warning', kind: 'mvp' };
     if (s === 'ready') return { group: 'ready', label: 'MVP ready', tone: 'success', kind: 'mvp' };
     if (s === 'ready_with_warnings') return { group: 'ready', label: 'MVP ready with warnings', tone: 'warning', kind: 'mvp' };
-    if (s === IMPLEMENT_VIBE_NOT_MET) return { group: 'held', label: 'MVP vibes not met', tone: 'warning', kind: 'mvp' };
+    if (s === IMPLEMENT_VIBE_NOT_MET) return { group: 'held', label: 'MVP vibes not met', tone: 'warning', kind: 'mvp', hold: 'vibe' };
     if (runStopped(s, latest.stalled)) return { group: 'failed', label: 'MVP stopped', tone: 'error', kind: 'mvp' };
     if (s === 'failed') return { group: 'failed', label: 'MVP failed', tone: 'error', kind: 'mvp' };
     if (IMPLEMENT_ACTIVE_STATUSES.includes(s)) return { group: 'in_progress', label: 'MVP running', tone: 'busy', kind: 'mvp' };

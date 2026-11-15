@@ -1,0 +1,35 @@
+{
+ "use_case_id": "N04-U01",
+ "spec_version": 1,
+ "status": "ready_with_warnings",
+ "status_message": "Notebook: Genie found 0.445 missing periods, more than the 20% the first method needs, so it used Seven-day moving average against seasonal naive instead. Results will be less precise; Rebuild once the data meets that minimum to use Additive weekly ETS.; Notebook: Genie found 0.445 missing periods, more than the 20% the setting asked for, so it set Maximum missing period rate to 0.5, not 0.2: The ",
+ "ended_by": null,
+ "older_build": "",
+ "latest_run": {
+  "not_reliable": "No model passed this use case's acceptance check in the last run: Minimum backtest folds is 3, and this run measured 0. This may come from a setting you can change: the model learned only from the First run scope, about 1,000 records of inspire_kinds_rc7._inspire.sales_transactions, in 3 whole groups so no group is cut: paymentMethod = amex, 204 records; paymentMethod = visa, 190 records; paymentMethod = mastercard, 189 records, because this notebook reads its training rows through the First run; choose all for First run on the Run page, or build the notebook again with Vibe/Add/Remove Features on the Build page so the model trains on the full history and the First run limits only what it scores."
+ },
+ "asset_status": {
+  "delivery": {
+   "delivered": [
+    "genie_space",
+    "app"
+   ],
+   "not_delivered": [],
+   "spec_version": 1
+  },
+  "not_reliable": {
+   "app": "published",
+   "monitor": true,
+   "reason": "No model passed this use case's acceptance check in the last run: Minimum backtest folds is 3, and this run measured 0. This may come from a setting you can change: the model learned only from the First run scope, about 1,000 records of inspire_kinds_rc7._inspire.sales_transactions, in 3 whole groups so no group is cut: paymentMethod = amex, 204 records; paymentMethod = visa, 190 records; paymentMethod = mastercard, 189 records, because this notebook reads its training rows through the First run; choose all for First run on the Run page, or build the notebook again with Vibe/Add/Remove Features on the Build page so the model trains on the full history and the First run limits only what it scores.",
+   "spec_version": 1
+  },
+  "app": {
+   "backend": "delta",
+   "health": "running",
+   "spec_version": 1,
+   "state": "ready"
+  }
+ },
+ "_note": "Trimmed from a Build page status payload (REQ-295 walk). Ids, emails and URLs removed. The App is published: app_url is set and asset_status.delivery.delivered contains app.",
+ "app_url": "https://app.example.invalid/walk-app"
+}
