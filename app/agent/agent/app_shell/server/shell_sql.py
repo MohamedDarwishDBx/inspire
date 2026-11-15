@@ -10,7 +10,7 @@ import zoneinfo
 from html.parser import HTMLParser
 
 import shell_facts
-from shell_facts import (CLOSING_ORDER, CONVERTED, MONEY_CODES, MONEY_COLUMN, date_column, future_source, money_currency_column, money_equation_tokens, money_expression, money_joined, money_rule_problems, money_scope, money_value_sql, money_source, money_value_override, sql_text, closing_ctes, quote, table_name, versions_source)
+from shell_facts import (CLOSING_ORDER, CONVERTED, MONEY_CODES, MONEY_COLUMN, date_column, future_source, read_date, money_currency_column, money_equation_tokens, money_expression, money_joined, money_rule_problems, money_scope, money_value_sql, money_source, money_value_override, sql_text, closing_ctes, quote, table_name, versions_source)
 from shell_redact import inspire_parse_time, inspire_raised_by, inspire_redact_text
 
 SHELL_MODULES = ("shell_redact", "shell_facts", "shell_sql", "shell_db", "shell_pg", "shell_alerts", "shell_core", "app")
@@ -2574,7 +2574,7 @@ def _condition(kind, target: str, value, params) -> list:
     low, high = (value.get(edge) for edge in RANGE_EDGES[kind])
     cast = "DATE" if kind == "date_range" else "DOUBLE"
     shown = str if kind == "date_range" else (lambda v: repr(float(v)))
-    read = _read_date(target) if kind == "date_range" else f"CAST({target} AS DOUBLE)"
+    read = read_date(target) if kind == "date_range" else f"CAST({target} AS DOUBLE)"
     if kind == "date_range" and low and high:
         start, end = sorted((str(low), str(high)))
         return [f"{read} BETWEEN {params.add(start, 'DATE')} AND {params.add(end, 'DATE')}"]
@@ -2729,7 +2729,7 @@ def money_left_out(page: dict, kpi: dict, values: dict):
         cells += [f"SUM(CASE WHEN {column} IS NULL THEN 1 ELSE 0 END) AS undated",
                   f"SUM(CASE WHEN {column} >= date_trunc('{scope['grain']}', current_date()) THEN 1 ELSE 0 END) AS running"]
     if dated:
-        cells.append(f"SUM(CASE WHEN {quote(dated)} > current_date() THEN 1 ELSE 0 END) AS future")
+        cells.append(f"SUM(CASE WHEN {read_date(quote(dated))} > current_date() THEN 1 ELSE 0 END) AS future")
     if scope["rates"] or scope["rate_column"] or scope["rate_table"]:
         cells.append(f"SUM(CASE WHEN {CONVERTED} IS NULL THEN 1 ELSE 0 END) AS unrated")
     if scope["rate_table"]:
@@ -3553,14 +3553,8 @@ def column_options_query(page: dict, table, column: str, search: str = "", limit
     return _choice_query(page, [(dataset, column)], search, limit)
 
 
-def _read_date(target: str) -> str:
-    """One date read of a quoted column: a date, a timestamp (its day) or a date-like string. Text that is not a date reads as NULL,
-    never as a query error, so one stray value cannot fail a bounds read, a scope probe or a filter's WHERE."""
-    return f"TRY_CAST({target} AS DATE)"
-
-
 def date_value(column: str) -> str:
-    return _read_date(quote(column))
+    return read_date(quote(column))
 
 
 def bounds_query(page: dict, ident: str) -> tuple:

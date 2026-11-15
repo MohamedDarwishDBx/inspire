@@ -1173,12 +1173,24 @@ def date_column(page: dict, dataset: str) -> str:
     return next((column for f in page.get("filters") or [] if f.get("type") == "date_range"
                  for column in [(f.get("columns") or {}).get(dataset)] if column), "")
 
+DATE_TEXT_FORMATS = ("MMM d yyyy", "M/d/yyyy", "d/M/yyyy", "yyyy/M/d")
+
+
+def read_date(target: str) -> str:
+    """One date read of a quoted column, the same in the bounds, the scope probe, a filter's WHERE and the future rule: a date, a
+    timestamp (its day), ISO text (TRY_CAST), or text in one of DATE_TEXT_FORMATS, tried in order. Text in none of them reads NULL,
+    never an error. The slash forms take one or two digits: 5/3/2016 reads month first (5 March), and 25/05/2016 falls through
+    to day first (25 May), because month first has no month 25."""
+    reads = [f"TRY_CAST({target} AS DATE)"] + [f"TRY_TO_DATE({target}, '{text}')" for text in DATE_TEXT_FORMATS]
+    return f"COALESCE({', '.join(reads)})"
+
+
 def future_source(page: dict, dataset: str, sql: str) -> str:
     """Rows a KPI or chart may read: rows dated after today are left out, undated rows stay (a money total also drops them)."""
     column = date_column(page, dataset)
     if not column or column not in sql:
         return sql
-    return f"SELECT * FROM ({sql}) AS f WHERE {quote(column)} IS NULL OR {quote(column)} <= current_date"
+    return f"SELECT * FROM ({sql}) AS f WHERE {quote(column)} IS NULL OR {read_date(quote(column))} <= current_date"
 
 def money_expression(page: dict, dataset: str, expression: str) -> str:
     """A money expression reads the converted amount when the rule converts, and the stake amount otherwise."""
