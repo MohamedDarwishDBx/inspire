@@ -574,7 +574,7 @@ test('one parser reads every vibe line form, the lines of the step result first 
   const { vibeLine, vibeRouting } = await lib('mvpProgress.js');
   const core = 'this ask changes the analysis, so Inspire rebuilds the notebook and every part after it';
   assert.deepEqual(vibeLine(`sent to Notebook: count returns by week; ${core}`), { id: 'notebook', words: 'count returns by week', note: core });
-  assert.deepEqual(vibeLine(`sent to Money at stake formula: net of refunds; ${core}`), { id: 'value_formula', words: 'net of refunds', note: core });
+  assert.deepEqual(vibeLine(`sent to Value at stake formula: net of refunds; ${core}`), { id: 'value_formula', words: 'net of refunds', note: core });
   for (const [heading, id] of [['Dashboard', 'dashboard'], ['App', 'app'], ['Genie Agent', 'genie_space'], ['Alert', 'alert'], ['AI reasoning', 'ai_reasoning'],
     ['Dashboard chart w1a2', 'dashboard:w1a2'], ['App page detail', 'app:page:detail']]) {
     assert.equal(vibeLine(`sent to ${heading}: keep it short: two lines`).id, id, heading);

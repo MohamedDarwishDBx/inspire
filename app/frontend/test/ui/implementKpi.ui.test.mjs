@@ -204,7 +204,7 @@ test('a baseline taken on another table than the one the KPI is measured on now 
   }
 });
 
-test('an hours KPI never shows a currency or Money at stake anywhere on the MVP page, even when the run row still carries a currency', async () => {
+test('an hours KPI never shows a currency or Value at stake anywhere on the MVP page, even when the run row still carries a currency', async () => {
   const ui = await openBuild({ history: [builtWith(TRACKED)], moneySummary: [SUMMARY] });
   const { page } = ui;
   try {

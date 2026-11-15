@@ -108,8 +108,8 @@ test('each run reads in plain words: how it ended, what started it, what it cove
     '6 things to fix that could save $33.9K. It covered all the data, 7,420 records.');
   assert.equal(foundText({ segments: [], records: 1, to_fix: 1, could_save: null }), '1 thing to fix. It covered all the data, 1 record.');
   assert.equal(couldSaveRunFormula({ to_fix: 6, could_save: 33900, currency: 'USD' }),
-    'Money at stake on its 6 things to fix in Act now and Review, added up when the run ended = $33.9K');
-  assert.equal(couldSaveRunFormula({ to_fix: null, could_save: 12, currency: '' }), 'Money at stake on its things to fix in Act now and Review, added up when the run ended = 12');
+    'Value at stake on its 6 things to fix in Act now and Review, added up when the run ended = $33.9K');
+  assert.equal(couldSaveRunFormula({ to_fix: null, could_save: 12, currency: '' }), 'Value at stake on its things to fix in Act now and Review, added up when the run ended = 12');
   assert.equal(couldSaveRunFormula({ to_fix: 3, could_save: null }), '');
   assert.equal(foundText({ nothing_to_act: 'No record has 1000 USD or more at stake.', segments: null, records: 10, to_fix: 0 }),
     'No record has 1000 USD or more at stake. It checked 10 records.');
@@ -532,7 +532,7 @@ test('the Runs tab lists each run: when, how it ended, who started it, what it c
   assert.equal(await mainRows(page).nth(1).locator('.run-st--ok').innerText(), 'Done');
   const saving = mainRows(page).nth(1).locator('td.could-save [data-fx]');
   assert.equal(await page.locator(`[id="${await saving.getAttribute('aria-describedby')}"]`).textContent(),
-    'Money at stake on its 5 things to fix in Act now and Review, added up when the run ended = $1.2K', 'every money cell shows its formula');
+    'Value at stake on its 5 things to fix in Act now and Review, added up when the run ended = $1.2K', 'every money cell shows its formula');
   assert.equal(await mainRows(page).nth(2).locator('td.could-save [data-fx]').count(), 0, 'a run with no money has no formula');
   assert.match(await mainRows(page).nth(2).innerText(), /^\s*Oct 4, 06:00 AM UTC\s+Done\s+Not recorded\s+Not recorded\s+10\s+10\s+none\s+Ask Genie\s*$/);
   assert.equal(await page.locator('.runs .pager').count(), 0, 'three runs fit on one page');

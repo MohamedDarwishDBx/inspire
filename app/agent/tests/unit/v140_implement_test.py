@@ -5573,7 +5573,7 @@ def test_a_failed_step_whose_error_the_build_logs_once_is_a_warning_with_its_sta
 
 def test_every_failed_step_that_raises_to_the_build_leaves_its_one_error_to_the_build():
     source = agent_source()
-    raising, flagged = 0, 0
+    raising, flagged, misfits = 0, 0, 0
     for node in ast.walk(ast.parse(source)):
         for body in (getattr(node, field, None) for field in ("body", "orelse", "finalbody", "handlers")):
             if not isinstance(body, list):
@@ -5584,10 +5584,14 @@ def test_every_failed_step_that_raises_to_the_build_leaves_its_one_error_to_the_
                         and call.func.attr == "_implement_emit" and isinstance(following, ast.Raise)):
                     continue
                 if any(isinstance(arg, ast.Constant) and arg.value == "ended_error" for arg in call.args):
-                    raising += 1
+                    # An as-is misfit is caught by its caller, which has Genie rewrite the page (REQ-204); it never reaches the build.
+                    raised = following.exc.func if isinstance(following.exc, ast.Call) else None
+                    misfits += isinstance(raised, ast.Name) and raised.id == "ImplementAsIsMisfit"
+                    raising += not (isinstance(raised, ast.Name) and raised.id == "ImplementAsIsMisfit")
                     flagged += any(kw.arg == "error_logged_elsewhere" and getattr(kw.value, "value", None) is True
                                    for kw in call.keywords)
-    assert raising == 16 and flagged == raising, (raising, flagged)
+    assert raising == 16 and misfits == 1 and flagged == raising + misfits, (raising, misfits, flagged)
+    assert "except ImplementAsIsMisfit as misfit" in source
     failed = source[source.index("    def _implement_failed("):]
     failed = failed[:failed.index("\n    def ", 10)]
     assert failed.count("self.logger.error(") == 2 and "error_logged_elsewhere=True" in failed

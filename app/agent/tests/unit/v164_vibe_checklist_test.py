@@ -306,7 +306,7 @@ def _facts_spark(agent_ns):
 def test_a_notebook_ask_is_checked_on_the_facts_of_its_latest_run(agent_ns, value, status, evidence):
     spark = _facts_spark(agent_ns)
     inst = _inspire(agent_ns, spark)
-    ask, other = "Every row carries the money at stake", "Explain the money at stake"
+    ask, other = "Every row carries the value at stake", "Explain the value at stake"
     prompts = _judge(inst, {f"{ask}. {other}": [_ask(ask, {"kind": "result", "value": value}), _ask(other)]},
                      [{"status": "missing", "evidence": "no cell explains it"}])
     found = inst._implement_vibes_round({}, [{"asset": "notebook", "text": f"{ask}. {other}", "artifact": "# Score\nx = 1\n",

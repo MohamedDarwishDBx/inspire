@@ -76,7 +76,7 @@ def test_tiers_follow_each_row_evidence_and_rank_follows_the_stake(agent_ns):
     assert "'Monitor' for every other row, including every row whose data_quality_flag is not 'ok'" in tier
     rank = meaning(mandate, "rank")
     assert "the rows that pass the use case's decision test first" in rank, "a Monitor row never outranks an Act now row"
-    assert "each group by value_at_stake, highest first, then by value" in rank, "rank follows the money at stake"
+    assert "each group by value_at_stake, highest first, then by value" in rank, "rank follows the value at stake"
     assert "then the other rows whose data_quality_flag is 'ok', then the flagged rows" in rank, \
         "a network notebook ranked 153 senders flagged 'too few closed recipients' above the 55 senders it could test"
     assert "a row without enough evidence never outranks a row with it" in rank

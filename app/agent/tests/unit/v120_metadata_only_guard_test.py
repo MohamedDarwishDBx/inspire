@@ -1267,6 +1267,9 @@ def owned_target_roots(source):
     index = SqlIndex(ast.parse(source))
     roots = set()
     for _lineno, sql, _owner, _function in index.sql_literals():
+        if METADATA_STATEMENT.match(sql) or PERMISSION_STATEMENT.match(sql):
+            # SHOW CREATE TABLE names its object through the CREATE keyword: a metadata read, the same exemption violations_in gives it.
+            continue
         for kind, target in statement_targets(sql):
             found = OWNED_TARGET_PLACEHOLDER.match(target.strip())
             if kind == "write" and found:

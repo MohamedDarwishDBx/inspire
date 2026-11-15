@@ -100,7 +100,7 @@ def test_a_money_kpi_is_still_priced_in_money_word_for_word(agent_ns):
     assert ("`value_at_stake` is the money each record puts at stake, in the currency the `currency` widget names: one formula in "
             "code over the record's own amounts") in rules
     assert "a record the formula cannot price, such as one without a sales amount" in rules
-    assert "`currency` is the currency of the source amounts, and `act_now_amount` and `review_amount` come from the money at stake" in rules
+    assert "`currency` is the currency of the source amounts, and `act_now_amount` and `review_amount` come from the value at stake" in rules
     assert "currency" in {w["name"] for w in inst._genie_core_widgets(spec)}
     _inst, legacy = _spec_for(agent_ns, [])
     assert legacy["impact"]["kind"] == "money" and legacy["target_kpi"] is None, "a use case with no KPI at all stays as it was"
@@ -410,7 +410,7 @@ def test_the_shell_reads_the_unit_from_the_summary_and_an_old_summary_is_money_o
     assert unit({"impact_kind": "shares", "impact_unit": "x", "currency": "AED"}) == "AED"
     assert [label(of({"impact_kind": "hours", "impact_unit": "hours"})), label(of({"currency": "USD"})), label(of({})),
             label(of({"impact_kind": "count", "impact_unit": "late shipments"}))] == [
-        "Hours at stake", "Money at stake", "Money at stake", "Late shipments at stake"]
+        "Hours at stake", "Value at stake", "Value at stake", "Late shipments at stake"]
 
 
 def test_the_weekly_digest_counts_a_productivity_use_case_in_hours():
@@ -439,7 +439,7 @@ def test_the_weekly_email_text_names_the_unit(agent_ns, tmp_path):
     inst, calls, _queries = _digest_inspire(agent_ns, tmp_path, {("POST", "/api/2.0/alerts"): {"id": "al-1"}})
     inst._implement_alert(_output_context(agent_ns, **ALERT, alert_destinations=[{"id": "dest-0001", "name": "Slack"}]), None)
     money = [b for m, p, b, _q in calls if (m, p) == ("POST", "/api/2.0/alerts")][-1]
-    assert "Estimated: the money at stake on the records still open" in money["custom_description"]
+    assert "Estimated: the value at stake on the records still open" in money["custom_description"]
     assert "Reported: the money people entered when they marked a record fixed." in money["custom_description"]
 
 

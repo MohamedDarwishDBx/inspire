@@ -240,6 +240,7 @@ def test_the_live_case_ends_the_version_with_vibe_not_done(agent_ns, tmp_path):
     inst._implement_runner = lambda uc: "genie"
     inst._implement_app = _built("app", V2)
     _judge(inst, {VIBE: SPLIT}, [{"status": "done", "evidence": "Priority tier", "where": "filters"}])
+    inst._implement_app_served = {"n01_u01": {"filters": {}, "columns": {"records": {}}}}  # the served App, read by its check (REQ-214)
     assert _run(inst, _vibed(previous, [PAGE], **{f"{PAGE}_vibes": VIBE})) == "ready_with_warnings", "missed asks never hold the version"
     final = inst.updates[-1]
     assert final["status_message"].startswith("v3 is published with 2 unmet asks (not met or could not be checked), the rest of the vibe is in place: App (page n01_u01"), \
@@ -398,6 +399,8 @@ def test_the_before_save_gate_sends_a_table_filter_put_on_the_filter_bar_back_to
     context = {"uc_id": "N01-U01", "key": (5150, "N01-U01", 3), "spec": {"outputs": {f"{PAGE}_vibes": VIBE}},
                "asset_status": {"app": {"state": "ready", "spec_version": 2, "snapshot": True}},
                "genie_round": {"name": "app", "round": 1, "rounds": 3}}
+    # the served App's column filters, as the App check stores them before the gate (REQ-214): none on the Fix plan table yet
+    inst._implement_app_served = {"n01_u01": {"filters": {}, "columns": {"records": {}}}}
     with pytest.raises(agent_ns["ImplementAsksMissed"]) as missed:
         inst._implement_output_vibes_gate(context, "app", V2)
     assert missed.value.feedback.startswith("\n\nInspire checked what you wrote against the user's asks before saving it")
@@ -407,6 +410,8 @@ def test_the_before_save_gate_sends_a_table_filter_put_on_the_filter_bar_back_to
                                   "where": "records"}])
     context["genie_round"] = {"name": "app", "round": 2, "rounds": 3}
     every = [{"column": column} for column in ("rank", "entity_label", "priority_tier", "channel", "value_at_stake")]
+    inst._implement_app_served = {"n01_u01": {"filters": {}, "columns": {"records": {
+        c["column"]: {"label": c["column"], "problem": ""} for c in every}}}}
     inst._implement_output_vibes_gate(context, "app", dict(V3, records=dict(V3["records"], column_filters=every)))
     assert [c["status"] for c in context["round_vibes"]["app"]["checks"][PAGE]] == ["done", "done"]
     assert context["round_vibes"]["app"]["resend"] == {}

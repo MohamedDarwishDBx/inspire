@@ -270,7 +270,7 @@ def test_the_closing_in_one_pass_per_record_equals_the_closing_built_from_joins_
     assert (by_key["l"]["_inspire_status"], by_key["l"]["_inspire_at_close"], by_key["l"]["_inspire_closed"]) == \
         ("Could not fix", 75.0, iso(at(23, 9)))
     assert (by_key["m"]["_inspire_closed"], by_key["m"]["_inspire_at_close"]) == (iso(at(16, 9)), 20.0), \
-        "saving Done again is not a new close, so the money at stake is the one at the first close"
+        "saving Done again is not a new close, so the value at stake is the one at the first close"
 
 
 def test_the_run_keeps_the_latest_close_of_each_closed_record_as_the_key_read_finds_it_on_a_real_postgres(engine):

@@ -40,9 +40,9 @@ def test_one_helper_in_the_notebook_names_what_is_at_stake(agent_ns):
              ({"kind": "shares", "unit": "x"}, "amount")]
     assert [noun(impact) for impact, _ in cases] == [said for _, said in cases]
     assert [words(None), words(MONEY_IMPACT), words(HOURS_IMPACT), words(MWH_IMPACT)] == [
-        "amount at stake", "money at stake", "hours at stake", "MWh at stake"]
+        "amount at stake", "value at stake", "hours at stake", "MWh at stake"]
     assert [label(None), label(MONEY_IMPACT), label(MWH_IMPACT), label({"kind": "count", "unit": "late shipments"})] == [
-        "Amount at stake", "Money at stake", "MWh at stake", "Late shipments at stake"], "only the first letter changes"
+        "Amount at stake", "Value at stake", "MWh at stake", "Late shipments at stake"], "only the first letter changes"
     assert "def inspire_stake_noun(" in agent_ns["IMPLEMENT_RESULT_HISTORY_SOURCE"], "generated notebooks carry the same helper"
     assert "implement_stake_words" not in agent_ns, "the agent has no second copy"
 
@@ -52,7 +52,7 @@ def test_the_notebook_helper_problems_name_the_kpi_s_unit(agent_ns):
     assert formula(dict(_hours_value(None), formula=None), SCHEMA)[1][0].startswith(
         "the notebook has no VALUE_AT_STAKE_FORMULA, so the App cannot show how each record's hours at stake is worked out")
     assert formula(dict(_value(None), formula=None), SCHEMA)[1][0].startswith(
-        "the notebook has no VALUE_AT_STAKE_FORMULA, so the App cannot show how each record's money at stake is worked out")
+        "the notebook has no VALUE_AT_STAKE_FORMULA, so the App cannot show how each record's value at stake is worked out")
     hours = _hours_value(None)
     parsed, problems = formula(hours, SCHEMA)
     assert problems == []
@@ -83,7 +83,7 @@ def test_the_notebook_helper_prints_name_the_kpi_s_unit(agent_ns):
     assert broken[0].startswith("Hours at stake: Inspire could not read the assumptions people changed in the App")
     plain = []
     agent_ns["inspire_apply_assumptions"](_latest(EDITS), "main.inspire.churn_out", "N01-U01", dict(scope, INSPIRE_RUN={}), plain.append)
-    assert plain and all(line.startswith("Money at stake: ") for line in plain), "a notebook built before the impact unit is money"
+    assert plain and all(line.startswith("Value at stake: ") for line in plain), "a notebook built before the impact unit is money"
 
 
 def test_the_run_names_the_kpi_s_unit_when_it_leaves_out_the_formula_column(agent_ns):
@@ -105,7 +105,7 @@ def test_the_genie_widgets_name_the_kpi_s_unit_with_its_own_capitals(agent_ns):
         assert (widgets["act_now_amount"], widgets["review_amount"]) == (act_now, review) and "currency" not in widgets
     money = {w["name"]: w["label"] for w in inst._genie_core_widgets(dict(spec, impact=dict(MONEY_IMPACT)))}
     assert (money["currency"], money["act_now_amount"], money["review_amount"]) == (
-        "Currency of the money at stake (ISO code)", "Money at stake to act now", "Money at stake to review"), "money stays word for word"
+        "Currency of the value at stake (ISO code)", "Value at stake to act now", "Value at stake to review"), "money keeps its value words"
     assert "the MWh each record puts at stake" in inst._genie_platform_rules(dict(spec, impact=dict(MWH_IMPACT)))
 
 
@@ -120,13 +120,13 @@ def test_a_recorded_kpi_with_no_unit_still_names_its_kind_never_money(agent_ns):
 def test_the_implement_texts_name_the_kpi_s_unit_and_amount_when_an_app_spans_use_cases(agent_ns):
     owners = [f"p{i:02d}@example.com" for i in range(agent_ns["IMPLEMENT_APP_OWNERS_MAX"] + 1)]
     outputs = {**VALID["outputs"], "app": True, "app_owners": owners}
-    for impact, named in ((HOURS_IMPACT, "hours"), (MONEY_IMPACT, "money"), (None, "amount")):
+    for impact, named in ((HOURS_IMPACT, "hours"), (MONEY_IMPACT, "value"), (None, "amount")):
         errors = agent_ns["validate_implement_spec"](dict(VALID, outputs=outputs), impact=impact)[1]
         assert f"an App can name at most 50 owners, the people who may change its {named} at stake assumptions" in errors, (impact, errors)
     refused = agent_ns["implement_assumptions_refused"]
     assert [refused(HOURS_IMPACT), refused(MONEY_IMPACT), refused()] == [
         "the owners of this use case cannot change its hours at stake assumptions in the App",
-        "the owners of this use case cannot change its money at stake assumptions in the App",
+        "the owners of this use case cannot change its value at stake assumptions in the App",
         "the owners of this use case cannot change its amount at stake assumptions in the App"]
 
 
@@ -177,10 +177,10 @@ def test_the_weekly_email_names_the_hours_people_entered_and_keeps_the_unit_when
     inst.logger = _Log()
     inst._implement_alert(_output_context(agent_ns, **ALERT, alert_destinations=[{"id": "dest-0001", "name": "Slack"}]), None)
     digest = [b for m, p, b, _q in calls if (m, p) == ("POST", "/api/2.0/alerts")][-1]
-    assert "'Money at stake now (estimated)'" in digest["query_text"], "a money use case keeps its money words"
+    assert "'Value at stake now (estimated)'" in digest["query_text"], "a money use case keeps its money words"
     warned = [text for level, text in inst.logger.lines if level == "warning" and "run summary" in text]
     assert len(warned) == 1 and warned[0].startswith(
-        "[IMPLEMENT-ALERT] N01-U01: the weekly impact email shows the money at stake the runs wrote without a currency, because "), warned
+        "[IMPLEMENT-ALERT] N01-U01: the weekly impact email shows the value at stake the runs wrote without a currency, because "), warned
 
 
 def test_the_app_shell_server_names_the_summary_s_unit_through_one_helper():
@@ -188,7 +188,7 @@ def test_the_app_shell_server_names_the_summary_s_unit_through_one_helper():
                {"kind": "count", "unit": " late  shipments "}, {"kind": "number", "unit": "MWh"}, {"kind": "count", "unit": ""})
     assert [shell_sql.stake_noun(i) for i in impacts] == ["amount", "money", "money", "hours", "late shipments", "MWh", "count"]
     assert [shell_sql.stake_words(impacts[3]), shell_sql.stake_label(impacts[5]), shell_sql.stake_label(impacts[1]),
-            shell_sql.stake_label(None)] == ["hours at stake", "MWh at stake", "Money at stake", "Amount at stake"]
+            shell_sql.stake_label(None)] == ["hours at stake", "MWh at stake", "Value at stake", "Amount at stake"]
     fields = [{"name": "units", "kind": "integer"}, {"name": "value_at_stake", "kind": "decimal"}]
     hours = {"impact_kind": "hours", "impact_unit": "hours", "currency": ""}
     cases = [({}, "the hours at stake formula of this use case names no assumption"),
@@ -206,7 +206,7 @@ def test_the_app_shell_server_names_the_summary_s_unit_through_one_helper():
         run.update(changes or {"value_assumptions": None})
         assert shell_sql.money_model(run, fields)["problem"] == problem, changes
     assert shell_sql.money_model(None, fields)["problem"] == "the amount at stake formula of this use case names no assumption"
-    assert shell_sql.money_model({"currency": "USD"}, fields)["problem"] == "the money at stake formula of this use case names no assumption"
+    assert shell_sql.money_model({"currency": "USD"}, fields)["problem"] == "the value at stake formula of this use case names no assumption"
     assert shell_core.NO_MONEY == "this page puts no amount at stake on its records"
     owners = {"version": shell_core.SETTINGS_VERSION, "use_case_owners": {"p": ["a"] * (shell_core.USE_CASE_OWNERS_MAX + 1)}}
     problems = [p for p in shell_core.settings_problems(owners, [{"id": "p"}]) if "use_case_owners" in p]

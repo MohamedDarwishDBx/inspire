@@ -144,6 +144,8 @@ REVIEWED = {
     },
     'person': {
         ('__init__', '_raw_operation'),
+        # REQ-199: the Grouping names a vibe typed, shown back so the person can keep one of them.
+        ('_implement_route_vibe', "' and '.join(named)"),
         ('__init__', 'self.generation_path'),
         ('__init__', 'self.table_election_mode'),
         ('_entries', 'name'),
@@ -186,6 +188,8 @@ REVIEWED = {
         ('_run_implement_mode', 'missing'),
     },
     'name': {
+        # REQ-204/REQ-197: the Table Scope view name Inspire computed, named in the refusal to rewrite a view that is not one.
+        ('scope_view_definition', 'view'),
         ('_implement_alert', 'named'),
         ('_verify_file', 'file'),
         ('notebook_file', "pin['file']"),

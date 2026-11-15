@@ -12,7 +12,7 @@ const PERSON = 'person-token';
 const APP_URL = 'https://churn-desk-1.aws.databricksapps.com';
 const MODEL = [
   { name: 'WEEKS_LEFT', label: 'Weeks left', group: 'impact', kind: 'number', low: 1, high: 52, allowed: '1 to 52', source: 'assumption', default: 12, unit: '',
-    reason: 'the value the notebook defines', help: 'An assumption of the money at stake formula.', applies: 'app_and_run' },
+    reason: 'the value the notebook defines', help: 'An assumption of the value at stake formula.', applies: 'app_and_run' },
   { name: 'act_now_share', label: 'Act now share', group: 'flagging', kind: 'percent', low: 0, high: 1, allowed: '0 to 1', source: 'widget', default: '0.05', unit: '%',
     reason: "Inspire's default: the top 5% of the records that pass the decision test are Act now and the next 15% Review",
     help: 'The share of the records that pass the decision test, the highest ranked, that are Act now.', applies: 'run' },
@@ -47,7 +47,7 @@ const CONSTANTS = ['AVG_MONTHLY_REVENUE', 'RETENTION_OFFER_COST', 'GROSS_MARGIN_
 const assumptionRow = (name, at) => ({
   name, label: name.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()), group: 'impact', kind: at % 3 === 2 ? 'percent' : 'money',
   low: 0, high: at % 3 === 2 ? 1 : 5000, allowed: at % 3 === 2 ? '0 to 1' : '0 to 5000', source: 'assumption', default: at % 3 === 2 ? 0.3 : 120 + at,
-  unit: at % 3 === 2 ? '%' : 'USD', reason: 'the value the notebook defines', help: 'An assumption of the money at stake formula.', applies: 'app_and_run',
+  unit: at % 3 === 2 ? '%' : 'USD', reason: 'the value the notebook defines', help: 'An assumption of the value at stake formula.', applies: 'app_and_run',
 });
 const widgetRow = (name, label, group, allowed, low, high, whole) => ({ name, label, group, kind: whole ? 'integer' : 'number', low, high, whole, allowed,
   source: 'widget', default: String(low), unit: '', reason: 'Genie Code chose it when it built the notebook', help: `${label}.`, applies: 'run' });

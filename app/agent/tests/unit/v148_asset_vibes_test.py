@@ -483,11 +483,11 @@ def test_the_reasoning_asks_reach_only_the_record_reasoning_and_the_formula_asks
                     retry_outputs=["value_formula"], retry_asks={"value_formula": ["Count only the weeks left in the season"]})[0]
     text = agent_ns["implement_choices_markdown"](formula, asks={"value_formula": ["Count only the weeks left in the season"]},
                                                   impact=agent_ns["INSPIRE_MONEY_IMPACT"])
-    assert ('- The customer\'s asks for the money at stake formula, word for word: """Count only the weeks left in the season""" They '
+    assert ('- The customer\'s asks for the value at stake formula, word for word: """Count only the weeks left in the season""" They '
             "are explicit user directives for `VALUE_AT_STAKE_FORMULA`") in text
-    assert ("- Inspire split the asks for the money at stake formula into these, and checks each one in the value_at_stake_formula "
+    assert ("- Inspire split the asks for the value at stake formula into these, and checks each one in the value_at_stake_formula "
             "the run writes: 1. Count only the weeks left in the season") in text
-    assert ("- Try again on only these asks for the money at stake formula, which the last build missed, and keep the rest of the "
+    assert ("- Try again on only these asks for the value at stake formula, which the last build missed, and keep the rest of the "
             "formula as it is: 1. Count only the weeks left in the season") in text
     assert "money at stake formula" not in agent_ns["implement_choices_markdown"](_spec(agent_ns, outputs=ALL)[0])
 
@@ -515,8 +515,8 @@ def test_new_reasoning_asks_rerun_the_notebook_with_them_and_record_their_checks
     assert status_of["ai_reasoning"]["vibes_checks"] == [{"ask": "Answer in French", "status": "done", "evidence": "Appeler le magasin."}]
     assert (status_of["ai_reasoning"]["state"], status_of["ai_reasoning"]["spec_version"]) == ("ready", 3)
     assert status_of["ai_reasoning"]["what"] == "Why each row is flagged, what to do, and how sure"
-    assert status_of["value_formula"] == {"state": "ready", "spec_version": 3, "title": "Money at stake formula",
-                                          "what": "How the money at stake on each row is counted"}
+    assert status_of["value_formula"] == {"state": "ready", "spec_version": 3, "title": "Value at stake formula",
+                                          "what": "How the value at stake on each row is counted"}
 
 
 def test_the_notebook_and_its_parts_are_checked_against_what_the_run_and_genie_wrote(agent_ns):
@@ -549,7 +549,7 @@ def test_the_notebook_and_its_parts_are_checked_against_what_the_run_and_genie_w
     assert context["asset_status"]["ai_reasoning"]["vibes_checks"] == [
         {"ask": "Answer in Spanish", "status": "done", "evidence": "Llamar al gerente de la tienda."}]
     assert context["asset_status"]["value_formula"]["state"] == "failed"
-    assert warnings == ["Money at stake formula vibe not done: Count only the weeks left: the latest run wrote no money at stake "
+    assert warnings == ["Value at stake formula vibe not done: Count only the weeks left: the latest run wrote no value at stake "
                         "formula on any record"]
     assert queries[0] == ("SELECT `record_key`, `priority_tier`, `ai_explanation`, `ai_confidence_reason`, `ai_next_action`, "
                           "`ai_expected_result`, `ai_other_option`, `ai_evidence` FROM `main`.`inspire`.`churn_out` WHERE use_case_id = "

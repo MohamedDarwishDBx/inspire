@@ -397,7 +397,7 @@ def test_write_result_stages_the_rows_and_always_drops_the_stage(fresh_ns):
     with pytest.raises(ValueError, match="value_at_stake"):
         fresh_ns["inspire_write_result"](_Frame([("entity_id", "string")]), TABLE, spark_session=unpriced.spark, out=printed.append)
     assert unpriced.spark.statements[-1] == f"DROP TABLE IF EXISTS {QUOTED_STAGE}", \
-        "a notebook built for the money at stake that writes no value_at_stake is refused"
+        "a notebook built for the value at stake that writes no value_at_stake is refused"
 
 
 def test_every_notebook_run_controls_cell_carries_the_writer(agent_ns):
