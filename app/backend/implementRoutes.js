@@ -232,8 +232,6 @@ function registerImplementRoutes(app, deps) {
     try {
       return { tags: GP.columnTagsOf(await sqlRows(req.dbHost, token, warehouseId, asked)), error: '' };
     } catch (err) {
-      // A refusal reads as the Permission Required payload, never as a note under the columns (REQ-313).
-      if (PM_ERROR.accessDenied(err)) throw err;
       console.warn(`implement: the column tags of ${tables.join(', ')} could not be read, so only column names are checked for personal data: ${err.message}`);
       return { tags: {}, error: err.message || String(err) };
     }
@@ -2411,7 +2409,6 @@ function registerImplementRoutes(app, deps) {
       const rows = await implementRows(req.dbHost, req.dbToken, ctx.warehouseId, table, (existing) => I.implementRegistryStatement(table, existing));
       return { shared: I.sharedHolders(rows, { sessionId: ctx.sid, useCaseId: ctx.useCaseId }), shared_error: '' };
     } catch (err) {
-      if (PM_ERROR.accessDenied(err)) throw err;
       return { shared: null, shared_error: err.message };
     }
   }

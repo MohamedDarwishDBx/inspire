@@ -138,7 +138,7 @@ test('must-exclude: a read privilege still maps to the read set, unchanged', () 
 });
 
 // (a) An App-identity or tag read that is refused is the Permission Required payload, not a note under the page (REQ-313).
-test('the column tags read refused by Unity Catalog answers 403 with the payload, not a note under the columns (REQ-313)', async () => {
+test('an optional tag read refused by Unity Catalog falls back to the name rule with its note, and answers 200 (D-OPTREAD)', async () => {
   const made = makeApp({ forwardedToken: PERSON, forwardedEmail: PERSON_EMAIL, tagsError: DENIED });
   const srv = await listen(made.app);
   let resp;
@@ -149,9 +149,9 @@ test('the column tags read refused by Unity Catalog answers 403 with the payload
   } finally {
     await srv.close();
   }
-  assert.equal(resp.status, 403, JSON.stringify(body));
-  assert.ok(Array.isArray(body.permissions) && body.permissions.length > 0, 'the payload is present');
-  assert.equal(body.tags_note, undefined, 'no note is shown in place of the payload');
+  assert.equal(resp.status, 200, JSON.stringify(body));
+  assert.equal(body.tags_read, false, 'the name rule is used and the page says so');
+  assert.equal(body.permissions, undefined, 'an optional read never raises the dialog');
 });
 
 test('must-exclude: a tag read that fails for a reason that is not a refusal still answers with the tags note (must-exclude)', async () => {
