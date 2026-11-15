@@ -36,8 +36,6 @@ const NOT_WALKED = {
   'GET /api/inspire/implement/diagnostics': 'reads the build through the same loadStatus read and person token as GET /api/inspire/implement/status, which the harness walks; no non-owner harness row walks it yet',
   'GET /api/inspire/log': 'reads the run log only for its launcher or an App manager; no non-owner harness row walks it yet, and the route samples prove the launcher refusal',
   'POST /api/run/:runId/again': 'launches a run again only for its launcher or an App manager; no non-owner harness row walks it yet, and the route samples and runAgain tests prove the launcher refusal',
-  'POST /api/access-request/check': 'checks whether Request for Access is offered for the grants the person needs, with the person’s own sign-in and changes nothing; no non-owner harness row walks it yet, and accessRequest.test.js proves the offer and the refusal',
-  'POST /api/access-request': 'sends a Request for Access as the person, to the owner of the data; no non-owner harness row walks it yet, and accessRequest.test.js proves the send and the no-destination refusal',
   'POST /api/documents': 'rebuilds a session\'s documents only for its launcher or an App manager; the documentJob and launcher-refusal tests prove it',
 };
 const LITERAL = /\bapp\.(get|post|put|patch|delete|all)\(\s*(['"`])(.*?)\2([^\n]*)/g;
