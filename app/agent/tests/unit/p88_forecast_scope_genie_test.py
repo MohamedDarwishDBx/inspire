@@ -6,6 +6,7 @@ REQ-269: the First-run sample sentence leads the Genie Agent's instructions, so 
 """
 
 from v142_genie_test import COLUMNS, LATEST, ORDERS, RESULT, _rich_space
+from v120_artifacts_support import FakeSpark
 
 TABLE = "inspire_kinds_rc7._inspire.sales_transactions"
 GROUPS = {"amex": 204, "visa": 190, "mastercard": 189}
@@ -100,3 +101,46 @@ def test_a_folds_shortfall_is_written_into_the_reason_the_run_is_not_trusted(fre
     assert text.startswith("No model passed this use case's acceptance check in the last run: Minimum backtest folds is 3, and this run measured 2"), text
     assert text.endswith(". The history fits 2 of 3 backtest folds: each series has 30 periods, and a fold trains on 14 periods (two seasonal "
                          "cycles) before testing on the next 7, so the forecast cannot be checked on 3 folds yet"), text
+
+
+# P88 round 2 (D-AUTO): records mode on a table smaller than the goal names the rows it reads. The count comes from one shared fixture
+# that the wizard JS test also reads (app/frontend/test/firstRunCountShared.test.mjs).
+import json as _json
+from pathlib import Path as _Path
+
+_CASES = _json.loads((_Path(__file__).resolve().parents[3] / "shared" / "first_run_count_cases.json").read_text())["cases"]
+
+
+def _standalone(table, goal, available=None):
+    chosen = {"scope": "records", "table": table, "records": goal, "key": "transaction_id"}
+    return dict(chosen, available=available) if available is not None else chosen
+
+
+def test_records_mode_on_a_table_smaller_than_the_goal_names_the_rows_it_reads(agent_ns):
+    # fail-pre: the plain records branch printed the goal ("1,000 records") whatever the table held
+    text = agent_ns["inspire_scope_text"](_standalone(TABLE, 1000, available=583))
+    assert text == f"583 records of {TABLE} {agent_ns['INSPIRE_SPREAD_WORDS']}", text
+
+
+def test_the_text_matches_the_fixture_for_every_case_and_the_goal_only_when_the_table_is_larger(agent_ns):
+    # fail-pre on the smaller-table cases (text said the goal); the larger-table case already read the goal
+    for case in _CASES:
+        text = agent_ns["inspire_scope_text"](_standalone(TABLE, case["goal"], available=case["rows"]))
+        noun = "record" if case["shown"] == 1 else "records"
+        assert text.startswith(f"{case['shown']:,} {noun} of {TABLE}"), (case["name"], text)
+
+
+def test_the_one_group_and_cut_records_name_the_rows_too(agent_ns):
+    one = dict(_standalone(TABLE, 1000, available=583), one_group=True)
+    assert agent_ns["inspire_scope_text"](one).startswith(f"583 records of {TABLE} "), agent_ns["inspire_scope_text"](one)
+    cut = dict(_standalone(TABLE, 1000, available=583), cut="Anomaly Detection", cut_column="")
+    assert agent_ns["inspire_scope_text"](cut).startswith(f"583 records of {TABLE} "), agent_ns["inspire_scope_text"](cut)
+
+
+def test_resolve_counts_the_table_for_records_mode_and_the_text_follows_the_count(agent_ns):
+    # fail-pre: resolve returned the choice with no count, so the text could not name what the run reads
+    spark = FakeSpark(responder=lambda s: [{"n": 583}] if s.startswith("SELECT COUNT(*)") else [])
+    resolved = agent_ns["inspire_scope_resolve"](spark, _standalone(TABLE, 1000))
+    assert resolved["available"] == 583
+    assert any(s.startswith("SELECT COUNT(*) AS n FROM") for s in spark.statements)
+    assert agent_ns["inspire_scope_text"](resolved).startswith(f"583 records of {TABLE} ")

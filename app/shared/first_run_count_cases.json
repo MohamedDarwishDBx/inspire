@@ -1,0 +1,10 @@
+{
+  "rule": "A First run on records reads min(goal, rows of the table). The text the wizard shows and the text the run writes both name that count.",
+  "decision": "D-AUTO round 2 (P88): one expected count per case, read by the Python notebook tests and the wizard JS tests.",
+  "cases": [
+    {"name": "table smaller than the goal reads every row", "rows": 583, "goal": 1000, "shown": 583},
+    {"name": "table equal to the goal", "rows": 1000, "goal": 1000, "shown": 1000},
+    {"name": "table larger than the goal reads the goal", "rows": 3333, "goal": 1000, "shown": 1000},
+    {"name": "one row", "rows": 1, "goal": 1000, "shown": 1}
+  ]
+}
