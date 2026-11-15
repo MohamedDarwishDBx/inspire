@@ -109,7 +109,7 @@ The context's data_through is the latest date in the data, not the run date: say
 To mark records done, not an issue, snoozed, assigned or reopened, call propose_action: it never changes anything by itself, it shows the person a confirmation card that lists every affected record, and only their click saves it. Never say a change is saved. When the person says fix this, or asks what to do about records, call offer_actions: it shows buttons on those records, and their click prepares the change for confirmation; do not also list the buttons in text.
 A change_view change lasts until the page reloads: never say it stays, is remembered or becomes the default. When the person wants to keep it, tell them to choose Save this view under Saved views.
 A record marked not an issue needs the person's reason; ask for it when they gave none. A snooze needs a date.
-Answer for a narrow chat panel, in plain business words, in US English, with no em dashes. {brief} Use one small markdown table, with a header row, a separator row and at most {table_rows} rows, for any answer that lists {row_table_min} or more rows and for comparing several items on the same measures; never write those rows as bullets. Put every heading, bullet and table row on its own line; never write a table or a list inside a sentence, and never let a bold label run into the sentence after it. Every number comes from the context or a tool result. When the person asks what to do, give the one or two concrete next steps on this page, such as the record to open or the action you can propose. Name what you looked at in a few words."""
+Relative windows such as last 30 days or this month count back from data_through, the page's as-of date, never from today when the two differ. Answer for a narrow chat panel, in plain business words, in US English, with no em dashes. {brief} Use one small markdown table, with a header row, a separator row and at most {table_rows} rows, for any answer that lists {row_table_min} or more rows and for comparing several items on the same measures; never write those rows as bullets. Put every heading, bullet and table row on its own line; never write a table or a list inside a sentence, and never let a bold label run into the sentence after it. Every number comes from the context or a tool result. When the person asks what to do, give the one or two concrete next steps on this page, such as the record to open or the action you can propose. Name what you looked at in a few words."""
 FINAL_NOTE = "Answer now from what you have, without calling a tool."
 
 DRAFT_ROWS = 10
@@ -634,6 +634,31 @@ def genie_note(answer: str, result: dict) -> str:
     if value is None or not states(answer, value, "") or sql_scope(result.get("sql")) == ALL_ROWS:
         return ""
     return f"Genie counted {kpi_shown({}, value)} for {sql_scope(result.get('sql'))}."
+
+
+WINDOW_NUMBER = r"\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|thirty|sixty|ninety"
+RELATIVE_WINDOW = re.compile(rf"\b(?:last|past|previous|prior)\s+(?:{WINDOW_NUMBER})\s+(?:days?|weeks?|months?|quarters?|years?)\b"
+                             r"|\b(?:this|last|previous)\s+(?:week|month|quarter|year)\b|\b(?:today|yesterday)\b", re.I)
+
+
+def window_phrase(question) -> str:
+    found = RELATIVE_WINDOW.search(str(question or ""))
+    return " ".join(found.group(0).lower().split()) if found else ""
+
+
+def genie_question(question, as_of, today) -> str:
+    """A relative window in a Genie question counts back from the page's as-of date, the latest date in the data, so Genie and the page
+    agree. When the data is fresh the as-of is today and the question is unchanged."""
+    if not as_of or as_of == today or not window_phrase(question):
+        return question
+    return f"{question} Count relative dates from {as_of}, the latest date in the data, not from today ({today})."
+
+
+def window_note(question, as_of, today) -> str:
+    phrase = window_phrase(question)
+    if not as_of or as_of == today or not phrase:
+        return ""
+    return f"Counted over the {phrase} of data, to {as_of}."
 
 
 def plain_name(name) -> str:
@@ -1607,6 +1632,8 @@ class Agent:
                                table_rows=TABLE_ROWS, row_table_min=ROW_TABLE_MIN)
         context = self.context(job, ws, who)
         job["key_numbers"], job["genie"] = context.get("key_numbers") or [], []
+        job["as_of"] = (context.get("data_through") or {}).get("date"), self.shell.now().date().isoformat()
+        job["window_notes"] = []
         messages = [{"role": "system", "content": system}, {"role": "user", "content": "Context of this page:\n" + as_data(context)}]
         for item in job["history"]:
             messages += [{"role": "user", "content": item["question"]}, {"role": "assistant", "content": item["answer"] or "(no answer)"}]
@@ -1624,6 +1651,9 @@ class Agent:
                 turn.refused = turn.answer.strip() == OFF_TOPIC
                 if turn.refused:
                     turn.answer = self.refusal(job)
+                for note in job.get("window_notes") or []:
+                    if not turn.refused:
+                        turn.answer = f"{turn.answer}\n\n{note}"
                 turn.next = [] if turn.refused else self.next_steps(page, turn, turn.spoken or turn.answer)
                 if stop and stop not in turn.answer:
                     turn.answer = f"{turn.answer}\n\n{stop}"
@@ -1690,7 +1720,11 @@ class Agent:
         question = clean_question(args.get("question"))
         page, ws = job["page"], job["ws"]
         space = self.shell.genie_space(page)
-        started = ws.genie_ask(space, question, turn.conversation_id)
+        as_of, today = job.get("as_of") or (None, self.shell.now().date().isoformat())
+        started = ws.genie_ask(space, genie_question(question, as_of, today), turn.conversation_id)
+        note = window_note(question, as_of, today)
+        if note and note not in job.setdefault("window_notes", []):
+            job["window_notes"].append(note)
         turn.conversation_id = str(started.get("conversation_id") or "")
         until = self.clock() + GENIE_WAIT_S
         while True:
