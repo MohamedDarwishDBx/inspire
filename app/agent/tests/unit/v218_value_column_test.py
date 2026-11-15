@@ -60,7 +60,7 @@ def test_a_kpi_that_never_reads_the_asked_column_still_fails_the_column_check(ag
     plain = dict(COUNTED, expression="SUM(CASE WHEN amount > 100 THEN 1 ELSE 0 END)", caption="Refund mismatch")
     check, judged = _round(agent_ns, _page(kpis=[TOTAL, plain]))
     assert check["status"] == "missing"
-    assert check["evidence"] == f"the built {NAME} KPI on the App page n03_u01 names no column reason category"
+    assert check["evidence"] == f"the built {NAME} KPI on the App page Order review names no column reason category"  # REQ-237: by title
     assert ("column: reason category", False) in [(c["name"], c["passed"]) for c in check["checks"]]
 
 

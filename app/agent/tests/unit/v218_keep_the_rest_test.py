@@ -71,7 +71,7 @@ def _asks_of(prompt):
 def test_a_keep_the_rest_ask_is_done_from_the_untargeted_check_and_never_asks_the_judge(agent_ns):
     checks, judged, found = _round(agent_ns, V2)
     assert (checks[KEEP]["status"], checks[KEEP]["evidence"]) == (
-        "done", f"nothing on the built {LABEL} that the other asks did not name changed from the version before")
+        "done", "nothing on the built App page Late order outlook that the other asks did not name changed from the version before")  # REQ-237: by title
     assert checks[REMOVE]["status"] == "done"
     assert checks[ADD]["status"] == "done"
     assert all(KEEP not in _asks_of(prompt) for prompt in judged), "the judge is never asked about the keep-the-rest ask"
