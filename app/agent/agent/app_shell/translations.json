@@ -320,7 +320,8 @@
   "key_measure_note": "المقياس الرئيسي",
   "doc_data_filters": "مرشحات البيانات",
   "doc_filter_all_except": "الكل باستثناء {values}",
-  "doc_filter_and_more": "و{count} أكثر"
+  "doc_filter_and_more": "و{count} أكثر",
+  "doc_value_at_stake": "القيمة المعرضة للخطر"
  },
  "Spanish": {
   "main_title": "Generador de Casos de Uso Impulsado por Databricks Genie Code",
@@ -643,7 +644,8 @@
   "key_measure_note": "Medida clave",
   "doc_data_filters": "Filtros de Datos",
   "doc_filter_all_except": "todos excepto {values}",
-  "doc_filter_and_more": "y {count} más"
+  "doc_filter_and_more": "y {count} más",
+  "doc_value_at_stake": "Valor en riesgo"
  },
  "French": {
   "main_title": "Générateur de Cas d'Utilisation Propulsé par Databricks Genie Code",
@@ -966,7 +968,8 @@
   "key_measure_note": "Mesure clé",
   "doc_data_filters": "Filtres de Données",
   "doc_filter_all_except": "tout sauf {values}",
-  "doc_filter_and_more": "et {count} de plus"
+  "doc_filter_and_more": "et {count} de plus",
+  "doc_value_at_stake": "Valeur en jeu"
  },
  "German": {
   "main_title": "Anwendungsfall-Generator Unterstützt von Databricks Genie Code",
@@ -1289,7 +1292,8 @@
   "key_measure_note": "Schlüsselkennzahl",
   "doc_data_filters": "Datenfilter",
   "doc_filter_all_except": "alle außer {values}",
-  "doc_filter_and_more": "und {count} weitere"
+  "doc_filter_and_more": "und {count} weitere",
+  "doc_value_at_stake": "Wert auf dem Spiel"
  },
  "Portuguese": {
   "main_title": "Gerador de Casos de Uso Impulsionado por Databricks Genie Code",
@@ -1612,7 +1616,8 @@
   "key_measure_note": "Medida-chave",
   "doc_data_filters": "Filtros de Dados",
   "doc_filter_all_except": "todos exceto {values}",
-  "doc_filter_and_more": "e mais {count}"
+  "doc_filter_and_more": "e mais {count}",
+  "doc_value_at_stake": "Valor em jogo"
  },
  "Italian": {
   "main_title": "Generatore di Casi d'Uso Alimentato da Databricks Genie Code",
@@ -1935,7 +1940,8 @@
   "key_measure_note": "Misura chiave",
   "doc_data_filters": "Filtri Dati",
   "doc_filter_all_except": "tutti tranne {values}",
-  "doc_filter_and_more": "e {count} altri"
+  "doc_filter_and_more": "e {count} altri",
+  "doc_value_at_stake": "Valore in gioco"
  },
  "Chinese (Mandarin)": {
   "main_title": "由 达塔布里克斯 吉尼 科德 驱动的用例生成器",
@@ -2258,7 +2264,8 @@
   "key_measure_note": "关键指标",
   "doc_data_filters": "数据筛选器",
   "doc_filter_all_except": "除{values}外的所有",
-  "doc_filter_and_more": "以及{count}个更多"
+  "doc_filter_and_more": "以及{count}个更多",
+  "doc_value_at_stake": "风险价值"
  },
  "Japanese": {
   "main_title": "データブリックス ジーニー コード を活用したユースケースジェネレーター",
@@ -2581,7 +2588,8 @@
   "key_measure_note": "主要指標",
   "doc_data_filters": "データフィルター",
   "doc_filter_all_except": "{values} 以外のすべて",
-  "doc_filter_and_more": "他 {count} 件"
+  "doc_filter_and_more": "他 {count} 件",
+  "doc_value_at_stake": "リスクにさらされている価値"
  },
  "Korean": {
   "main_title": "데이터브릭스 지니 코드 기반의 유스케이스 생성기",
@@ -2904,7 +2912,8 @@
   "key_measure_note": "핵심 지표",
   "doc_data_filters": "데이터 필터",
   "doc_filter_all_except": "{values}을(를) 제외한 전체",
-  "doc_filter_and_more": "및 {count}개 더"
+  "doc_filter_and_more": "및 {count}개 더",
+  "doc_value_at_stake": "위험에 처한 가치"
  },
  "Hindi": {
   "main_title": "डेटाब्रिक्स जीनी कोड द्वारा संचालित उपयोग केस जनरेटर",
@@ -3227,7 +3236,8 @@
   "key_measure_note": "मुख्य मापदंड",
   "doc_data_filters": "डेटा फ़िल्टर",
   "doc_filter_all_except": "{values} को छोड़कर सभी",
-  "doc_filter_and_more": "और {count} अधिक"
+  "doc_filter_and_more": "और {count} अधिक",
+  "doc_value_at_stake": "दांव पर लगा मूल्य"
  },
  "Russian": {
   "main_title": "Генератор бизнес-кейсов на базе Датабрикс Джини Код",
@@ -3550,7 +3560,8 @@
   "key_measure_note": "Ключевой показатель",
   "doc_data_filters": "Фильтры данных",
   "doc_filter_all_except": "все, кроме {values}",
-  "doc_filter_and_more": "и ещё {count}"
+  "doc_filter_and_more": "и ещё {count}",
+  "doc_value_at_stake": "Стоимость под риском"
  },
  "Swedish": {
   "main_title": "Användningsfallsgenerator Driven av Databricks Genie Code",
@@ -3873,7 +3884,8 @@
   "key_measure_note": "Nyckelmått",
   "doc_data_filters": "Datafilter",
   "doc_filter_all_except": "alla utom {values}",
-  "doc_filter_and_more": "och {count} till"
+  "doc_filter_and_more": "och {count} till",
+  "doc_value_at_stake": "Värde i fara"
  },
  "Danish": {
   "main_title": "Anvendelsescase-generator drevet af Databricks Genie Code",
@@ -4196,7 +4208,8 @@
   "key_measure_note": "Nøgletal",
   "doc_data_filters": "Datafiltre",
   "doc_filter_all_except": "alle undtagen {values}",
-  "doc_filter_and_more": "og {count} flere"
+  "doc_filter_and_more": "og {count} flere",
+  "doc_value_at_stake": "Værdi på spil"
  },
  "Norwegian": {
   "main_title": "Brukscasegenerator drevet av Databricks Genie Code",
@@ -4519,7 +4532,8 @@
   "key_measure_note": "Nøkkeltall",
   "doc_data_filters": "Datafiltre",
   "doc_filter_all_except": "alle unntatt {values}",
-  "doc_filter_and_more": "og {count} til"
+  "doc_filter_and_more": "og {count} til",
+  "doc_value_at_stake": "Verdi i spill"
  },
  "Finnish": {
   "main_title": "Käyttötapausgeneraattori Databricks Genie Coden avulla",
@@ -4842,7 +4856,8 @@
   "key_measure_note": "Avainmittari",
   "doc_data_filters": "Tietosuodattimet",
   "doc_filter_all_except": "kaikki paitsi {values}",
-  "doc_filter_and_more": "ja {count} lisää"
+  "doc_filter_and_more": "ja {count} lisää",
+  "doc_value_at_stake": "Vaarassa oleva arvo"
  },
  "Polish": {
   "main_title": "Generator przypadków użycia oparty na Databricks Genie Code",
@@ -5165,7 +5180,8 @@
   "key_measure_note": "Kluczowy miernik",
   "doc_data_filters": "Filtry danych",
   "doc_filter_all_except": "wszystkie oprócz {values}",
-  "doc_filter_and_more": "i {count} więcej"
+  "doc_filter_and_more": "i {count} więcej",
+  "doc_value_at_stake": "Wartość zagrożona"
  },
  "Romanian": {
   "main_title": "Generator de cazuri de utilizare alimentat de Databricks Genie Code",
@@ -5488,7 +5504,8 @@
   "key_measure_note": "Măsura cheie",
   "doc_data_filters": "Filtre de Date",
   "doc_filter_all_except": "toate cu excepția {values}",
-  "doc_filter_and_more": "și {count} mai multe"
+  "doc_filter_and_more": "și {count} mai multe",
+  "doc_value_at_stake": "Valoare în joc"
  },
  "Ukrainian": {
   "main_title": "Генератор бізнес-кейсів на базі Датабрікс Джіні Код",
@@ -5811,7 +5828,8 @@
   "key_measure_note": "Ключовий показник",
   "doc_data_filters": "Фільтри даних",
   "doc_filter_all_except": "усі, крім {values}",
-  "doc_filter_and_more": "і ще {count}"
+  "doc_filter_and_more": "і ще {count}",
+  "doc_value_at_stake": "Вартість під ризиком"
  },
  "Dutch": {
   "main_title": "Gebruikscasegenerator aangedreven door Databricks Genie Code",
@@ -6134,7 +6152,8 @@
   "key_measure_note": "Kernmaatstaf",
   "doc_data_filters": "Gegevensfilters",
   "doc_filter_all_except": "alles behalve {values}",
-  "doc_filter_and_more": "en {count} meer"
+  "doc_filter_and_more": "en {count} meer",
+  "doc_value_at_stake": "Waarde op het spel"
  },
  "Indonesian": {
   "main_title": "Generator Kasus Penggunaan Didukung oleh Databricks Genie Code",
@@ -6457,7 +6476,8 @@
   "key_measure_note": "Ukuran kunci",
   "doc_data_filters": "Filter Data",
   "doc_filter_all_except": "semua kecuali {values}",
-  "doc_filter_and_more": "dan {count} lainnya"
+  "doc_filter_and_more": "dan {count} lainnya",
+  "doc_value_at_stake": "Nilai yang dipertaruhkan"
  },
  "Malay": {
   "main_title": "Penjana Kes Penggunaan Dikuasakan oleh Databricks Genie Code",
@@ -6780,7 +6800,8 @@
   "key_measure_note": "Ukuran utama",
   "doc_data_filters": "Penapis Data",
   "doc_filter_all_except": "semua kecuali {values}",
-  "doc_filter_and_more": "dan {count} lagi"
+  "doc_filter_and_more": "dan {count} lagi",
+  "doc_value_at_stake": "Nilai yang dipertaruhkan"
  },
  "Tamil": {
   "main_title": "Databricks Genie Code மூலம் இயக்கப்படும் பயன்பாட்டு வழக்கு உருவாக்கி",
@@ -7103,6 +7124,7 @@
   "key_measure_note": "முக்கிய அளவீடு",
   "doc_data_filters": "தரவு வடிகட்டிகள்",
   "doc_filter_all_except": "{values} தவிர அனைத்தும்",
-  "doc_filter_and_more": "மற்றும் {count} மேலும்"
+  "doc_filter_and_more": "மற்றும் {count} மேலும்",
+  "doc_value_at_stake": "ஆபத்தில் உள்ள மதிப்பு"
  }
 }

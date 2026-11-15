@@ -41,7 +41,7 @@ test('the Build page requests the value estimates route and shows its line on an
     await unmeasured.first().waitFor({ timeout: 20000 });
     assert.ok(await unmeasured.count() >= 1, 'an unmeasured card shows the route line');
     const body = await page.locator('body').innerText();
-    assert.match(body, /Set a money rule to see its value\./);
+    assert.match(body, /Set a money rule to see the value at stake\./);
     assert.doesNotMatch(body, /Value not measured yet: measure late shipments/, 'the route line replaces the Discover fallback on that card');
     assert.match(body, /AED 9,000 a year/, 'the measured figure stays on its card even though the route answered set a rule');
   } finally {

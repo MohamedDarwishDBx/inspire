@@ -31,7 +31,7 @@ test('an estimate says Estimated, its amount and currency, and the App whose mon
 test('with no rule, the card asks for a money rule and shows no number', () => {
   const html = line({ status: 'set_rule' }, { onSetRule: () => {} });
   assert.match(html, /data-value-estimate="set-rule"/);
-  assert.match(html, /Set a money rule to see its value\./);
+  assert.match(html, /Set a money rule to see the value at stake\./);
   assert.match(html, /data-value-set-rule/);
   assert.doesNotMatch(html, /\d,?\d* AED/);
 });
@@ -57,7 +57,7 @@ test('a borrowed rule that cannot estimate names the rule it borrows from and gi
 
 test('the Set rule button does not repeat the sentence before it (REQ-078 walk defect 6)', () => {
   const html = line({ status: 'set_rule' }, { onSetRule: () => {} });
-  assert.match(html, /Set a money rule to see its value\./);
+  assert.match(html, /Set a money rule to see the value at stake\./);
   assert.match(html, />Set rule<\/button>/);
   assert.equal((html.match(/Set a money rule/g) || []).length, 1, 'the words appear once');
 });
@@ -123,7 +123,7 @@ const info = (uc) => bundle.v130View(uc);
 test('the drawer value section shows the route line for an unmeasured use case, the same as its card', () => {
   const html = drawer({ info: info(notMeasuredUc), uc: notMeasuredUc, valueEstimate: { status: 'set_rule' } });
   assert.match(html, /data-value-estimate="set-rule"/);
-  assert.match(html, /Set a money rule to see its value\./);
+  assert.match(html, /Set a money rule to see the value at stake\./);
   assert.doesNotMatch(html, /Value not measured yet/);
 });
 
