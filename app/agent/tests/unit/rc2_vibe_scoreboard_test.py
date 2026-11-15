@@ -281,3 +281,69 @@ def test_a_failed_on_demand_read_is_unchecked_not_an_exception(agent_ns):
 
     inst._implement_app_check = boom
     assert inst._implement_app_served_tool() == {}
+
+
+class _ShownShell:
+    """The spec shows rank and priority_tier and filters both; the served App is read through the page entry under test."""
+
+    def list_column_filters(self, node):
+        return [{"column": c} for c in (node.get("records") or {}).get("column_filters") or []]
+
+    def list_shown(self, node):
+        return ["rank", "priority_tier"]
+
+    def table_column_filters(self, held):
+        return []
+
+    def table_shown(self, held):
+        return []
+
+
+SPEC_RANK_AND_TIER = dict(RECORDS_PAGE, records=dict(RECORDS_PAGE["records"], column_filters=["rank", "priority_tier"]))
+BOTH_FILTERED = {"rank": {"label": "Rank", "problem": ""}, "priority_tier": {"label": "Priority tier", "problem": ""}}
+
+
+def _all_gate(agent_ns, served_entry, page=SPEC_RANK_AND_TIER):
+    return agent_ns["implement_vibes_gate"]({"kind": "column_filter", "value": "all", "all": True}, page, None, "App page fixture_page",
+                                            {"served": {PAGE_ID: served_entry}, "shell_sql": _ShownShell()})
+
+
+def test_an_all_check_the_served_list_does_not_show_a_spec_column_is_unmet(agent_ns):
+    served = {"filters": {}, "columns": {"records": BOTH_FILTERED}, "shown": ["rank"]}
+    ok, reason = _all_gate(agent_ns, served)
+    assert ok is False and "the served records table does not show priority_tier" in reason
+
+
+def test_an_all_check_passes_when_the_served_list_shows_every_spec_column_with_a_filter(agent_ns):
+    served = {"filters": {}, "columns": {"records": BOTH_FILTERED}, "shown": ["rank", "priority_tier"]}
+    ok, reason = _all_gate(agent_ns, served)
+    assert ok is True and "not the served App" not in reason
+
+
+def test_an_all_check_with_no_served_rows_is_judged_on_the_spec_and_says_so(agent_ns):
+    served = {"filters": {}, "columns": {"records": BOTH_FILTERED}, "shown": None}
+    ok, reason = _all_gate(agent_ns, served)
+    assert ok is True and "shown columns from the spec, not the served App" in reason
+
+
+def test_the_served_page_entry_records_the_columns_the_list_shows(agent_ns):
+    rows = [{"rank": 1, "priority_tier": "Act now"}, {"rank": 2, "priority_tier": "Review"}]
+    entry = agent_ns["implement_served_page"]({"filters": [], "columns": {"list": []}}, shell_core.served_filter_problem, rows)
+    assert entry["shown"] == ["priority_tier", "rank"]
+    assert agent_ns["implement_served_page"]({"filters": [], "columns": {}}, shell_core.served_filter_problem, [])["shown"] is None
+
+
+class _RowsShell:
+    def __init__(self, rows):
+        self.rows, self.calls = rows, []
+
+    def records(self, headers, data):
+        self.calls.append(data)
+        return {"rows": self.rows}
+
+
+def test_the_served_rows_come_from_the_decision_list_of_a_page_with_records_only(agent_ns):
+    shell = _RowsShell([{"rank": 1}])
+    assert agent_ns["implement_served_rows"](shell, {}, {"id": PAGE_ID, "records": {"id": "records"}}) == [{"rank": 1}]
+    assert agent_ns["implement_served_rows"](shell, {}, {"id": PAGE_ID}) == []
+    assert shell.calls == [{"page": PAGE_ID}]
