@@ -93,11 +93,12 @@ export default function SetupWizard({ settings, update, onComplete }) {
 
             // Auto-create database
             try {
-              await fetch('/api/setup/create-database', {
+              const created = await fetch('/api/setup/create-database', {
                 method: 'POST',
                 headers: autoHeaders,
                 body: JSON.stringify({ inspire_database: db, warehouse_id: wh }),
               });
+              if (!created.ok) await responseError(created.clone());
             } catch {}
 
             // Auto-publish notebook. A read that never answers stops here: the page says so, and Try again runs the detect again.
@@ -174,7 +175,7 @@ export default function SetupWizard({ settings, update, onComplete }) {
     if (!selectedCatalog || (!token && !isDatabricksApp)) return;
     const q = warehouseId ? `?warehouse_id=${encodeURIComponent(warehouseId)}` : '';
     fetch(`/api/catalogs/${encodeURIComponent(selectedCatalog)}/schemas${q}`, { headers: headers() })
-      .then(r => r.json())
+      .then(async (r) => { if (!r.ok) await responseError(r.clone()); return r.json(); })
       .then(data => setSchemas(data.schemas || []))
       .catch(() => {});
   }, [selectedCatalog, token, databricksHost, warehouseId, isDatabricksApp, headers]);
@@ -189,8 +190,9 @@ export default function SetupWizard({ settings, update, onComplete }) {
         headers: headers(),
         body: JSON.stringify({ warehouse_id: warehouseId, inspire_database: inspireDatabase }),
       });
+      const refused = resp.ok ? null : await responseError(resp.clone());
       const data = await resp.json();
-      setVerification(data);
+      if (!refused?.dialog) setVerification(data);
     } catch (err) {
       setVerification({ ok: false, checks: { error: { ok: false, message: err.message } } });
     }
@@ -202,11 +204,12 @@ export default function SetupWizard({ settings, update, onComplete }) {
     setPublishing(true);
     try {
       const resp = await fetch('/api/notebook/republish', { method: 'POST', headers: headers() });
+      const refused = resp.ok ? null : await responseError(resp.clone());
       const data = await resp.json();
       if (data.path) {
         update('notebookPath', data.path);
         setPublishResult({ ok: true, path: data.path });
-      } else {
+      } else if (!refused?.dialog) {
         setPublishResult({ ok: false, message: data.error || 'Failed to publish' });
       }
     } catch (err) {
@@ -224,6 +227,7 @@ export default function SetupWizard({ settings, update, onComplete }) {
         headers: headers(),
         body: JSON.stringify({ inspire_database: inspireDatabase, warehouse_id: warehouseId }),
       });
+      if (!resp.ok) await responseError(resp.clone());
       const data = await resp.json();
       if (data.ok) {
         setCreatingDb(false);

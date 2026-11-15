@@ -1,8 +1,18 @@
 const { readStatements, readStatementsFor, permissionRequired } = require('./permissions');
 const RP = require('./routePolicy');
 
-const DENIED = /\bPERMISSION_DENIED\b|\bINSUFFICIENT_PERMISSIONS\b|\bUser does not have\b|\bInsufficient privileges\b/i;
+const DENIED = /\bPERMISSION_DENIED\b|\bINSUFFICIENT_PERMISSIONS\b|\bUser does not have\b|\bInsufficient privileges\b|\bCAN[ _]USE\b[^.\n]{0,60}\bwarehouse\b/i;
 const OBJECT_ON = /\bon\s+(catalog|schema|table|volume)\s+[`'"]?([A-Za-z0-9_.\-`]+)[`'"]?/i;
+// The privilege the warehouse named before "on <object>" (User does not have CREATE SCHEMA on Catalog main). Only the write privileges that
+// need their own GRANT are named here; a read privilege keeps the read set (USE CATALOG, USE SCHEMA, SELECT).
+const NAMED_PRIVILEGE = /\bdoes not have\s+(?:permission\s+)?(CREATE SCHEMA|CREATE TABLE|MODIFY)\s+on\s+/i;
+const WAREHOUSE_CAN_USE = /\bCAN[ _]USE\b[^.\n]{0,60}\bwarehouse\s+[`'"]?([A-Za-z0-9-]+)[`'"]?/i;
+
+// A refusal on a SQL warehouse (Can Use) is not a SQL GRANT: the admin sets it on the warehouse, so the payload carries steps to copy.
+function warehouseDeniedOf(message) {
+  const hit = WAREHOUSE_CAN_USE.exec(String(message || ''));
+  return hit ? hit[1] : null;
+}
 
 function deniedObjectOf(message) {
   const text = String(message || '');
@@ -16,11 +26,25 @@ function deniedObjectOf(message) {
 }
 
 function permissionFor(message, principal) {
-  const denied = deniedObjectOf(message);
   const who = String(principal || '').trim();
-  if (!denied || !who) return null;
+  if (!who) return null;
+  const warehouse = warehouseDeniedOf(message);
+  if (warehouse) {
+    return permissionRequired({ steps: [`In SQL Warehouses, open ${warehouse} > Permissions, add ${who} with Can Use`], principal: who,
+      why: `Inspire runs its queries on SQL warehouse ${warehouse} as you, and you cannot use it yet. Ask your workspace admin to do this, then click Try again.` });
+  }
+  const denied = deniedObjectOf(message);
+  if (!denied) return null;
+  const named = NAMED_PRIVILEGE.exec(String(message || ''));
   let statements;
-  if (denied.kind === 'schema') {
+  if (named && denied.kind === 'catalog' && /^CREATE SCHEMA$/i.test(named[1])) {
+    statements = [`GRANT CREATE SCHEMA ON CATALOG \`${denied.name}\` TO \`${who}\``]; // PERMISSION_DIALOG
+  } else if (named && denied.kind === 'schema' && /^CREATE TABLE$/i.test(named[1])) {
+    const [catalog, schema] = denied.name.split('.');
+    statements = [`GRANT CREATE TABLE ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${who}\``]; // PERMISSION_DIALOG
+  } else if (named && denied.kind === 'table' && /^MODIFY$/i.test(named[1])) {
+    statements = [`GRANT MODIFY ON TABLE ${denied.name.split('.').map((p) => `\`${p}\``).join('.')} TO \`${who}\``]; // PERMISSION_DIALOG
+  } else if (denied.kind === 'schema') {
     const [catalog, schema] = denied.name.split('.');
     // PERMISSION_DIALOG: these statements go to the Permission Required dialog, which copies them (REQ-131, REQ-260)
     statements = [
@@ -52,8 +76,34 @@ function failureBody(res, message) {
   return { error: message, ...(permission ? { permissions: [permission] } : {}) };
 }
 
-function sendFailure(res, code, message, extra) {
-  return res.status(code).json({ ...(extra || {}), ...failureBody(res, message) });
+// One rule for every route that reads data: a warehouse or Unity Catalog refusal is HTTP 403 with the Permission Required payload,
+// whatever status the route would have given a failure. A route never answers a denial with a 500 (REQ-314).
+const CODED_DENIAL = new Set(['PERMISSION_DENIED', 'INSUFFICIENT_PERMISSIONS']);
+function accessDenied(failure) {
+  if (failure && typeof failure === 'object') {
+    if (CODED_DENIAL.has(failure.error_code) || failure.http_status === 403) return true;
+    if (failure.denial && accessDenied(failure.denial)) return true;
+    return DENIED.test(String(failure.message || ''));
+  }
+  return DENIED.test(String(failure || ''));
 }
 
-module.exports = { deniedObjectOf, permissionFor, errorPermission, failureBody, sendFailure };
+// The status a failed route answers with: 403 for an access denial, otherwise the error's own status or 500.
+function failureStatus(err, fallback = 500) {
+  if (accessDenied(err)) return 403;
+  return err && Number.isFinite(err.statusCode) ? err.statusCode : fallback;
+}
+
+// Body for a failed response. Carries structured grants only when the message (or the warehouse's own refusal text, when a route words
+// its refusal in plain text) is a permission refusal.
+function failureBody(res, message, denial) {
+  const permission = errorPermission((res && res.req) || {}, denial || message);
+  return { error: message, ...(permission ? { permissions: [permission] } : {}) };
+}
+
+function sendFailure(res, code, message, extra, denial) {
+  const status = accessDenied(denial || message) ? 403 : code;
+  return res.status(status).json({ ...(extra || {}), ...failureBody(res, message, denial) });
+}
+
+module.exports = { deniedObjectOf, permissionFor, errorPermission, failureBody, sendFailure, accessDenied, failureStatus };

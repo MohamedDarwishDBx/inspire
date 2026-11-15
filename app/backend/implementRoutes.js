@@ -43,8 +43,7 @@ const MV = require('./lib/metricViews');
 const AR = require('./lib/accessRequest');
 
 function sendError(res, err) {
-  const code = err && Number.isFinite(err.statusCode) ? err.statusCode : 500;
-  return res.status(code).json({ ...(err && err.details), ...PM_ERROR.failureBody(res, err.message || String(err)) });
+  return PM_ERROR.sendFailure(res, PM_ERROR.failureStatus(err), (err && err.message) || String(err), err && err.details, err && err.denial);
 }
 
 function q(req, key) {
@@ -184,7 +183,9 @@ function registerImplementRoutes(app, deps) {
     const token = personReadToken(req);
     const looked = await Promise.all(named.map((t) => tableTypeOf(req, () => token, warehouseId, t)));
     named.forEach((table, i) => {
-      const { type, transient } = looked[i];
+      const { type, transient, denied } = looked[i];
+      // A refusal from Unity Catalog is the person's answer: it reaches the route as the Permission Required payload (REQ-313).
+      if (denied) throw denied;
       if (MV.isMetricViewType(type)) throw tableRefusal(MV.metricViewRefusal(table));
       if (!unknownType || type) return;
       // A transient lookup failure is not a verdict on the table: it is retryable, never shown as not usable.
@@ -209,7 +210,7 @@ function registerImplementRoutes(app, deps) {
   // { type: null, transient } where transient says a retry can change it. A transient failure is retried once (lookupWithRetry).
   async function tableTypeOf(req, tokenOf, warehouseId, table) {
     const got = await lookupWithRetry(() => sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table)));
-    if (got.error) return { type: null, transient: got.transient };
+    if (got.error) return { type: null, transient: got.transient, denied: PM_ERROR.accessDenied(got.error) ? got.error : null };
     const rows = got.value;
     return { type: rows.length ? String(rows[0].table_type || '') || null : null, transient: false };
   }
@@ -840,7 +841,8 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       const source = q(req, 'source');
       const token = personReadToken(req);
-      const { type, transient } = await tableTypeOf(req, () => token, warehouseId, table);
+      const { type, transient, denied } = await tableTypeOf(req, () => token, warehouseId, table);
+      if (denied) throw denied;
       if (MV.isMetricViewType(type)) {
         return res.json({ table, readable: false, reason: MV.metricViewRefusal(table) });
       }
@@ -1512,7 +1514,8 @@ function registerImplementRoutes(app, deps) {
       if (counted.row_count !== 0) return '';
       return await emptyScopeWarningOf(scope, I.sourceTables(spec, I.useCaseTables(useCase)), (table) => countOf(table, { columns: [], filters: [], window: {} }));
     } catch (err) {
-      if (err && err.refusal) throw err;
+      // A refusal (ours, or the warehouse's access denial) is never downgraded to a warning: it reaches the person as the Permission Required payload (REQ-313).
+      if (err && (err.refusal || PM_ERROR.accessDenied(err))) throw err;
       console.warn(`implement row count failed for ${scope.table}: ${err.message || err}`);
       return `Inspire could not count the rows in ${scope.table}. The build checks the data itself.`;
     }
@@ -1536,7 +1539,7 @@ function registerImplementRoutes(app, deps) {
     try {
       output = await checkOutput(req, warehouseId, planned.config.result_table, useCaseId);
     } catch (err) {
-      if ((err.statusCode && err.statusCode < 500) || I.isReadDenied(err.message)) throw err;
+      if ((err.statusCode && err.statusCode < 500) || I.isReadDenied(err.message) || PM_ERROR.accessDenied(err)) throw err;
       console.warn(`implement output check failed for ${planned.config.result_table}: ${err.message || err}`);
       return { spec: planned, warnings: [`Inspire could not check the result table: ${err.message || err}. The build checks it again.`] };
     }
@@ -1966,6 +1969,7 @@ function registerImplementRoutes(app, deps) {
       try {
         got = await callApp(req, target, 'GET', `/api/settings?page=${encodeURIComponent(target.page)}`);
       } catch (err) {
+        if (PM_ERROR.accessDenied(err)) throw err;
         return recorded(`The App\u2019s settings could not be read: ${err.message}`);
       }
       if (!got.ok) return recorded(String(got.data.error || `The App answered ${got.status} for its settings`));
@@ -1986,6 +1990,7 @@ function registerImplementRoutes(app, deps) {
       try {
         got = await callApp(req, target, 'GET', `/api/runs?page=${encodeURIComponent(target.page)}`);
       } catch (err) {
+        if (PM_ERROR.accessDenied(err)) throw err;
         return none(`The App\u2019s runs could not be read: ${err.message}`);
       }
       if (!got.ok) return none(String(got.data.error || `The App answered ${got.status} for its runs`));
@@ -2011,7 +2016,7 @@ function registerImplementRoutes(app, deps) {
       try {
         got = await callApp(req, target, 'POST', `/api/settings/${action}`, body);
       } catch (err) {
-        return res.status(502).json({ error: `The App could not be reached: ${err.message}` });
+        return PM_ERROR.sendFailure(res, 502, `The App could not be reached: ${err.message}`);
       }
       const view = got.data && Array.isArray(got.data.settings) ? { ...got.data, settings: I.implementAppSettings(got.data.settings, history) } : got.data;
       return res.status(got.status).json(view);
@@ -2029,10 +2034,11 @@ function registerImplementRoutes(app, deps) {
     const submitted = /^SQL failed \((\d{3})\)/.exec(message);
     const kind = err && err.code === 'SQL_DEADLINE' ? 'deadline'
       : submitted && submitted[1] === '401' ? 'sign_in'
-        : I.isReadDenied(message) || (submitted && submitted[1] === '403') ? 'denied'
+        : I.isReadDenied(message) || PM_ERROR.accessDenied(message) || (submitted && submitted[1] === '403') ? 'denied'
           : submitted ? 'submitted' : isMissingTableError(err) ? 'missing' : 'failed';
     const [status, text] = texts[kind](message);
-    return I.badRequest(text, status);
+    // The plain sentence stays; the warehouse's own refusal text rides along, so the response still carries the Permission Required payload.
+    return Object.assign(I.badRequest(text, status), kind === 'denied' ? { denial: message } : {});
   }
 
   const profileFailures = (table) => ({
@@ -2324,6 +2330,7 @@ function registerImplementRoutes(app, deps) {
     try {
       return res.json(await alertsFor(req, ...asked, 'listing'));
     } catch (err) {
+      if (PM_ERROR.accessDenied(err)) return sendError(res, err);
       return res.json(A.unavailableListing(err));
     }
   });

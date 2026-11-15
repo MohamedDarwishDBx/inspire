@@ -45,6 +45,8 @@ export async function responseError(resp, { raise = true } = {}) {
   err.showcase = resp.status === 403 && err.body?.showcase === true;
   // Every failed request reaches the App-level Permission Required dialog when it carries grants.
   if (raise) raisePermissions(err.body?.permissions);
+  // dialog: the Permission Required dialog was raised from this refusal. A page then shows no second message next to it (REQ-220).
+  err.dialog = Boolean(raise) && Array.isArray(err.body?.permissions) && err.body.permissions.length > 0;
   return err;
 }
 

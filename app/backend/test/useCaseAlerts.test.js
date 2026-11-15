@@ -266,7 +266,7 @@ test('Check the value now reads only the latest run, as the person, on the wareh
   });
   await withAlerts({ sqlErrors: { 'WITH latest AS': 'SQL failed (403): {"error_code":"PERMISSION_DENIED","message":"no CAN_USE on warehouse wh1"}' } }, async (base) => {
     const out = await send(base, 'preview', { watch: ROWS_TO_ACT });
-    assert.equal(out.status, 409);
+    assert.equal(out.status, 403, 'a warehouse refusal answers 403, never a 409 or 500 (REQ-314)');
     assert.match(out.data.error, /^Inspire could not check the value on the SQL warehouse wh1 as you: .*You need Can Use on it\.$/);
   });
 });

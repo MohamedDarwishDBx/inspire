@@ -1759,7 +1759,7 @@ app.post('/api/setup/create-database', requireToken, async (req, res) => {
     await executeSql(req.dbHost, req.dbToken, warehouse_id, createPlaceSql(catalog, schema));
     res.json({ ok: true, message: `Schema ${inspire_database} ready` });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(PM_ERROR.failureStatus(err)).json({ ok: false, ...PM_ERROR.failureBody(res, err.message) });
   }
 });
 
@@ -2815,7 +2815,7 @@ app.get('/api/inspire/value/estimates', requireToken, async (req, res) => {
     if (invalidSessionId(session_id)) return res.status(400).json({ error: 'session_id must be numeric.' });
     res.json(await estimatesOfSession(req, warehouse_id, parsedDb, String(session_id).trim()));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    PM_ERROR.sendFailure(res, PM_ERROR.failureStatus(err), err.message);
   }
 });
 

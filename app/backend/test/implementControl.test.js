@@ -333,7 +333,7 @@ test('live status lists the latest control actions, tolerates a missing control 
     });
   await withApp({ history: [BUILT], controlLogError: 'PERMISSION_DENIED: no SELECT on __inspire_control_log' }, async (url) => {
     const got = await call(url, `/api/inspire/implement/live?${Q}`);
-    assert.equal(got.status, 500);
+    assert.equal(got.status, 403, 'a denial answers 403, never a 500 (REQ-314)');
     assert.match(got.data.error, /PERMISSION_DENIED/);
   });
 });

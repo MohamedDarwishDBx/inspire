@@ -36,6 +36,8 @@ const NOT_WALKED = {
   'GET /api/inspire/implement/diagnostics': 'reads the build through the same loadStatus read and person token as GET /api/inspire/implement/status, which the harness walks; no non-owner harness row walks it yet',
   'GET /api/inspire/log': 'reads the run log only for its launcher or an App manager; no non-owner harness row walks it yet, and the route samples prove the launcher refusal',
   'POST /api/run/:runId/again': 'launches a run again only for its launcher or an App manager; no non-owner harness row walks it yet, and the route samples and runAgain tests prove the launcher refusal',
+  'POST /api/access-request/check': 'checks whether Request for Access is offered for the grants the person needs, with the person’s own sign-in and changes nothing; no non-owner harness row walks it yet, and accessRequest.test.js proves the offer and the refusal',
+  'POST /api/access-request': 'sends a Request for Access as the person, to the owner of the data; no non-owner harness row walks it yet, and accessRequest.test.js proves the send and the no-destination refusal',
   'POST /api/documents': 'rebuilds a session\'s documents only for its launcher or an App manager; the documentJob and launcher-refusal tests prove it',
 };
 const LITERAL = /\bapp\.(get|post|put|patch|delete|all)\(\s*(['"`])(.*?)\2([^\n]*)/g;
@@ -160,4 +162,112 @@ test('a registration whose path is not a literal, or is built at run time, fails
   assert.throws(() => registeredRoutes([variable]), /not a string literal/);
   assert.throws(() => registeredRoutes([built]), /built at run time/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// REQ-313, REQ-314: every route's failure goes through the shared access mapping (permissionError.js), so a denial is a 403 with the
+// Permission Required payload and never a raw 500 or an echoed error. This gate reads the route files' source.
+const ROUTE_SOURCES = [SERVER, path.join(BACKEND, 'implementRoutes.js')];
+const RAW_FAILURE = /res\.status\(\s*500\s*\)|res\.status\([^)]*\)\.json\(\s*\{[^\n]*\b(err|e|error|e1)\.message\b(?![\s\S]{0,0})/;
+
+function rawFailures(text) {
+  return text.split('\n').map((line, i) => ({ line, n: i + 1 }))
+    .filter(({ line }) => RAW_FAILURE.test(line) && !/PM_ERROR\./.test(line))
+    .map(({ line, n }) => `${n}: ${line.trim()}`);
+}
+
+test('no route answers a failure with a raw 500 or an echoed error message: every failure goes through permissionError.js (REQ-314)', () => {
+  for (const file of ROUTE_SOURCES) {
+    assert.deepEqual(rawFailures(fs.readFileSync(file, 'utf8')), [], path.basename(file));
+  }
+});
+
+test('the failure gate convicts a raw 500 and an echoed error, and passes the shared mapping (must-fail, must-exclude)', () => {
+  assert.equal(rawFailures("app.get('/x', (req, res) => {\n  res.status(500).json({ error: 'x' });\n});").length, 1);
+  assert.equal(rawFailures("res.status(500).json({ ok: false, error: err.message });").length, 1);
+  assert.equal(rawFailures('PM_ERROR.sendFailure(res, PM_ERROR.failureStatus(err), err.message);').length, 0);
+  assert.equal(rawFailures("res.status(400).json({ error: 'Format: catalog.schema' });").length, 0);
+});
+
+// Every page reads its data with the one error path: a refusal from the route raises the Permission Required dialog (apiClient.responseError).
+const FRONTEND_SRC = path.resolve(BACKEND, '..', 'frontend', 'src');
+// A raw fetch that reads no workspace data, or is the shared helper itself, names its reason here.
+const RAW_FETCH_EXEMPT = {
+  'App.jsx': 'the showcase list and the sign-in token exchange; neither reads workspace data, and a failure is shown on its own page',
+  'lib/apiClient.js': 'the shared helpers themselves: responseError and bootRead raise the dialog or the boot error',
+  'pages/ConfigPage.jsx': 'reads the list of bundled notebook files; it reads no workspace data',
+};
+
+function rawFetchesWithoutRaise(root) {
+  const out = [];
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+  for (const file of walk(root).filter((f) => /\.jsx?$/.test(f) && !/\.test\./.test(f))) {
+    const rel = path.relative(root, file);
+    if (Object.hasOwn(RAW_FETCH_EXEMPT, rel)) continue;
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      if (!/\bfetch\(/.test(line)) return;
+      const window = lines.slice(i, i + 6).join('\n');
+      if (!/responseError|raisePermissions|makeApi/.test(window)) out.push(`${rel}:${i + 1}`);
+    });
+  }
+  return out;
+}
+
+test('every frontend page raises the Permission Required dialog from a refused read, through responseError (REQ-313)', () => {
+  assert.deepEqual(rawFetchesWithoutRaise(FRONTEND_SRC), []);
+});
+
+test('a page that reads with a raw fetch and no raise is convicted, and a page that raises is passed (must-fail, must-exclude)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'raise-walk-'));
+  fs.mkdirSync(path.join(dir, 'pages'));
+  fs.writeFileSync(path.join(dir, 'pages', 'Silent.jsx'), "const r = await fetch('/api/x');\nif (!r.ok) return;\n");
+  fs.writeFileSync(path.join(dir, 'pages', 'Raised.jsx'), "const r = await fetch('/api/x');\nif (!r.ok) await responseError(r.clone());\n");
+  assert.deepEqual(rawFetchesWithoutRaise(dir), ['pages/Silent.jsx:1']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the dialog opens from the payload: a 403 that carries grants raises them, and a refusal with no grants raises nothing (behaviour)', async () => {
+  const { pathToFileURL } = require('node:url');
+  const api = await import(pathToFileURL(path.join(FRONTEND_SRC, 'lib', 'apiClient.js')).href);
+  const bus = await import(pathToFileURL(path.join(FRONTEND_SRC, 'lib', 'permissionBus.js')).href);
+  const raised = [];
+  const unsubscribe = bus.subscribePermissions((permissions) => raised.push(permissions));
+  try {
+    const grants = [{ statements: ['GRANT SELECT ON TABLE `main`.`s`.`orders` TO `amr@example.com`'], principal: 'amr@example.com' }];
+    const err = await api.responseError(new Response(JSON.stringify({ error: 'denied', permissions: grants }), { status: 403 }));
+    assert.equal(err.status, 403);
+    assert.equal(raised.length, 1, 'the dialog is raised once');
+    assert.deepEqual(raised[0], grants);
+    await api.responseError(new Response(JSON.stringify({ error: 'missing' }), { status: 404 }));
+    assert.equal(raised.length, 1, 'a refusal with no grants raises no dialog');
+    await api.responseError(new Response(JSON.stringify({ error: 'denied', permissions: grants }), { status: 403 }), { raise: false });
+    assert.equal(raised.length, 1, 'a probe that shows its own refusal does not raise');
+  } finally {
+    unsubscribe();
+  }
+});
+
+// (d) REQ-220: a page shows one message for a refusal. The pages that show inline text read the refusal's dialog flag and skip it.
+const ONE_MESSAGE_PAGES = ['pages/ChoosePage.jsx', 'pages/ResultsPage.jsx', 'components/SettingsPanel.jsx', 'components/TableBrowser.jsx', 'pages/SetupWizard.jsx'];
+
+test('every page that shows refusal text beside the dialog reads the dialog flag, so only one message shows (REQ-220)', () => {
+  for (const rel of ONE_MESSAGE_PAGES) {
+    const text = fs.readFileSync(path.join(FRONTEND_SRC, rel), 'utf8');
+    assert.match(text, /\.dialog\b/, `${rel} reads the dialog flag`);
+  }
+});
+
+test('the dialog flag is set only when the dialog was raised from the payload (behaviour, must-exclude)', async () => {
+  const { pathToFileURL } = require('node:url');
+  const api = await import(pathToFileURL(path.join(FRONTEND_SRC, 'lib', 'apiClient.js')).href);
+  const bus = await import(pathToFileURL(path.join(FRONTEND_SRC, 'lib', 'permissionBus.js')).href);
+  const unsubscribe = bus.subscribePermissions(() => {});
+  try {
+    const grants = [{ statements: ['GRANT SELECT ON TABLE `main`.`s`.`orders` TO `amr@example.com`'], principal: 'amr@example.com' }];
+    assert.equal((await api.responseError(new Response(JSON.stringify({ error: 'x', permissions: grants }), { status: 403 }))).dialog, true);
+    assert.equal((await api.responseError(new Response(JSON.stringify({ error: 'x' }), { status: 403 }))).dialog, false, 'no grants, no dialog');
+    assert.equal((await api.responseError(new Response(JSON.stringify({ error: 'x', permissions: grants }), { status: 403 }), { raise: false })).dialog, false, 'a probe raises nothing');
+  } finally {
+    unsubscribe();
+  }
 });
