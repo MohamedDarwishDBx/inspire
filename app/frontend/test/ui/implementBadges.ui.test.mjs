@@ -23,7 +23,9 @@ async function auditEveryStep(page, { look = true } = {}) {
     for (const fold of [null, ...new Set(folds)]) {
       if (fold) await openFolded(page, fold);
       await settleChoices(page);
-      const tabs = label === WHERE_LABEL && look ? APP_LOOK_TABS.map((t) => t.label) : [null];
+      // App look is a fold of Where it lives (REQ-002): its tabs exist only while that fold is open, so the tabs are audited there.
+      const lookOpen = label === WHERE_LABEL && look && (await page.getByRole('tab', { name: APP_LOOK_TABS[0].label, exact: true }).count()) > 0;
+      const tabs = lookOpen ? APP_LOOK_TABS.map((t) => t.label) : [null];
       for (const tab of tabs) {
         if (tab) await page.getByRole('tab', { name: tab, exact: true }).click();
         const shown = await choicesShown(page);
