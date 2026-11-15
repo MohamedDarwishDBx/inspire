@@ -1,6 +1,6 @@
 const express = require('express');
 const { registerImplementRoutes } = require('../../implementRoutes');
-const { IMPLEMENT_COLUMNS } = require('../../lib/inspireImplement');
+const { IMPLEMENT_COLUMNS, sampleCopyTable } = require('../../lib/inspireImplement');
 const { noPersonTokenBody } = require('../../lib/routePolicy');
 const { sqlCancelledError } = require('../../lib/sqlStatements');
 const { withServicePrincipal } = require('./appRecord');
@@ -362,7 +362,7 @@ function makeApp(overrides = {}, { mount } = {}) {
   });
   app.post('/api/inspire/samples/copy', (req, res) => {
     sampleCopies.push(req.body);
-    const [status, data] = state.sampleCopyAnswer || [200, { destination: String((req.body || {}).destination || ''), copies: (req.body.entries || []).map((source) => { const [, schema, table] = source.split('.'); return { source, copy: `${req.body.destination}.${schema}_${table}` }; }), failed: [] }];
+    const [status, data] = state.sampleCopyAnswer || [200, { destination: String((req.body || {}).destination || ''), copies: (req.body.entries || []).map((source) => ({ source, copy: `${req.body.destination}.${sampleCopyTable(source)}` })), failed: [] }];
     res.status(status).json(data);
   });
   app.get('/api/inspire/feedback', (_req, res) => res.json(state.feedback || { available: false, latest: [], message: '' }));

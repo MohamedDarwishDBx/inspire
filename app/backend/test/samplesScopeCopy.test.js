@@ -78,6 +78,27 @@ test('the backend keeps the scope of a copied table when the copy destination sc
 });
 
 // Two samples tables with one table name in different schemas: their copies must not share a name, and each scope stays on its own copy.
+// A copy name is schema__table. Pairs that differ only by where the underscores fall stay distinct, and a pair that lands on one name is refused.
+test('a readable copy name, distinct underscore pairs, and a refusal for the pair that lands on one name', () => {
+  const impl = require('../lib/inspireImplement');
+  assert.equal(impl.sampleCopyTable('samples.bakehouse.sales_franchises'), 'bakehouse__sales_franchises');
+  const dest = { catalog: 'inspire_kinds_rc7', schema: '_inspire' };
+  assert.equal(impl.sampleCopyClash(['samples.a_b.c', 'samples.a.b_c'], dest), '', 'a_b + c and a + b_c stay distinct');
+  assert.notEqual(impl.sampleCopyTable('samples.a_b.c'), impl.sampleCopyTable('samples.a.b_c'));
+  const clash = impl.sampleCopyClash(['samples.a__b.c', 'samples.a.b__c'], dest);
+  assert.equal(clash, 'samples.a__b.c and samples.a.b__c would both copy to inspire_kinds_rc7._inspire.a__b__c. Copy one of them on its own.');
+  assert.equal(impl.sampleCopyClash(['samples.a.b__c', 'samples.a.b__c'], dest), '', 'the same table twice is not a clash');
+});
+
+test('the statement and the returned copy name come from one helper, so they name the same table', () => {
+  const impl = require('../lib/inspireImplement');
+  const dest = { catalog: 'inspire_kinds_rc7', schema: '_inspire' };
+  const src = 'samples.a_b.c_d';
+  const table = impl.sampleCopyTable(src);
+  assert.equal(impl.sampleCopyName(src, dest), `inspire_kinds_rc7._inspire.${table}`);
+  assert.match(impl.sampleCopyStatement(src, dest), new RegExp(`\\\`${table}\\\` AS SELECT`));
+});
+
 test('two samples tables with one table name in different schemas copy to different tables, and their scopes stay separate', async () => {
   const impl = require('../lib/inspireImplement');
   const S = await lib('samplesCopy.js');
@@ -87,9 +108,9 @@ test('two samples tables with one table name in different schemas copy to differ
   const copyA = impl.sampleCopyName(A, dest);
   const copyB = impl.sampleCopyName(B, dest);
   assert.notEqual(copyA, copyB, 'the copies do not collide');
-  assert.equal(copyA, 'inspire_kinds_rc7._inspire.bakehouse_sales_franchises');
-  assert.match(impl.sampleCopyStatement(A, dest), new RegExp(`\`bakehouse_sales_franchises\` AS SELECT`));
-  assert.match(impl.sampleCopyStatement(B, dest), new RegExp(`\`tpch_sales_franchises\` AS SELECT`));
+  assert.equal(copyA, 'inspire_kinds_rc7._inspire.bakehouse__sales_franchises');
+  assert.match(impl.sampleCopyStatement(A, dest), new RegExp(`\`bakehouse__sales_franchises\` AS SELECT`));
+  assert.match(impl.sampleCopyStatement(B, dest), new RegExp(`\`tpch__sales_franchises\` AS SELECT`));
   const scopeB = { columns: ['franchiseID'], rows: [{ column: 'franchiseID', op: '>=', values: ['3000001'] }] };
   const moved = S.scopesAfterSampleCopies({ [A]: SCOPE, [B]: scopeB }, [{ source: A, copy: copyA }, { source: B, copy: copyB }]);
   assert.deepEqual(moved[copyA], SCOPE);
