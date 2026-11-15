@@ -34,11 +34,11 @@ export function kpiHues(pageHue, count) {
 }
 
 function Delta({ kpi, data, scope }) {
-  if (!kpi.compare) return <div className="kpi-s">{kpi.caption || '\u00a0'}</div>;
+  if (!kpi.compare) return <div className="kpi-s">{'\u00a0'}</div>;
   const none = scope?.note || kpi.words.none;
-  if (data?.before == null) return <div className="kpi-s">{kpi.caption ? `${kpi.caption} · ${none}` : none}</div>;
+  if (data?.before == null) return <div className="kpi-s">{none}</div>;
   const d = change(data?.now, data?.before);
-  if (d == null) return <div className="kpi-s">{kpi.caption || '\u00a0'}</div>;
+  if (d == null) return <div className="kpi-s">{'\u00a0'}</div>;
   const { way, text } = changeParts(d, kpi.words);
   const good = kpi.good === 'neutral' || way === 'same' ? null : (kpi.good === 'down') === d < 0;
   return (
@@ -72,6 +72,7 @@ export default function Kpis({ page, data, errors, loading, plan, scope, moneyNo
             {loading ? <Skeleton height={30} width="60%" /> : error ? <CardFailure text={error} size={12} onRetry={retry} /> : (
               <>
                 <div className="kpi-v">{kpiValue(kpi, data?.[kpi.id])}</div>
+                {kpi.caption && <div className="kpi-note" data-kpi-note="">{kpi.caption}</div>}
                 {pickReason(data?.[kpi.id]?.empty, navigator.languages || [navigator.language])
                   ? <div className="kpi-s" data-empty-reason="">{pickReason(data[kpi.id].empty, navigator.languages || [navigator.language])}</div>
                   : <Delta kpi={kpi} data={data?.[kpi.id]} scope={scope} />}
