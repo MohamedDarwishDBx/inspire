@@ -63,3 +63,14 @@ test('the implement tracking row carries the encoded use case name and the wareh
   const columns = I.IMPLEMENT_COLUMNS.map(([n]) => n);
   assert.ok(columns.includes('use_case_name_tag') && columns.includes('warehouse_id'), 'both columns are migrated onto existing tables');
 });
+
+test('the implement tracking columns match the notebook copy, so the App and the agent migrate and write the same table', () => {
+  const I = require('../lib/inspireImplement');
+  const nb = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'agent', 'agent', 'dbx_inspire_ai_agent.ipynb'), 'utf8'));
+  const source = nb.cells.map((c) => (Array.isArray(c.source) ? c.source.join('') : String(c.source))).find((s) => s.includes('IMPLEMENT_COLUMNS = ('));
+  const block = source.slice(source.indexOf('IMPLEMENT_COLUMNS = ('), source.indexOf('IMPLEMENT_TABLE_COMMENT'));
+  const notebook = [...block.matchAll(/\("([a-z_]+)", "([A-Z]+)"\)/g)].map((m) => `${m[1]}:${m[2]}`).sort();
+  const js = I.IMPLEMENT_COLUMNS.map(([name, kind]) => `${name}:${kind}`).sort();
+  assert.deepEqual(js, notebook);
+  assert.ok(js.includes('lakebase_project_id:STRING') && js.includes('use_case_name_tag:STRING') && js.includes('warehouse_id:STRING'));
+});

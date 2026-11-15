@@ -152,7 +152,7 @@ const IMPLEMENT_COLUMNS = [
   ['suggested_schedule', 'VARIANT'], ['asset_status', 'VARIANT'], ['created_by', 'STRING'], ['created_at', 'TIMESTAMP'],
   ['updated_at', 'TIMESTAMP'], ['alert_id', 'STRING'], ['alert_url', 'STRING'], ['implement_run_id', 'BIGINT'],
   ['asset_snapshots', 'STRING'], ['ended_by', 'STRING'],
-  ['use_case_name_tag', 'STRING'], ['warehouse_id', 'STRING'],
+  ['use_case_name_tag', 'STRING'], ['warehouse_id', 'STRING'], ['lakebase_project_id', 'STRING'],
 ];
 const IMPLEMENT_UNREAD_COLUMNS = ['asset_snapshots'];
 const IMPLEMENT_VARIANT_COLUMNS = IMPLEMENT_COLUMNS.filter(([, t]) => t === 'VARIANT').map(([n]) => n);
