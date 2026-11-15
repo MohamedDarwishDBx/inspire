@@ -262,7 +262,7 @@ def test_every_built_output_and_part_gets_its_own_record_and_only_a_missed_ask_w
     assert chart["vibes_checks"] == [
         {"ask": "Make it a horizontal bar chart", "status": "missing",
          "evidence": "the built Customers by region bar chart on the dashboard chart by_region has no horizontal_bar chart; its charts are "
-                     "bar (by_region)",
+                     "bar chart by_region",
          "checks": [{"name": "chart_type: horizontal bar", "passed": False}]},
         {"ask": "Keep the biggest regions first", "status": "done", "evidence": "sort: value_desc by value",
          "checks": [{"name": "sort: value", "passed": True}]}]
@@ -333,10 +333,11 @@ def test_a_failed_build_says_why_for_each_ask_and_fails_only_its_own_part(agent_
     assert _run(inst, _vibed(previous, ["app:page:n01_u01"], **{"app:page:n01_u01_vibes": PAGE_VIBES})) == "failed", \
         "the version is failed, not ready: its App is not published (REQ-252). The per-part records below are unchanged"
     final = inst.updates[-1]
-    assert "App not published: PERMISSION_DENIED: User does not have CAN MANAGE on app churn-desk" in final["status_message"]
+    # REQ-260: error codes stay out of the status line; the plain sentence names the App and the missing right.
+    assert "App not published: User does not have CAN MANAGE on app churn-desk" in final["status_message"]
     page = final["asset_status"]["app:page:n01_u01"]
     assert page["state"] == "failed" and [c["evidence"] for c in page["vibes_checks"]] == [
-        "the App page n01_u01 was not built: PERMISSION_DENIED: User does not have CAN MANAGE on app churn-desk"] * 2
+        "the App page n01_u01 was not built: User does not have CAN MANAGE on app churn-desk"] * 2
     assert final["asset_status"]["dashboard:by_region"] == PARTS["dashboard:by_region"], "another output's part is left as it was"
 
 
@@ -395,7 +396,7 @@ def test_the_split_keeps_every_ask_and_only_checks_it_can_trust(agent_ns):
 @pytest.mark.parametrize("asset,check,status,evidence", [
     ("dashboard:by_region", {"kind": "chart_type", "value": "Bar chart"}, "done", "chart by_region: type bar"),
     ("dashboard:by_region", {"kind": "chart_type", "value": "horizontal bar"}, "missing",
-     "the built dashboard chart by_region has no horizontal_bar chart; its charts are bar (by_region)"),
+     "the built dashboard chart by_region has no horizontal_bar chart; its charts are bar chart by_region"),
     ("dashboard:by_region", {"kind": "sort", "value": "value", "direction": "desc"}, "done", "sort: value_desc"),
     ("dashboard:by_region", {"kind": "sort", "value": "region", "direction": "asc"}, "missing",
      "the built dashboard chart by_region orders by sort value_desc by value, never by region"),
