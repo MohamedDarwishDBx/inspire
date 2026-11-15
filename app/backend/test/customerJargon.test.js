@@ -50,6 +50,8 @@ test('positive controls: the terms catch the strings a customer saw on rc7 (must
   assert.equal(caught('Skip __constraints'), true, 'a bare internal object name fails (must-exclude)');
   assert.equal(caught('the table main.inspire.demand_out__series does not exist'), false, 'a qualified table name passes (must-keep)');
   assert.equal(caught('[DATA-FILTER-LABEL FIRED] 12 of 12 names carried the label'), true);
+  assert.equal(caught('<bound method Series.prod of inspire_group 0 1 Name: 165, dtype: object>'), true, 'REQ-249 repr fails (must-exclude)');
+  assert.equal(caught('Average transaction value rose 12% to 340 USD over the last 30 days.'), false, 'a plain sentence passes (must-keep)');
   const mode = TERMS.find((term) => term.id === 'mode_name_on_run_output');
   assert.equal(mode.re.test('AI Enhanced Discovery: the AI sees the summary figures'), true);
   assert.equal(mode.re.test('Discovery: the AI sees the summary figures'), false, 'the plain Discovery label is fine (must-include)');
