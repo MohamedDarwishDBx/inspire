@@ -156,20 +156,21 @@ NOTEBOOK = os.path.join(ROOT, "agent", "dbx_inspire_ai_agent.ipynb")
 RECORDS_PAGE = {"id": PAGE_ID, "title": "Silent franchise sales monitor", "question": "Which franchises went quiet?",
                 "records": {"id": "records", "columns": [{"column": "priority_tier", "label": "Priority tier"}]}, "tables": [],
                 "charts": [], "kpis": []}
+SPEC_FILTERED = dict(RECORDS_PAGE, records=dict(RECORDS_PAGE["records"], column_filters=["priority_tier"]))
 PRIORITY_OK = {PAGE_ID: {"filters": {}, "columns": {"records": {"priority_tier": {"label": "Priority tier", "problem": ""}}}}}
 
 
 class _ShellSql:
-    """The shell's column-filter listing for the fixture: the shown column is priority_tier, the spec filters are not read here."""
+    """The shell's column-filter listing for the fixture: the spec's column_filters per holder, and priority_tier shown."""
 
     def list_column_filters(self, node):
-        return []
+        return [{"column": c} for c in (node.get("records") or {}).get("column_filters") or []]
 
     def list_shown(self, node):
         return ["priority_tier"]
 
     def table_column_filters(self, held):
-        return []
+        return [{"column": c} for c in held.get("column_filters") or []]
 
     def table_shown(self, held):
         return ["priority_tier"]
@@ -185,14 +186,14 @@ def test_a_column_filter_the_served_list_shows_is_met(agent_ns):
 
 
 def test_a_column_filter_the_served_app_lacks_is_unmet_even_when_the_spec_has_it(agent_ns):
-    ok, reason = _column_gate(agent_ns, "priority_tier", {PAGE_ID: {"filters": {}, "columns": {"records": {}}}})
+    ok, reason = _column_gate(agent_ns, "priority_tier", {PAGE_ID: {"filters": {}, "columns": {"records": {}}}}, SPEC_FILTERED)
     assert ok is False and "no table on the built App page" in reason and "priority_tier" in reason
 
 
 def test_a_served_column_filter_with_an_error_is_unmet(agent_ns):
     served = {PAGE_ID: {"filters": {}, "columns": {"records": {"priority_tier": {"label": "x", "problem": "it is served with an error: boom"}}}}}
-    ok, reason = _column_gate(agent_ns, "priority_tier", served)
-    assert ok is False and "priority_tier" in reason
+    ok, reason = _column_gate(agent_ns, "priority_tier", served, SPEC_FILTERED)
+    assert ok is False and "boom" not in reason and "priority_tier" in reason
 
 
 def test_a_column_filter_whose_page_was_not_read_is_unchecked(agent_ns):
