@@ -699,7 +699,7 @@ test('the policy of a page Inside Inspire allows only its own /run/<id>/ path, n
   const origin = 'https://inspire-ai-111122223333444.example.com';
   assert.equal(H.hostedCsp(origin, 'n01-u01-42'), [
     "default-src 'none'",
-    `script-src ${origin}/run/n01-u01-42/assets/`,
+    `script-src ${origin}/run/n01-u01-42/assets/ '${require('../lib/bootGuardCsp').BOOT_GUARD_SCRIPT_HASH}'`,
     `style-src ${origin}/run/n01-u01-42/assets/`,
     `img-src ${origin}/run/n01-u01-42/ data:`,
     `font-src ${origin}/run/n01-u01-42/`,
