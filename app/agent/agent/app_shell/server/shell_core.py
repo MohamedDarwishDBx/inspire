@@ -2659,14 +2659,19 @@ class Shell:
         blocks = json.dumps(view.get("blocks") or [], ensure_ascii=False, default=str)
         ws, _who = self.workspace(headers)
         sql, params = shell_sql.thread_event_write(page, person, thread, turn.question, view.get("answer") or "", blocks)
+        self.save_thread_row(ws, page, sql, params)
+        return {"thread_id": thread, "saved": True}
+
+    def save_thread_row(self, ws, page: dict, sql: str, params: list) -> None:
+        """Write one saved turn. The companion table is ensured on the first save that finds it missing, the way the App's
+        other companion tables are: CREATE TABLE IF NOT EXISTS through the same writer, then the write again. Later saves never create it."""
         try:
             self.write_saved(ws, shell_sql.threads_table(page), sql, params)
         except HttpError as error:
-            if NO_TABLE.search(str(error.message)):
-                raise HttpError(409, f"Nothing was saved: {shell_sql.threads_table(page)} does not exist yet; the App creates it when it is published "
-                                     f"with its other companion tables, so {shell_sql.rebuild_action('the use case')}")
-            raise
-        return {"thread_id": thread, "saved": True}
+            if not NO_TABLE.search(str(error.message)):
+                raise
+            self.execute(self.decision_writer(ws), shell_sql.threads_create_sql(page), [], 1, delta=True)
+            self.write_saved(ws, shell_sql.threads_table(page), sql, params)
 
     def app_access(self, headers: dict, data: dict) -> dict:
         step = data.get("step")

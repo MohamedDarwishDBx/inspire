@@ -7,6 +7,7 @@ if SERVER not in sys.path:
     sys.path.insert(0, SERVER)
 
 import shell_agent  # noqa: E402
+import shell_core  # noqa: E402
 import shell_sql  # noqa: E402
 
 PAGE = {"id": "p", "use_case_id": "uc1", "result_table": "main.loss.out"}
@@ -16,8 +17,39 @@ def test_the_threads_live_in_their_own_companion_table_of_the_result_table():
     assert shell_sql.threads_table(PAGE) == "`main`.`loss`.`out_agent_threads`"
 
 
-def test_the_table_is_not_created_on_the_first_save_any_more():
-    assert not hasattr(shell_sql, "threads_create_sql"), "the App's publish step creates the table, not the first save"
+def test_the_first_save_creates_the_table_and_the_second_does_not():
+    calls = {"ddl": 0, "writes": 0}
+
+    class Stub:
+        def __init__(self):
+            self.created = False
+
+        def write_saved(self, ws, table, sql, params):
+            calls["writes"] += 1
+            if not self.created:
+                raise shell_core.HttpError(409, "[TABLE_OR_VIEW_NOT_FOUND] " + table)
+
+        def decision_writer(self, ws):
+            return "writer"
+
+        def execute(self, writer, sql, params, limit, delta=False):
+            calls["ddl"] += 1
+            assert sql.startswith("CREATE TABLE IF NOT EXISTS") and writer == "writer"
+            self.created = True
+            return {"rows": []}
+
+    stub = Stub()
+    sql, params = shell_sql.thread_event_write(PAGE, "ana@corp.example", "t" * 32, "Q", "A", "[]")
+    shell_core.Shell.save_thread_row(stub, None, PAGE, sql, params)
+    assert calls == {"ddl": 1, "writes": 2}, "the first save creates the table, then writes"
+    shell_core.Shell.save_thread_row(stub, None, PAGE, sql, params)
+    assert calls == {"ddl": 1, "writes": 3}, "the second save writes without creating it again"
+
+
+def test_the_publish_does_not_create_it_and_the_save_no_longer_refuses_a_missing_table():
+    import inspect
+    source = inspect.getsource(shell_core.Shell.agent_thread_save)
+    assert "409" not in source and "does not exist yet" not in source
 
 
 def test_a_saved_turn_writes_its_own_person_and_thread_as_parameters_not_text():

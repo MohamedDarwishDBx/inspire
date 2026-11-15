@@ -5587,6 +5587,11 @@ def threads_table(page: dict) -> str:
     return sibling_table(page, THREAD_SUFFIX)
 
 
+def threads_create_sql(page: dict) -> str:
+    columns = ", ".join(f"`{c}` {THREAD_TYPES[c]}" for c in THREAD_COLUMNS)
+    return f"CREATE TABLE IF NOT EXISTS {threads_table(page)} ({columns}) USING DELTA"
+
+
 def thread_event_write(page: dict, person: str, thread_id: str, question: str, answer: str, blocks: str) -> tuple:
     params = _Params()
     cells = [params.add(uuid_hex()), params.add(str(page.get("use_case_id") or "")), params.add(thread_id), params.add(person),

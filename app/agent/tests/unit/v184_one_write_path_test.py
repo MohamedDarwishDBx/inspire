@@ -65,4 +65,44 @@ def test_every_web_write_call_site_goes_through_act_or_actRecords():
         for call in re.findall(r"\bacts?\.act\(|\bactRecords\(", text):
             assert call
     work = open(os.path.join(WEB, "Work.jsx"), encoding="utf-8").read()
-    assert "actRecords({ page: pageId, ...body, values })" in work, "the Work page's write is the one actRecords call"
+    assert "actRecords({ page: pageId, ...body, action, values })" in work, "the Work page's write names the registry action"
+
+
+def test_a_done_or_snooze_keeps_the_note_the_person_wrote():
+    assert shell_actions.record_body("done", {"action_status": shell_sql.DONE, "note": "Closed"}, TODAY) == {
+        "action_status": shell_sql.DONE, "note": "Closed"}
+    assert shell_actions.record_body("snooze", {"snooze_until": "2026-12-01", "note": "Waiting"}, TODAY) == {
+        "snooze_until": "2026-12-01", "note": "Waiting"}
+
+
+def test_an_explicit_action_whose_values_name_another_action_is_refused_not_silently_rewritten():
+    try:
+        shell_actions.record_body("done", {"action_owner": "Ana"}, TODAY)
+    except ValueError as error:
+        assert "do not say done" in str(error)
+    else:
+        raise AssertionError("a done write must not carry an owner change")
+
+
+def test_the_contract_fixture_names_the_action_of_every_write_shape():
+    import json
+    fixture = json.load(open(os.path.join(os.path.dirname(__file__), "..", "fixtures", "app_usability_contract.json"), encoding="utf-8"))
+    expected = {"act_keys": "update", "act_match": "done", "snooze": "snooze", "act_reviewed": "done"}
+    for name, action in expected.items():
+        assert fixture[name]["request"]["body"]["action"] == action, name
+
+
+def test_an_old_body_without_an_action_is_still_accepted_and_named_from_its_values():
+    old = {"action_status": shell_sql.DONE}
+    assert shell_actions.action_for_values(old) == "done"
+    assert shell_actions.record_body(shell_actions.action_for_values(old), old, TODAY) == old
+    assert shell_actions.action_for_values({"action_status": "In progress", "note": "x"}) == "update"
+
+
+def test_the_work_page_sends_the_registry_action_id_on_every_write():
+    work = open(os.path.join(WEB, "Work.jsx"), encoding="utf-8").read()
+    assert "actRecords({ page: pageId, ...body, action, values })" in work
+    assert "submit('done', { action_status: DONE }, 'done')" in work
+    assert "submit('snooze', { snooze_until: until }, 'snooze')" in work
+    records = open(os.path.join(WEB, "Records.jsx"), encoding="utf-8").read()
+    assert "key, action });" in records and "run('done', { action_status: DONE }, 'done')" in records

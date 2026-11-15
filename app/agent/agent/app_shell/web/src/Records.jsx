@@ -106,12 +106,12 @@ function useAction(data, person, acts, label, choices) {
   const gate = useWrite();
   const saving = gate.busy;
   useEffect(() => { setForm(actionForm(current, person, choices)); setFailure(null); }, [current, person, choices]);
-  const send = async (values, said, key) => {
+  const send = async (values, said, key, action = 'update') => {
     if (!current || gate.busy) return null;
     setFailure(null);
     try {
       return await acts.act({ record_keys: [data.record_key], seen: { [data.record_key]: current.valid_from_us } }, values,
-        { said, about: { record_key: data.record_key, label }, key });
+        { said, about: { record_key: data.record_key, label }, key, action });
     } catch (err) {
       setFailure({ ...failureOf(err), stale: isStaleRecord(err) });
       return null;
@@ -151,17 +151,17 @@ const ACT_OFF = 'This record cannot be acted on here: it is deleted, held, or th
 
 function WorkBar({ work, action, tomorrow, canAct }) {
   const [until, setUntil] = useState(tomorrow);
-  const run = async (kind, values) => {
-    if (values && !(await action.send(values, undefined, `work:${kind}`))) return;
+  const run = async (kind, values, actionId) => {
+    if (values && !(await action.send(values, undefined, `work:${kind}`, actionId))) return;
     work.next(kind);
   };
   return (
     <div className="work-f" role="group" aria-label="Work through the list">
       <span className="work-k" data-work-k>{work.text}</span>
-      <SaveButton write="work:done" className="btn btn--pri" onClick={() => run('done', { action_status: DONE })} disabled={!canAct} data-key="d"
+      <SaveButton write="work:done" className="btn btn--pri" onClick={() => run('done', { action_status: DONE }, 'done')} disabled={!canAct} data-key="d"
         why={canAct ? '' : ACT_OFF}><Icon name="check" size={15} />Done and next</SaveButton>
       <label className="work-snz"><span className="sr">Snooze until</span><input type="date" name="work_snooze" min={tomorrow} value={until} onChange={(e) => setUntil(e.target.value)} /></label>
-      <SaveButton write="work:snoozed" onClick={() => run('snoozed', { snooze_until: until })} disabled={!canAct || !until || until < tomorrow} data-key="s"
+      <SaveButton write="work:snoozed" onClick={() => run('snoozed', { snooze_until: until }, 'snooze')} disabled={!canAct || !until || until < tomorrow} data-key="s"
         why={!canAct ? ACT_OFF : !until ? missingWhy(['a date']) : 'Pick a date after today to snooze.'}>Snooze and next</SaveButton>
       <button className="btn" onClick={() => run('skipped', null)} disabled={action.saving} data-key="skip">Skip</button>
     </div>
@@ -176,7 +176,7 @@ function SnoozeButton({ action, tomorrow }) {
   const submit = async (e) => {
     e.preventDefault();
     close();
-    await action.send({ snooze_until: until }, undefined, SNOOZE_WRITE);
+    await action.send({ snooze_until: until }, undefined, SNOOZE_WRITE, 'snooze');
   };
   return (
     <>
@@ -694,7 +694,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
       toast(NO_AS_OF, 'error', { actions: [{ label: 'Reload the list', run: () => setRefresh((n) => n + 1) }] });
       return;
     }
-    const out = await acts.act({ match: matchOf(openOnly({ ...asked, mine: true }), asOf) }, { action_status: DONE }, { said: 'Your open records are done', key: 'clear-queue' }).catch(() => null);
+    const out = await acts.act({ match: matchOf(openOnly({ ...asked, mine: true }), asOf) }, { action_status: DONE }, { said: 'Your open records are done', key: 'clear-queue', action: 'done' }).catch(() => null);
     if (out) setClearing(false);
   };
   const selectAll = () => {
@@ -706,14 +706,14 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     const open = openCount ?? shownTotal;
     setPicks({ scope, keys: picked, all: { total: open, closed: Math.max(0, shownTotal - open), capped, as_of_us: asOf } });
   };
-  const actOn = async (values, { said, body = null, key } = {}) => {
+  const actOn = async (values, { said, body = null, key, action = 'update' } = {}) => {
     try {
       const out = await acts.act(body || (matching ? { match: matchOf(openOnly(asked), matching.as_of_us) } : { record_keys: [...picked.keys()], seen: Object.fromEntries(picked) }), values,
-        { said, key });
+        { said, key, action });
       if (out) clearPicks();
       return out;
     } catch (err) {
-      toastFailure(toast, err, () => actOn(values, { said, body, key }), actError(err));
+      toastFailure(toast, err, () => actOn(values, { said, body, key, action }), actError(err));
       acted();
       return null;
     }
@@ -727,7 +727,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     }
     actOn(ACCEPTED, { said: acceptedText(keys.length, picked.size - keys.length), body: { record_keys: keys, seen: Object.fromEntries(keys.map((k) => [k, picked.get(k)])) }, key: 'bulk:accept' });
   };
-  const quick = async (row, values, said, write = `quick:${recordKeyOf(row)}`) => {
+  const quick = async (row, values, said, write = `quick:${recordKeyOf(row)}`, action = 'update') => {
     const key = recordKeyOf(row);
     if (isClosed(row)) {
       toast(skippedText(1));
@@ -736,7 +736,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     if (key == null || !row._inspire_version) return;
     try {
       await acts.act({ record_keys: [String(key)], seen: { [String(key)]: String(row._inspire_version) } }, values,
-        { said, about: { record_key: String(key), label: recordSentenceName(row, meta) }, key: write });
+        { said, about: { record_key: String(key), label: recordSentenceName(row, meta) }, key: write, action });
     } catch (err) {
       toastFailure(toast, err, () => quick(row, values, said, write));
     }
@@ -848,10 +848,10 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
       }
       if (e.key === 'd') {
         e.preventDefault();
-        if (!drawer || !press('d')) k.quick(row, { action_status: DONE });
+        if (!drawer || !press('d')) k.quick(row, { action_status: DONE }, undefined, undefined, 'done');
       } else if (e.key === 's') {
         e.preventDefault();
-        if (!drawer || !press('s')) k.quick(row, { snooze_until: k.tomorrow });
+        if (!drawer || !press('s')) k.quick(row, { snooze_until: k.tomorrow }, undefined, undefined, 'snooze');
       } else if (e.key === 'a') {
         e.preventDefault();
         setOwnerFocus(true);

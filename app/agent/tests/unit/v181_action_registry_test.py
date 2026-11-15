@@ -46,7 +46,7 @@ def test_override_sets_a_status_with_the_reason_and_refuses_an_unknown_status():
 
 
 def test_add_note_writes_the_action_note_and_needs_text():
-    assert shell_actions.record_values("add_note", {"note": "call back Tuesday"}, TODAY) == {"action_note": "call back Tuesday"}
+    assert shell_actions.record_values("add_note", {"note": "call back Tuesday"}, TODAY) == {"note": "call back Tuesday"}
     with pytest.raises(ValueError):
         shell_actions.record_values("add_note", {"note": "  "}, TODAY)
 

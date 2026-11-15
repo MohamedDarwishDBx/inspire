@@ -54,6 +54,11 @@ def action_of(name) -> Action:
     return REGISTRY[name]
 
 
+def _note_of(raw: dict) -> dict:
+    note = raw.get(NOTE_KEY)
+    return {NOTE_KEY: note} if isinstance(note, str) and note.strip() else {}
+
+
 def _text(raw: dict, field: str, what: str) -> str:
     value = raw.get(field)
     if not isinstance(value, str) or not value.strip():
@@ -61,12 +66,19 @@ def _text(raw: dict, field: str, what: str) -> str:
     return value.strip()
 
 
+NOTE_KEY = "note"
+
+
 def action_for_values(values) -> str:
-    """The registry action a record write's values name: the Work page and the record panel send values, not an action id.
-    Done is exactly a status of Done, snooze is exactly a snooze date, and any other change is the panel's free update."""
-    if isinstance(values, dict) and values == {"action_status": shell_sql.DONE}:
+    """The registry action a record write's values name. A write sends its action id; a write that does not (every App built
+    before the id existed) is named from its values: a Done status (with an optional note) is done, a snooze date (with an
+    optional note) is snooze, and any other change is the panel's free update."""
+    if not isinstance(values, dict):
+        return "update"
+    keys = set(values) - {NOTE_KEY}
+    if keys == {"action_status"} and values.get("action_status") == shell_sql.DONE:
         return "done"
-    if isinstance(values, dict) and list(values) == ["snooze_until"]:
+    if keys == {"snooze_until"}:
         return "snooze"
     return "update"
 
@@ -78,6 +90,8 @@ def record_body(name, raw, today) -> dict:
         raise ValueError(f"action is one of {', '.join(WRITE_ACTIONS)}")
     if not REGISTRY[name].writes:
         raise ValueError(f"{name} writes nothing; the records stay as they are")
+    if name in ("done", "snooze") and action_for_values(raw) != name:
+        raise ValueError(f"the values do not say {name}: send {name}'s own values, or the update action")
     return record_values(name, raw, today)
 
 
@@ -88,12 +102,12 @@ def record_values(name: str, raw: dict, today) -> dict:
             raise ValueError("send the action values to change, as an object of column name to value")
         return dict(raw)
     if name == "done":
-        return {"action_status": shell_sql.DONE}
+        return dict({"action_status": shell_sql.DONE}, **_note_of(raw))
     if name == "snooze":
         until = raw.get("until", raw.get("snooze_until"))
         if not isinstance(until, str) or not DATE.match(until):
             raise ValueError("a snooze needs a date as YYYY-MM-DD; ask the person until when")
-        return {"snooze_until": until}
+        return dict({"snooze_until": until}, **_note_of(raw))
     if name == "assign":
         return {"action_owner": _text(raw, "owner", "assigning records needs the person to assign them to")}
     if name == "not_an_issue":
@@ -108,7 +122,7 @@ def record_values(name: str, raw: dict, today) -> dict:
             out["dismiss_reason"] = reason
         return out
     if name == "add_note":
-        return {"action_note": _text(raw, "note", "a note needs the text the person wants to keep")}
+        return {NOTE_KEY: _text(raw, "note", "a note needs the text the person wants to keep")}
     raise ValueError(f"{name} is not a record action")
 
 

@@ -52,12 +52,14 @@
     "page_fields": {"window_note": "", "done": {"mine_today": 3}}
   },
   "act_keys": {
-    "request": {"method": "POST", "path": "records/act", "body": {"page": "n01_u05", "record_keys": ["k1"], "seen": {"k1": "1001"},
+    "request": {"method": "POST", "path": "records/act", "body": {
+        "action": "update","page": "n01_u05", "record_keys": ["k1"], "seen": {"k1": "1001"},
                                                                  "values": {"action_status": "In progress", "note": "Called the store"}}},
     "response": {"written": ["k1"], "conflicts": [], "conflicts_count": 0, "left_out": 0, "batch_id": "0123456789abcdef0123456789abcdef"}
   },
   "act_match": {
-    "request": {"method": "POST", "path": "records/act", "body": {"page": "n01_u05", "match": {"filters": {"category": ["Books"]},
+    "request": {"method": "POST", "path": "records/act", "body": {
+        "action": "done","page": "n01_u05", "match": {"filters": {"category": ["Books"]},
                                                                                              "view": {"window": "all"},
                                                                                              "as_of_us": "111122223333444"},
                                                                  "values": {"action_status": "Done", "note": "Repriced the shelf"}}},
@@ -67,7 +69,8 @@
                                          "matched": 100001, "cap": 100000, "code": "over_cap"}}
   },
   "snooze": {
-    "request": {"method": "POST", "path": "records/act", "body": {"page": "n01_u05", "record_keys": ["k1"], "seen": {"k1": "1001"},
+    "request": {"method": "POST", "path": "records/act", "body": {
+        "action": "snooze","page": "n01_u05", "record_keys": ["k1"], "seen": {"k1": "1001"},
                                                                  "values": {"snooze_until": "2026-11-03"}}}
   },
   "similar": {
@@ -80,7 +83,8 @@
                            "as_of_us": "5555555555555555"}}
   },
   "act_reviewed": {
-    "request": {"method": "POST", "path": "records/act", "body": {"page": "n01_u05", "record_keys": ["k2", "k3"], "seen": {"k2": "1001", "k3": "1002"},
+    "request": {"method": "POST", "path": "records/act", "body": {
+        "action": "done","page": "n01_u05", "record_keys": ["k2", "k3"], "seen": {"k2": "1001", "k3": "1002"},
                 "similar": {"filters": {"category": ["Books"]}, "view": {"window": "all", "exclude": ["k1"]}, "as_of_us": "5555555555555555"},
                 "values": {"action_status": "Done"}}},
     "response": {"written": ["k2"], "conflicts": [], "conflicts_count": 0, "left_out": 0, "batch_id": "0123456789abcdef0123456789abcdef",
