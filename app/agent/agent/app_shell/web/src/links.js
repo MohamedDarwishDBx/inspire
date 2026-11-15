@@ -20,7 +20,7 @@ function decodePart(text) {
   try { return decodeURIComponent(text); } catch { return text; }
 }
 
-export const SECTIONS = ['dashboard', 'work', 'performance', 'runs', 'alerts', 'settings'];
+export const SECTIONS = ['dashboard', 'work', 'plan', 'performance', 'runs', 'alerts', 'settings'];
 export const DEFAULT_SECTION = 'dashboard';
 export const OPEN_TAB = 'open';
 export const UNCHECKED_TAB = 'unchecked';

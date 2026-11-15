@@ -14,14 +14,15 @@ import { tableContext } from './explain.js';
 import { KIND_PARTS, KindReady } from './KindLayouts.jsx';
 import { reducedMotion } from './theme.js';
 import { DEFAULT_PREFS, windowParams } from './prefs.js';
-import { DEFAULT_LAYOUT, hasWork, isLaidOut, isQueue, layoutOf } from './modes.js';
+import { DEFAULT_LAYOUT, hasPlan, hasWork, isLaidOut, isQueue, layoutOf } from './modes.js';
 
 const ScenarioPanel = lazy(() => import('./Scenario.jsx'));
 
 export { DEFAULT_LAYOUT, layoutOf, isLaidOut, isQueue };
 export const tabLabel = (page, fallback) => (isLaidOut(page) && page.layout?.tab_label) || fallback;
 export const impactOn = (app, page) => app?.screens?.impact !== false && (!!page?.history || !!page?.promised);
-export const pageSections = (app, page) => ['dashboard', ...(hasWork(page) ? ['work'] : []), ...(app?.screens?.runs !== false ? ['runs'] : []),
+export const pageSections = (app, page) => ['dashboard', ...(hasWork(page) ? ['work'] : []), ...(hasPlan(page) ? ['plan'] : []),
+  ...(app?.screens?.runs !== false ? ['runs'] : []),
   ...(app?.alerting?.on ? ['alerts'] : []), ...(impactOn(app, page) ? ['impact'] : []), 'settings'];
 export const decides = pageDecides;
 const PLAN_ROWS = 50;

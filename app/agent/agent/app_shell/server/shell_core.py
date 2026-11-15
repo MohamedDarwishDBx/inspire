@@ -4768,7 +4768,9 @@ class Shell:
         return self.plans_view(headers, page["id"])
 
     def plan_results(self, headers: dict, ident) -> dict:
-        page = self.planned_page(ident, "plan")
+        page = self.planned_page(ident)
+        if shell_sql.plan_contract(page) == "forecast":
+            return self.forecast_plan(headers, page)
         if not isinstance(page.get("plan"), dict):
             raise HttpError(404, f"{page_label(page)} has no plan to compare with its actuals")
         ws, who = self.workspace(headers)
@@ -4777,6 +4779,11 @@ class Shell:
         chosen = next((v for v in versions if v["status"] == "Published"), None) or next((v for v in versions if v["status"] == "Approved"), None)
         lines = self.run(ws, who, *shell_sql.plan_lines_query(page), shell_sql.PLAN_CAPS["lines"])["rows"] if chosen else []
         return dict(shell_sql.plan_performance(page["plan"], chosen, lines, (page.get("records") or {}).get("label")), missing=missing)
+
+    def forecast_plan(self, headers: dict, page: dict) -> dict:
+        ws, who = self.workspace(headers)
+        rows = self.run(ws, who, *shell_sql.forecast_actuals_query(page), shell_sql.PLAN_CAPS["series"])["rows"]
+        return shell_sql.forecast_plan(rows)
 
     def forecast_review(self, headers: dict, ident) -> dict:
         page = self.planned_page(ident, "forecast")
