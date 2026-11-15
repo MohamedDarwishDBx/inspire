@@ -362,7 +362,7 @@ function makeApp(overrides = {}, { mount } = {}) {
   });
   app.post('/api/inspire/samples/copy', (req, res) => {
     sampleCopies.push(req.body);
-    const [status, data] = state.sampleCopyAnswer || [200, { destination: String((req.body || {}).destination || ''), copies: (req.body.entries || []).map((source) => ({ source, copy: `${req.body.destination}.${source.split('.')[2]}` })), failed: [] }];
+    const [status, data] = state.sampleCopyAnswer || [200, { destination: String((req.body || {}).destination || ''), copies: (req.body.entries || []).map((source) => { const [, schema, table] = source.split('.'); return { source, copy: `${req.body.destination}.${schema}_${table}` }; }), failed: [] }];
     res.status(status).json(data);
   });
   app.get('/api/inspire/feedback', (_req, res) => res.json(state.feedback || { available: false, latest: [], message: '' }));
