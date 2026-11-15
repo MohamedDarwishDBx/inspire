@@ -129,3 +129,14 @@ def test_a_look_change_that_keeps_a_removal_vibe_redeploys_the_app_with_the_scre
     inst._implement_app_restyle(context, host, {"files": {}}, {"shell_core": type("Core", (), {"SETTINGS_VERSION": 1})})
     assert seen["settings"]["screens"]["performance"] is False, seen["settings"]["screens"]
     assert seen["settings"]["screens"]["runs"] is True
+
+
+def test_remove_the_performance_page_from_the_app_on_a_queue_app_turns_the_screen_off(agent_ns):
+    # REQ-246: the user's words "Remove the Performance page from the App" left the nav item in place on a decision-queue App.
+    assert _resolve(agent_ns, "Remove the Performance page from the App", "decision_queue") == (["performance"], ["Performance"], [], [])
+
+
+def test_a_scope_phrase_after_the_nav_name_is_read_as_part_of_the_remove_ask(agent_ns):
+    assert _resolve(agent_ns, "Remove Runs from this App", "decision_queue") == (["runs"], ["Runs"], [], [])
+    assert _resolve(agent_ns, "Remove the Runs tab in the App", "decision_queue") == (["runs"], ["Runs"], [], [])
+    assert _resolve(agent_ns, "Remove the small multiples from the App", FORECAST) == ([], [], ["small_multiples"], [])
