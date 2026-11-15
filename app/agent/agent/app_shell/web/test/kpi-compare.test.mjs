@@ -91,8 +91,22 @@ test('a first run says there is no earlier run to compare, on the tile and in th
 test('a compared KPI with a caption still says there is no earlier run on a first run', async () => {
   const captioned = KPIS.map((k) => (k.id === 'items' ? { ...k, caption: 'from the latest run' } : k));
   const { page, context } = await open({ now: 48, before: null }, captioned);
-  assert.equal(await itemsTile(page), 'from the latest run \u00b7 No earlier run to compare');
+  assert.equal(await itemsTile(page), 'No earlier run to compare');
+  assert.equal(await page.locator('.kpi').nth(2).locator('.kpi-note').innerText(), 'from the latest run', 'the caption is a note under the number');
   await context.close();
+});
+
+test('a KPI caption is a note under its number whether or not a change is shown, and KPIs without one show none', async () => {
+  const note = 'Counts the stores on the list at the latest run';
+  const captioned = KPIS.map((k) => (k.id === 'items' ? { ...k, caption: note } : k));
+  const changed = await open({ now: 48, before: 40 }, captioned);
+  assert.equal(await changed.page.locator('.kpi').nth(2).locator('.kpi-note').innerText(), note, 'the note stays when the change is shown');
+  assert.equal(await itemsTile(changed.page), `\u25b2 20.0% ${VS}`, 'the change line keeps its own text');
+  assert.equal(await changed.page.locator('.kpi-note').count(), 1, 'only the KPI with a caption shows a note');
+  await changed.context.close();
+  const plain = await open({ now: 1234567, before: 1100000 }, KPIS);
+  assert.equal(await plain.page.locator('.kpi-note').count(), 0, 'a KPI without a caption shows no note');
+  await plain.context.close();
 });
 
 test('a previous run that held 0 reads as a change from 0, never as no earlier run', async () => {
