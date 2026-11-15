@@ -158,6 +158,24 @@ def test_a_bare_internal_object_name_still_fails_and_a_qualified_table_name_pass
     assert internal_hits("the table main.inspire.demand_out__series does not exist") == []  # must-keep
 
 
+def test_req258_bare_use_case_id_fails_in_person_copy_and_the_title_passes():
+    """REQ-258 (D7): a bare use case id is never person copy (must-fail); the use case by its title is kept (must-keep)."""
+    assert "use_case_id" in internal_hits('Genie Agent "N06-U01 Merge Duplicate Customer Records" when it needs the data')
+    assert "use_case_id" in internal_hits("Ask Genie about n06-u01")
+    assert internal_hits('Genie Agent "Merge Duplicate Customer Records" when it needs the data') == [], "must-keep: the title"
+    assert internal_hits("the table main.inspire.n06_u01_scope does not exist") == [], "must-keep: a qualified table name"
+
+
+def test_req258_genie_agent_title_defaults_to_the_use_case_name_not_its_id(story):
+    """REQ-258 (D7): the App shows the Genie Agent's title. With no saved name, the title is the use case name, never 'N06-U01 ...'."""
+    context = {"uc_id": "N06-U01", "use_case": {"Name": "Merge Duplicate Customer Records"},
+               "spec": {"outputs": {"genie_space": True}}, "assets": {"genie_space": "space-1"}}
+    genie, _ = story._implement_app_genie(context)
+    assert genie == {"space_id": "space-1", "title": "Merge Duplicate Customer Records"}
+    named = dict(context, spec={"outputs": {"genie_space": True, "genie_space_name": "Churn questions"}})
+    assert story._implement_app_genie(named)[0]["title"] == "Churn questions", "a saved name still wins"
+
+
 def test_req249_python_repr_fails_and_a_plain_sentence_passes():
     """REQ-249: a Python or pandas object dump is never customer copy (must-fail); a plain sentence with a number is kept."""
     dump = "<bound method Series.prod of inspire_group 0 1\nName: 165, dtype: object>"

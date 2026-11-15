@@ -9,7 +9,7 @@ from v142_merge_test import HOST_APP, OWN_SOURCE, _host_files, _host_page, _own_
 OWN_APP = {"name": "churn-desk", "description": OURS_APP, "url": "https://churn-desk.example/",
            "active_deployment": {"source_code_path": OWN_SOURCE}, "compute_status": {"state": "ACTIVE"},
            "service_principal_client_id": "sp-1"}
-GENIE = {"space_id": "g1", "title": "N01-U01 Predict churn"}
+GENIE = {"space_id": "g1", "title": "Predict churn"}  # REQ-258: the Genie Agent title is the use case name, never its id
 NOT_READY = "The Genie Agent is not ready: it was not built"
 CHECK_FAILED = "page n01_u01: kpi:revenue failed: TABLE_OR_VIEW_NOT_FOUND"
 

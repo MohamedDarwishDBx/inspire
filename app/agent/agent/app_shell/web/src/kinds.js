@@ -7,6 +7,7 @@ const techniqueKey = (technique) => String(technique ?? '').split(/\s+/).filter(
 
 export const kindOf = (id) => byId(REGISTRY.kinds, id);
 export const familyOf = (id) => byId(REGISTRY.families, id);
+export const contractOf = (id) => (id && REGISTRY.contracts?.[id]) || null;
 
 export function kindForTechnique(technique) {
   const label = techniqueKey(technique);

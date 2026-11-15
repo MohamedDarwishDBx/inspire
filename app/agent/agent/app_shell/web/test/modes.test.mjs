@@ -76,6 +76,12 @@ test('the rail labels and the work section follow the page mode, so switching us
   assert.equal(sectionTitle(ask, 'performance'), 'Answer quality');
   assert.equal(sectionTitle(scen, 'work'), 'Scenarios');
   assert.equal(sectionTitle(queue, 'work'), 'Work');
+  // REQ-258 (D8): each section names itself; Runs and Impact never take the Performance heading
+  assert.equal(sectionTitle(queue, 'runs'), 'Runs');
+  assert.equal(sectionTitle(queue, 'impact'), 'Impact');
+  assert.equal(sectionTitle(queue, 'performance'), 'Performance');
+  assert.equal(sectionTitle(scen, 'runs'), 'Runs', 'Runs after a Performance-named mode keeps its own heading');
+  assert.notEqual(sectionTitle(ask, 'runs'), 'Answer quality');
   assert.equal(sectionTitle(queue, 'runs'), SECTION_TITLES.runs);
   assert.equal(sectionTitle(queue, 'odd'), 'odd');
   assert.equal(pageMode(undefined).id, 'queue');

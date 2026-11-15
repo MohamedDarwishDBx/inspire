@@ -556,7 +556,7 @@ function emptyState({ search, mine, changed, fresh, windowed, narrowedAny, range
 
 export default function Records({ meta, app, pageId, filters, ai, onFilter, history = false, onChanged, nonce = 0, ready = true, onExplain, genieBusy, openKey,
   columnMeta, columnValues, onColumn, onClearColumns, onClearFilters, seeChanged = 0, onShowRuns, similarBy, keepsActions, onList, onOpen, section, sort: lookSort, onSort: onLookSort,
-  tab, focus: only, docked = false, onTab }) {
+  tab, focus: only, docked = false, onTab, raise }) {
   const { prefs, update } = useMyView();
   const [query, setQuery] = useState('');
   const search = useDebounced(query.trim(), 300);
@@ -647,7 +647,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
   const person = app.user?.email || '';
   const canModify = !!(history && app.options.modify);
   const keyOf = useCallback((r) => String(recordKeyOf(r) ?? r?.[meta.key] ?? ''), [meta.key]);
-  const quiet = quietList(rows, meta, aliases);
+  const quiet = quietList(rows, meta, aliases, raise);
   const labelOf = (c) => {
     const row = rows.find((r) => keyOf(r) === String(c.record_key));
     return row ? recordSentenceName(row, meta) : plainText(c.label ?? '') || String(c.record_key ?? '');
