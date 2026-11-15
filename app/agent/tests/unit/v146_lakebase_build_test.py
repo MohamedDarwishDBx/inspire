@@ -1256,7 +1256,9 @@ def test_a_caller_who_is_not_the_owner_gets_the_exact_grant_the_owner_runs(agent
     assert refusal.statement.startswith("GRANT ") and refusal.statement.endswith(f'TO "{LAKEBASE_CALLER}"')
     entry = out["permissions"][0]
     assert entry["statements"] == [refusal.statement] and entry["principal"] == LAKEBASE_CALLER and entry["instructions"] == []
-    assert entry["why"].endswith("Your admin runs this command, then click Try again.")
+    # REQ-300: the reason says why only; the Permission Required dialog adds its one instruction line.
+    assert entry["why"].startswith("Optional: pages load faster with Lakebase. Until then the App reads Delta tables")
+    assert "admin" not in entry["why"].lower() and "try again" not in entry["why"].lower()
     assert [e["status"] for e in inst.emitted] == ["started", "ended_warning"]
     logged = _lines(inst, "WARNING")
     assert any(line.startswith("[IMPLEMENT-LAKEBASE] ") and refusal.statement in line for line in logged), logged

@@ -132,7 +132,7 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
     const message = I.appUnreadableMessage(offer, job);
     // REQ-131, REQ-260: the exact GRANT statements travel as the Permission Required entry the App raises; the prose names the dialog
     const permissions = offer.grants.length ? [permissionRequired({ statements: offer.grants, principal: who.id,
-      why: 'Inspire reads these source tables with your own access. Ask your data owner to run the commands, then check again.' })] : [];
+      why: 'Inspire reads these source tables with your own access.' })] : [];
     const opener = policyLost.length ? `${I.abacUnreadableSentence(who.name || who.id, { app: true })}. ${message.charAt(0).toUpperCase()}${message.slice(1)}` : message;
     const text = opener + (builtIn.length ? `. ${I.builtInSampleMessage(builtIn)}` : '');
     return { missing, app_unreadable: { ...offer, permissions, builtin: builtIn, text } };

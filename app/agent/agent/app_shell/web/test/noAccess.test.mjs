@@ -1,3 +1,5 @@
+// REQ-310/311: the no-access banner is the Permission Required dialog (PermissionDialog). Its pins below target that dialog; the
+// grant flow (confirm, refuse, copy the SQL) is unchanged.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -24,9 +26,11 @@ const tileErrors = (page) => page.locator('.tile-err').evaluateAll((els) => els.
 
 test('a page whose data the App cannot read shows one banner naming the table and owner, a short line per tile, and Check again', async () => {
   const errors = { 'chart:pareto': 'No access to main.pricing.items', 'chart:by_category': 'No access to main.pricing.items', 'kpi:total_loss': 'No access to main.pricing.items' };
-  const { page, seen, context } = await openApp(browser, served.base, appInfo({ unread: UNREAD, unread_owners: OWNERS }), { errors });
+  // REQ-311: the dialog checks Request for Access once; no destination is set here, so Advanced opens and Check again is in it.
+  const routes = { 'access-request/check': ({ json }) => json(200, { offered: false, destinations: [], reason: 'no one has set up where access requests for these go yet' }) };
+  const { page, seen, context } = await openApp(browser, served.base, appInfo({ unread: UNREAD, unread_owners: OWNERS }), { errors, routes });
   try {
-    const banner = page.locator('[data-no-access-banner]');
+    const banner = page.locator('[data-permission-dialog]');
     await banner.waitFor();
     assert.equal(await banner.count(), 1, 'one banner per page, not one per tile');
     const said = await banner.innerText();
@@ -43,7 +47,7 @@ test('a page whose data the App cannot read shows one banner naming the table an
     await banner.getByRole('button', { name: 'Check again' }).click();
     await until(() => seen.pages.length > asked, 10000);
     await page.locator('[data-card="pareto"] canvas').waitFor();
-    await page.locator('[data-no-access-banner]').waitFor({ state: 'detached' });
+    await page.locator('[data-permission-dialog]').waitFor({ state: 'detached' });
     assert.deepEqual(await tileErrors(page), []);
     assert.deepEqual(seen.errors, []);
   } finally {
@@ -55,7 +59,7 @@ test('without a recorded owner the banner says your data owner can grant it, and
   const errors = { 'chart:pareto': "No access to part of this App's data yet. Ask your data owner for read access, then try again." };
   const { page, context } = await openApp(browser, served.base, appInfo({ auth: 'user' }), { errors });
   try {
-    const banner = page.locator('[data-no-access-banner]');
+    const banner = page.locator('[data-permission-dialog]');
     await banner.waitFor();
     const said = await banner.innerText();
     assert.match(said, /You cannot read part of its data yet/);
@@ -72,7 +76,7 @@ test('an error that is not about access keeps its own words and raises no banner
   try {
     await page.locator('[data-card="pareto"] .tile-err').waitFor();
     assert.equal(await said(page.locator('[data-card="pareto"] .tile-err')), 'This chart could not load: the SQL warehouse is stopped, so start it on the SQL Warehouses page or ask its owner to, then try again.');
-    assert.equal(await page.locator('[data-no-access-banner]').count(), 0);
+    assert.equal(await page.locator('[data-permission-dialog]').count(), 0);
   } finally {
     await context.close();
   }

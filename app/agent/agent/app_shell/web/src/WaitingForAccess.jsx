@@ -1,42 +1,29 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { WAITING_FOR_ACCESS_TITLE } from './api.js';
-import { ACCESS_CHECKED, AccessActions } from './ui.jsx';
+import { ACCESS_CHECKED } from './ui.jsx';
+import PermissionDialog from './PermissionDialog.jsx';
 import { waitingAskOf } from './plainText.js';
 
 export const WAITING_REASON = 'The App cannot read the tables this page uses yet, so its numbers and records stay empty until access is granted.';
 
-export default function WaitingForAccess({ waiting, onCheck, compact = false }) {
-  const tables = waiting?.tables || [];
-  const ask = waitingAskOf(waiting?.owners);
+// REQ-310/311: every access failure of the MVP App opens the Permission Required dialog (PermissionDialog), never a plain waiting card.
+// reason overrides the one line the dialog shows above its block (the no-access banner passes its own sentence).
+export default function WaitingForAccess({ waiting, onCheck, compact = false, reason }) {
+  const [open, setOpen] = useState(true);
+  // A check (Check again in the dialog's Advanced section) reloads the page through onCheck, as before.
   useEffect(() => {
     if (!onCheck) return undefined;
     const again = () => onCheck();
     window.addEventListener(ACCESS_CHECKED, again);
     return () => window.removeEventListener(ACCESS_CHECKED, again);
   }, [onCheck]);
-  const actions = <AccessActions />;
-  if (compact) {
+  const text = reason ?? `${WAITING_REASON} ${waitingAskOf(waiting?.owners)}`;
+  if (!open) {
     return (
-      <div className="waiting-access waiting-access--compact tile-err" role="status" aria-label={WAITING_FOR_ACCESS_TITLE} data-waiting-for-access="" data-waiting-compact="">
-        <p>{WAITING_REASON} {ask}</p>
-        {actions}
-      </div>
+      <p className="tile-err" role="status" aria-label={WAITING_FOR_ACCESS_TITLE} data-waiting-for-access="" data-waiting-compact={compact ? '' : undefined}>
+        {text} <button type="button" className="lnk" onClick={() => setOpen(true)} data-permission-open="">Permission Required</button>
+      </p>
     );
   }
-  return (
-    <section className="card waiting-access" role="status" aria-label={WAITING_FOR_ACCESS_TITLE} data-waiting-for-access="">
-      <h2>{WAITING_FOR_ACCESS_TITLE}</h2>
-      <p>{WAITING_REASON} {ask}</p>
-      {tables.length > 0 && (
-        <details data-waiting-details="">
-          <summary>Details</summary>
-          <ul aria-label="Tables the App cannot read">
-            {tables.map((table) => <li key={table} className="mono">{table}</li>)}
-          </ul>
-          {waiting?.detail && <p className="mono">{String(waiting.detail)}</p>}
-        </details>
-      )}
-      {actions}
-    </section>
-  );
+  return <PermissionDialog found={waiting?.access} reason={text} title={WAITING_FOR_ACCESS_TITLE} onClose={() => setOpen(false)} inline={compact} />;
 }

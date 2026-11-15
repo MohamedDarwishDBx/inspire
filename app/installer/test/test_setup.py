@@ -263,6 +263,15 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual((done.status.state, len(waited)), (SUCCEEDED, 3))
 
 
+class AppScopesTest(unittest.TestCase):
+    def test_a_fresh_install_asks_for_the_unity_catalog_scope_so_request_for_access_can_be_sent(self):
+        # REQ-311: Request for Access (POST /api/3.0/rfa/requests) needs the user-app scope unity-catalog. A fresh create merges the
+        # notebook's scopes with INSPIRE_APP_OWN_SCOPES, and the fallback when the notebook has none is INSPIRE_APP_OWN_SCOPES itself.
+        self.assertIn("unity-catalog", setup.INSPIRE_APP_OWN_SCOPES)
+        self.assertIn("unity-catalog", setup._merged_scopes(None, setup.INSPIRE_APP_OWN_SCOPES))
+        self.assertIn("unity-catalog", setup._merged_scopes(["sql"], setup.INSPIRE_APP_OWN_SCOPES))
+
+
 class AssetsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="inspire_assets_test_"))

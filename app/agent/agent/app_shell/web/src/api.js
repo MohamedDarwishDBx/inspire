@@ -75,6 +75,9 @@ const json = async (method, path, body) => {
 
 export const getApp = () => json('GET', 'app');
 export const appAccess = (step, body = {}) => json('POST', 'access', { ...body, step });
+// REQ-311: Request for Access. The server reads the grants itself; the check reads the destinations once, the send files as the viewer.
+export const accessRequestCheck = () => json('POST', 'access-request/check', {});
+export const accessRequestSend = () => json('POST', 'access-request', {});
 export const getFilters = (page) => json('GET', `filters?page=${encodeURIComponent(page)}`);
 export const getDefaults = (page) => json('GET', `defaults?page=${encodeURIComponent(page)}`);
 export const getPage = (page, filters, tables, sorts, searches) => json('POST', 'page', { page, filters, ...(tables && Object.keys(tables).length ? { table_filters: tables } : {}),

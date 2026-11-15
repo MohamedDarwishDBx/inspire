@@ -8,7 +8,7 @@ const GRANT = 'GRANT SELECT ON TABLE `main`.`s`.`orders` TO `owner@example.com`'
 test('the copy payload is the GRANT statements only: a reason and a non-grant step never reach the clipboard', () => {
   const permissions = [{
     statements: [GRANT],
-    instructions: ['The App inspire-fwa reads main.s.orders directly. Rebuild the App so it reads through its views, then click Try again.'],
+    instructions: ['The App inspire-fwa reads main.s.orders directly, so its viewers cannot see that data. A rebuild reads them through the App views.'],
     principal: 'owner@example.com',
     why: 'amr.ali opens the App and reads its data with their own access.',
   }];
@@ -40,7 +40,7 @@ test('Copy steps copies the steps only: the Share step and the CLI line, never a
   const permissions = [{
     statements: [GRANT],
     steps: ['In Workspace, open /Workspace/x > Share, add app with Can Edit', "databricks api patch /api/2.0/permissions/directories/1 --json '{}'"],
-    instructions: ['Rebuild the App to read through its views, then click Try again.'],
+    instructions: ['A rebuild reads them through the App views.'],
     principal: 'app',
   }];
   assert.equal(copyStepsText(permissions), permissions[0].steps.join('\n'));

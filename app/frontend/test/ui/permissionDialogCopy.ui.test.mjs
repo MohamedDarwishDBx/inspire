@@ -14,8 +14,9 @@ const GRANTS = [
   `GRANT USE SCHEMA ON SCHEMA \`main\`.\`s\` TO \`${APP}\``,
   `GRANT SELECT ON TABLE \`main\`.\`s\`.\`orders\` TO \`${APP}\``,
 ];
-const COPY_LINE = 'Copy the text below and pass it on to your Databricks admin.';
-const REBUILD = 'The App inspire-fwa-batch-a-walk-fraud reads inspire_kinds_rc7._inspire.sales_transactions directly, so its viewers cannot see that data. Rebuild the App to read through its views, then click Try again.';
+// REQ-313: the one instruction line sits under Advanced (REQ-300: exactly one instruction line).
+const COPY_LINE = 'Copy the SQL below and send it to your Databricks admin.';
+const REBUILD = 'The App inspire-fwa-batch-a-walk-fraud reads inspire_kinds_rc7._inspire.sales_transactions directly, so its viewers cannot see that data. A rebuild reads them through the App views.';
 
 async function openLaunch(checkPermissions) {
   const ui = await openUi('launch', { ...STATE, checkPermissions });
@@ -58,6 +59,8 @@ test('the copy line reads once, and no grantee paragraph says Ask your admin', a
     { statements: [GRANTS[2]], principal: 'admins', why: 'Admins open the App.' }]);
   try {
     const dialog = await openDialog(page);
+    // REQ-313: the copy line sits under Advanced; open it so the text reads.
+    await dialog.locator('details[data-permission-advanced=""]').evaluate((el) => { el.open = true; });
     const text = await dialog.innerText();
     assert.equal(text.split(COPY_LINE).length - 1, 1, 'the copy line appears exactly once');
     assert.doesNotMatch(text, /Ask your admin/);

@@ -10,6 +10,7 @@ import statistics
 import sys
 import threading
 import time
+from urllib.parse import quote
 import uuid
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 
@@ -109,7 +110,7 @@ LEVEL_ASK = "Give the reason for that level from the facts, and never give anoth
 RECORD_STAKE = "value_at_stake"
 NO_ACCESS = re.compile(r"INSUFFICIENT_PERMISSIONS|PERMISSION_DENIED|permission denied|TABLE_OR_VIEW_NOT_FOUND|answered HTTP 403|"
                        r"access denied|not authori[sz]ed|does not have .{0,120}(?:privilege|permission)", re.I)
-WRITE_ROUTE_NAMES = {"records/act", "records/undo", "records/draft", "settings/save", "settings/run", "plan/decide", "money/rule",
+WRITE_ROUTE_NAMES = {"access-request", "records/act", "records/undo", "records/draft", "settings/save", "settings/run", "plan/decide", "money/rule",
                      "money/assumption", "scenario/save", "scenario/share", "scenario/choose", "plans/version", "feedback",
                      "agent/feedback", "genie/feedback", "forecast/override", "refresh"}
 
@@ -502,6 +503,144 @@ def access_grants(table: str, principal: str) -> list:
 def access_said(statement: str) -> tuple:
     privilege, target = ACCESS_GRANT.match(statement).groups()
     return privilege, target.replace("`", "")
+
+
+# REQ-311: Request for Access. The same contract as the Inspire App's backend (backend/lib/accessRequest.js): one request per
+# principal, the viewer's own grants with no behalf_of, another grantee behalf_of its SCIM id, and copy-only when no id resolves.
+RFA_TYPES = ("CATALOG", "SCHEMA", "TABLE", "VOLUME")
+RFA_GRANT = re.compile(r"^GRANT (.+?) ON (CATALOG|SCHEMA|TABLE|VOLUME) (.+?) TO (.+?);?$", re.I)
+RFA_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+RFA_COMMENT = "Requested through Inspire for a use case I run"
+RFA_NO_DESTINATION = "no one has set up where access requests for these go yet, so ask your Databricks admin to send them the copied text"
+RFA_NO_PRINCIPAL = "Inspire could not find a principal one of these grants names, so that grant can only be copied"
+RFA_NO_GRANT = "none of these grants can be requested through Request for Access"
+RFA_NO_PERSON = "Inspire cannot tell who is signed in, so it cannot send the request as you"
+
+
+def rfa_requests(statements) -> list:
+    by_key = {}
+    for statement in statements or []:
+        hit = RFA_GRANT.match(str(statement or "").strip())
+        if not hit:
+            continue
+        grantee = hit.group(4).replace("`", "").strip()
+        full_name = hit.group(3).replace("`", "").strip()
+        kind = hit.group(2).upper()
+        if not grantee or not full_name or kind not in RFA_TYPES:
+            continue
+        privilege = re.sub(r"\s+", "_", hit.group(1).strip().upper())
+        entry = by_key.setdefault((grantee.lower(), kind, full_name),
+                                  {"grantee": grantee, "securable": {"type": kind, "full_name": full_name}, "permissions": []})
+        if privilege not in entry["permissions"]:
+            entry["permissions"].append(privilege)
+    return list(by_key.values())
+
+
+def rfa_label(destination, securable: dict) -> str:
+    return str((destination or {}).get("destination_id") or "").strip() or f"the owner of {securable['type'].lower()} {securable['full_name']}"
+
+
+def rfa_failure(error) -> str:
+    # The one redaction of an error into text (v169): a workspace refusal names no token or secret the person could copy.
+    return shell_sql.error_text(error)
+
+
+def rfa_resolve(ws, grantee: str, cache: dict):
+    key = grantee.lower()
+    if key in cache:
+        return cache[key]
+    found = None
+    if '"' not in grantee and "\\" not in grantee:
+        lookups = ([("ServicePrincipals", f'applicationId eq "{grantee}"', "SERVICE_PRINCIPAL")] if RFA_UUID.match(grantee) else [])
+        lookups += [("Users", f'userName eq "{grantee}"', "USER_PRINCIPAL"), ("Groups", f'displayName eq "{grantee}"', "GROUP_PRINCIPAL")]
+        for resource, expression, kind in lookups:
+            try:
+                resources = (ws.call("GET", f"/api/2.0/preview/scim/v2/{resource}", params={"filter": expression}) or {}).get("Resources") or []
+            except Exception:  # an unreadable directory entry is one more lookup, never a failure of the request
+                continue
+            if resources and str(resources[0].get("id") or ""):
+                found = {"id": str(resources[0]["id"]), "principal_type": kind}
+                break
+    cache[key] = found
+    return found
+
+
+def rfa_parents(securable: dict) -> list:
+    parts = securable["full_name"].split(".")
+    parents = []
+    if securable["type"] in ("TABLE", "VOLUME") and len(parts) >= 2:
+        parents.append({"type": "SCHEMA", "full_name": ".".join(parts[:2])})
+    if securable["type"] != "CATALOG" and parts:
+        parents.append({"type": "CATALOG", "full_name": parts[0]})
+    return parents
+
+
+def rfa_destinations_chain(ws, securable: dict) -> tuple:
+    for level in [securable, *rfa_parents(securable)]:
+        try:
+            got = ws.call("GET", f"/api/3.0/rfa/destinations/{level['type'].lower()}/{quote(level['full_name'], safe='')}")
+        except Exception as error:
+            return [], rfa_failure(error)
+        found = (got or {}).get("destinations") or []
+        if found:
+            return [rfa_label(d, level) for d in found], ""
+    return [], ""
+
+
+def rfa_check(ws, who: str, statements) -> dict:
+    if not who:
+        return {"offered": False, "destinations": [], "reason": RFA_NO_PERSON, "pending": []}
+    requests = rfa_requests(statements)
+    if not requests:
+        return {"offered": False, "destinations": [], "reason": RFA_NO_GRANT, "pending": []}
+    destinations, reason = {}, ""
+    for request in requests:
+        securable = request["securable"]
+        key = (securable["type"], securable["full_name"])
+        if key in destinations:
+            continue
+        # REQ-315: a table with no destination of its own inherits its schema's, then its catalog's.
+        found, failure = rfa_destinations_chain(ws, securable)
+        destinations[key], reason = found, failure or reason
+    cache, pending, labels, unresolved = {}, [], [], False
+    for request in requests:
+        securable = request["securable"]
+        names = destinations.get((securable["type"], securable["full_name"])) or []
+        if not names:
+            continue
+        is_person = request["grantee"].lower() == who.lower()
+        principal = None if is_person else rfa_resolve(ws, request["grantee"], cache)
+        if not is_person and principal is None:
+            unresolved = True
+            continue
+        pending.append({**request, "principal": principal, "destinations": names})
+        labels.extend(names)
+    if pending:
+        return {"offered": True, "destinations": list(dict.fromkeys(labels)), "reason": "", "pending": pending}
+    return {"offered": False, "destinations": [], "reason": RFA_NO_PRINCIPAL if unresolved else (reason or RFA_NO_DESTINATION), "pending": []}
+
+
+def rfa_body(pending: list) -> dict:
+    by_principal = {}
+    for request in pending:
+        principal = request.get("principal")
+        key = principal["id"] if principal else "requester"
+        if key not in by_principal:
+            by_principal[key] = {**({"behalf_of": {"id": principal["id"], "principal_type": principal["principal_type"]}} if principal else {}),
+                                 "comment": RFA_COMMENT, "securable_permissions": []}
+        by_principal[key]["securable_permissions"].append({"securable": request["securable"], "permissions": request["permissions"]})
+    return {"requests": list(by_principal.values())}
+
+
+def rfa_send(ws, who: str, statements) -> dict:
+    check = rfa_check(ws, who, statements)
+    if not check["offered"]:
+        return {"sent": False, "destinations": [], "reason": check["reason"]}
+    try:
+        ws.call("POST", "/api/3.0/rfa/requests", body=rfa_body(check["pending"]))
+    except Exception as error:
+        return {"sent": False, "destinations": [], "reason": rfa_failure(error)}
+    return {"sent": True, "destinations": check["destinations"], "reason": ""}
 
 
 def access_owners(tables: list) -> str:
@@ -2512,6 +2651,10 @@ class Shell:
                 return 200, self.similar(headers, query)
             if route == ("POST", "access"):
                 return 200, self.app_access(headers, data)
+            if route == ("POST", "access-request/check"):
+                return 200, self.app_access_request(headers, data, send=False)
+            if route == ("POST", "access-request"):
+                return 200, self.app_access_request(headers, data, send=True)
             if route == ("POST", "genie/ask"):
                 return 200, self.genie_ask(headers, data)
             if route == ("POST", "genie/explain"):
@@ -2698,6 +2841,20 @@ class Shell:
                 raise
             self.execute(self.decision_writer(ws), shell_sql.threads_create_sql(page), [], 1, delta=True)
             self.write_saved(ws, shell_sql.threads_table(page), sql, params)
+
+    def app_access_request(self, headers: dict, data: dict, send: bool) -> dict:
+        # REQ-311: the grants the access check names, requested as the viewer with the viewer's own token. The client names no grant:
+        # the server reads them, so a request can only ask for what this App needs.
+        who = str(headers.get("x-forwarded-email") or "").strip()
+        token = headers.get("x-forwarded-access-token")
+        statements = [g for t in self.access_found(headers)["tables"] for g in t["grants"]]
+        ws = self.user_factory(self.env.get("DATABRICKS_HOST", ""), token) if token else None
+        if ws is None:
+            return {"sent": False, "destinations": [], "reason": RFA_NO_PERSON} if send else {"offered": False, "destinations": [], "reason": RFA_NO_PERSON}
+        if send:
+            return rfa_send(ws, who, statements)
+        check = rfa_check(ws, who, statements)
+        return {"offered": check["offered"], "destinations": check["destinations"], "reason": check["reason"]}
 
     def app_access(self, headers: dict, data: dict) -> dict:
         step = data.get("step")

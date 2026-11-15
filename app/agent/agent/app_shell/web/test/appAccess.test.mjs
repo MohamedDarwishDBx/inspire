@@ -1,3 +1,5 @@
+// REQ-310/311: the no-access banner is the Permission Required dialog (PermissionDialog). Its pins below target that dialog; the
+// grant flow (confirm, refuse, copy the SQL) is unchanged.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -27,6 +29,8 @@ after(async () => {
 function accessRoutes({ refuse = false } = {}) {
   const state = { bodies: [], granted: false };
   const routes = {
+    // REQ-311: the dialog checks Request for Access once; no destination is set in these fixtures.
+    'access-request/check': ({ json }) => json(200, { offered: false, destinations: [], reason: 'no one has set up where access requests for these go yet' }),
     access: ({ route, json }) => {
       const body = route.request().postDataJSON();
       state.bodies.push(body);
@@ -48,7 +52,7 @@ test('the banner grants with the person\'s permissions only after Confirm, sends
   const { state, routes } = accessRoutes();
   const { page, seen, context } = await openApp(browser, served.base, appInfo({ unread: UNREAD, unread_owners: OWNERS }), { errors, routes });
   try {
-    const banner = page.locator('[data-no-access-banner]');
+    const banner = page.locator('[data-permission-dialog]');
     await banner.getByRole('button', { name: 'Grant access with my permissions' }).waitFor();
     assert.equal(await banner.getByRole('button', { name: 'Copy the grant SQL' }).count(), 1);
     assert.equal(await banner.getByRole('button', { name: 'Check again' }).count(), 1);
@@ -65,7 +69,7 @@ test('the banner grants with the person\'s permissions only after Confirm, sends
     await until(() => grants(state).length === 1);
     assert.deepEqual(grants(state)[0], { step: 'grant', confirmed: true, seen: FOUND.seen }, 'the browser sends no SQL, only what it saw');
     await until(() => seen.pages.length > asked, 10000);
-    await page.locator('[data-no-access-banner]').waitFor({ state: 'detached' });
+    await page.locator('[data-permission-dialog]').waitFor({ state: 'detached' });
     assert.deepEqual(seen.errors, []);
   } finally {
     await context.close();
@@ -77,13 +81,13 @@ test('a refused grant names the owner, keeps the buttons, and Copy shows the ser
   const { state, routes } = accessRoutes({ refuse: true });
   const { page, context } = await openApp(browser, served.base, appInfo({ unread: UNREAD, unread_owners: OWNERS }), { errors, routes });
   try {
-    const banner = page.locator('[data-no-access-banner]');
+    const banner = page.locator('[data-permission-dialog]');
     await banner.getByRole('button', { name: 'Grant access with my permissions' }).click();
     await banner.getByRole('button', { name: 'Confirm grant' }).click();
     const refused = banner.locator('[data-access-error]');
     await refused.waitFor();
     assert.match(await refused.innerText(), /did not let you grant USE SCHEMA on main\.pricing\. Ask data-eng/);
-    assert.equal(await page.locator('[data-no-access-banner]').count(), 1, 'the banner stays after a refusal');
+    assert.equal(await page.locator('[data-permission-dialog]').count(), 1, 'the banner stays after a refusal');
     await banner.getByRole('button', { name: 'Copy the grant SQL' }).click();
     await banner.locator('[data-access-sql]').waitFor();
     assert.equal(await banner.locator('[data-access-sql]').innerText(), FOUND.sql);
@@ -114,7 +118,7 @@ test('Genie answers why there is no data with the banner\'s own buttons, and its
     await page.getByRole('button', { name: 'Send' }).click();
     const card = page.locator('[data-confirm="access"] [data-access-actions]');
     await card.waitFor();
-    const banner = page.locator('[data-no-access-banner] [data-access-actions]');
+    const banner = page.locator('[data-permission-dialog] [data-access-actions]');
     const labels = (el) => el.getByRole('button').evaluateAll((bs) => bs.map((b) => b.textContent.trim()));
     assert.deepEqual(await labels(card), await labels(banner), 'Genie shows the banner\'s own buttons');
     assert.equal(grants(state).length, 0);
@@ -127,7 +131,7 @@ test('Genie answers why there is no data with the banner\'s own buttons, and its
     assert.deepEqual(grants(state)[0], { step: 'grant', confirmed: true, seen: FOUND.seen });
     await card.getByText('You granted 2 read permissions to this App.').waitFor();
     await until(() => seen.pages.length > asked, 10000);
-    await page.locator('[data-no-access-banner]').waitFor({ state: 'detached' });
+    await page.locator('[data-permission-dialog]').waitFor({ state: 'detached' });
   } finally {
     await context.close();
   }
@@ -138,7 +142,7 @@ test('a person who cannot grant sees Copy the grant SQL and the owner, and no gr
   const routes = { access: ({ route, json }) => json(200, cannot) };
   const { page, context } = await openApp(browser, served.base, appInfo({ unread: UNREAD, unread_owners: OWNERS }), { errors: { 'chart:pareto': `No access to ${TABLE}` }, routes });
   try {
-    const banner = page.locator('[data-no-access-banner]');
+    const banner = page.locator('[data-permission-dialog]');
     await banner.getByRole('button', { name: 'Copy the grant SQL' }).waitFor();
     assert.equal(await banner.getByRole('button', { name: 'Grant access with my permissions' }).count(), 0, 'no grant button the person cannot use');
     assert.match(await banner.locator('[data-access-hint]').innerText(), /You cannot grant this access yourself.*data-eng/);

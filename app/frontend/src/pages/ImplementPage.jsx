@@ -1410,7 +1410,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     statements: [...new Set(readsLeft.tables.flatMap((t) => t.grants))],
     instructions: [],
     principal: readsLeft.app || 'the App',
-    why: `The App cannot read part of its data. Ask ${appReadsOwners(readsLeft)} to run these commands, then click Try again.`,
+    why: 'The App cannot read part of its data.',
   }] : [];
   const mustActKey = grantListKey(mustActPermissions);
   useEffect(() => {

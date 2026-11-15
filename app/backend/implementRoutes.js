@@ -1221,7 +1221,7 @@ function registerImplementRoutes(app, deps) {
       const direct = record.mode === 'user' && (record.sources || []).length ? record.sources : [];
       const rebuild = direct.length ? [PM.permissionRequired({ principal: record.app_name || '', instructions: [
         `The App ${record.app_name || ''} reads ${direct.join(', ')} directly, so its viewers cannot see that data. `
-        + 'Rebuild the App to read through its views, then click Try again.'] })] : [];
+        + 'A rebuild reads them through the App views.'] })] : [];
       return [...granted, ...rebuild].filter(Boolean);
     }
     // The same statements the card and Check again show: the live plan's grants, never a second list.

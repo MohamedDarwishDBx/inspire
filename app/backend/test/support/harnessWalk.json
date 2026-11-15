@@ -124,6 +124,12 @@
  "GET /api/notebook": [
   "G04"
  ],
+ "POST /api/access-request": [
+  "G29"
+ ],
+ "POST /api/access-request/check": [
+  "G28"
+ ],
  "POST /api/output-folder/check": [
   "G27",
   "G27b"

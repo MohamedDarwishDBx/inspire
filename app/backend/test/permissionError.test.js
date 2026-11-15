@@ -15,7 +15,7 @@ test('a schema refusal maps to USE CATALOG, USE SCHEMA and SELECT on the schema 
     `GRANT SELECT ON SCHEMA \`adb_fe_uae_01\`.\`demo_telco\` TO \`${PERSON}\``,
   ]);
   assert.equal(p.principal, PERSON);
-  assert.equal(p.why, 'Inspire reads this with your own access. Ask your workspace admin to run these commands, then click Try again.');
+  assert.equal(p.why, 'Inspire reads this with your own access.');
 });
 
 test('a table refusal maps to USE CATALOG, USE SCHEMA and SELECT on the table', () => {
