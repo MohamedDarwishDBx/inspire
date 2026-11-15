@@ -7262,7 +7262,67 @@ def part_table_problems(page: dict, section: str) -> list:
                             f"add {', '.join(gone)}")
         if page.get("result_table") and not reads_table(sqls.get(table.get("dataset")), companion):
             problems.append(f"table {table.get('id')} in {section} reads {companion}; point its dataset at that table")
+        produced = projected_columns(sqls.get(table.get("dataset")))
+        lost = [c for c in PART_COLUMNS[section] if produced is not None and c not in produced]
+        if lost:
+            problems.append(f"table {table.get('id')} in {section} shows {', '.join(lost)}, which its dataset {table.get('dataset')} does not "
+                            f"select; select {', '.join(lost)} from {companion} under those names, or alias the column to that name")
     return problems
+
+
+_SELECT_LIST_END = re.compile(r"\bFROM\b", re.I)
+
+
+def _top_level_items(text: str) -> list:
+    """The comma-separated items of a select list, with commas inside parentheses, quotes and backticks kept whole."""
+    items, depth, quote, start = [], 0, "", 0
+    for i, ch in enumerate(text):
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"`":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            items.append(text[start:i])
+            start = i + 1
+    items.append(text[start:])
+    return [item.strip() for item in items if item.strip()]
+
+
+def projected_columns(sql):
+    """The names the top-level select list of one dataset returns, lower-cased: each item's alias, else its last identifier. None when the
+    names cannot be read (a star, a union, a WITH clause, or no plain SELECT ... FROM), so a check never flags what it cannot see."""
+    text = clean_sql(sql)
+    if not re.match(r"SELECT\b", text, re.I) or re.search(r"\bUNION\b", text, re.I):
+        return None
+    body = text[len("SELECT"):]
+    end = None
+    depth = 0
+    for match in re.finditer(r"[()]|\bFROM\b", body, re.I):
+        if match.group(0) == "(":
+            depth += 1
+        elif match.group(0) == ")":
+            depth -= 1
+        elif depth == 0:
+            end = match.start()
+            break
+    select_list = body[:end] if end is not None else body
+    select_list = re.sub(r"^\s*(DISTINCT\s+)?", "", select_list, flags=re.I)
+    names = set()
+    for item in _top_level_items(select_list):
+        if item == "*" or item.endswith(".*"):
+            return None
+        alias = re.search(r"\bAS\s+`?([A-Za-z_][A-Za-z0-9_]*)`?\s*$", item, re.I)
+        if alias:
+            names.add(alias.group(1).lower())
+            continue
+        last = re.search(r"(?:^|[\s.])`?([A-Za-z_][A-Za-z0-9_]*)`?\s*$", item)
+        if last and not re.search(r"[()]\s*$", item):
+            names.add(last.group(1).lower())
+    return names
 
 
 def segments_problems(page: dict) -> list:
