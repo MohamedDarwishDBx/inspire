@@ -2207,7 +2207,7 @@ def run_level_datasets(page: dict) -> set:
     if not result:
         return set()
     whole = scenario_layout(page)
-    tables = [f"{result}{suffix}" for suffix in layout_contract(page) if whole or suffix in RUN_LEVEL_SUFFIXES]
+    tables = [shell_facts.companion(result, suffix) for suffix in layout_contract(page) if whole or suffix in RUN_LEVEL_SUFFIXES]
     return {str(d.get("name")) for d in page.get("datasets") or [] if isinstance(d, dict)
             and any(reads_table(d.get("sql"), table) for table in tables)}
 
@@ -2230,7 +2230,7 @@ def contract_problems(page: dict) -> list:
             read = [(page.get("scenario") or {}).get("model")] if isinstance(page.get("scenario"), dict) else []
         else:
             read = [i.get("dataset") for i in section_items(page, section)]
-        companion = f"{result}{suffix}"
+        companion = shell_facts.companion(result, suffix)
         if read and not any(reads_table(sqls.get(d), companion) for d in read):
             problems.append(f"the {section} section of a {page_layout(page)} page reads {companion}, the companion table its notebook writes "
                             f"with {', '.join(suffixes[suffix])}; point its dataset at that table")
@@ -3558,7 +3558,7 @@ def list_context(page: dict, columns, fields, decisions: bool) -> dict:
             "tier": records.get("tier") if records.get("tier") in names else None,
             "tie": "record_key" if "record_key" in columns else key, "ai": ai,
             "categories": [n for n in ai if AI_CATEGORY.match(n)],
-            "scopes": table_name(str(page["result_table"]).strip() + SUMMARY_SUFFIX) if join and page_scopes(page) else None,
+            "scopes": table_name(shell_facts.companion(page["result_table"], SUMMARY_SUFFIX)) if join and page_scopes(page) else None,
             "treatments": segment_column(page) if join and decisions and BATCH_VALUES in names else None,
             "unjoined": "" if join else unjoined_reason(page, columns, fields)}
 
@@ -4374,7 +4374,7 @@ def runs_compare_sql(sql: str, table: str, columns, backs=(0, 1), history=None, 
     text, carries = _runs_query(tokens, 0, len(tokens), table)
     if not carries:
         raise ValueError(f"it does not read the result table {table} in its FROM, the one table that keeps earlier runs")
-    summary = table_name(str(table).strip() + SUMMARY_SUFFIX) if scopes else None
+    summary = table_name(shell_facts.companion(table, SUMMARY_SUFFIX)) if scopes else None
     rows, text = f"{RUNS_CTE} AS (\n{_runs_rows(table_name(table), columns, backs, history, summary, facts)}\n)", text.replace(_RUNS_MARK, "")
     return f"WITH {rows},\n{text[len('WITH '):]}" if text.startswith("WITH ") else f"WITH {rows}\n{text}"
 
@@ -5007,8 +5007,8 @@ def state_facts(row, result_table: str = "") -> dict:
         facts = None
     if not facts_ready(facts) or str(facts.get("latest")) != str((row or {}).get("run_id")):
         return None
-    base = ".".join(p.strip() for p in str(result_table or "").split(".")).lower()
-    owned = {key: base + suffix for key, suffix in (("log", shell_facts.RUN_LOG_SUFFIX), ("acted", shell_facts.ACTED_SUFFIX),
+    base = shell_facts.companion(result_table, "").lower()
+    owned = {key: shell_facts.companion(result_table, suffix).lower() for key, suffix in (("log", shell_facts.RUN_LOG_SUFFIX), ("acted", shell_facts.ACTED_SUFFIX),
                                                     ("closed", shell_facts.CLOSED_SUFFIX))}
     changes = str(facts.get("changes") or "").lower()
     if not base or (all(str(facts.get(k) or "").lower() == v for k, v in owned.items()) and changes in ("", base + shell_facts.CHANGES_SUFFIX)):
@@ -5038,7 +5038,7 @@ def summary_query(page: dict, limit: int = 1, run_ids=None, index: bool = False)
         conditions.append(f"CAST(`run_id` AS STRING) IN (SELECT explode(from_json({holder}, 'ARRAY<STRING>')))")
     picked = "CAST(`run_id` AS STRING) AS `run_id`, `updated_at`" if index else "*"
     scope = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-    return (f"SELECT {picked} FROM {table_name(str(page['result_table']).strip() + SUMMARY_SUFFIX)}{scope} "
+    return (f"SELECT {picked} FROM {table_name(shell_facts.companion(page['result_table'], SUMMARY_SUFFIX))}{scope} "
             f"ORDER BY `updated_at` DESC NULLS LAST LIMIT {int(limit)}", params.items)
 
 
@@ -5323,7 +5323,8 @@ def money_sql(model, alias: str = "", live: bool = False) -> str:
 def money_values_sql(model, result_table: str, use_case: str) -> str:
     if not model or not model.get("recomputes"):
         return ""
-    edits, summary = table_name(str(result_table).strip() + ASSUMPTIONS_SUFFIX), table_name(str(result_table).strip() + SUMMARY_SUFFIX)
+    edits, summary = (table_name(shell_facts.companion(result_table, ASSUMPTIONS_SUFFIX)),
+                      table_name(shell_facts.companion(result_table, SUMMARY_SUFFIX)))
     scope, cells, pairs = sql_text(use_case), [], []
     for i, a in enumerate(model["assumptions"]):
         name, path = sql_text(a["name"]), f"$[{model['_at'][a['name']]}]"
@@ -5361,7 +5362,7 @@ ALERT_THRESHOLD_SETTING = "alert_threshold"
 
 
 def setting_value_sql(result_table: str, use_case_id: str, name: str) -> str:
-    return (f"(SELECT CAST(a.`value` AS DOUBLE) FROM {table_name(str(result_table).strip() + ASSUMPTIONS_SUFFIX)} AS a WHERE "
+    return (f"(SELECT CAST(a.`value` AS DOUBLE) FROM {table_name(shell_facts.companion(result_table, ASSUMPTIONS_SUFFIX))} AS a WHERE "
             f"a.`use_case_id` = {sql_text(use_case_id)} AND a.`name` = {sql_text(name)} ORDER BY {assumption_order('a')} LIMIT 1)")
 
 
@@ -5376,7 +5377,7 @@ def assumption_order(alias: str = "") -> str:
 
 
 def sibling_table(page: dict, suffix: str) -> str:
-    return table_name(str(page["result_table"]).strip() + suffix)
+    return table_name(shell_facts.companion(page["result_table"], suffix))
 
 
 def assumptions_table(page: dict) -> str:
@@ -6386,7 +6387,7 @@ def scope_line_sql(table: str, use_case: str = "") -> str:
     scope = f" WHERE `use_case_id` = {sql_text(use_case)}" if use_case else ""
     covered = _covered_sql("l.`segments`")
     return (f"COALESCE((SELECT CASE WHEN {covered} = '' THEN '' ELSE concat({sql_text(SCOPE_SENTENCE.lstrip())}, {covered}, '.') END FROM "
-            f"(SELECT CAST(`run_segments` AS STRING) AS `segments` FROM {table_name(str(table).strip() + SUMMARY_SUFFIX)}{scope} ORDER BY "
+            f"(SELECT CAST(`run_segments` AS STRING) AS `segments` FROM {table_name(shell_facts.companion(table, SUMMARY_SUFFIX))}{scope} ORDER BY "
             f"`updated_at` DESC NULLS LAST LIMIT 1) AS l), '')")
 
 
@@ -7164,12 +7165,19 @@ def choice_sql(choices, names, alias: str = "") -> str:
     return parts[0] if len(parts) == 1 else f"COALESCE({', '.join(parts)})"
 
 
+def companion_required_suffixes(ident: str) -> set:
+    """The companion suffixes a layout's table sections read, which the App fit check requires of the page (REQ-264). They are declared
+    in the kinds registry (required_companions) so the notebook reads the same list. The notebook leaves the layout as its decision list
+    when one of these companions is not written yet, because no page could pass the check."""
+    return set((layouts().get(ident) or {}).get("required_companions") or [])
+
+
 def part_table_problems(page: dict, section: str) -> list:
     tables = [t for t in section_items(page, section) if t in (page.get("tables") or [])]
     if not tables:
         return [f"the {section} section of a {page_layout(page)} page needs a table: {section_words(section)}"]
     sqls = {d.get("name"): d.get("sql") for d in page.get("datasets") or [] if isinstance(d, dict)}
-    companion = f"{page.get('result_table') or ''}{(SECTIONS.get(section) or {}).get('suffix') or ''}"
+    companion = shell_facts.companion(page.get("result_table"), (SECTIONS.get(section) or {}).get("suffix") or "")
     problems = []
     for table in tables:
         shown = {str((c or {}).get("column") or "") for c in table.get("columns") or []}

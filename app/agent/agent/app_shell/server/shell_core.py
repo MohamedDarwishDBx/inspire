@@ -2278,7 +2278,7 @@ class Shell:
             for page in self.pages:
                 if page.get("result_table"):
                     result = shell_pg.uc_key(page["result_table"])
-                    if table in {result + suffix for suffix in shell_sql.INSPIRE_SUFFIXES}:
+                    if table in {shell_facts.companion(result, suffix) for suffix in shell_sql.INSPIRE_SUFFIXES}:
                         found.add(page["id"])
             self.owners[table] = found
         return found

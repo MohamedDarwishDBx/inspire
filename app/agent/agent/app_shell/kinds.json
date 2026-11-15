@@ -173,6 +173,7 @@
    "tab_label": "Segments",
    "enabled": true,
    "contract": "segments",
+   "required_companions": ["__segments"],
    "sections": [
     "todo",
     "kpis",
@@ -251,6 +252,7 @@
    "tab_label": "Lift",
    "enabled": true,
    "contract": "impact",
+   "required_companions": ["__effect"],
    "sections": [
     "todo",
     "kpis",
