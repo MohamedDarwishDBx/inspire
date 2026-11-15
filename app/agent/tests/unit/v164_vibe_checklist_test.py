@@ -69,7 +69,7 @@ def test_the_judge_says_done_but_a_failing_block_gate_leaves_the_ask_not_met(age
     _judge(inst, split, [{"status": "done", "evidence": "image: Mickey Mouse"}])
     found = inst._implement_vibes_checks({}, ASSET, MICKEY, PAGE)
     assert found == [{"ask": MICKEY, "status": "missing",
-                      "evidence": "no block on the built App page n01_u01 is kind image, align center; its blocks are block hero: image "
+                      "evidence": "no block on the built App page Loss desk is kind image, align center; its blocks are block hero: image "
                                   "at the page top, half width, aligned left",
                       "checks": [{"name": "block: kind image, align center", "passed": False}]}]
     _judge(inst, split, [{"status": "done", "evidence": "image: Mickey Mouse"}])
@@ -254,7 +254,7 @@ def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks
     assert any(kind == "judge" and "App page n01_u01" in prompt and "[asked in an earlier version]" in prompt for kind, prompt in seen)
     assert [(e["requirement"], e["part"], e["where"]) for e in final["checklist"]] == [
         ("Make it a horizontal bar chart", "dashboard", "widget by_region"), ("Keep the biggest regions first", "dashboard", "widget by_region"),
-        ("Keep the region filter", "app", "page Churn desk"), ("Add a count of customers at risk", "app", "page Churn desk")]  # REQ-237: person copy names the page by title
+        ("Keep the region filter", "app", "page Loss desk"), ("Add a count of customers at risk", "app", "page Loss desk")]  # REQ-237 / D-NAMES: person copy names the page by its title
     assert final["checklist_summary"]["total"] == 4 and [e["status"] for e in final["checklist"][2:]] == ["met", "met"]
 
 
