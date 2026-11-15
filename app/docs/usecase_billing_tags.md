@@ -43,9 +43,10 @@ Every build writes one row to `<catalog>.<schema>.__inspire_implement`, keyed by
 | `job_id` | `usage_metadata.job_id` | the build job |
 | `asset_status:app.app_id` | `usage_metadata.app_id` | the App; `app_name` and `app_url` are also columns |
 | `warehouse_id` | `usage_metadata.warehouse_id` | the warehouse the App queries; set on rows written after this change |
+| `lakebase_project_id` | `usage_metadata.database_instance_id` | the Lakebase project or instance Inspire tagged on the build job (the project uid, else id). Written by the build after its assets are tagged |
 | `genie_space_id`, `dashboard_id`, `alert_id` | Genie, dashboard and alert ids | these assets bill through a warehouse, so they are context, not a billing key |
 
-Lakebase: the project id is not a column yet. It is on the build job as the tag `dbx_inspire_ai_lakebase_project_id`, so join through `job_id`.
+Lakebase bills under `usage_metadata.database_instance_id` (Databricks billing system table docs). Inspire stores the project uid, else the id, in `lakebase_project_id`. The two match in the usual case, but confirm on one sample row before you rely on Lakebase totals. A build row written before this change has no `lakebase_project_id`.
 
 Rows written before this change have no `use_case_name_tag` or `warehouse_id`. They show as `unattributed`.
 
@@ -69,6 +70,10 @@ WITH tracked AS (                             -- every billing id Inspire create
         WHERE warehouse_id IS NOT NULL AND use_case_name_tag IS NOT NULL)
   GROUP BY warehouse_id                       -- a warehouse counts only when one use case names it
   HAVING COUNT(DISTINCT use_case_name_tag) = 1
+  UNION ALL
+  SELECT DISTINCT use_case_name_tag, lakebase_project_id, 'lakebase'
+  FROM <catalog>.<schema>.__inspire_implement
+  WHERE lakebase_project_id IS NOT NULL AND use_case_name_tag IS NOT NULL
 ),
 usage_ids AS (
   SELECT CAST(usage_metadata.job_id AS STRING) AS asset_id, 'job' AS kind, usage_quantity
@@ -82,6 +87,10 @@ usage_ids AS (
   SELECT CAST(usage_metadata.warehouse_id AS STRING), 'warehouse', usage_quantity
   FROM system.billing.usage
   WHERE workspace_id = '<workspace_id>' AND usage_unit = 'DBU' AND usage_metadata.warehouse_id IS NOT NULL
+  UNION ALL
+  SELECT CAST(usage_metadata.database_instance_id AS STRING), 'lakebase', usage_quantity
+  FROM system.billing.usage
+  WHERE workspace_id = '<workspace_id>' AND usage_unit = 'DBU' AND usage_metadata.database_instance_id IS NOT NULL
 )
 SELECT coalesce(t.use_case_name_tag, 'unattributed') AS usecase_name,
        u.kind,
