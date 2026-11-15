@@ -145,10 +145,12 @@ test('a demo request gets the saved answer and never reaches the workspace route
 
 test('a demo MVP page may load scripts, styles, fonts and data only from the App itself, so the demo fetches nothing from an internet host behind any proxy', async () => {
   const { sameOriginCsp } = require('../lib/hostedRun');
+  const { BOOT_GUARD_SCRIPT_HASH } = require('../lib/bootGuardCsp');
   const { srv } = await serve();
   try {
+    // The only inline script the page may run is the boot guard, by its exact hash. Any other hash, nonce or unsafe-inline is a source to report.
     const allowed = (csp) => csp.split('; ').filter((d) => /^(default|script|style|img|font|connect)-src /.test(d))
-      .flatMap((d) => d.split(' ').slice(1)).filter((src) => !["'none'", "'self'", 'data:'].includes(src));
+      .flatMap((d) => d.split(' ').slice(1)).filter((src) => !["'none'", "'self'", 'data:', `'${BOOT_GUARD_SCRIPT_HASH}'`].includes(src));
     for (const asked of ['/showcase/taxi/mvp/N01-U01/', '/showcase/taxi/mvp/N01-U01/assets/app.js']) {
       const csp = (await fetch(`${srv.url}${asked}`)).headers.get('content-security-policy') || '';
       assert.equal(csp, sameOriginCsp(), asked);
@@ -156,6 +158,12 @@ test('a demo MVP page may load scripts, styles, fonts and data only from the App
       assert.deepEqual(allowed(csp), [], asked);
     }
     assert.deepEqual(allowed(`${sameOriginCsp()}; style-src https://fonts.googleapis.com`), ['https://fonts.googleapis.com'], 'an internet source is caught');
+    // Must-exclude: only the guard's hash is allowed inline. Another hash, a nonce or unsafe-inline in script-src is caught.
+    const withScript = (source) => sameOriginCsp().replace('script-src \'self\'', `script-src 'self' ${source}`);
+    assert.deepEqual(allowed(withScript(`'${BOOT_GUARD_SCRIPT_HASH}'`)), [], 'the guard hash alone is allowed');
+    assert.deepEqual(allowed(withScript("'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='")), ["'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='"], 'another sha256 is caught');
+    assert.deepEqual(allowed(withScript("'nonce-abc'")), ["'nonce-abc'"], 'a nonce is caught');
+    assert.deepEqual(allowed(withScript("'unsafe-inline'")), ["'unsafe-inline'"], 'unsafe-inline is caught');
   } finally {
     await srv.close();
   }

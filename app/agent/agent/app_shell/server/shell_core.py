@@ -630,6 +630,15 @@ def choice_options(item: dict, result) -> None:
     item["searchable"] = len(item["options"]) >= shell_sql.CAPS["options"]
 
 
+def served_filter_problem(item: dict) -> str:
+    """Why one entry of the served filter meta is not a working filter, or "" when it is served with options and no error."""
+    if item.get("error"):
+        return f"it is served with an error: {item['error']}"
+    if item.get("type") == "date_range":
+        return "" if item.get("low") is not None and item.get("high") is not None else "it is served with no dates"
+    return "" if item.get("options") else "it is served with no options"
+
+
 def public_page(page: dict, gaps=frozenset()) -> dict:
     by_column = click_filters(page)
     out = {k: page.get(k) for k in ("id", "use_case_id", "title", "question", "sponsor", "domain", "subdomain", "icon", "hue",

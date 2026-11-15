@@ -90,3 +90,53 @@ test('REQ-146 the Best-of-Best short-list label counts only the use cases that m
   const nb = JSON.parse(readFileSync(new URL('dbx_inspire_ai_agent.ipynb', ROOT), 'utf8'));
   assert.ok(nb.cells.some((c) => c.cell_type === 'code' && c.source.join('').includes("'meet'} the quality bar, not more than")), 'the label is in a code cell');
 });
+
+// REQ-143 (Amr, verbatim: "Genie progress overlay the page not push it to the side"): the Build progress drawer overlays the page at
+// every width. Opening it never squeezes the page: the page box and every card's x position stay the same, the drawer closes with
+// its Close button and with Escape, and after it closes the card's Vibe/Add button is clickable.
+test('REQ-143 the Build progress drawer overlays the page at 1024, 1280, 1440 and 1920: opening it never squeezes the page, and it closes by Close and Escape', async () => {
+  const ui = await openUi('implement', STUDIO_STATE);
+  const { page } = ui;
+  const boxes = () => page.evaluate(() => {
+    const at = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width)]; };
+    const pane = document.querySelector('[data-use-case-pane]');
+    return {
+      page: at(document.querySelector('[data-implement-page]')),
+      pane: pane ? at(pane) : null,
+      cards: [...document.querySelectorAll('[data-use-case-pane] [data-asset-tile], [data-use-case-pane] button:not([disabled])')]
+        .filter((el) => el.getClientRects().length > 0).map((el) => at(el)[0]),
+    };
+  });
+  const dialog = page.locator('[data-progress-dock] [data-progress-panel] [role="dialog"]');
+  try {
+    await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
+    for (const [width, height] of [[1024, 700], [1280, 800], [1440, 900], [1920, 1080]]) {
+      await page.setViewportSize({ width, height });
+      const card = page.locator('[data-progress-card]');
+      if (await card.getAttribute('data-progress-open') === 'true') await card.locator('[data-progress-show]').click();
+      await page.locator('[data-progress-card][data-progress-open="false"]').waitFor();
+      const closed = await boxes();
+      await card.locator('[data-progress-show]').click();
+      await dialog.waitFor();
+      const open = await boxes();
+      assert.deepEqual(open.page, closed.page, `the page box is not squeezed at ${width}px (closed ${closed.page}, open ${open.page})`);
+      assert.deepEqual(open.pane, closed.pane, `the use case pane keeps its box at ${width}px (closed ${closed.pane}, open ${open.pane})`);
+      assert.deepEqual(open.cards, closed.cards, `every card keeps its x position at ${width}px`);
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await dialog.waitFor({ state: 'detached' });
+      await card.locator('[data-progress-show]').click();
+      await dialog.waitFor();
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'detached', timeout: 5000 });
+      const vibe = page.locator('[data-use-case-pane]').getByRole('button', { name: /^Vibe\/Add/ }).first();
+      assert.ok(await vibe.count() > 0, 'the card has a Vibe/Add button');
+      await vibe.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+      const r = await vibe.boundingBox();
+      const hit = await vibe.evaluate((el, [x, y]) => el.contains(document.elementFromPoint(x, y)), [r.x + r.width / 2, r.y + r.height / 2]);
+      assert.equal(hit, true, `after the drawer closes, the Vibe/Add button is clickable at ${width}px`);
+    }
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});

@@ -1741,3 +1741,36 @@ for (const [width, height] of [[1440, 900], [1024, 768], [390, 844]]) {
     }
   });
 }
+
+// REQ-206: the confirm dialog that stops a shared App is a modal: Escape cancels it with nothing sent, its Cancel and Close stay in
+// view at 1024x700, and Tab stays inside it.
+test('the stop confirm is a modal at 1024x700: Escape cancels it with nothing sent, Close stays in view, and Tab stays inside', async () => {
+  const ui = await openTower(JOINER_STATE);
+  const { page } = ui;
+  const controls = [];
+  page.on('request', (r) => { if (r.url().includes('/api/inspire/implement/control')) controls.push(r.url()); });
+  try {
+    await page.setViewportSize({ width: 1024, height: 700 });
+    await showAsset(page, 'app');
+    const app = page.locator('[data-asset-panel="app"]');
+    await app.getByRole('button', { name: 'Stop the App', exact: true }).waitFor({ timeout: 15000 });
+    await app.getByRole('button', { name: 'Stop the App', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Stop the App for every use case in it' });
+    await dialog.waitFor({ timeout: 5000 });
+    const close = dialog.getByRole('button', { name: 'Close', exact: true });
+    const box = await close.boundingBox();
+    assert.ok(box && box.y >= 0 && box.y + box.height <= 700, `Close is inside the 1024x700 viewport: ${JSON.stringify(box)}`);
+    const inside = () => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')?.querySelector('h2')?.textContent === 'Stop the App for every use case in it'));
+    for (let i = 0; i < 15; i += 1) {
+      await page.keyboard.press('Tab');
+      assert.equal(await inside(), true, `Tab ${i + 1} keeps focus in the stop confirm`);
+    }
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached', timeout: 5000 }).catch(() => null);
+    assert.equal(await dialog.count(), 0, 'Escape cancels the stop confirm');
+    assert.deepEqual(controls, [], 'Escape sends nothing');
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});

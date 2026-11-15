@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+const { BOOT_GUARD_SCRIPT_HASH } = createRequire(import.meta.url)('../../../backend/lib/bootGuardCsp.js');
 
 const backend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'backend');
 const require = createRequire(path.join(backend, 'package.json'));
@@ -81,7 +82,7 @@ test('a page Inside Inspire renders under its strict CSP, reads as the viewer, a
     const doc = await documentResponse;
     assert.equal(doc.headers()['content-security-policy'], H.hostedCsp(inspire.base, ID));
     const csp = doc.headers()['content-security-policy'];
-    for (const part of ["default-src 'none'", `script-src ${inspire.base}/run/${ID}/assets/`, "object-src 'none'", "base-uri 'none'", "frame-ancestors 'self'"]) {
+    for (const part of ["default-src 'none'", `script-src ${inspire.base}/run/${ID}/assets/ '${BOOT_GUARD_SCRIPT_HASH}'`, "object-src 'none'", "base-uri 'none'", "frame-ancestors 'self'"]) {
       assert.ok(csp.split('; ').includes(part), `${part} in ${csp}`);
     }
     assert.ok(!/unsafe-inline|unsafe-eval/.test(csp), 'no unsafe-inline and no unsafe-eval');
