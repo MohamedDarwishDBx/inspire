@@ -36,7 +36,7 @@ CUSTOMER = re.compile(r"(?i)\b(emirates|etisalat|adnoc|alshaya|al[- ]futtaim)\w*
 # Test workspace names: a scratch App or catalog name must never reach the public ledger.
 SCRATCH_APP = re.compile(r"\binspire-(?:kinds|customer|cust|walk|e2e|rc\d|happy|fwa|fraud|amr|bakehouse|v\d)[a-z0-9-]*")
 SCRATCH_WORKSPACE = re.compile(r"\bmy-(?:uae|adp|gcp|aws)\b")
-SCRATCH_CATALOG = re.compile(r"\badb_fe_uae_\d+\b|\b(?:home_)?amr_ali\b")
+SCRATCH_CATALOG = re.compile(r"\badb_fe_uae_\d+\b|\b(?:home_)?amr_ali\b|\binspire_kinds_rc\d+\b|\binspire_\d{2}\b")
 PROFANITY = re.compile(r"(?i)\b(shit|fuck|damn|idiot|stupid|bullshit|crap|wtf|retard|moron)\w*")
 
 LEAK_KINDS = (
