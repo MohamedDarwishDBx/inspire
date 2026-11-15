@@ -46,6 +46,7 @@ import {
   primaryTableOf,
   restoreTable,
   pickedTable,
+  duplicateSourceNotice,
   revertLostSwaps,
   revertedSwapsText,
   removalBlocker,
@@ -1451,6 +1452,8 @@ export default function ImplementWizard({
   };
 
   const pickTable = (original, value) => {
+    const refused = duplicateSourceNotice(sourceTables, original, spec.data.tables[original] || original, value);
+    if (refused) { setNotice(refused); return; }
     const picked = pickedTable(spec, original, value);
     setSpec(picked.spec);
     if (picked.notice !== null) setNotice(picked.notice);

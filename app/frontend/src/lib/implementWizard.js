@@ -827,6 +827,15 @@ export function pickedTable(spec, original, value) {
   return { spec: { ...spec, data: { ...spec.data, tables: { ...spec.data.tables, [original]: value } } }, notice: null };
 }
 
+// REQ-240: a replacement that is already a source table would give the use case two reads of one table, and two rows with the same key.
+// The pick is refused with a plain notice, so the source list keeps one row per table.
+export function duplicateSourceNotice(sourceTables, original, chosen, value) {
+  if (!value || value === REMOVE_TABLE) return '';
+  const low = (t) => String(t || '').toLowerCase();
+  const taken = (sourceTables || []).some((t) => low(t) === low(value) && low(t) !== low(chosen || original));
+  return taken ? `${value} is already a source table, so it cannot replace ${original}.` : '';
+}
+
 export function clearedText(cleared) {
   const parts = [];
   if (cleared?.roles?.length) parts.push(`its column roles (${cleared.roles.map((r) => r.replace('_', ' ')).join(', ')})`);
