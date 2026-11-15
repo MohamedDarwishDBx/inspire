@@ -2904,9 +2904,18 @@ class Shell:
                 jobs[("left", kpi["id"])] = (lambda s=left[0], p=left[1]: self.run(ws, who, s, p, 1))
         if page.get(shell_sql.RUN_SCOPES) and page.get("result_table"):
             jobs[("scope", "runs")] = lambda: self.summary_rows(ws, who, shell_sql.summary_query(page, 2), 2)
+        try:
+            names = {f["name"] for f in self.table_fields(ws, who, page)} if page.get("result_table") and self.lakebase is None else set()
+        except (QueryError, HttpError):
+            names = set()  # an unreadable table keeps its own error on the KPI, with no scope line
+        counted = shell_sql.scope_counts_query(page, names) if names else None
+        if counted:
+            jobs[("scope", "counts")] = (lambda s=counted[0], p=counted[1]: self.run(ws, who, s, p, 1))
         done, errors = self._parallel(jobs, probe)
         scoped = done.pop(("scope", "runs"), None)
         errors.pop(("scope", "runs"), None)
+        counts = done.pop(("scope", "counts"), None)
+        errors.pop(("scope", "counts"), None)
         errors.update(failed)
         out = {"kpis": {}, "charts": {}, "tables": {}, "errors": {}, "served": served_by(done), "catching_up": self.catching_up(),
                "scope": shell_sql.scope_view(scoped) if scoped is not None else None, "money_note": page.get("money_note") or ""}
@@ -2925,6 +2934,11 @@ class Shell:
         for kpi in page.get("kpis") or []:
             if basis and kpi.get("format") == "currency":
                 out["kpis"].setdefault(kpi["id"], {})["basis"] = basis
+        if counts is not None:
+            line = {"text": shell_sql.scope_counts_text(counts["rows"])}
+            for kpi in page.get("kpis") or []:
+                if kpi.get("format", "number") in shell_sql.SCOPE_COUNT_FORMATS and ("kpi", kpi["id"]) not in errors:
+                    out["kpis"].setdefault(kpi["id"], {})["left_out"] = line
         out["zero_state"] = self.zero_state(page, ws, who, out["charts"], rows_checked(scoped[0]) if scoped else None) if out["charts"] else None
         return out
 

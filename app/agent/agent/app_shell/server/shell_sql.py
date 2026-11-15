@@ -2766,6 +2766,37 @@ def left_out_text(rows) -> dict:
     return {"undated": undated, "running": running, "unrated": unrated, "duplicated": duplicated, "future": future, "text": line}
 
 
+SCOPE_COUNT_FORMATS = ("number", "integer")
+
+
+def scope_counts_query(page: dict, names) -> tuple:
+    """One read of the App's result table under the one scope: open, held back, done or closed, and could not be checked.
+    Every count KPI on a page with the quality flag states these numbers, so no count is read as the open work count alone."""
+    if "data_quality_flag" not in names:
+        return None
+    params = _Params()
+    ok = f"COALESCE(({flagged_ok_sql(names)}), FALSE)"
+    held = "COALESCE(`held_back`, FALSE)" if "held_back" in names else "FALSE"
+    statuses = page_statuses(page)
+    status = (f"COALESCE(CAST(`action_status` AS STRING), {params.add(statuses['unset'])})" if "action_status" in names
+              else params.add(statuses["unset"]))
+    opened = ", ".join(params.add(str(v)) for v in statuses["open"])
+    closed = ", ".join(params.add(str(v)) for v in statuses["closed"])
+    scope = " AND ".join(c for c in (use_case_scope(page, params), "`is_current`", "`change_source` <> 'delete'") if c)
+    text = (f"SELECT COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened})) AS open_, COUNT_IF({ok} AND {held}) AS held_, "
+            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({closed})) AS closed_, COUNT_IF(NOT {ok}) AS unchecked "
+            f"FROM {table_name(page['result_table'])} WHERE {scope}")
+    return f"{text} LIMIT 1", params.items
+
+
+def scope_counts_text(rows) -> str:
+    row = (rows or [{}])[0]
+    open_, held, closed, unchecked = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked"))
+    checked = open_ + held + closed
+    return (f"Scope: {checked} checked records, {open_} open, {held} held back, {closed} done or closed. "
+            f"{unchecked} could not be checked and are never open work.")
+
+
 MONEY_RULE_NAME = "money_rule"
 MONEY_BUILD_KEYS = ("statuses", "rule", "rate_table", "per", "group_column")
 
