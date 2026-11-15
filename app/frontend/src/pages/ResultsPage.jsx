@@ -92,6 +92,7 @@ import {
   nameOfUseCase,
 } from '../lib/useCaseFields';
 import { nextStepOf, runOutcomeOf } from '../lib/runOutcome';
+import { stepBarStagesOf } from '../lib/runStepBar';
 import { qualityBarCountText } from '../lib/qualityBarWording';
 import { liveCountText } from '../lib/liveUseCases';
 import { saveBlob } from '../lib/download';
@@ -169,6 +170,8 @@ export default function ResultsPage({
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [results, setResults] = useState(null);
+  // REQ-126: the steps the run recorded, the same rows the Monitor reads; the Review step bar is built from them.
+  const [runSteps, setRunSteps] = useState({ session: '', steps: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isProgressive, setIsProgressive] = useState(false);
@@ -508,6 +511,12 @@ export default function ResultsPage({
         warehouse_id: warehouseId,
       });
       if (sid) q.set('session_id', sid);
+      if (sid) {
+        const stepSession = String(sid);
+        apiFetch(`/api/inspire/steps?${q}`)
+          .then((d) => setRunSteps({ session: stepSession, steps: Array.isArray(d?.steps) ? d.steps : [] }))
+          .catch(() => setRunSteps({ session: stepSession, steps: [] }));
+      }
 
       // Try final results_json first
       const data = await apiFetch(`/api/inspire/results?${q}`);
@@ -556,6 +565,8 @@ export default function ResultsPage({
   const allUseCases = useMemo(() => buildUseCaseList(results, usecases), [results, usecases]);
   const qualityBarCounts = useMemo(() => qualityBarCountsOf(allUseCases), [allUseCases]);
   const runOutcome = runOutcomeOf(results, qualityBarCounts);
+  const reviewBarStages = useMemo(() => stepBarStagesOf(PIPELINE_STAGES,
+    runSteps.session === String(selectedSessionId ?? '') ? runSteps.steps : []), [runSteps, selectedSessionId]);
   const noneMeetsBar = qualityBarCounts.found > 0 && qualityBarCounts.meets === 0;
   const bizPriorities = useMemo(() => knownPriorities(results), [results]);
   const strategy = useMemo(() => strategyContext(results), [results]);
@@ -1394,12 +1405,21 @@ export default function ResultsPage({
                       </h3>
                       {runOutcome.failed
                         ? <p className="text-[11px] text-error-fg" data-testid="execution-failure">{displayCleanText(runOutcome.message)}</p>
-                        : runOutcome.missingDocuments.length > 0
+                        : (runOutcome.missingDocuments.length > 0 || runOutcome.unfinishedSteps.length > 0)
                           ? (
-                            <ul className="text-[11px] text-warning-fg" data-testid="missing-documents" aria-label="Documents the run did not write">
-                              {runOutcome.missingDocuments.map((line) => <li key={line} dir="auto">{line}</li>)}
-                              <li className="text-text-secondary">Open the run log to see why.</li>
-                            </ul>
+                            <>
+                              {runOutcome.missingDocuments.length > 0 && (
+                                <ul className="text-[11px] text-warning-fg" data-testid="missing-documents" aria-label="Documents the run did not write">
+                                  {runOutcome.missingDocuments.map((line) => <li key={line} dir="auto">{line}</li>)}
+                                  <li className="text-text-secondary">Open the run log to see why.</li>
+                                </ul>
+                              )}
+                              {runOutcome.unfinishedSteps.length > 0 && (
+                                <ul className="text-[11px] text-warning-fg" data-testid="unfinished-steps" aria-label="Steps the run did not finish">
+                                  {runOutcome.unfinishedSteps.map((line) => <li key={line} dir="auto">{line}</li>)}
+                                </ul>
+                              )}
+                            </>
                           )
                           : <p className="text-[11px] text-text-secondary">Every step of the run finished.</p>}
                       {qualityBarCounts.found > 0 && (
@@ -1422,13 +1442,13 @@ export default function ResultsPage({
                 </div>
                 {/* Pipeline stages row */}
                 <div className="flex items-center gap-1 pt-2 border-t border-border overflow-x-auto">
-                  {PIPELINE_STAGES.map((stage, i) => (
+                  {reviewBarStages.map((stage, i) => (
                     <div key={stage} className="flex items-center shrink-0">
                       <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-success-bg">
                         <CheckCircle2 size={11} className="text-success-fg shrink-0" />
                         <span className="text-[10px] font-medium text-success-fg whitespace-nowrap">{stage}</span>
                       </div>
-                      {i < PIPELINE_STAGES.length - 1 && (
+                      {i < reviewBarStages.length - 1 && (
                         <span className="text-text-tertiary text-[10px] mx-1 shrink-0">&rarr;</span>
                       )}
                     </div>
