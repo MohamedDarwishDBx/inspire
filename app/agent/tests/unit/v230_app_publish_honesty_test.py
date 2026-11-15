@@ -176,8 +176,9 @@ def test_other_widgets_still_refuse_an_empty_default_and_an_unknown_range_form(a
                                   {"name": "max_supplier_shift", "type": "text", "default": "0.25", "allowed": "0 to 1, or empty"},
                                   {"name": "run_profile", "type": "dropdown", "default": "full", "choices": ["full"], "allowed": ""}])
     assert agent_ns["normalize_genie_fill_widgets"](fill, []) == [
-        "widget max_supplier_shift has allowed '0 to 1, or empty', which is not one of Inspire's range forms "
-        f"({agent_ns['GENIE_ALLOWED_FORMS_TEXT']}, or empty for any value)"]
+        "widget max_supplier_shift has an allowed range Inspire cannot read, which is not one of Inspire's range forms "
+        f"({agent_ns['GENIE_ALLOWED_FORMS_TEXT']}, or empty for any value): write allowed for max_supplier_shift as one of those forms "
+        "that holds its default 0.25, in place of the text 0 to 1, or empty"]
     assert agent_ns["validate_genie_fill_result"](fill, []) == ["the default of widget min_line_move is ''; allowed: at least 1"]
 
 
