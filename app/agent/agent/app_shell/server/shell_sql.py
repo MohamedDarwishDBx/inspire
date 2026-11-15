@@ -3076,6 +3076,35 @@ def kpi_values(rows) -> dict:
     return {"now": single["now"] if single else None, "before": single["before"] if single else None, "by_currency": by_currency}
 
 
+def kpi_needs_rows_check(shown: dict) -> bool:
+    """A KPI shows a zero or nothing (not a number, not a currency split): only then can its zero be missing data rather than a measure."""
+    return isinstance(shown, dict) and not shown.get("by_currency") and shown.get("now") in (None, 0)
+
+
+def kpi_rows_query(page: dict, ident: str, values: dict) -> tuple:
+    """How many rows the KPI's own dataset gives its filters at these values, before the KPI's expression runs."""
+    kpi = _item(page, "kpis", ident)
+    money = kpi.get("format") == "currency"
+    dataset = _dataset(page, kpi["dataset"])
+    sql, params = (money_source(page, kpi["dataset"], dataset) if money else future_source(page, kpi["dataset"], dataset)), _Params()
+    where = _where(page, kpi["dataset"], values, params)
+    return f"SELECT COUNT(*) AS n FROM ({sql}) AS d{where} LIMIT 1", params.items
+
+
+def kpi_empty_text(page: dict, through: str = "") -> str:
+    """Why a KPI with no rows behind it has no number, in plain words. On a forecast page the reason is the forecast's start."""
+    if plan_contract(page) == "forecast":
+        return (f"No forecast yet: the forecast starts after the last date in the data ({through})" if through
+                else "No forecast yet for these dates")
+    return f"No rows for these dates: the data ends on {through}" if through else "No rows match these filters"
+
+
+def kpi_missing(page: dict, shown: dict, rows: int, through: str = "") -> dict:
+    """A zero or missing KPI value with no rows behind it shows no number and says why. A zero with rows behind it is a measured zero."""
+    if not kpi_needs_rows_check(shown) or rows:
+        return shown
+    return dict(shown, now=None, empty=kpi_empty_text(page, through))
+
 def split_filters(page: dict, dataset: str) -> list:
     return [f for f in page.get("filters") or [] if f.get("type") not in RANGE_EDGES and (f.get("columns") or {}).get(dataset)]
 
