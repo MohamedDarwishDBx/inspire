@@ -7142,10 +7142,17 @@ def choice_problems(page: dict, stored=None) -> list:
     return problems
 
 
+def default_choice(choice: dict) -> bool:
+    """REQ-285: only a default choice (its id, label and status are the status's own) stands in for its status. A custom choice, such as the
+    Merge choice of an entity-matching page, is named only when a person picked it, so a status change never reads as that choice."""
+    return any(choice.get("id") == d["id"] and choice.get("label") == d["label"] and choice.get("status") == d["status"] for d in DEFAULT_CHOICES)
+
+
 def status_text(page: dict, values: dict) -> str:
     status = (values or {}).get("action_status") or NEW
     choices = [c for c in status_choices(page) if c.get("status") == status]
-    found = next((c for c in choices if c.get("id") == (values or {}).get(CHOICE_COLUMN)), choices[0] if len(choices) == 1 else None)
+    lone = choices[0] if len(choices) == 1 and default_choice(choices[0]) else None
+    found = next((c for c in choices if c.get("id") == (values or {}).get(CHOICE_COLUMN)), lone)
     return str((found or {}).get("label") or shell_facts.status_label(status))
 
 
@@ -7170,7 +7177,7 @@ def choice_sql(choices, names, alias: str = "") -> str:
                             f"ESCAPE '{LIKE_ESCAPE}') THEN {sql_text(c['id'])}")
         if said:
             parts.append(f"CASE {' '.join(said)} END")
-    alone = [c for c in picked if sum(1 for o in picked if o["status"] == c["status"]) == 1]
+    alone = [c for c in picked if sum(1 for o in picked if o["status"] == c["status"]) == 1 and default_choice(c)]
     if alone:
         parts.append("CASE " + " ".join(f"WHEN {status} = {sql_text(c['status'])} THEN {sql_text(c['id'])}" for c in alone) + " END")
     return parts[0] if len(parts) == 1 else f"COALESCE({', '.join(parts)})"

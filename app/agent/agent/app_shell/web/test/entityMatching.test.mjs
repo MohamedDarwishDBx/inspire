@@ -43,7 +43,8 @@ function listing(state, { failAfterAct = false } = {}) {
     const body = route.request().postDataJSON();
     acts.push(body);
     const hit = state.rows.filter((r) => body.record_keys.includes(String(r.record_key)));
-    hit.forEach((r) => Object.assign(r, { _inspire_status: body.values.action_status, _inspire_version: String(Number(r._inspire_version) + 1),
+    // REQ-285: the server names a choice only when the act stored one, so the fake keeps the choice the act sent and never infers it from a status.
+    hit.forEach((r) => Object.assign(r, { _inspire_status: body.values.action_status, _inspire_choice: body.values.action_choice ?? null, _inspire_version: String(Number(r._inspire_version) + 1),
       _inspire_closed_note: body.values.note || body.values.dismiss_reason || '', _inspire_closed_batch: batchId(acts.length), _inspire_closed_can_undo: true }));
     if (failAfterAct) broken = true;
     return json(200, { written: body.record_keys, conflicts: [], batch_id: `b${acts.length}` });
