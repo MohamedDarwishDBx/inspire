@@ -28,73 +28,76 @@ The encoder is `useCaseNameTag` in `app/backend/lib/inspireJobParams.js` and `in
 
 | Compute | Attribution | Use case key |
 |---|---|---|
-| Job compute and serverless jobs | Job tags reach `custom_tags`; `usage_metadata.job_id` is set | `custom_tags['dbx_inspire_ai_usecase_name']` |
-| Databricks Apps | `usage_metadata.app_id` is set. `custom_tags` is filled only when the App runs under a serverless usage policy, which Inspire does not set | join `app_id` to the job tag `dbx_inspire_ai_app_id` |
-| SQL warehouse (App statements) | Statement `query_tags` carry `dbx_inspire_ai_app_name` and `dbx_inspire_ai_usecase_id`; the warehouse DBUs are shared, so they are apportioned | see `docs/inspire_usage_report.sql`, statement 5 (query-duration apportionment) |
+| Job compute and serverless jobs | Job tags reach `custom_tags`; `usage_metadata.job_id` is set | `custom_tags['dbx_inspire_ai_usecase_name']`, or the tracking table |
+| Databricks Apps | `usage_metadata.app_id` is set. `custom_tags` is filled only when the App runs under a serverless usage policy, which Inspire does not set | join `usage_metadata.app_id` to the tracking table (below) |
+| SQL warehouse (App statements) | Statement `query_tags` carry `dbx_inspire_ai_app_name`, `dbx_inspire_ai_usecase_id` and `dbx_inspire_ai_usecase_name` (the name comes from the App page, written at build time). Warehouse DBUs are shared, so DBUs count only for a warehouse that one use case names | `docs/inspire_usage_report.sql`, statement 5 for apportionment by query duration |
+
+## Inspire's tracking table
+
+Every build writes one row to `<catalog>.<schema>.__inspire_implement`, keyed by session and use case. The row holds the billing ids of that build:
+
+| Column | Billing id | Notes |
+|---|---|---|
+| `use_case_id`, `session_id` | the use case | |
+| `use_case_name_tag` | encoded use case name | written by the App on each build row, from the same encoder as the job tags |
+| `job_id` | `usage_metadata.job_id` | the build job |
+| `asset_status:app.app_id` | `usage_metadata.app_id` | the App; `app_name` and `app_url` are also columns |
+| `warehouse_id` | `usage_metadata.warehouse_id` | the warehouse the App queries; set on rows written after this change |
+| `genie_space_id`, `dashboard_id`, `alert_id` | Genie, dashboard and alert ids | these assets bill through a warehouse, so they are context, not a billing key |
+
+Lakebase: the project id is not a column yet. It is on the build job as the tag `dbx_inspire_ai_lakebase_project_id`, so join through `job_id`.
+
+Rows written before this change have no `use_case_name_tag` or `warehouse_id`. They show as `unattributed`.
 
 ## Example: DBUs per use case name
 
-Replace `system.lakeflow.jobs` and `system.billing.usage` with your central copies if the principal cannot read `system.*`.
+Run it in the workspace whose tracking table you query, so `workspace_id` matches. Replace `<catalog>.<schema>` and `<workspace_id>`.
 
 ```sql
-WITH inspire_jobs AS (                       -- latest tags of every Inspire job
-  SELECT job_id, workspace_id, tags
-  FROM (
-    SELECT job_id, workspace_id, tags, delete_time,
-           ROW_NUMBER() OVER (PARTITION BY workspace_id, job_id ORDER BY change_time DESC) AS rn
-    FROM system.lakeflow.jobs
-    WHERE change_time >= current_timestamp() - INTERVAL 365 DAYS
-  )
-  WHERE rn = 1 AND delete_time IS NULL AND try_element_at(tags, 'dbx_inspire_ai_version') IS NOT NULL
-),
-job_usecase AS (
-  SELECT job_id, workspace_id,
-         try_element_at(tags, 'dbx_inspire_ai_usecase_name') AS usecase_name,
-         try_element_at(tags, 'dbx_inspire_ai_app_id') AS app_id,
-         try_element_at(tags, 'dbx_inspire_ai_warehouse_id') AS warehouse_ids
-  FROM inspire_jobs
-),
-warehouse_owner AS (                         -- a warehouse is one use case's only when a single named use case uses it
-  SELECT workspace_id, warehouse_id, MIN(usecase_name) AS usecase_name
-  FROM (
-    SELECT j.workspace_id, w.warehouse_id, j.usecase_name
-    FROM job_usecase j
-    LATERAL VIEW explode(split(coalesce(j.warehouse_ids, ''), ',')) w AS warehouse_id
-    WHERE coalesce(w.warehouse_id, '') <> '' AND j.usecase_name IS NOT NULL
-  )
-  GROUP BY workspace_id, warehouse_id
-  HAVING COUNT(DISTINCT usecase_name) = 1
-),
-usage_by_kind AS (
-  SELECT u.workspace_id, 'job' AS kind, CAST(u.usage_metadata.job_id AS STRING) AS asset_id, u.usage_quantity
-  FROM system.billing.usage u
-  WHERE u.usage_unit = 'DBU' AND u.usage_metadata.job_id IS NOT NULL
+WITH tracked AS (                             -- every billing id Inspire created, with its use case name
+  SELECT DISTINCT use_case_name_tag, CAST(job_id AS STRING) AS asset_id, 'job' AS kind
+  FROM <catalog>.<schema>.__inspire_implement
+  WHERE job_id IS NOT NULL AND use_case_name_tag IS NOT NULL
   UNION ALL
-  SELECT u.workspace_id, 'app', CAST(u.usage_metadata.app_id AS STRING), u.usage_quantity
-  FROM system.billing.usage u
-  WHERE u.usage_unit = 'DBU' AND u.usage_metadata.app_id IS NOT NULL
+  SELECT DISTINCT use_case_name_tag, CAST(asset_status:app.app_id AS STRING), 'app'
+  FROM <catalog>.<schema>.__inspire_implement
+  WHERE asset_status:app.app_id IS NOT NULL AND use_case_name_tag IS NOT NULL
   UNION ALL
-  SELECT u.workspace_id, 'warehouse', CAST(u.usage_metadata.warehouse_id AS STRING), u.usage_quantity
-  FROM system.billing.usage u
-  WHERE u.usage_unit = 'DBU' AND u.usage_metadata.warehouse_id IS NOT NULL
+  SELECT MIN(use_case_name_tag), warehouse_id, 'warehouse'
+  FROM (SELECT DISTINCT use_case_name_tag, warehouse_id
+        FROM <catalog>.<schema>.__inspire_implement
+        WHERE warehouse_id IS NOT NULL AND use_case_name_tag IS NOT NULL)
+  GROUP BY warehouse_id                       -- a warehouse counts only when one use case names it
+  HAVING COUNT(DISTINCT use_case_name_tag) = 1
+),
+usage_ids AS (
+  SELECT CAST(usage_metadata.job_id AS STRING) AS asset_id, 'job' AS kind, usage_quantity
+  FROM system.billing.usage
+  WHERE workspace_id = '<workspace_id>' AND usage_unit = 'DBU' AND usage_metadata.job_id IS NOT NULL
+  UNION ALL
+  SELECT CAST(usage_metadata.app_id AS STRING), 'app', usage_quantity
+  FROM system.billing.usage
+  WHERE workspace_id = '<workspace_id>' AND usage_unit = 'DBU' AND usage_metadata.app_id IS NOT NULL
+  UNION ALL
+  SELECT CAST(usage_metadata.warehouse_id AS STRING), 'warehouse', usage_quantity
+  FROM system.billing.usage
+  WHERE workspace_id = '<workspace_id>' AND usage_unit = 'DBU' AND usage_metadata.warehouse_id IS NOT NULL
 )
-SELECT coalesce(
-         CASE WHEN b.kind = 'warehouse' THEN wo.usecase_name ELSE j.usecase_name END,
-         'unattributed') AS usecase_name,
-       b.kind,
-       SUM(b.usage_quantity) AS dbus
-FROM usage_by_kind b
-LEFT JOIN job_usecase j
-  ON (b.kind = 'job' AND b.asset_id = CAST(j.job_id AS STRING) AND b.workspace_id = j.workspace_id)
-  OR (b.kind = 'app' AND b.asset_id = j.app_id AND b.workspace_id = j.workspace_id)
-LEFT JOIN warehouse_owner wo
-  ON b.kind = 'warehouse' AND b.asset_id = wo.warehouse_id AND b.workspace_id = wo.workspace_id
+SELECT coalesce(t.use_case_name_tag, 'unattributed') AS usecase_name,
+       u.kind,
+       SUM(u.usage_quantity) AS dbus
+FROM usage_ids u
+LEFT JOIN tracked t ON t.asset_id = u.asset_id AND t.kind = u.kind
 GROUP BY 1, 2
 ORDER BY dbus DESC;
 ```
+
 Notes:
 
-- A warehouse that more than one use case names has no single owner, so its DBUs show as `unattributed`. For an apportioned figure use statement 5 of `docs/inspire_usage_report.sql` (query duration).
-- A job with several use case ids has no name tag, so its DBUs show as `unattributed`.
-- Rows before the tag set existed have no name tag and show as `unattributed`.
-- The join assumes one job per asset. Confirm one sample row per kind before you rely on the totals.
+- Each billing id appears once in the tracking table, so the join does not multiply DBUs. Confirm that with one sample row per kind before you rely on the totals.
+- A warehouse named by more than one use case has no single owner, so its DBUs show as `unattributed`. For an apportioned figure use statement 5 of `docs/inspire_usage_report.sql`.
+- The App's statements carry the same name in `system.query.history`, at `query_tags['dbx_inspire_ai_usecase_name']`, so warehouse statements filter by use case without this table.
+
+## Option not built: a usage policy per use case
+
+Serverless usage policies write their tags into `custom_tags`, so a policy per use case would put the name on the billing row itself. Creating and assigning a policy needs a workspace admin write, so Inspire does not do it. The tracking table above gives the same totals without it.
