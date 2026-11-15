@@ -6,6 +6,9 @@ import { NOT_RECORDED, formatValue, integer } from './format.js';
 import './styles/plan.css';
 import { SectionHelp } from './SectionHelp.jsx';
 
+// One label source for the plan part: a forecast page's lines are its forecast, a plan's lines are the plan.
+export const plannedHead = (d) => (d?.forecast ? 'Forecast' : 'Planned');
+
 const STATE_WORDS = { on: 'On plan', off: 'Off plan', unknown: 'Not known yet' };
 
 export function Stat({ label, value, note, tone = '', id }) {
@@ -47,7 +50,7 @@ export default function PlanPerformance({ page }) {
             <header className="card-h"><div><h2>Plan against actuals</h2><p>Each line of {d.version.label} next to its value in the latest run. Lines off plan come first.</p></div><SectionHelp title={'Plan against actuals'} steps={[{ title: 'Plan against actuals', text: "Each line of the plan next to its value in the latest run. Lines that are off plan come first." }]} /></header>
             {d.lines.length ? (
               <div className="tw"><table className="plan-t">
-                <thead><tr><th scope="col">Line</th><th scope="col">Planned</th><th scope="col">Now</th><th scope="col">Gap</th><th scope="col">State</th><th scope="col">Override reason</th></tr></thead>
+                <thead><tr><th scope="col">Line</th><th scope="col">{plannedHead(d)}</th><th scope="col">Now</th><th scope="col">Gap</th><th scope="col">State</th><th scope="col">Override reason</th></tr></thead>
                 <tbody>{d.lines.map((l) => (
                   <tr key={l.line_key} data-perf-line={l.line_key} data-state={l.state}>
                     <th scope="row"><bdi>{l.label}</bdi></th>
