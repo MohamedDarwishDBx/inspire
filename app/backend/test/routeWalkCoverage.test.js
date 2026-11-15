@@ -246,3 +246,28 @@ test('the dialog opens from the payload: a 403 that carries grants raises them, 
     unsubscribe();
   }
 });
+
+// (d) REQ-220: a page shows one message for a refusal. The pages that show inline text read the refusal's dialog flag and skip it.
+const ONE_MESSAGE_PAGES = ['pages/ChoosePage.jsx', 'pages/ResultsPage.jsx', 'components/SettingsPanel.jsx', 'components/TableBrowser.jsx', 'pages/SetupWizard.jsx'];
+
+test('every page that shows refusal text beside the dialog reads the dialog flag, so only one message shows (REQ-220)', () => {
+  for (const rel of ONE_MESSAGE_PAGES) {
+    const text = fs.readFileSync(path.join(FRONTEND_SRC, rel), 'utf8');
+    assert.match(text, /\.dialog\b/, `${rel} reads the dialog flag`);
+  }
+});
+
+test('the dialog flag is set only when the dialog was raised from the payload (behaviour, must-exclude)', async () => {
+  const { pathToFileURL } = require('node:url');
+  const api = await import(pathToFileURL(path.join(FRONTEND_SRC, 'lib', 'apiClient.js')).href);
+  const bus = await import(pathToFileURL(path.join(FRONTEND_SRC, 'lib', 'permissionBus.js')).href);
+  const unsubscribe = bus.subscribePermissions(() => {});
+  try {
+    const grants = [{ statements: ['GRANT SELECT ON TABLE `main`.`s`.`orders` TO `amr@example.com`'], principal: 'amr@example.com' }];
+    assert.equal((await api.responseError(new Response(JSON.stringify({ error: 'x', permissions: grants }), { status: 403 }))).dialog, true);
+    assert.equal((await api.responseError(new Response(JSON.stringify({ error: 'x' }), { status: 403 }))).dialog, false, 'no grants, no dialog');
+    assert.equal((await api.responseError(new Response(JSON.stringify({ error: 'x', permissions: grants }), { status: 403 }), { raise: false })).dialog, false, 'a probe raises nothing');
+  } finally {
+    unsubscribe();
+  }
+});

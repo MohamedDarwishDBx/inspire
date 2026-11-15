@@ -203,11 +203,11 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
     try {
       const q = new URLSearchParams({ inspire_database: inspireDatabase, warehouse_id: warehouseId, session_id: String(sessionId) });
       const resp = await fetch(`/api/inspire/session?${q}`, { method: 'DELETE', headers: requestHeaders(token, databricksHost) });
-      if (!resp.ok) await responseError(resp.clone());
+      const refused = resp.ok ? null : await responseError(resp.clone());
       if (resp.ok) {
         setSessions(prev => prev.filter(s => s.session_id !== sessionId));
         setDeleteError(null);
-      } else {
+      } else if (!refused.dialog) {
         const data = await resp.json().catch(() => ({}));
         setDeleteError({ sessionId, message: data.error || `Inspire could not delete session ${sessionId}.` });
       }
@@ -254,7 +254,7 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
       try {
         const q = new URLSearchParams({ inspire_database: inspireDatabase, warehouse_id: warehouseId, all: '1' });
         const resp = await fetch(`/api/inspire/sessions?${q}`, { headers: requestHeaders(token, databricksHost, {}, showcase) });
-        if (!resp.ok) await responseError(resp.clone());
+        const refused = resp.ok ? null : await responseError(resp.clone());
         if (resp.ok) {
           const data = await resp.json();
           setSessions(data.sessions || []);
@@ -263,7 +263,7 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
           if (data.connection_error || data.message) {
             setError(data.connection_error || data.message);
           }
-        } else {
+        } else if (!refused.dialog) {
           const errText = await resp.text().catch(() => '');
           setError(errText || `Could not load runs (${resp.status})`);
         }

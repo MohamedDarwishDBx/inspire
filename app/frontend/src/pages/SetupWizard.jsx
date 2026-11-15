@@ -190,9 +190,9 @@ export default function SetupWizard({ settings, update, onComplete }) {
         headers: headers(),
         body: JSON.stringify({ warehouse_id: warehouseId, inspire_database: inspireDatabase }),
       });
-      if (!resp.ok) await responseError(resp.clone());
+      const refused = resp.ok ? null : await responseError(resp.clone());
       const data = await resp.json();
-      setVerification(data);
+      if (!refused?.dialog) setVerification(data);
     } catch (err) {
       setVerification({ ok: false, checks: { error: { ok: false, message: err.message } } });
     }
@@ -204,12 +204,12 @@ export default function SetupWizard({ settings, update, onComplete }) {
     setPublishing(true);
     try {
       const resp = await fetch('/api/notebook/republish', { method: 'POST', headers: headers() });
-      if (!resp.ok) await responseError(resp.clone());
+      const refused = resp.ok ? null : await responseError(resp.clone());
       const data = await resp.json();
       if (data.path) {
         update('notebookPath', data.path);
         setPublishResult({ ok: true, path: data.path });
-      } else {
+      } else if (!refused?.dialog) {
         setPublishResult({ ok: false, message: data.error || 'Failed to publish' });
       }
     } catch (err) {

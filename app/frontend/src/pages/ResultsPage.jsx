@@ -882,12 +882,12 @@ export default function ResultsPage({
     const headers = artifactHeaders();
     try {
       const resp = await fetch(`/api/workspace/list?path=${encodeURIComponent(folderPath)}`, { headers });
-      if (!resp.ok) await responseError(resp.clone());
+      const refused = resp.ok ? null : await responseError(resp.clone());
       if (resp.ok) {
         const data = await resp.json();
         setArtifactTree(prev => ({ ...prev, [folderPath]: { files: visibleArtifactFiles(data.files), loading: false, error: null } }));
       } else {
-        setArtifactTree(prev => ({ ...prev, [folderPath]: { files: [], loading: false, error: 'Could not list folder' } }));
+        setArtifactTree(prev => ({ ...prev, [folderPath]: { files: [], loading: false, error: refused.dialog ? null : 'Could not list folder' } }));
       }
     } catch {
       setArtifactTree(prev => ({ ...prev, [folderPath]: { files: [], loading: false, error: 'Network error' } }));
@@ -908,10 +908,10 @@ export default function ResultsPage({
   const exportedFile = useCallback(async (filePath, fileName, action) => {
     setFileProblem('');
     const resp = await fetch(`/api/workspace/export?path=${encodeURIComponent(filePath)}`, { headers: artifactHeaders() }).catch(() => null);
-    if (resp && !resp.ok) await responseError(resp.clone());
+    const refused = resp && !resp.ok ? await responseError(resp.clone()) : null;
     const blob = resp?.ok ? await resp.blob().catch(() => null) : null;
     if (blob) return blob;
-    setFileProblem(await fileProblemText(action, fileName, resp?.ok ? null : resp));
+    if (!refused?.dialog) setFileProblem(await fileProblemText(action, fileName, resp?.ok ? null : resp));
     return null;
   }, [artifactHeaders]);
 
@@ -952,9 +952,10 @@ export default function ResultsPage({
     setPreviewLoading(true);
     const headers = artifactHeaders();
     let resp = null;
+    let refusal = null;
     try {
       resp = await fetch(`/api/workspace/export?path=${encodeURIComponent(filePath)}`, { headers });
-      if (!resp.ok) { await responseError(resp.clone()); throw new Error('fetch failed'); }
+      if (!resp.ok) { refusal = await responseError(resp.clone()); throw new Error('fetch failed'); }
       const ext = fileExtension({ name: fileName });
       if (ext === 'pdf') {
         const blob = new Blob([await resp.blob()], { type: 'application/pdf' });
@@ -975,7 +976,7 @@ export default function ResultsPage({
         setPreviewData(textPreview(ext, await resp.text()));
       }
     } catch {
-      setPreviewData({ type: 'error', message: resp?.ok ? `Inspire could not preview ${fileName}: the file could not be read.` : await fileProblemText('preview', fileName, resp) });
+      if (refusal?.dialog) setPreviewData(null); else setPreviewData({ type: 'error', message: resp?.ok ? `Inspire could not preview ${fileName}: the file could not be read.` : await fileProblemText('preview', fileName, resp) });
     }
     setPreviewLoading(false);
   }, [previewFile, previewFrom, previewData, artifactHeaders]);

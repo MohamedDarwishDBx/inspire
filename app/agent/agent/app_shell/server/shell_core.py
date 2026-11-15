@@ -2528,6 +2528,17 @@ class Shell:
         answer.setdefault("detail", refusal_details(refused))
         return status, answer
 
+    def write_refusal(self, headers: dict, text: str) -> dict:
+        # The waiting state the Permission Required dialog opens from, plus the grants the signed-in person copies for the tables named.
+        body = waiting_for_access_body(text, self.access_owners([text]))
+        body["error"] = shell_sql.error_text(text)
+        person = str((headers or {}).get("x-forwarded-email") or "").strip()
+        grants = [g for table in body["tables"] for g in access_grants(table, person)]
+        if grants:
+            body["permissions"] = [{"statements": grants, "instructions": [], "steps": [], "principal": person,
+                                    "why": "Inspire wrote this with your own access, and you cannot write it yet. Ask your data owner to run these commands."}]
+        return body
+
     def access_owners(self, texts) -> list:
         text = " ".join(texts).replace("`", "").lower()
         owners = self.settings.get("unread_owners") or {}
@@ -2684,16 +2695,18 @@ class Shell:
             raise HttpError(404, f"no API route {method} /api/{path.strip('/')}")
         except HttpError as error:
             # REQ-313, REQ-314: a refusal from the warehouse or Unity Catalog on a read is the waiting state, whatever status the
-            # route raised it with (a 403 read refusal used to bypass it as plain text).
-            if error.status in (403, 502) and NO_ACCESS.search(str(error.message)) and not is_write_route(method, route[1]):
-                return 200, waiting_for_access_body(str(error.message), self.access_owners([str(error.message)]))
+            # route raised it with (a 403 read refusal used to bypass it as plain text). A write refusal is a 403 with the same state.
+            if error.status in (403, 502) and NO_ACCESS.search(str(error.message)):
+                if not is_write_route(method, route[1]):
+                    return 200, waiting_for_access_body(str(error.message), self.access_owners([str(error.message)]))
+                return 403, self.write_refusal(headers, str(error.message))
             return error.status, error_body(error.message, error.code, error.extra)
         except QueryError as error:
             if NO_ACCESS.search(str(error)):
-                # A refusal on a read is the waiting state; on a write it is a 403 denial, never a 502 gateway failure (REQ-314).
+                # A refusal on a read is the waiting state; on a write it is a 403 with the same state and the grants to copy (REQ-314).
                 if not is_write_route(method, route[1]):
                     return 200, waiting_for_access_body(error, self.access_owners([str(error)]))
-                return 403, {"error": shell_sql.error_text(error)}
+                return 403, self.write_refusal(headers, str(error))
             return 502, {"error": shell_sql.error_text(error)}
         except (ValueError, KeyError) as error:
             return 400, error_body(shell_sql.error_text(error), getattr(error, "code", ""))

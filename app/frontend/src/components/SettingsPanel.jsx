@@ -43,7 +43,8 @@ function WarehouseSelector({ settings, update }) {
 
       const resp = await fetch('/api/warehouses', { headers });
       if (!resp.ok) {
-        await responseError(resp.clone());
+        const refused = await responseError(resp.clone());
+        if (refused.dialog) return; // the dialog says it; no second message here (REQ-220)
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${resp.status}`);
       }
@@ -293,12 +294,12 @@ export default function SettingsPanel({ settings, update, onClose }) {
                         const headers = { Authorization: `Bearer ${settings.token}`, 'X-DB-PAT-Token': settings.token };
                         if (settings.databricksHost) headers['X-Databricks-Host'] = settings.databricksHost;
                         const resp = await fetch('/api/notebook/republish', { method: 'POST', headers });
-                        if (!resp.ok) await responseError(resp.clone());
+                        const refused = resp.ok ? null : await responseError(resp.clone());
                         const data = await resp.json().catch(() => ({}));
                         if (resp.ok) {
                           if (data.path) update('notebookPath', data.path);
                           alert('Notebook re-published successfully!');
-                        } else {
+                        } else if (!refused.dialog) {
                           alert(data.error || 'Failed to re-publish notebook.');
                         }
                       } catch { alert('Error re-publishing notebook.'); }

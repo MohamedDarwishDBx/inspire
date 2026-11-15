@@ -32,7 +32,11 @@ export default function TableBrowser({
     const headers = {};
     if (token) { headers['Authorization'] = `Bearer ${token}`; headers['X-DB-PAT-Token'] = token; }
     const resp = await fetch(url, { headers });
-    if (!resp.ok) { await responseError(resp.clone()); throw new Error(`API error ${resp.status}`); }
+    if (!resp.ok) {
+      const refused = await responseError(resp.clone());
+      // The dialog carries the refusal, so the caller shows no message of its own (REQ-220).
+      throw refused.dialog ? Object.assign(new Error(''), { dialog: true }) : new Error(`API error ${resp.status}`);
+    }
     return resp.json();
   }, [token]);
 
@@ -41,7 +45,7 @@ export default function TableBrowser({
     setError(null);
     apiFetch('/api/catalogs')
       .then((d) => setCatalogs(d.catalogs || []))
-      .catch((e) => setError(e.message));
+      .catch((e) => { if (!e.dialog) setError(e.message); });
   }, [token, apiFetch]);
 
   const toggleCatalog = async (catalogName) => {
@@ -53,7 +57,7 @@ export default function TableBrowser({
         const d = await apiFetch(`/api/catalogs/${encodeURIComponent(catalogName)}/schemas`);
         setSchemas((p) => ({ ...p, [catalogName]: d.schemas || [] }));
       } catch (e) {
-        setError(e.message);
+        if (!e.dialog) setError(e.message);
       } finally {
         setLoading((p) => ({ ...p, [catalogName]: false }));
       }
@@ -72,7 +76,7 @@ export default function TableBrowser({
         );
         setTables((p) => ({ ...p, [key]: d.tables || [] }));
       } catch (e) {
-        setError(e.message);
+        if (!e.dialog) setError(e.message);
       } finally {
         setLoading((p) => ({ ...p, [key]: false }));
       }

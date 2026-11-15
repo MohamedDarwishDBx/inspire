@@ -48,3 +48,22 @@ def test_a_write_failure_that_is_not_a_refusal_still_answers_502(tmp_path):
     s.record_act = lambda headers, data: (_ for _ in ()).throw(shell_db.QueryError("SQL failed: syntax error at or near 'FROM'"))
     status, body = call(s, "POST", "records/act", {}, body={"page": PAGE["id"]})
     assert status == 502, (status, body)
+
+
+def test_a_write_refusal_carries_the_waiting_state_and_the_grants_the_person_copies(tmp_path):
+    s = refused_shell(tmp_path)
+    s.record_act = lambda headers, data: (_ for _ in ()).throw(shell_db.QueryError(DENIED))
+    status, body = call(s, "POST", "records/act", {}, {"x-forwarded-email": "amr@example.com"}, body={"page": PAGE["id"]})
+    assert status == 403, (status, body)
+    assert body["state"] == "waiting_for_access" and body["tables"] == ["main.s.orders"]
+    grants = [g for p in body["permissions"] for g in p["statements"]]
+    assert "GRANT SELECT ON TABLE `main`.`s`.`orders` TO `amr@example.com`" in grants
+    assert body["permissions"][0]["principal"] == "amr@example.com"
+
+
+def test_a_write_refusal_with_no_signed_in_person_still_waits_but_names_no_grantee(tmp_path):
+    s = refused_shell(tmp_path)
+    s.record_act = lambda headers, data: (_ for _ in ()).throw(shell_db.QueryError(DENIED))
+    status, body = call(s, "POST", "records/act", {}, body={"page": PAGE["id"]})
+    assert status == 403 and body["state"] == "waiting_for_access"
+    assert "permissions" not in body, "no blank grantee is ever written"

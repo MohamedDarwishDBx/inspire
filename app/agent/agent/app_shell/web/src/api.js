@@ -68,7 +68,14 @@ export const waitingError = (data) => {
   return error;
 };
 const json = async (method, path, body) => {
-  const data = await (await send(method, path, body)).json();
+  let data;
+  try {
+    data = await (await send(method, path, body)).json();
+  } catch (error) {
+    // REQ-313: a write the warehouse refuses answers 403 with the waiting state; its body opens the Permission Required dialog too.
+    if (error?.detail?.state === WAITING_FOR_ACCESS_CODE) throw waitingError(error.detail);
+    throw error;
+  }
   if (data && data.state === WAITING_FOR_ACCESS_CODE) throw waitingError(data);
   return data;
 };

@@ -338,7 +338,7 @@ test('live status lists the latest control actions, tolerates a missing control 
   });
 });
 
-test('live status says which of the use case\'s assets another use case shares, and a registry it cannot read is reported, not fatal', async () => {
+test('live status says which of the use case\'s assets another use case shares; a refused registry read is the payload, not a note (REQ-313)', async () => {
   const holder = (uc, name, extra) => ({ session_id: '42', use_case_id: uc, spec_version: 1, status: 'ready', updated_at: '2026-10-21T00:00:00Z',
     spec_json: JSON.stringify({ use_case_name: name, outputs: { app: true } }), asset_status: null, dashboard_id: null, genie_space_id: null, app_name: null, ...extra });
   const registry = [holder('N01-U01', 'Predict churn', { spec_version: 2, app_name: 'churn-desk', dashboard_id: 'd1', genie_space_id: 'g1' }),
@@ -350,11 +350,12 @@ test('live status says which of the use case\'s assets another use case shares, 
       app: { id: 'churn-desk', use_cases: [{ session_id: '42', use_case_id: 'N01-U02', name: 'Forecast demand' }] } });
     assert.equal(got.data.shared_error, '');
   });
+  // REQ-313 (coordinator round 2): a refused read of the App's registry is the Permission Required payload, not a note, so it is a 403.
   await withApp({ history: [BUILT], registryError: 'PERMISSION_DENIED: no SELECT on __inspire_implement' }, async (url) => {
     const got = await call(url, `/api/inspire/implement/live?${Q}`);
-    assert.equal(got.status, 200, JSON.stringify(got.data));
-    assert.equal(got.data.shared, null);
-    assert.match(got.data.shared_error, /PERMISSION_DENIED/);
+    assert.equal(got.status, 403, JSON.stringify(got.data));
+    assert.match(got.data.error, /PERMISSION_DENIED/);
+    assert.equal(got.data.shared_error, undefined, 'no note is shown in place of the payload');
   });
 });
 

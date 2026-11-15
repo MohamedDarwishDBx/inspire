@@ -99,3 +99,73 @@ for (const [family, method, url, body] of FAMILIES) {
     assert.ok(Array.isArray(answer.permissions) && answer.permissions.length > 0, `${family}: no payload`);
   });
 }
+
+// (c) The mapper names the privilege the warehouse refused, not the read set. Each rule has a must-exclude beside it.
+const { permissionFor } = PM;
+const WHO = 'amr@example.com';
+
+test('CREATE SCHEMA on a catalog maps to GRANT CREATE SCHEMA on the catalog, not USE CATALOG (REQ-313)', () => {
+  const p = permissionFor("[INSUFFICIENT_PERMISSIONS] User does not have CREATE SCHEMA on Catalog 'main'.", WHO);
+  assert.deepEqual(p.statements, [`GRANT CREATE SCHEMA ON CATALOG \`main\` TO \`${WHO}\``]);
+  assert.ok(!p.statements.some((s) => s.includes('USE CATALOG')), 'the read set is not asked for');
+});
+
+test('CREATE TABLE on a schema and MODIFY on a table each map to their own GRANT (REQ-313)', () => {
+  const create = permissionFor("[INSUFFICIENT_PERMISSIONS] User does not have CREATE TABLE on Schema 'main.inspire'.", WHO);
+  assert.deepEqual(create.statements, [`GRANT CREATE TABLE ON SCHEMA \`main\`.\`inspire\` TO \`${WHO}\``]);
+  const modify = permissionFor("[INSUFFICIENT_PERMISSIONS] User does not have MODIFY on Table 'main.inspire.churn_out'.", WHO);
+  assert.deepEqual(modify.statements, [`GRANT MODIFY ON TABLE \`main\`.\`inspire\`.\`churn_out\` TO \`${WHO}\``]);
+});
+
+test('a warehouse Can Use refusal carries steps to copy, names the warehouse, and writes no GRANT (REQ-313)', () => {
+  const p = permissionFor('no CAN_USE on warehouse wh1', WHO);
+  assert.deepEqual(p.statements, []);
+  assert.equal(p.steps.length, 1);
+  assert.match(p.steps[0], /SQL Warehouses, open wh1 > Permissions, add amr@example\.com with Can Use/);
+  assert.match(p.why, /warehouse wh1/);
+});
+
+test('must-exclude: a Can Use refusal that names no warehouse, and a write privilege on no object, map to nothing', () => {
+  assert.equal(permissionFor('User does not have CAN USE on the App.', WHO), null, 'no warehouse named');
+  assert.equal(permissionFor('[INSUFFICIENT_PERMISSIONS] User does not have CREATE SCHEMA.', WHO), null, 'no object named');
+  assert.equal(PM.deniedObjectOf('no CAN_USE on warehouse wh1'), null, 'a warehouse is not a SQL securable');
+});
+
+test('must-exclude: a read privilege still maps to the read set, unchanged', () => {
+  const p = permissionFor("[INSUFFICIENT_PERMISSIONS] User does not have USE SCHEMA on Schema 'main.s'.", WHO);
+  assert.ok(p.statements.includes(`GRANT USE SCHEMA ON SCHEMA \`main\`.\`s\` TO \`${WHO}\``));
+  assert.ok(p.statements.includes(`GRANT USE CATALOG ON CATALOG \`main\` TO \`${WHO}\``));
+});
+
+// (a) An App-identity or tag read that is refused is the Permission Required payload, not a note under the page (REQ-313).
+test('the column tags read refused by Unity Catalog answers 403 with the payload, not a note under the columns (REQ-313)', async () => {
+  const made = makeApp({ forwardedToken: PERSON, forwardedEmail: PERSON_EMAIL, tagsError: DENIED });
+  const srv = await listen(made.app);
+  let resp;
+  let body;
+  try {
+    resp = await fetch(`${srv.url}/api/inspire/implement/columns?table=${encodeURIComponent(TABLE)}&warehouse_id=wh1`);
+    body = await resp.json();
+  } finally {
+    await srv.close();
+  }
+  assert.equal(resp.status, 403, JSON.stringify(body));
+  assert.ok(Array.isArray(body.permissions) && body.permissions.length > 0, 'the payload is present');
+  assert.equal(body.tags_note, undefined, 'no note is shown in place of the payload');
+});
+
+test('must-exclude: a tag read that fails for a reason that is not a refusal still answers with the tags note (must-exclude)', async () => {
+  const made = makeApp({ forwardedToken: PERSON, forwardedEmail: PERSON_EMAIL, tagsError: WAREHOUSE_FAILURE });
+  const srv = await listen(made.app);
+  let resp;
+  let body;
+  try {
+    resp = await fetch(`${srv.url}/api/inspire/implement/columns?table=${encodeURIComponent(TABLE)}&warehouse_id=wh1`);
+    body = await resp.json();
+  } finally {
+    await srv.close();
+  }
+  assert.equal(resp.status, 200, JSON.stringify(body));
+  assert.equal(body.tags_read, false);
+  assert.equal(body.permissions, undefined);
+});
