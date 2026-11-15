@@ -3127,22 +3127,40 @@ def kpi_rows_query(page: dict, ident: str, values: dict) -> tuple:
     return f"SELECT COUNT(*) AS n FROM ({sql}) AS d{where} LIMIT 1", params.items
 
 
-def kpi_empty_text(page: dict, through: str = "") -> dict:
+def zero_run_checked(summary) -> int | None:
+    """REQ-297: the records the latest run checked when it found nothing to act on (no Act now and no Review record), else None: no
+    summary, a count that is missing, a flagged record, or a run that checked no record."""
+    if not summary:
+        return None
+    flagged = [as_number(summary.get("act_now_records")), as_number(summary.get("review_records"))]
+    records = as_number(summary.get("records"))
+    if None in flagged or records is None or sum(flagged) or records < 1:
+        return None
+    return int(records)
+
+
+def kpi_empty_text(page: dict, through: str = "", checked=None) -> dict:
     """Why a KPI with no rows behind it has no number, in plain words, in every App language: {language code: text}. The words are the
-    tour registry's per-language `reasons` in kinds.json. On a forecast page the reason is the forecast's start."""
-    if plan_contract(page) == "forecast":
+    tour registry's per-language `reasons` in kinds.json. On a forecast page the reason is the forecast's start. When the latest run checked
+    records and found nothing (checked, REQ-297), the reason says what the run did."""
+    if checked is not None:
+        key, through = "run_found_nothing", shown_number(checked)
+    elif plan_contract(page) == "forecast":
         key = "forecast_not_yet" if through else "forecast_no_date"
     else:
         key = "no_rows_dated" if through else "no_rows"
     languages = (kinds_registry().get("tour") or {}).get("languages") or {}
-    return {str(lang.get("code")): str(lang["reasons"][key]).replace("{through}", through)
+    return {str(lang.get("code")): str(lang["reasons"][key]).replace("{through}", through).replace("{checked}", through)
             for lang in languages.values() if isinstance(lang, dict) and isinstance(lang.get("reasons"), dict) and key in lang["reasons"]}
 
 
-def kpi_missing(page: dict, shown: dict, rows: int, through: str = "") -> dict:
-    """A zero or missing KPI value with no rows behind it shows no number and says why. A zero with rows behind it is a measured zero."""
+def kpi_missing(page: dict, shown: dict, rows: int, through: str = "", checked=None) -> dict:
+    """A zero or missing KPI value with no rows behind it says why. REQ-297: when the latest run checked records and found nothing to act
+    on, the KPI is a measured zero with that reason, never a blank number. Otherwise a zero with no rows behind it shows no number."""
     if not kpi_needs_rows_check(shown) or rows:
         return shown
+    if checked is not None:
+        return dict(shown, now=0, empty=kpi_empty_text(page, checked=checked))
     return dict(shown, now=None, empty=kpi_empty_text(page, through))
 
 def split_filters(page: dict, dataset: str) -> list:
