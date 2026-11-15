@@ -51,7 +51,7 @@ test('a list of 10,000 records pages 25 at a time and says how many there are, w
   assert.match(main, /10,000/);
   assert.doesNotMatch(main, /\b10000\b/, 'counts are grouped');
   assert.equal(await page.locator('tbody tr').filter({ hasText: /^Item number|Item number \d+/ }).count() <= 25, true, 'one page of rows, never all 10,000');
-  assert.match(await page.locator('[data-section="todo"] [data-todo-count]').innerText(), /^10,000 of 10,000 waiting for you$/);
+  assert.match(await page.locator('[data-section="todo"] [data-todo-count]').innerText(), /^10,000 waiting for you$/);
   assert.deepEqual(seen.errors, []);
   await context.close();
 });
