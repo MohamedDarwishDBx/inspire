@@ -7758,6 +7758,18 @@
     [
       "ended_by",
       "STRING"
+    ],
+    [
+      "use_case_name_tag",
+      "STRING"
+    ],
+    [
+      "warehouse_id",
+      "STRING"
+    ],
+    [
+      "lakebase_project_id",
+      "STRING"
     ]
   ],
   "stale_after_seconds": 14400,
