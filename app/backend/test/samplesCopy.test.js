@@ -153,12 +153,12 @@ test('the destination and sample-name checks are shared helpers', () => {
   assert.equal(I.isBuiltInSampleEntry('main.samples'), false);
 });
 
-test('a copy request whose two tables would land on one name is refused before any copy runs, and the message names both tables', async () => {
+test('a copy request with a schema whose copy name would be ambiguous is refused before any copy runs, and the message names the table', async () => {
   S.reset({ notebookPresent: true });
   const got = await copy({ entries: ['samples.a__b.c', 'samples.a.b__c'], destination: DEST });
   assert.equal(got.status, 409, got.text.slice(0, 300));
-  assert.match(got.data.error, /samples\.a__b\.c and samples\.a\.b__c would both copy to main\.inspire\.a__b__c/);
-  assert.equal(copyCalls().length, 0, 'no table is copied when the request clashes');
+  assert.match(got.data.error, /^samples\.a__b\.c cannot be copied: its schema name has a double underscore/);
+  assert.equal(copyCalls().length, 0, 'no table is copied when the request is refused');
 });
 
 test('a copy request with underscore names that stay distinct copies both tables', async () => {

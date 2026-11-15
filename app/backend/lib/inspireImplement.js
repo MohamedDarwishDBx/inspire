@@ -3243,16 +3243,13 @@ function sampleTableRef(name) {
   return `\`${t.catalog}\`.\`${t.schema}\`.\`${t.table}\``;
 }
 
-// Two tables picked in one copy request that land on one name (a__b + c and a + b__c both give a__b__c) cannot both be copied: the
-// second would reuse or refuse the first. Returns the plain refusal naming both tables, or '' when every name is distinct.
-function sampleCopyClash(sources, destination) {
-  const named = new Map();
-  for (const source of sources) {
-    const copy = sampleCopyName(source, destination);
-    if (named.has(copy) && named.get(copy) !== source) {
-      return `${named.get(copy)} and ${source} would both copy to ${copy}. Copy one of them on its own.`;
-    }
-    named.set(copy, source);
+// A copy's table name is <schema>__<table>. The name is unambiguous only when the schema has no double underscore and does not end in an
+// underscore: then the first "__" always marks the end of the schema, so no two (schema, table) pairs share a name, in any request. A
+// source whose schema breaks that rule is refused with the reason, before any copy runs. Returns '' when the source can be copied.
+function sampleCopyRefusal(source) {
+  const { schema } = tableParts(source);
+  if (schema.includes('__') || schema.endsWith('_')) {
+    return `${source} cannot be copied: its schema name has a double underscore or ends in an underscore, so its copy name would not be unambiguous.`;
   }
   return '';
 }
@@ -4007,7 +4004,7 @@ module.exports = {
   sampleCopyDestination,
   sampleCopyName,
   sampleCopyTable,
-  sampleCopyClash,
+  sampleCopyRefusal,
   sampleCopyStatement,
   sampleCopyFailureKind,
   samplesNeedChoice,

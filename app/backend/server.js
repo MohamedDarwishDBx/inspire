@@ -62,7 +62,7 @@ const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('.
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
 const PM_ERROR = require('./lib/permissionError');
 const { apiRefusalText, logApiBody } = require('./lib/apiRefusal');
-const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyClash, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
+const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
 const { keepLongInteger, parseExactJson } = require('./lib/exactJson');
 const { int64Id, isInt64Id, jsonWithInt64Ids } = require('./lib/int64Id');
 const { dataFiltersOf, scopesOfSessions } = require('./lib/dataFilters');
@@ -2503,8 +2503,8 @@ app.post('/api/inspire/samples/copy', requireToken, async (req, res) => {
     if (!picked.length) throw Object.assign(new Error('Pick samples tables to copy'), { statusCode: 400 });
     const { tables, more } = await scopeTables(dbFetch, req.dbHost, person, picked);
     if (more) throw Object.assign(new Error(`The samples you picked hold more tables than one copy can take (${tables.length} read). Pick fewer tables or schemas`), { statusCode: 409 });
-    const clash = sampleCopyClash(tables, destination);
-    if (clash) throw Object.assign(new Error(clash), { statusCode: 409 });
+    const refused = tables.map(sampleCopyRefusal).find(Boolean);
+    if (refused) throw Object.assign(new Error(refused), { statusCode: 409 });
     const copies = [];
     const failed = [];
     let schemaTried = false;
