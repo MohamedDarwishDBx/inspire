@@ -37,6 +37,7 @@ USER_OFF = ("alerts",)
 OFF_WHEN_UNSET = ("alerts",)
 USER_OFF_PROBLEMS = {"alerts": "an App where each viewer sees only their own data cannot send alerts"}
 TOUR = "tour"
+DEFAULT_RANGE = "default_range"
 TOUR_KPI = "kpi"
 TOUR_FALLBACK = "English"
 TOUR_PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
@@ -298,6 +299,16 @@ SKIPPED = ("SKIPPED", "EXCLUDED", "DISABLED", "MAXIMUM_CONCURRENT_RUNS_REACHED",
 TRIGGERS = {"PERIODIC": "scheduled", "ONE_TIME": "manual", "RETRY": "retry", "RUN_JOB_TASK": "another job",
             "FILE_ARRIVAL": "file arrival", "TABLE": "table update", "CONTINUOUS": "continuous", "CONTINUOUS_RESTART": "continuous"}
 UTC = datetime.timezone.utc
+
+
+def stored_bounds(page: dict) -> dict:
+    """The date bounds the publish stored for each date filter, shaped like a bounds read so the first load can use them without a scan.
+    {} unless every date filter of the page has a stored low and high."""
+    dated = [f["id"] for f in page.get("filters") or [] if f.get("type") == "date_range"]
+    stored = page.get(DEFAULT_RANGE) or {}
+    if not dated or not all(isinstance(stored.get(i), dict) and stored[i].get("low") and stored[i].get("high") for i in dated):
+        return {}
+    return {("filter", i): {"rows": [{"low": stored[i]["low"], "high": stored[i]["high"]}]} for i in dated}
 
 
 class Probe:
@@ -1916,6 +1927,7 @@ class Shell:
             else:
                 self.pages = [shell_pg.served_page(p, self.backend) for p in self.pages]
         self.by_id = {p["id"]: p for p in self.pages}
+        self.fresh_bounds = {}
         self.cache = Cache(clock=clock)
         self.stamps, self.reads, self.stamp_lock, self.inflight = {}, collections.OrderedDict(), threading.Lock(), {}
         self.lookups, self.owners, self.stamp_pool = {}, {}, ThreadPoolExecutor(max_workers=STAMP_WORKERS)
@@ -2759,7 +2771,10 @@ class Shell:
         ws, who = self.session(headers, probe)
         page = self.live_grouping(ws, who, page)
         self.warm_open(ws, who, page)
-        jobs = self.bounds_jobs(ws, who, page)
+        known = self.known_bounds(page)
+        jobs = {} if known else self.bounds_jobs(ws, who, page)
+        if known:
+            self.prefetch(lambda: self.refresh_bounds(ws, who, page))
         chosen = len(jobs)
         for f in page.get("filters") or []:
             if f["type"] != "date_range":
@@ -2773,6 +2788,7 @@ class Shell:
         if len(jobs) > chosen:
             self.after_list(page)
         done, errors = self._parallel(jobs, probe)
+        done.update(known)
         self.bounds_apart(ws, who, page, done, errors, probe)
         out = []
         for f in page.get("filters") or []:
@@ -2834,13 +2850,29 @@ class Shell:
         self.bounds_apart(ws, who, page, done, errors, probe)
         return done, errors
 
+    def known_bounds(self, page: dict) -> dict:
+        """The date bounds the first load uses: the last background refresh, else the range the publish stored. {} when neither exists,
+        so the caller scans the table as before."""
+        return self.fresh_bounds.get(page["id"]) or stored_bounds(page)
+
+    def refresh_bounds(self, ws, who, page: dict) -> None:
+        done, errors = self.bounds(ws, who, page)
+        dated = [f["id"] for f in page.get("filters") or [] if f.get("type") == "date_range"]
+        if not errors and all(("filter", i) in done for i in dated):
+            self.fresh_bounds[page["id"]] = {("filter", i): done[("filter", i)] for i in dated}
+
     def defaults(self, headers: dict, ident) -> dict:
         page = self.page(ident)
         ws, who = self.workspace(headers)
         self.open_list(page)
         try:
             self.warm_open(ws, who, page)
-            done, errors = self.bounds(ws, who, page)
+            known = self.known_bounds(page)
+            if known:
+                done, errors = dict(known), {}
+                self.prefetch(lambda: self.refresh_bounds(ws, who, page))
+            else:
+                done, errors = self.bounds(ws, who, page)
         except BaseException:
             self.listed(page)
             raise
