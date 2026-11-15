@@ -4,7 +4,7 @@ import { copyStepsText, copyText, grantAsk, grantListKey } from '../lib/permissi
 import { accessRequestResultText, checkAccessRequest, offerShown, sendAccessRequest, statementsOf } from '../lib/accessRequest';
 
 const BUTTON = 'inline-flex h-8 items-center justify-center px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle';
-const PRIMARY = 'inline-flex h-8 items-center justify-center px-3 rounded-lg text-xs font-semibold bg-db-red text-white hover:opacity-90 disabled:opacity-60';
+const PRIMARY = 'inline-flex h-8 items-center justify-center px-3 rounded-lg text-xs font-semibold text-white bg-db-red-solid hover:opacity-90 disabled:opacity-60';
 // REQ-313: Request access is the primary action. The SQL sits under Advanced, with the one instruction line (REQ-300). Advanced opens
 // by default only when no destination exists, because then the SQL is the way forward.
 export const ADVANCED_LINE = 'Copy the SQL below and send it to your Databricks admin.';
