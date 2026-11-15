@@ -94,3 +94,19 @@ def test_a_held_back_checked_row_never_counts_as_open():
 
 def test_without_the_quality_flag_there_is_no_scope_count():
     assert shell_sql.scope_counts_query(PAGE, NAMES - {"data_quality_flag"}) is None
+
+
+PAGE_DS = dict(PAGE, datasets=[{"name": "records", "sql": "SELECT * FROM `cat`.`sch`.`results`"},
+                               {"name": "churn", "sql": "SELECT * FROM `cat`.`sch`.`churn_out`"}])
+
+
+def test_a_plain_row_count_of_the_result_table_gets_the_scope_line():
+    assert shell_sql.kpi_counts_result_rows(PAGE_DS, {"dataset": "records", "expression": "COUNT(*)"})
+    assert shell_sql.kpi_counts_result_rows(PAGE_DS, {"dataset": "records", "expression": "COUNT(DISTINCT `record_key`)"})
+
+
+def test_a_count_of_something_else_or_any_other_measure_gets_no_scope_line():
+    assert not shell_sql.kpi_counts_result_rows(PAGE_DS, {"dataset": "churn", "expression": "COUNT(*)"}), "another table"
+    assert not shell_sql.kpi_counts_result_rows(PAGE_DS, {"dataset": "records", "expression": "SUM(`value`)"}), "a sum"
+    assert not shell_sql.kpi_counts_result_rows(PAGE_DS, {"dataset": "records", "expression": "COUNT(*) / 2"}), "a ratio"
+    assert not shell_sql.kpi_counts_result_rows(PAGE_DS, {"dataset": "missing", "expression": "COUNT(*)"}), "no such dataset"
