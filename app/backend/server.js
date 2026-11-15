@@ -946,6 +946,21 @@ async function startingSessions(req, inspireDatabase, warehouseId, listed) {
   }
 }
 
+// The record write has a bound: a warehouse that never leaves PENDING must not hold the launch open (executeSql has no deadline of its own).
+const LAUNCH_RECORD_MS = 60000;
+
+// Whether the ledger holds a row for the run: true or false when it could read, null when it could not say.
+async function launchRecordedFor(host, token, runId) {
+  const stmt = L.runLauncherStatement(L.launchTableName(DEFAULT_INSPIRE_DB), runId);
+  if (!stmt || !DEFAULT_WAREHOUSE_ID) return null;
+  try {
+    const got = await executeSql(host, token, DEFAULT_WAREHOUSE_ID, stmt.sql, stmt.parameters, { signal: AbortSignal.timeout(LAUNCH_RECORD_MS) });
+    return (got?.result?.data_array || []).length > 0;
+  } catch (err) {
+    return isMissingTableError(err) ? false : null;
+  }
+}
+
 async function recordLaunch(host, token, record) {
   const table = L.launchTableName(DEFAULT_INSPIRE_DB);
   if (!table || !DEFAULT_WAREHOUSE_ID) {
@@ -957,7 +972,7 @@ async function recordLaunch(host, token, record) {
       launchTableReady = true;
     }
     const insert = L.launchInsertStatement(table, record);
-    await executeSql(host, token, DEFAULT_WAREHOUSE_ID, insert.sql, insert.parameters);
+    await executeSql(host, token, DEFAULT_WAREHOUSE_ID, insert.sql, insert.parameters, { signal: AbortSignal.timeout(LAUNCH_RECORD_MS) });
     return { recorded: true };
   } catch (err) {
     console.warn(`launch record write failed for run ${record.runId}: ${err.message}`);
@@ -973,6 +988,11 @@ async function recordLaunchOrStop(host, token, record) {
   if (launch.recorded || !launch.failed) return launch;
   launch = await recordLaunch(host, token, record);
   if (launch.recorded || !launch.failed) return launch;
+  // The insert may have landed even though its answer failed. Stop the run only when the ledger has no row for it.
+  const recorded = await launchRecordedFor(host, token, record.runId);
+  if (recorded !== false) {
+    return { ...launch, warning: `Inspire started run ${record.runId} but could not confirm its record, so it did not stop the run. Cancel it from the App managers if it is not wanted` };
+  }
   const stopped = await dbFetch(host, token, '/api/2.1/jobs/runs/cancel', {
     method: 'POST',
     body: jsonWithInt64Ids({ run_id: record.runId }, ['run_id']),
