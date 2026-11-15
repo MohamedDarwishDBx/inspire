@@ -1,6 +1,7 @@
 import { Children, Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './icons.jsx';
+import WaitingForAccess from './WaitingForAccess.jsx';
 import { COPIED_SEND_TEXT, COPY_SEND_LABEL, DETAILS_LABEL, NO_ACCESS_LEAD, RETRYING_LABEL, RETRY_LABEL, SOME_DATA, failureCausesLoaded, noAccessOf, sendText, setFailureCauses, splitTechnical } from './plainText.js';
 import { retryable, toneOf } from './api.js';
 
@@ -107,8 +108,12 @@ function NoAccessLine({ tables, as: Tag, icon, rest }) {
 export const ACCESS_CHECKED = 'inspire:access-checked';
 const tablesOf = (found) => (found?.tables || []).map((t) => t.table).join(', ');
 
-export function AccessActions({ access: given }) {
-  const [access, setAccess] = useState(given || null);
+// onFound: reports the grants this control reads (the Permission Required dialog uses them for its copy and request). REQ-311.
+export function AccessActions({ access: given, onFound }) {
+  const [access, setAccessState] = useState(given || null);
+  const foundRef = useRef(onFound);
+  foundRef.current = onFound;
+  const setAccess = (found) => { setAccessState(found); foundRef.current?.(found); };
   const [phase, setPhase] = useState('idle');
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
@@ -199,11 +204,8 @@ export function NoAccessScope({ app, children }) {
   return (
     <NoAccessContext.Provider value={scope}>
       {lists.length > 0 && (
-        <div className="note note--warn" role="alert" data-no-access-banner="">
-          <Icon name="info" size={14} />
-          <span>{noAccessBanner(tables, app?.no_access, app?.auth)}</span>
-          <AccessActions />
-        </div>
+        // REQ-310/311: the no-access banner is the Permission Required dialog too, with the same rules as every other access issue.
+        <WaitingForAccess waiting={{ tables, owners: app?.no_access }} reason={noAccessBanner(tables, app?.no_access, app?.auth)} compact />
       )}
       <Fragment key={round}>{children}</Fragment>
     </NoAccessContext.Provider>

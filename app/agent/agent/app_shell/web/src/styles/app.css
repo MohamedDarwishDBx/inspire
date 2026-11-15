@@ -74,3 +74,5 @@
 .perm-dialog { display: grid; gap: 10px; width: 100%; max-width: 36rem; max-height: calc(100vh - 32px); overflow: auto; }
 .perm-dialog-block { max-height: 14rem; overflow: auto; white-space: pre-wrap; word-break: break-all; padding: 10px; border-radius: 8px; font-size: 12px; background: #f4f4f4; }
 .perm-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.perm-dialog-inline { margin: 0 0 12px; }
+.perm-dialog-advanced summary { cursor: pointer; font-weight: 600; }

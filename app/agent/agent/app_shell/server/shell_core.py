@@ -526,7 +526,8 @@ def rfa_label(destination, securable: dict) -> str:
 
 
 def rfa_failure(error) -> str:
-    return str(getattr(error, "message", "") or error)
+    # The one redaction of an error into text (v169): a workspace refusal names no token or secret the person could copy.
+    return shell_sql.error_text(error)
 
 
 def rfa_resolve(ws, grantee: str, cache: dict):
@@ -549,6 +550,28 @@ def rfa_resolve(ws, grantee: str, cache: dict):
     return found
 
 
+def rfa_parents(securable: dict) -> list:
+    parts = securable["full_name"].split(".")
+    parents = []
+    if securable["type"] in ("TABLE", "VOLUME") and len(parts) >= 2:
+        parents.append({"type": "SCHEMA", "full_name": ".".join(parts[:2])})
+    if securable["type"] != "CATALOG" and parts:
+        parents.append({"type": "CATALOG", "full_name": parts[0]})
+    return parents
+
+
+def rfa_destinations_chain(ws, securable: dict) -> tuple:
+    for level in [securable, *rfa_parents(securable)]:
+        try:
+            got = ws.call("GET", f"/api/3.0/rfa/destinations/{level['type'].lower()}/{quote(level['full_name'], safe='')}")
+        except Exception as error:
+            return [], rfa_failure(error)
+        found = (got or {}).get("destinations") or []
+        if found:
+            return [rfa_label(d, level) for d in found], ""
+    return [], ""
+
+
 def rfa_check(ws, who: str, statements) -> dict:
     if not who:
         return {"offered": False, "destinations": [], "reason": RFA_NO_PERSON, "pending": []}
@@ -561,11 +584,9 @@ def rfa_check(ws, who: str, statements) -> dict:
         key = (securable["type"], securable["full_name"])
         if key in destinations:
             continue
-        try:
-            got = ws.call("GET", f"/api/3.0/rfa/destinations/{securable['type'].lower()}/{quote(securable['full_name'], safe='')}")
-            destinations[key] = [rfa_label(d, securable) for d in (got or {}).get("destinations") or []]
-        except Exception as error:
-            reason, destinations[key] = rfa_failure(error), []
+        # REQ-315: a table with no destination of its own inherits its schema's, then its catalog's.
+        found, failure = rfa_destinations_chain(ws, securable)
+        destinations[key], reason = found, failure or reason
     cache, pending, labels, unresolved = {}, [], [], False
     for request in requests:
         securable = request["securable"]

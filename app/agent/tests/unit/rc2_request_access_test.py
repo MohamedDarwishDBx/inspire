@@ -132,3 +132,15 @@ def test_the_send_route_is_a_write_and_names_no_grant_from_the_client(tmp_path):
     assert status == 200, (status, body)
     assert body == {"sent": False, "destinations": [], "reason": shell_core.RFA_NO_GRANT}
     assert ws.posts() == []
+
+
+def test_REQ315_a_table_with_no_destination_of_its_own_falls_back_to_its_schema_then_its_catalog():
+    empty = {}
+    ws = FakeWs({("GET", f"/api/3.0/rfa/destinations/table/{quote('main.s.orders', safe='')}"): empty,
+                 ("GET", f"/api/3.0/rfa/destinations/schema/{quote('main.s', safe='')}"): empty,
+                 ("GET", "/api/3.0/rfa/destinations/catalog/main"): OWNER})
+    got = shell_core.rfa_check(ws, WHO, [GRANTS[2]])
+    assert got["offered"] is True and got["destinations"] == ["owner@example.com"]
+    assert [c["path"] for c in ws.calls] == [f"/api/3.0/rfa/destinations/table/{quote('main.s.orders', safe='')}",
+                                             f"/api/3.0/rfa/destinations/schema/{quote('main.s', safe='')}",
+                                             "/api/3.0/rfa/destinations/catalog/main"]
