@@ -1211,7 +1211,18 @@ export function useCaseSchemaTags({ sessionId, useCaseId, businessName, inspireD
 export function ownSchemaFallbackNote(catalog, me = '') {
   const who = String(me || '').trim() ? `\`${String(me).trim()}\`` : 'you';
   return `You cannot create schemas in ${catalog}, so this use case's tables go to the Inspire database schema. For a schema of its own, `
-    + `ask your data owner to run GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO ${who}, then pick Its own schema again.`;
+    + `ask your data owner to give ${who} CREATE SCHEMA on ${catalog}, then pick Its own schema again. The exact command is in Permission Required.`;
+}
+
+// REQ-131, REQ-260: the GRANT that lets the person create the use case schema goes to the Permission Required dialog, never into prose.
+export function ownSchemaGrantPermission(catalog, me = '') {
+  const who = String(me || '').trim();
+  return {
+    statements: [`GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO ${who ? `\`${who}\`` : '<you>'}`], // PERMISSION_DIALOG
+    instructions: [],
+    principal: who || 'you',
+    why: `Inspire cannot create the use case schema in ${catalog} with your sign-in.`,
+  };
 }
 
 export function ownSchemaHolderText(holder = {}, { useCaseId = '', inspireDatabase = '' } = {}) {
@@ -2041,7 +2052,8 @@ export function withResultTable(spec, { catalog, schema, table }) {
 export const OFF_IN_WORKSPACE = { app: 'Apps are turned off in this workspace.', genie_space: 'Genie Agents are turned off in this workspace.',
   alert: 'Alerts are turned off in this workspace.' };
 export const OFF_DETAILS = 'A workspace admin turns this feature on in the workspace settings.';
-const ACCESS_PLACES = [['the catalog', /\bon catalog\b/i], ['the schema', /\bon schema\b/i], ['the table', /\bon table\b/i], ['the SQL warehouse', /\bwarehouse\b/i]];
+// the place a grant is missing on, in the grant SQL ("ON CATALOG") or in plain words ("on the catalog", REQ-260)
+const ACCESS_PLACES = [['the catalog', /\bon (?:the )?catalog\b/i], ['the schema', /\bon (?:the )?schema\b/i], ['the table', /\bon (?:the )?table\b/i], ['the SQL warehouse', /\bwarehouse\b/i]];
 
 export function needsAccess(detail = '') {
   const places = ACCESS_PLACES.filter(([, re]) => re.test(String(detail || ''))).map(([place]) => place);

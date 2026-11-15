@@ -603,27 +603,28 @@ def test_grant_sql_renders_one_need_for_one_principal(agent_ns):
     assert grant(GAP_CATALOG, "planners") == GRANT_CATALOG.format("planners")
 
 
-def test_access_gap_messages_name_the_privilege_the_owner_and_the_statement(agent_ns):
+def test_access_gap_messages_name_the_privilege_the_owner_and_the_dialog_not_inline_sql(agent_ns):
+    # REQ-131, REQ-260: the prose names the Permission Required dialog; the GRANT statements are never in the message
     assert agent_ns["implement_access_gap_message"]("bob@x", [GAP_CATALOG]) == (
         "bob@x may not be able to read the result table: Inspire cannot grant this access, because it "
-        "neither owns nor holds MANAGE on it. If bob@x does not have it yet, ask your data owner to run: "
-        "GRANT USE CATALOG ON CATALOG `main` TO `bob@x`")
+        "neither owns nor holds MANAGE on it. If bob@x does not have it yet, ask your data owner to grant it: "
+        "the commands are in Permission Required")
     assert agent_ns["implement_access_gap_message"]("bob@x", [GAP_CATALOG, dict(GAP_SCHEMA, owner="")]) == (
         "bob@x may not be able to read the result table: Inspire cannot grant these accesses, because it "
         "neither owns nor holds MANAGE on them. If bob@x does not have them yet, "
-        "ask your data owner to run: GRANT USE CATALOG ON CATALOG `main` TO `bob@x`; GRANT USE SCHEMA ON SCHEMA `main`.`inspire` TO `bob@x`")
+        "ask your data owner to grant them: the commands are in Permission Required")
     assert agent_ns["implement_app_access_message"](ACCESS_TABLE, [GAP_CATALOG, GAP_SCHEMA], "inspire-sp") == (
-        "a new App could not read the result table: its service principal needs these accesses, which not all account users have, "
-        "and Inspire can grant them only "
-        "with MANAGE or ownership. Ask your data owner to run: GRANT MANAGE ON CATALOG `main` TO `inspire-sp`; GRANT MANAGE ON SCHEMA "
-        "`main`.`inspire` TO `inspire-sp`, or GRANT USE CATALOG ON CATALOG `main` TO `account users`; GRANT USE SCHEMA ON SCHEMA "
-        "`main`.`inspire` TO `account users`, which open no data by themselves; or choose a result table in a catalog and schema "
+        "a new App could not read the result table: its service principal needs these accesses, which not all "
+        "account users have, and Inspire can grant them only "
+        "with MANAGE or ownership. Ask your data owner to grant them on the catalog and on the schema: the commands are in Permission Required, or give all account users "
+        "the same access, which open no data by themselves; or choose a result table in a catalog and schema "
         "Inspire manages")
-    assert ("TO the identity Inspire runs as, or GRANT USE CATALOG ON CATALOG `main` TO `account users`, which opens no data by itself; "
+    assert ("on the catalog: the commands are in Permission Required, or give all account users the same access, which opens no data by itself; "
             "or choose") in agent_ns["implement_app_access_message"](ACCESS_TABLE, [GAP_CATALOG], "")
     with_select = agent_ns["implement_app_access_message"](ACCESS_TABLE, [GAP_CATALOG, dict(NEED_SELECT, owner="data-eng")], "inspire-sp")
-    assert "GRANT MANAGE ON TABLE `main`.`inspire`.`churn_out` TO `inspire-sp`; or choose" in with_select
-    assert "account users`" not in with_select, "SELECT for every account user would open the data, so it is never offered"
+    assert "on the catalog and on the table: the commands are in Permission Required; or choose" in with_select
+    assert "give all account users" not in with_select, "SELECT for every account user would open the data, so it is never offered"
+    assert "GRANT " not in agent_ns["implement_access_gap_message"]("bob@x", [GAP_CATALOG]) + with_select, "a GRANT is never in the prose (REQ-260)"
 
 
 def test_permission_acl_maps_principal_types(agent_ns):

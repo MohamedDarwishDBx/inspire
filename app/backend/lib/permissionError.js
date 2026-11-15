@@ -22,10 +22,11 @@ function permissionFor(message, principal) {
   let statements;
   if (denied.kind === 'schema') {
     const [catalog, schema] = denied.name.split('.');
+    // PERMISSION_DIALOG: these statements go to the Permission Required dialog, which copies them (REQ-131, REQ-260)
     statements = [
-      `GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${who}\``,
-      `GRANT USE SCHEMA ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${who}\``,
-      `GRANT SELECT ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${who}\``,
+      `GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${who}\``, // PERMISSION_DIALOG
+      `GRANT USE SCHEMA ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${who}\``, // PERMISSION_DIALOG
+      `GRANT SELECT ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${who}\``, // PERMISSION_DIALOG
     ];
   } else if (denied.kind === 'catalog') {
     statements = readStatements(denied.name, who);

@@ -587,7 +587,9 @@ test('Where results live offers its own schema, falls back to the Inspire databa
     assert.equal(await places.getByRole('radio', { name: /The Inspire database schema/ }).isChecked(), true, 'no right to create a schema keeps the Inspire database schema');
     const placeNote = step.getByRole('note', { name: 'Where the tables go note' });
     assert.equal(await placeNote.locator('p').innerText().then((t) => /GRANT/.test(t)), false, 'no raw GRANT text in the plain line');
-    assert.match(await placeNote.locator('[data-technical-details] pre').textContent(), /GRANT CREATE SCHEMA ON CATALOG `main`/);
+    // REQ-131, REQ-260: the CREATE SCHEMA grant is in the Permission Required dialog, never in the note's details
+    assert.doesNotMatch((await placeNote.locator('[data-technical-details] pre').allTextContents()).join('\n'), /GRANT/, 'the note carries no GRANT details (REQ-260)');
+    assert.match(await placeNote.locator('p').first().innerText(), /The exact command is in Permission Required\.$/, 'the note points at Permission Required in plain words');
     await step.getByRole('note', { name: 'Moving the result table' }).getByText('Moving the table later copies its history to the new table and keeps the old one.').waitFor();
     await catalog.selectOption('sales');
     assert.equal(await schema.inputValue(), '', 'a new catalog asks for its schema again');

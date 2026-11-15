@@ -10,6 +10,9 @@ const SRC = path.join(APP, 'frontend', 'src');
 const spec = JSON.parse(fs.readFileSync(path.join(APP, 'agent', 'tests', 'fixtures', 'customer_jargon_terms.json'), 'utf8'));
 const TERMS = spec.terms.map((term) => ({ ...term, re: new RegExp(term.pattern, term.flags) }));
 const RUN_OUTPUT = new Set(spec.run_output_files.map((file) => path.join(SRC, file)));
+// REQ-131, REQ-137, REQ-260: the GRANT SQL the Permission Required dialog copies is the one sanctioned way a GRANT reaches the screen.
+// A producer whose statements go to that dialog marks its line with dialog_marker; a dialog_exempt term is not copy on a marked line only.
+const DIALOG = new RegExp(spec.dialog_marker);
 // A literal that is SQL is code, never copy. Copy is any literal with a space, plus JSX text.
 const SQL = /^\s*(SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|WITH|SHOW|DESCRIBE)\b|\bFROM\b/i;
 const LITERAL = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\\n]|\\.)*)`/g;
@@ -19,13 +22,19 @@ function customerTexts(source) {
   const out = [];
   source.split('\n').forEach((line, i) => {
     if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+    const dialog = DIALOG.test(line);
     for (const m of line.matchAll(LITERAL)) {
       const text = (m[1] ?? m[2] ?? m[3] ?? '').replace(/\$\{[^}]*\}/g, ' ');
-      if (/\s/.test(text) && !SQL.test(text)) out.push({ line: i + 1, text });
+      if (/\s/.test(text) && !SQL.test(text)) out.push({ line: i + 1, text, dialog });
     }
-    for (const m of line.matchAll(JSX_TEXT)) out.push({ line: i + 1, text: m[1] });
+    for (const m of line.matchAll(JSX_TEXT)) out.push({ line: i + 1, text: m[1], dialog });
   });
   return out;
+}
+
+// The terms that copy text trips. A dialog_exempt term does not trip on a line that hands its SQL to the Permission Required dialog.
+function termsTripped(text, dialog) {
+  return TERMS.filter((term) => term.re.test(text) && !(term.dialog_exempt && dialog));
 }
 
 function sources(dir) {
@@ -59,9 +68,20 @@ test('positive controls: the terms catch the strings a customer saw on rc7 (must
   assert.equal(mode.re.test('Discovery: the AI sees the summary figures'), false, 'the plain Discovery label is fine (must-include)');
 });
 
+test('REQ-260: a GRANT reaches the screen only through the Permission Required dialog (must-exclude / must-keep controls)', () => {
+  const ids = (source) => customerTexts(source).flatMap(({ text, dialog }) => termsTripped(text, dialog).map((term) => term.id));
+  const grant = 'GRANT USE CATALOG ON CATALOG `main` TO `amr@x`';
+  assert.deepEqual(ids(`const status = 'Ask your admin to run ${grant}';`), ['grant_statement'], 'a GRANT in status prose fails (must-exclude)');
+  assert.deepEqual(ids(`  <p>Run ${grant}</p>`), ['grant_statement'], 'a GRANT in JSX text fails (must-exclude)');
+  assert.deepEqual(ids(`const msg = \`ask your data owner to run ${grant}\`;`), ['grant_statement'], 'a GRANT in a template string fails (must-exclude)');
+  assert.deepEqual(ids(`const sql = '${grant}'; // ${spec.dialog_marker}`), [], 'the dialog producer line passes (must-keep)');
+  assert.deepEqual(ids("const why = 'grant USE CATALOG so the app can browse';"), [], 'prose grant in lower case passes (must-keep)');
+  assert.deepEqual(ids("const e = '[TABLE_OR_VIEW_NOT_FOUND] x';"), ['error_code'], 'an error code still fails: only the GRANT term is exempt');
+});
+
 test('no customer copy in the frontend carries an internal term', () => {
-  const hits = sources(SRC).flatMap((file) => customerTexts(fs.readFileSync(file, 'utf8')).flatMap(({ line, text }) => TERMS
-    .filter((term) => (term.scope === 'run_output' ? RUN_OUTPUT.has(file) : true) && term.re.test(text))
+  const hits = sources(SRC).flatMap((file) => customerTexts(fs.readFileSync(file, 'utf8')).flatMap(({ line, text, dialog }) => termsTripped(text, dialog)
+    .filter((term) => (term.scope === 'run_output' ? RUN_OUTPUT.has(file) : true))
     .map((term) => `${path.relative(APP, file)}:${line} [${term.id}] ${text.trim()}`)));
   assert.deepEqual(hits, []);
 });
@@ -87,13 +107,13 @@ backendFiles.dirOf = (dir) => sources(dir).filter((file) => !file.includes(`${pa
 
 test('no backend message the App shows carries an internal term (the log tag is dropped first, as the App sees it)', () => {
   const hits = backendFiles().flatMap((file) => fs.readFileSync(file, 'utf8').split('\n')
-    .flatMap((line, i) => (BACKEND_LOG.test(line) ? [] : customerTexts(line).map(({ text }) => ({ text, i }))))
+    .flatMap((line, i) => (BACKEND_LOG.test(line) ? [] : customerTexts(line).map(({ text, dialog }) => ({ text, i, dialog }))))
     // A quoted SQL identifier (`catalog`.`schema`.`__inspire_session`) is code the warehouse reads, never copy.
     .filter(({ text }) => !/\\?`\.|\.\\?`/.test(text))
-    .map(({ text, i }) => {
+    .map(({ text, i, dialog }) => {
       const copy = text.replace(/^\[[A-Z0-9_ -]+ FIRED\]\s*/, '');
       // the mode name is run-output only: the chooser's own validation text may name the modes
-      const id = TERMS.find((term) => term.scope !== 'run_output' && term.re.test(copy));
+      const id = termsTripped(copy, dialog).find((term) => term.scope !== 'run_output');
       return id ? `${path.relative(APP, file)}:${i + 1} [${id.id}] ${copy.trim().slice(0, 120)}` : '';
     }).filter(Boolean));
   assert.deepEqual(hits, []);
