@@ -2,7 +2,9 @@
 // Permission Required dialog names. It goes out with the signed-in person's own token. The person's own grants leave behalf_of empty,
 // so the requester is that person. A grant to the App or another principal names that principal as behalf_of (its SCIM id), so the
 // owner sees who the access is for. A principal that cannot be resolved stays copy-only. The API needs the user-app scope
-// 'unity-catalog' (Databricks API reference, Request For Access: "API scopes: unity-catalog").
+// 'unity-catalog' (Databricks API reference, Request For Access: "API scopes: unity-catalog"), which the Apps API does not grant as a
+// user scope (the workspace refused it on install, REQ-320). So a person's token may lack it: the send is then refused with a scope
+// error and the dialog falls back to the copyable SQL under Advanced, opened (REQ-313).
 const RFA_SCOPE = 'unity-catalog';
 const RFA_TYPES = new Set(['CATALOG', 'SCHEMA', 'TABLE', 'VOLUME']);
 const GRANT_RE = /^GRANT\s+(.+?)\s+ON\s+(CATALOG|SCHEMA|TABLE|VOLUME)\s+(.+?)\s+TO\s+(.+?);?$/i;

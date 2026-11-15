@@ -213,8 +213,8 @@ const ROUTE_POLICY = {
     'reads the use case table with your own sign-in'),
   'POST /api/money/rate-sample': tracked('read the rates of the rate table a money rule names',
     'reads the rate table with your own sign-in'),
-  'POST /api/access-request/check': yours('check whether Request for Access is offered for the grants you need', ['unity-catalog']),
-  'POST /api/access-request': yours('send a Request for Access to the owner of the data, as you', ['unity-catalog']),
+  'POST /api/access-request/check': yours('check whether Request for Access is offered for the grants you need', ['catalog.catalogs:read']),
+  'POST /api/access-request': yours('send a Request for Access to the owner of the data, as you', ['catalog.catalogs:read']),
   'POST /api/grouping/profile': tracked('read the main table of a use case for its Data groups',
     'reads the use case record from the Inspire tracking tables in the App database, and reads the use case table only with your own sign-in'),
 };

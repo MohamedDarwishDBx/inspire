@@ -264,12 +264,15 @@ class PreflightTest(unittest.TestCase):
 
 
 class AppScopesTest(unittest.TestCase):
-    def test_a_fresh_install_asks_for_the_unity_catalog_scope_so_request_for_access_can_be_sent(self):
-        # REQ-311: Request for Access (POST /api/3.0/rfa/requests) needs the user-app scope unity-catalog. A fresh create merges the
-        # notebook's scopes with INSPIRE_APP_OWN_SCOPES, and the fallback when the notebook has none is INSPIRE_APP_OWN_SCOPES itself.
-        self.assertIn("unity-catalog", setup.INSPIRE_APP_OWN_SCOPES)
-        self.assertIn("unity-catalog", setup._merged_scopes(None, setup.INSPIRE_APP_OWN_SCOPES))
-        self.assertIn("unity-catalog", setup._merged_scopes(["sql"], setup.INSPIRE_APP_OWN_SCOPES))
+    def test_a_fresh_install_never_asks_for_a_scope_the_workspace_refuses_for_apps(self):
+        # REQ-320 live install (rc7, 21:24 GMT): "unity-catalog" in INSPIRE_APP_OWN_SCOPES made the workspace refuse the App's
+        # user_api_scopes ("The specified scope unity-catalog ..."), so a fresh create would install Inspire without user
+        # authorization (no catalogs, no runs). Only scopes the Apps API accepts may be asked for; Request for Access falls back
+        # to the copyable SQL when the person's token cannot send it (accessRequest.test.js covers that fallback).
+        self.assertNotIn("unity-catalog", setup.INSPIRE_APP_OWN_SCOPES)
+        self.assertNotIn("unity-catalog", setup._merged_scopes(["sql"], setup.INSPIRE_APP_OWN_SCOPES))
+        for scope in ("sql", "catalog.catalogs:read", "catalog.schemas:read", "catalog.tables:read", "workspace.workspace", "apps"):
+            self.assertIn(scope, setup.INSPIRE_APP_OWN_SCOPES)
 
 
 class AssetsTest(unittest.TestCase):
