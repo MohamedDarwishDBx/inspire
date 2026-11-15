@@ -127,3 +127,47 @@ def test_a_genie_fact_without_a_status_column_adds_no_status_rule(agent_ns):
     fact = agent_ns["implement_scope_fact"]("cat.sch.results", {"data_quality_flag": "STRING"})
     assert "action_status" not in fact and "snooze_until" not in fact
     assert "with data_quality_flag = 'ok'." in fact
+
+
+# ---- Round 2: the Actions line and the App's KPIs read the same open-work scope ----
+
+KPI_PAGE = {"result_table": "cat.sch.results",
+            "datasets": [{"name": "rows", "sql": "SELECT * FROM `cat`.`sch`.`results`"}],
+            "kpis": [{"id": "open", "label": "Open", "dataset": "rows", "expression": "COUNT(*)", "open_work": True}]}
+
+
+def _kpi_value(db, page):
+    sql, items = shell_sql.kpi_query(page, "open", {}, None, NAMES)
+    sql = sql.replace("`cat`.`sch`.`results`", "src").replace("cat.sch.results", "src").replace("AS DATE)", "AS TEXT)")
+    sql = sql.replace("current_date", f"'{TODAY}'").replace(f"LIMIT {shell_sql.CAPS['kpi_rows']}", "")
+    values = {p["name"]: p["value"] for p in items}
+    return db.execute(sql, values).fetchone()[1]  # (period, value)
+
+
+def test_a_kpi_marked_open_work_counts_the_same_rows_as_the_scope_line():
+    db = _db()
+    assert _kpi_value(db, KPI_PAGE) == _scope_row(db)["open_"] == len(_open_keys(db)) == 3
+
+
+def test_an_unmarked_count_kpi_still_counts_every_row_it_reads():
+    plain = dict(KPI_PAGE, kpis=[dict(KPI_PAGE["kpis"][0], open_work=False)])
+    assert _kpi_value(_db(), plain) == len(ROWS)
+
+
+def test_the_actions_line_has_no_open_figure_outside_the_one_scope():
+    # The impact aggregate used to carry its own open predicate (no hold, flag or snooze). Open now comes from open_work_sql only.
+    assert "open_n" not in shell_facts.ACTION_NUMBERS
+    assert "open_n" not in shell_facts.action_cells("a")
+    assert "open_n" not in shell_facts.action_counts_sql("cat.sch.results")
+
+
+def test_facts_from_the_old_open_count_shape_are_refused_so_they_rebuild():
+    old = {"v": 5, "log": "l", "acted": "a", "closed": "c", "changes": "x", "actions": {"open_n": 1, "done_n": 0, "resolved_n": 0},
+           "stamp_us": 1, "people": [], "numbers": {}, "runs": [], "names": [], "columns": []}
+    assert "older shape" in shell_facts.facts_problem(old)
+
+
+def test_an_open_work_kpi_must_be_a_plain_row_count_of_the_result_table():
+    page = dict(KPI_PAGE, kpis=[dict(KPI_PAGE["kpis"][0], expression="SUM(`value`)")])
+    problems = shell_sql.spec_problems(page)
+    assert any("is marked open_work" in p for p in problems), problems
