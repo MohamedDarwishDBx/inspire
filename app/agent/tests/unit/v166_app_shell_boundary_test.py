@@ -47,6 +47,9 @@ SHELL_ENTRY_POINTS = {
     ("_implement_app_block_files", "_implement_app_shell"),
     ("_implement_app_block_files", "shell_sql.image_blocks"),
     ("_implement_app_block_images", "_implement_app_shell"),
+    # Carried App check inputs (REQ-225): a version that does not rebuild the App reads its published settings and pages through the
+    # App shell (the same files the App build reads for a carried App) so the served App is checked by the one App check.
+    ("_implement_carried_app_args", "_implement_app_shell"),
     ("_implement_app_check", "shell_core.Shell"),
     # Served App read (REQ-214): the check reads the page filters and the first decision-list rows of the App it checks, through the same
     # Shell class the App runs, so each all-column and filter ask is judged against what the served App shows, not the spec alone.

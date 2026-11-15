@@ -1,5 +1,6 @@
 import base64
 import json
+import types
 
 import pytest
 
@@ -189,7 +190,52 @@ def test_a_carried_ask_on_an_output_this_version_did_not_build_is_checked_again_
     assert inst._implement_recheck_vibes(context, []) == [] and prompts == [], "an output this version built is checked by its own build"
 
 
-def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks_and_lists_every_ask(agent_ns):
+def _carried_app(inst, agent_ns, tmp_path, filters):
+    """The App the use case already sits in, as a version that does not rebuild it sees it: the workspace App names its published
+    source, the source holds the settings and page, and the App's own shell serves those page filters (the Shell double)."""
+    from v140_implement_test import _app_shell
+    inst.local_log_output_dir = str(tmp_path)
+    payload, modules = _app_shell(agent_ns, tmp_path)
+    real = modules["shell_core"]
+
+    class ServedShell:
+        pages = [PAGE]
+
+        def __init__(self, root, **kwargs):
+            pass
+
+        def speed(self, headers):
+            return {}
+
+        def checked(self, headers):
+            return []
+
+        def filters(self, headers, ident, probe=None):
+            return {"filters": filters, "columns": {}}
+
+        def records(self, headers, data, probe=None):
+            return {"rows": []}
+
+        def close(self):
+            return None
+
+    core = types.SimpleNamespace(**{k: getattr(real, k) for k in dir(real) if not k.startswith("_") and k != "Shell"}, Shell=ServedShell)
+    inst._implement_app_shell = lambda: (payload, dict(modules, shell_core=core))
+    prior = inst._implement_api
+
+    def api(method, path, body=None, query=None):
+        if method == "GET" and path.startswith("/api/2.0/apps/"):
+            return {"app_name": "churn-desk", "default_source_code_path": "/Workspace/apps/churn-desk/v2"}
+        return prior(method, path, body, query)
+
+    inst._implement_api = api
+    inst._implement_app_files_at = lambda source, core_: ({"version": core_.SETTINGS_VERSION, "pages": [PAGE["id"]]}, [PAGE])
+
+
+REGION = {"id": "region", "label": "Region", "type": "multi_select", "options": ["North", "South"]}
+
+
+def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks_and_lists_every_ask(agent_ns, tmp_path):
     from v143_vibes_test import _locked, _run
     from v148_asset_vibes_test import PAGE as BUILT_PAGE, PAGE_VIBES, PARTS, SPLITS, WIDGET_VIBES, _built, _carrying, _llm, _vibed
     inst, previous = _locked(agent_ns, {"app:page:n01_u01_vibes": PAGE_VIBES})
@@ -197,6 +243,7 @@ def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks
               {"ask": "Add a count of customers at risk", "status": "done", "evidence": "Customers at risk"}]
     _carrying(inst, dict(PARTS, **{ASSET: dict(PARTS[ASSET], vibes_split={"text": PAGE_VIBES, "asks": SPLITS[PAGE_VIBES]},
                                                vibes_checks=checks)}), app={"snapshot": True})
+    _carried_app(inst, agent_ns, tmp_path, [REGION])
     inst._implement_snapshot = lambda key, name, version: {"artifact": BUILT_PAGE}
     inst._implement_runner = lambda uc: "genie"
     inst._implement_dashboard = _built("dashboard", BUILT_PAGE)
@@ -209,6 +256,21 @@ def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks
         ("Make it a horizontal bar chart", "dashboard", "widget by_region"), ("Keep the biggest regions first", "dashboard", "widget by_region"),
         ("Keep the region filter", "app", "page n01_u01"), ("Add a count of customers at risk", "app", "page n01_u01")]
     assert final["checklist_summary"]["total"] == 4 and [e["status"] for e in final["checklist"][2:]] == ["met", "met"]
+
+
+def test_a_carried_app_without_the_region_filter_is_read_without_it_and_its_ask_stays_missing(agent_ns, tmp_path):
+    """Must-exclude: the carried App is read for real, so an App that does not serve the region filter reads no region filter."""
+    from v143_vibes_test import _locked
+    context = {"uc_id": "N01-U01", "spec": {"outputs": {"app_name": "churn-desk"}, "config": {"warehouse_id": "wh1"}}, "asset_status": {}}
+    inst, _previous = _locked(agent_ns)
+    _carried_app(inst, agent_ns, tmp_path, [])
+    served = inst._implement_app_served_tool(context)
+    assert served[PAGE["id"]]["filters"] == {}
+    assert agent_ns["_implement_vibes_served_filter"]("region", PAGE, "App", served)[0] == "missing"
+    inst, _previous = _locked(agent_ns)
+    _carried_app(inst, agent_ns, tmp_path, [REGION])
+    served = inst._implement_app_served_tool(context)
+    assert agent_ns["_implement_vibes_served_filter"]("region", PAGE, "App", served)[0] == "done"
 
 
 def _checklist_context(agent_ns, records):
