@@ -12,6 +12,7 @@ parsed rows, not the raw bytes.
 """
 import json
 import logging
+import re
 
 import pytest
 
@@ -150,15 +151,60 @@ def _refused_label_re_ask(misses):
     return [None] * len(misses)
 
 
-def _gates_then_fired(ns, length_answer):
+def _gates_then_fired(ns, length_answer, use_cases=None, label_re_ask=_refused_label_re_ask):
     """Runs the label gate, the name-length gate (through the real re-ask parser), then the FIRED count as the Final Gate does."""
-    use_cases = [dict(uc) for uc in LONG_UNLABELLED]
-    stats = ns["ensure_data_filter_labels"](use_cases, lambda uc: [], LABEL, ns["INSPIRE_TABLE_SCOPES"], reask=_refused_label_re_ask)
+    use_cases = use_cases if use_cases is not None else [dict(uc) for uc in LONG_UNLABELLED]
+    stats = ns["ensure_data_filter_labels"](use_cases, lambda uc: [], LABEL, ns["INSPIRE_TABLE_SCOPES"], reask=label_re_ask)
+    before = ns["label_carrying_ids"](use_cases, LABEL)
     stub = _Stub(answers=[length_answer])
     ns["ensure_name_lengths"](use_cases, reask=lambda misses: ns["reask_data_filter_names"](
         stub, misses, LABEL, step_name=ns["NAME_LENGTH_REASK_STEP"]))
-    counted = ns["count_label_in_final_names"](stats, use_cases, LABEL)
+    counted = ns["count_label_in_final_names"](stats, use_cases, LABEL, before)
     return use_cases, counted, ns["data_filter_label_line"](counted, LABEL)
+
+
+PARTS = re.compile(r"(\d+) (carried already|asked again|set directly|renamed by the length check)")
+AFTER = re.compile(r"after the fix (\d+) of (\d+) carry it")
+
+
+def _parts(line):
+    """The breakdown of a FIRED line: its four parts (kept_user_named is outside them) and the after count."""
+    parts = {name: int(n) for n, name in PARTS.findall(line)}
+    after, affected = (int(x) for x in AFTER.search(line).groups())
+    return parts, after, affected
+
+
+def test_the_breakdown_parts_add_up_to_the_after_count_and_the_final_names(ns):
+    """Three affected names: one carried already, one the label re-ask labels, one the length re-ask renames. The four parts sum to
+    the after count, and the after count equals the names that carry the label at the end."""
+    use_cases = [
+        {"No": "1", "Name": "Forecast Tokyo Tidbits Order Volume", "Primary Table": USE_CASE_ORDERS},
+        {"No": "2", "Name": "Rank Customers by Future Value and Tier", "Primary Table": USE_CASE_ORDERS},
+        {"No": "3", "Name": "Plan Warehouse Stock", "Primary Table": USE_CASE_ORDERS},
+    ]
+    seen = []
+
+    def label_re_ask(misses):
+        seen.append(len(misses))
+        return [None, "Plan Tokyo Tidbits Warehouse Stock"]
+
+    # the label gate misses names 2 and 3 only; the re-ask answers name 3
+    use_cases, counted, line = _gates_then_fired(
+        ns, json.dumps([{"Ref": "0", "Name": "Rank Tokyo Tidbits Customers by Value"}]), use_cases, label_re_ask)
+    assert seen == [2], "the label re-ask covers the two misses"
+    parts, after, affected = _parts(line)
+    final_carrying = sum(1 for uc in use_cases if LABEL in uc["Name"])
+    assert parts == {"carried already": 1, "asked again": 1, "set directly": 0, "renamed by the length check": 1}, line
+    assert after == affected == 3 == final_carrying
+    assert sum(parts.values()) == after, "the parts add up to the after count"
+
+
+def test_the_breakdown_parts_add_up_when_the_length_gate_changes_nothing_in_the_label(ns):
+    """A length gate that drops the label leaves the parts summing to the after count too (0 renamed, the rest 0)."""
+    unlabelled = json.dumps([{"Ref": "0", "Name": "Rank Customers by Future Value"}])
+    _, _, line = _gates_then_fired(ns, unlabelled)
+    parts, after, _ = _parts(line)
+    assert sum(parts.values()) == after == 0, line
 
 
 def test_the_length_gate_renames_a_name_to_carry_the_label_and_the_fired_count_follows_the_final_name(ns):
@@ -183,9 +229,12 @@ def test_a_length_re_ask_that_drops_the_label_is_counted_as_not_carrying_it(ns):
 
 
 def test_the_final_gate_recounts_the_fired_line_after_the_length_gate():
-    """Wiring: the FIRED count is recounted after ensure_name_lengths and before the proof lines are written."""
+    """Wiring: the carrying snapshot is taken before ensure_name_lengths, and the FIRED count is recounted after it and before the
+    proof lines are written."""
     from _agentload import agent_source
     source = agent_source()
-    after_lengths = source[source.index("name_length_stats = ensure_name_lengths("):]
-    recount = after_lengths.index("count_label_in_final_names(label_stats, final_consolidated_use_cases")
-    assert recount < after_lengths.index("log_name_fix_lines(self.logger, label_stats")
+    snapshot = source.index("label_carrying_before = label_carrying_ids(final_consolidated_use_cases")
+    lengths = source.index("name_length_stats = ensure_name_lengths(")
+    recount = source.index("count_label_in_final_names(label_stats, final_consolidated_use_cases, DATA_FILTER_LABEL[\"text\"],")
+    proof = source.index("log_name_fix_lines(self.logger, label_stats")
+    assert snapshot < lengths < recount < proof
