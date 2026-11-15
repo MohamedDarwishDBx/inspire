@@ -50,7 +50,7 @@ def test_no_dashboard_the_builder_draws_carries_a_custom_visualization(agent_ns,
 @pytest.mark.parametrize("ask", [PIE, DONUT], ids=["pie", "donut"])
 def test_a_pie_or_a_donut_ask_is_met_by_the_dashboards_pie_and_not_by_another_chart(agent_ns, tmp_path, ask):
     met = _both_views(agent_ns, tmp_path, ask, _kind("donut"))
-    assert [(c["status"], c["evidence"]) for c in met] == [("done", "chart t: type pie")] * 2, met
+    assert [(c["status"], c["evidence"]) for c in met] == [("done", "chart Loss: type pie")] * 2, met
     missed = _both_views(agent_ns, tmp_path, ask, _kind("bar"))
     assert [c["status"] for c in missed] == ["missing", "missing"], missed
     assert all("has no" in c["evidence"] and "cannot draw" not in c["evidence"] for c in missed), missed
@@ -61,7 +61,7 @@ def test_the_app_draws_its_own_donut_so_a_donut_ask_is_met_there_and_a_pie_ask_i
     donut, _judged = _round(agent_ns, "app:page:n01_u01", "k", [DONUT], page, chart_types=app_types)
     pie, _judged = _round(agent_ns, "app:page:n01_u01", "k", [PIE], page, chart_types=app_types)
     assert donut[0]["status"] == "done", donut
-    assert (pie[0]["status"], pie[0]["evidence"]) == ("missing", "the App page n01_u01 cannot draw a pie chart: it draws "
+    assert (pie[0]["status"], pie[0]["evidence"]) == ("missing", "the App page Price-loss decision desk cannot draw a pie chart: it draws "
                                                                  + ", ".join(app_types) + " charts"), pie
 
 
@@ -197,10 +197,10 @@ def test_a_pareto_ask_is_met_only_when_the_published_combo_draws_ranked_bars_and
     view = agent_ns["implement_dashboard_drawn"](page, published)
     checked = _checked(agent_ns, page, view, PARETO)
     if change == "as_built":
-        assert (view["charts"][0]["type"], checked["status"], checked["evidence"]) == ("pareto", "done", "chart t: type pareto"), checked
+        assert (view["charts"][0]["type"], checked["status"], checked["evidence"]) == ("pareto", "done", "chart Loss: type pareto"), checked
     else:
         assert (view["charts"][0]["type"], checked["status"]) == ("combo", "missing"), (change, checked)
-        assert checked["evidence"].endswith("has no pareto chart; its charts are combo (t)"), checked
+        assert checked["evidence"].endswith("has no pareto chart; its charts are combo chart Loss"), checked
 
 
 def test_the_dashboard_counts_only_the_chart_kinds_a_published_snapshot_showed_drawn(agent_ns, tmp_path):
