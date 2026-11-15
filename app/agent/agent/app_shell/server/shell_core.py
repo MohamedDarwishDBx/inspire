@@ -91,8 +91,9 @@ BRIEF_CHARS = 3000
 CONFIDENCE_LEVELS = ("High", "Medium", "Low")
 LEVEL_ASK = "Give the reason for that level from the facts, and never give another level or a number for it."
 RECORD_STAKE = "value_at_stake"
-NO_ACCESS = re.compile(r"INSUFFICIENT_PERMISSIONS|PERMISSION_DENIED|permission denied|TABLE_OR_VIEW_NOT_FOUND|answered HTTP 403", re.I)
-WRITE_ROUTE_NAMES = {"records", "records/act", "records/undo", "records/draft", "settings/save", "settings/run", "plan/decide", "money/rule",
+NO_ACCESS = re.compile(r"INSUFFICIENT_PERMISSIONS|PERMISSION_DENIED|permission denied|TABLE_OR_VIEW_NOT_FOUND|answered HTTP 403|"
+                       r"access denied|not authori[sz]ed|does not have .{0,120}(?:privilege|permission)", re.I)
+WRITE_ROUTE_NAMES = {"records/act", "records/undo", "records/draft", "settings/save", "settings/run", "plan/decide", "money/rule",
                      "money/assumption", "scenario/save", "scenario/share", "scenario/choose", "plans/version", "feedback",
                      "agent/feedback", "genie/feedback", "forecast/override", "refresh"}
 
@@ -2536,11 +2537,11 @@ class Shell:
             raise HttpError(404, f"no API route {method} /api/{path.strip('/')}")
         except HttpError as error:
             if error.status == 502 and NO_ACCESS.search(str(error.message)) and not is_write_route(method, route[1]):
-                return 200, waiting_for_access_body(str(error.message))
+                return 200, waiting_for_access_body(str(error.message), self.access_owners([str(error.message)]))
             return error.status, error_body(error.message, error.code, error.extra)
         except QueryError as error:
             if NO_ACCESS.search(str(error)) and not is_write_route(method, route[1]):
-                return 200, waiting_for_access_body(error)
+                return 200, waiting_for_access_body(error, self.access_owners([str(error)]))
             return 502, {"error": shell_sql.error_text(error)}
         except (ValueError, KeyError) as error:
             return 400, error_body(shell_sql.error_text(error), getattr(error, "code", ""))
