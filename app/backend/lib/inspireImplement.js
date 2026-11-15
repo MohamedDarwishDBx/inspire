@@ -15,7 +15,7 @@ const {
 const { specVibeAsks, vibeRefusalText, vibeRefusals } = require('../../frontend/src/lib/vibeLimits.js');
 const { PERSONAL_KEY_REASON, personalColumn } = require('../../frontend/src/lib/personalColumns.js');
 const {
-  defaultResultTable: defaultUseCaseResultTable, inspireDatabaseKey, isAppUpdate, liveAppVersion, lostTablesAction, lostTablesList,
+  defaultResultTable: defaultUseCaseResultTable, inspireDatabaseKey, isAppUpdate, keptAppEntry, liveAppVersion, lostTablesAction, lostTablesList,
   ownSchemaAllTakenNote, ownSchemaClashNote, ownSchemaFallbackNote, ownSchemaReuseNote, rowKeyOf, USE_CASE_SCHEMA_CLASH_LIMIT,
 } = require('../../frontend/src/lib/implementWizard.js');
 const { quotedIdent } = require('../../frontend/src/lib/tableName.js');
@@ -1901,6 +1901,17 @@ function liveBuiltRow(history) {
   return (appVersion != null && rows.find((r) => r.spec_version === appVersion)) || previousBuilt(rows);
 }
 
+// REQ-241 (D-LIVE): the App that serves the live App name. Under keep-previous the newest build lists the kept older App (kept.assets, output 'app'):
+// its name and URL are the live ones. Without a kept App the newest built row's own App is live.
+function liveAppOf(history) {
+  const rows = byNewest(history);
+  const newest = previousBuilt(rows);
+  if (!newest) return null;
+  const kept = keptAppEntry(newest);
+  if (kept) return { name: str(kept.id), url: str(kept.url), version: Number(kept.version) };
+  return { name: str(newest.app_name), url: str(newest.app_url), version: newest.spec_version };
+}
+
 function liveCodeRow(history) {
   return liveBuiltRow(history) || byNewest(history)[0] || null;
 }
@@ -1931,7 +1942,7 @@ function appShellUpdate(history, current) {
   const rows = byNewest(history);
   const live = previousBuilt(rows);
   const version = liveAppVersion(rows);
-  if (version == null || live.asset_status.app.placement === IMPLEMENT_APP_INSIDE || !str(live.app_name)) return null;
+  if (version == null || live.asset_status.app.placement === IMPLEMENT_APP_INSIDE || !liveAppOf(rows)?.name) return null;
   const deployed = rows.find((r) => r.spec_version === version);
   if (!deployed || !isPlainObject(deployed.asset_status) || !isPlainObject(deployed.asset_status.app) || deployed.asset_status.app.snapshot !== true) return null;
   const built = codeStampOf(deployed);
@@ -1977,6 +1988,7 @@ function runPages(rows, scope = [], current = null, names = []) {
       published_at: str(live.updated_at), owners: implementOwners(live), older_build: olderBuildNote(list.filter((r) => (r.spec_version || 0) <= (live.spec_version || 0)), current),
     };
     const hosted = hostedRecord(live);
+    const app = outputs.app ? liveAppOf(list) : null;
     if (hosted) {
       const entry = { ...base, kind: IMPLEMENT_APP_INSIDE, id: hosted.id, version: hosted.version, published_at: hosted.published_at || base.published_at,
         page: hosted.page, hosted };
@@ -1989,8 +2001,8 @@ function runPages(rows, scope = [], current = null, names = []) {
       if (seen) seen.conflict = clash(entry);
       byId.set(hosted.id, entry);
       pages.push(entry);
-    } else if (outputs.app && str(live.app_name)) {
-      pages.push({ ...base, kind: 'app', app_name: str(live.app_name), app_url: str(live.app_url) });
+    } else if (outputs.app && app?.name) {
+      pages.push({ ...base, version: app.version, kind: 'app', app_name: app.name, app_url: app.url });
     }
   }
   return pages.sort((a, b) => a.domain.localeCompare(b.domain) || a.name.localeCompare(b.name) || a.use_case_id.localeCompare(b.use_case_id));
@@ -4149,6 +4161,7 @@ module.exports = {
   appStatusFrom,
   jobRunsFrom,
   IMPLEMENT_SPEC_WIDGETS,
+  liveAppOf,
   liveBuiltRow,
   liveLogPath,
   useCaseLogLines,
