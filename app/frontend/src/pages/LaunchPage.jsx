@@ -44,7 +44,7 @@ import DataFilters from '../components/DataFilters';
 import { groupLabelOf } from '../lib/implementWizard';
 import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
 import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
-import { scopesFromObject, launchTableScopeText, filterValuesOf, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
+import { scopesFromObject, launchTableScopeText, filterValuesOf, labelAvailable, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
 import { runBusiness } from '../lib/reviewFigures';
@@ -481,6 +481,10 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const scope = useMemo(() => pickedScope(selectedCatalogs, selectedSchemas, selectedTables, wholeCatalogs),
     [selectedCatalogs, selectedSchemas, selectedTables, wholeCatalogs]);
   const scopeTables = useMemo(() => pickedTableNames(tableScopes, scope), [tableScopes, scope]);
+  // The label is off whenever no picked table has a Row Group. The state follows that rule, and the typed text is kept for when a group comes back.
+  useEffect(() => {
+    if (dataFilterLabel.on && !labelAvailable(tableScopes, scopeTables)) setDataFilterLabel((l) => ({ ...l, on: false }));
+  }, [dataFilterLabel.on, tableScopes, scopeTables]);
   const scopeText = scopeSummary(scope);
 
   useEffect(() => {

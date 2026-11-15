@@ -115,8 +115,8 @@ export function tableScopeOf(scopes, table) {
   return null;
 }
 
-// The use case label only means something when a picked table has a row filter, so it is written only then.
-export function serializeTableScopes(scopes, pickedTables = [], label = '') {
+// The scope entries a run reads: the valid entries of the picked tables, sorted by name.
+function sentTableScopes(scopes, pickedTables = []) {
   const picked = new Set(pickedTables.map(scopeKeyOf));
   const out = {};
   for (const table of Object.keys(scopes || {}).sort()) {
@@ -124,8 +124,19 @@ export function serializeTableScopes(scopes, pickedTables = [], label = '') {
     const entry = scopes[table];
     if (scopeIsValid(entry)) out[table] = normalizeTableScope(entry);
   }
+  return out;
+}
+
+// The one rule for the use case label: it names the Row Groups of the picked tables, so it is available only when a picked
+// table has a Row Group. The label box is disabled without one, and the serialiser writes the label only with one.
+export function labelAvailable(scopes, pickedTables = []) {
+  return Object.values(sentTableScopes(scopes, pickedTables)).some((entry) => entry.rows.some(isGroupRow));
+}
+
+export function serializeTableScopes(scopes, pickedTables = [], label = '') {
+  const out = sentTableScopes(scopes, pickedTables);
   const labelText = text(label);
-  if (labelText && Object.values(out).some((entry) => entry.rows.some(isGroupRow))) out[USE_CASE_LABEL_KEY] = labelText;
+  if (labelText && labelAvailable(scopes, pickedTables)) out[USE_CASE_LABEL_KEY] = labelText;
   return Object.keys(out).length ? JSON.stringify(out) : '';
 }
 

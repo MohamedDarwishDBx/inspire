@@ -678,3 +678,80 @@ test('REQ-305 a catalog picked whole with nothing under it: Data Filters lists e
     await ui.close();
   }
 });
+
+// REQ-316 / REQ-126: the label box is usable only when a picked table has a Row Group. Without one it is disabled and says why,
+// and a label ticked before its group went away is not sent and is not shown ticked.
+const LABEL_BOX = 'Use case labeling enhanced using filters';
+const LABEL_REASON = 'Add a row group above to label your use cases.';
+
+test('with no Row Group the label box is disabled and says why, and a plain row filter does not enable it', async () => {
+  const ui = await openUi('launch', STATE);
+  const { page } = ui;
+  try {
+    await pickOrdersAndOpenDataFilters(page);
+    const box = page.getByRole('checkbox', { name: LABEL_BOX });
+    assert.equal(await box.isDisabled(), true, 'no picked table has a Row Group: the tick box is disabled');
+    assert.equal(await page.getByRole('textbox', { name: 'Use case label', exact: true }).isDisabled(), true, 'the label text is disabled too');
+    assert.equal(await page.locator('[data-use-case-label-reason]').innerText(), LABEL_REASON, 'the reason is shown in one line');
+    await openGrid(page);
+    await addFilter(page, 'brand_name', 'Starbucks');
+    await until(async () => (await summaryOf(page)).includes('120 rows match'), 'the brand filter counts its rows');
+    assert.equal(await box.isDisabled(), true, 'a row filter is not a Row Group: the box stays disabled');
+  } finally {
+    await ui.close();
+  }
+});
+
+test('a Row Group enables the label box, and the launch text carries use_case_label', async () => {
+  const ui = await openUi('launch', STATE);
+  const { page, made } = ui;
+  try {
+    await pickOrdersAndOpenDataFilters(page);
+    await openGrid(page);
+    await loadGroups(page, 'brand_name');
+    const text = page.getByRole('textbox', { name: 'Use case label', exact: true });
+    await page.locator('[data-group-value="Starbucks"]').check();
+    await until(async () => (await text.inputValue()) === 'Starbucks', 'the picked group prefills the label');
+    const box = page.getByRole('checkbox', { name: LABEL_BOX });
+    assert.equal(await box.isDisabled(), false, 'a Row Group makes the box usable');
+    assert.equal(await page.locator('[data-use-case-label-reason]').count(), 0, 'no reason is shown once the label is available');
+    await box.check();
+    await text.fill('Starbucks Cafe');
+    const params = await launchOf(page, made);
+    assert.equal(JSON.parse(params['17_table_scope']).use_case_label, 'Starbucks Cafe', 'the label reaches the table scope');
+  } finally {
+    await ui.close();
+  }
+});
+
+test('a label ticked before its Row Group went away is not on and is not sent, and the typed text comes back with the group', async () => {
+  const ui = await openUi('launch', STATE);
+  const { page, made } = ui;
+  try {
+    await pickOrdersAndOpenDataFilters(page);
+    await openGrid(page);
+    await loadGroups(page, 'brand_name');
+    const text = page.getByRole('textbox', { name: 'Use case label', exact: true });
+    const box = page.getByRole('checkbox', { name: LABEL_BOX });
+    await page.locator('[data-group-value="Starbucks"]').check();
+    await box.check();
+    await text.fill('Starbucks Cafe');
+    await page.locator('[data-group-value="Starbucks"]').uncheck();
+    await until(async () => box.isDisabled(), 'the group went away: the box is disabled');
+    assert.equal(await box.isChecked(), false, 'the box does not look on without a Row Group');
+    assert.equal(await page.locator('[data-use-case-label-reason]').innerText(), LABEL_REASON);
+    assert.equal(await text.inputValue(), 'Starbucks Cafe', 'the typed label is kept while the box is off');
+    await page.locator('[data-group-value]').first().waitFor({ timeout: 15000 });
+    await page.locator('[data-group-value="Starbucks"]').check();
+    await until(async () => box.isDisabled().then((d) => !d), 'the group is back: the box is usable again');
+    assert.equal(await box.isChecked(), false, 'it comes back unticked, not on by itself');
+    assert.equal(await text.inputValue(), 'Starbucks Cafe', 'the typed label comes back with the group');
+    await page.locator('[data-group-value="Starbucks"]').uncheck();
+    await until(async () => box.isDisabled(), 'the group went away again before the launch');
+    const params = await launchOf(page, made);
+    const sent = params['17_table_scope'] ? JSON.parse(params['17_table_scope']) : {};
+    assert.equal('use_case_label' in sent, false, 'no label is sent without a Row Group');
+  } finally {
+    await ui.close();
+  }
+});
