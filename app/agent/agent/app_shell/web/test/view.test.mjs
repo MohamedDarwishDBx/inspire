@@ -242,7 +242,7 @@ test('Copy a link to a record copies an address that opens that record', async (
   const [copied] = await page.evaluate(() => window.__copied);
   assert.equal(new URL(copied).hash, '#/n01_u05/work?rec=R001');
   const other = await openWith(appInfo(DECIDE, 1, TABLE), tracked().routes, { hash: new URL(copied).hash });
-  await other.page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, LABEL);
+  await other.page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, `Price-loss decision desk for ${LABEL}`);
   assert.deepEqual([...seen.errors, ...other.seen.errors], []);
   await other.context.close();
   await context.close();
