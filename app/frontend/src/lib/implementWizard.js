@@ -1026,13 +1026,12 @@ export function dataMinimumRefusalText(readiness) {
   return `The data cannot meet the minimum this use case needs: it has ${what}, and at least ${minimum.toLocaleString('en-US')} are needed. Build is blocked. To go on, ${way}.`;
 }
 
-// The scope note on the steps before the build. Rows: one plain sentence that never blocks (the build's refusal is dataMinimumRefusalText).
-// A forecast's distinct-date shortfall reads as the refusal itself, since its build check is the one that names the period to change.
+// The scope note on the steps before the build: one plain sentence that never blocks (the build's refusal is dataMinimumRefusalText, shown on the last step).
 export function tooFewRowsText(readiness) {
   const short = dataMinimumShortfall(readiness);
   if (!short || !(short.have > 0)) return '';
-  if (short.forecast) return dataMinimumRefusalText(readiness);
-  return `Only ${short.have.toLocaleString('en-US')} rows are in this scope, fewer than the ${short.minimum.toLocaleString('en-US')} this use case needs; you can still go on.`;
+  const what = short.forecast ? `${short.have.toLocaleString('en-US')} distinct dates` : `${short.have.toLocaleString('en-US')} rows`;
+  return `Only ${what} are in this scope, fewer than the ${short.minimum.toLocaleString('en-US')} this use case needs; you can still go on.`;
 }
 
 // The build is refused while the data has some rows but fewer than the minimum (the same count the build's check makes). Zero rows is
