@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { recordGroupsSaid } from '../src/lib/runScope.js';
 
-const fixture = JSON.parse(readFileSync(fileURLToPath(new URL('../../shared/first_run_count_cases.json', import.meta.url)), 'utf8'));
+const fixture = JSON.parse(readFileSync(fileURLToPath(new URL('../../agent/tests/fixtures/first_run_count_cases.json', import.meta.url)), 'utf8'));
 
 for (const c of fixture.cases) {
   test(`wizard First run on records names ${c.shown} for ${c.name}`, () => {

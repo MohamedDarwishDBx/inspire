@@ -14,6 +14,8 @@ const TOMORROW = '2026-10-28';
 const toastText = (page) => page.evaluate(() => (document.querySelector('.toast.is-on .toast-t') || document.querySelector('.toast .toast-t'))?.textContent || '');
 const toastButtons = (page) => page.locator('.toast .toast-a button').allInnerTexts();
 const label = (n) => `Item number ${n} with a long descriptive name`;
+// REQ-302: the drawer title is "<action> for <record>" (the use case is Price-loss decision desk in this fixture).
+const heading = (n) => `Price-loss decision desk for ${label(n)}`;
 const AS_OF = String((CLOCK.getTime() - 5000) * 1000);
 
 function routesFor(reply, more = {}) {
@@ -359,7 +361,7 @@ test('Start working shows one record at a time with k of N, Done and next and Sn
   const drawer = page.locator('dialog.drawer');
   await drawer.locator('.work-f').waitFor();
   const at = async (n) => {
-    await page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, label(n));
+    await page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, heading(n));
     return drawer.locator('[data-work-k]').innerText();
   };
   assert.equal(await at(1), '1 of 3 on this list');
@@ -441,10 +443,10 @@ test('the keyboard moves through the list, opens, marks done, snoozes, selects a
   await until(() => seen.acts?.length === 2);
   assert.deepEqual(seen.acts[1].values, { snooze_until: TOMORROW });
   await page.keyboard.press('Enter');
-  await page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, label(2));
+  await page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, heading(2));
   await page.locator('dialog.drawer .dr-act').waitFor();
   await page.keyboard.press('j');
-  await page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, label(3));
+  await page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, heading(3));
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('dialog.drawer[open]'));
   await page.keyboard.press('a');

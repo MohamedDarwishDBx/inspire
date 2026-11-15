@@ -108,7 +108,7 @@ def test_a_folds_shortfall_is_written_into_the_reason_the_run_is_not_trusted(fre
 import json as _json
 from pathlib import Path as _Path
 
-_CASES = _json.loads((_Path(__file__).resolve().parents[3] / "shared" / "first_run_count_cases.json").read_text())["cases"]
+_CASES = _json.loads((_Path(__file__).resolve().parents[1] / "fixtures" / "first_run_count_cases.json").read_text())["cases"]
 
 
 def _standalone(table, goal, available=None):
