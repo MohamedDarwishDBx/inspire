@@ -109,6 +109,30 @@ test('an owner changes a cutoff with a live preview and a note, and starts a run
   await context.close();
 });
 
+test('Save is busy while the change is written, then reports it saved', async () => {
+  const seen = {};
+  const base = routes(seen);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const gated = { ...base, 'settings/save': async (args) => { await held; return base['settings/save'](args); } };
+  const { page, context } = await openApp(browser, served.base, appInfo({}, 1, TABLE), { routes: gated });
+  await goRail(page, 'settings');
+  await page.waitForSelector('[data-setting="act_now_amount"] button');
+  await page.click('[data-setting="act_now_amount"] button');
+  await page.locator('input[name="setting_act_now_amount"]').fill('1000');
+  const save = page.locator('[data-setting="act_now_amount"] button[type="submit"]');
+  await save.click();
+  await page.waitForSelector('[data-setting="act_now_amount"] button[data-saving]');
+  assert.equal(await save.isDisabled(), true, 'Save is disabled while the write is in flight');
+  assert.match(await save.innerText(), /Saving/);
+  assert.equal(seen.saves, undefined, 'the write has not reached the server yet');
+  release();
+  await toastSays(page, 'Money at stake to act now is 1,000 USD now. The next run uses it.');
+  assert.equal(await page.locator('[data-setting="act_now_amount"] button[data-saving]').count(), 0, 'the busy state ends with the write');
+  assert.equal(seen.saves.length, 1);
+  await context.close();
+});
+
 test('a viewer who is not an owner gets Settings with only their own My view, and no use-case setting or Run now', async () => {
   const { page, seen: app, context } = await openApp(browser, served.base, appInfo({}, 1, TABLE));
   await page.waitForSelector('[data-rail="settings"]');

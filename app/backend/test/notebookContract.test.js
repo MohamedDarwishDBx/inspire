@@ -140,7 +140,7 @@ test(`deployment and API surfaces advertise ${INSPIRE_AGENT_VERSION} consistentl
 
   const jobParams = fs.readFileSync(path.join(appRoot, 'backend', 'lib', 'inspireJobParams.js'), 'utf8');
 
-  assert.match(server, /agentVersion:\s*INSPIRE_AGENT_VERSION/);
+  assert.match(server, /agentVersion:\s*inspireReleaseLabel\(\)/);
   assert.match(server, /tags:\s*inspireJobTags\(/);
   assert.match(jobParams, /inspire_version:\s*INSPIRE_AGENT_VERSION/);
   assert.match(bundleConfig, new RegExp(`inspire_version:\\s*"${INSPIRE_AGENT_VERSION.replace(/\./g, '\\.')}"`));
