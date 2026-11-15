@@ -283,13 +283,18 @@ class AssetsTest(unittest.TestCase):
         self.files = support.make_assets(self.assets)
         self.tar = self.tmp / "inspire-assets.tar"
         support.release.write_assets_tar(self.assets, "v1.3.0", self.tar, support.release.load_starter())
-        self.root = self.tmp / "Workspace" / "Shared" / "inspire-ai" / "assets" / "v1.3.0"
+        self.version_root = self.tmp / "Workspace" / "Shared" / "inspire-ai" / "assets" / "v1.3.0"
+        self.root = pathlib.Path(setup.assets_root_for(str(self.version_root), setup.assets_build_id(self.manifest_files(self.assets))))
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def install(self, tar=None, version="v1.3.0"):
-        ctx = {"ASSETS_TAR": str(tar or self.tar), "ASSETS_ROOT": str(self.root), "RELEASE_VERSION": version}
+    @staticmethod
+    def manifest_files(folder):
+        return json.loads((pathlib.Path(folder) / "manifest.json").read_text(encoding="utf-8"))["files"]
+
+    def install(self, tar=None, version="v1.3.0", version_root=None):
+        ctx = {"ASSETS_TAR": str(tar or self.tar), "ASSETS_ROOT": str(version_root or self.version_root), "RELEASE_VERSION": version}
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             setup.step_assets(ctx)
@@ -309,6 +314,31 @@ class AssetsTest(unittest.TestCase):
         _, said = self.install()
         self.assertIn("(1 copied, 3 already there)", said)
         self.assertEqual((self.root / "fonts" / "inter-400.ttf").read_bytes(), self.files["fonts/inter-400.ttf"])
+
+    def test_two_builds_of_one_version_get_two_folders_and_the_first_build_keeps_its_files(self):
+        """Fails before the fix: both builds wrote <version>/, so the second install replaced the first build's files."""
+        second_assets = self.tmp / "second-assets"
+        second_assets.mkdir()
+        second_files = support.make_assets(second_assets, files={support.NOTEBOOK_ASSET[0]: b"a newer build's notebook asset" * 40,
+                                                                  "fonts/inter-400.ttf": b"font" * 600,
+                                                                  "licenses/inter.txt": b"SIL Open Font License\n"})
+        second_tar = self.tmp / "second.tar"
+        support.release.write_assets_tar(second_assets, "v1.3.0", second_tar, support.release.load_starter())
+        second_root = pathlib.Path(setup.assets_root_for(str(self.version_root), setup.assets_build_id(self.manifest_files(second_assets))))
+        self.assertNotEqual(self.root, second_root)
+        self.install()
+        self.install(tar=second_tar)
+        self.assertEqual(self.root.parent, second_root.parent)
+        for name, data in self.files.items():
+            self.assertEqual((self.root / name).read_bytes(), data, name)
+        for name, data in second_files.items():
+            self.assertEqual((second_root / name).read_bytes(), data, name)
+
+    def test_the_build_folder_is_named_by_the_build_id_and_the_path_the_installer_reports_is_that_folder(self):
+        ctx, _ = self.install()
+        self.assertEqual(ctx["ASSETS_PATH"], str(self.root))
+        self.assertEqual(self.root.name, setup.assets_build_id(self.manifest_files(self.assets)))
+        self.assertEqual(len(self.root.name), setup.ASSETS_BUILD_ID_LEN)
 
     def test_both_cpu_builds_of_each_cli_land_whatever_machine_the_installer_runs_on(self):
         shutil.rmtree(self.assets)
