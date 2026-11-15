@@ -937,6 +937,11 @@ def spec_problems(page: dict, stored=None) -> list:
             problems.append(f"{where} reads dataset {kpi.get('dataset')}, which the page does not define")
         shape = expression_problems(where, kpi.get("expression"))
         problems += shape
+        if kpi.get("open_work") is not None and not isinstance(kpi.get("open_work"), bool):
+            problems.append(f"{where} open_work must be true or false")
+        elif kpi.get("open_work") and not shape and not kpi_counts_result_rows(page, kpi):
+            problems.append(f"{where} is marked open_work, so it must be a plain count of the result table "
+                            f"(COUNT(*), COUNT(col) or COUNT(DISTINCT col)) over a dataset that reads it")
         problems += _format_problems(where, kpi)
         if kpi.get("good", "neutral") not in GOODS:
             problems.append(f"{where} good must be up, down or neutral")
@@ -2786,7 +2791,7 @@ def scope_counts_query(page: dict, names, today: str) -> tuple:
     snooze = f"CAST(`{SNOOZE_COLUMN}` AS DATE)" if SNOOZE_COLUMN in names else "CAST(NULL AS DATE)"
     awake = not_snoozed_sql(snooze, params.add(today, "DATE"))
     scope = " AND ".join(c for c in (use_case_scope(page, params), "`is_current`", "`change_source` <> 'delete'") if c)
-    text = (f"SELECT COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened}) AND {awake}) AS open_, COUNT_IF({ok} AND {held}) AS held_, "
+    text = (f"SELECT COUNT_IF({shell_facts.open_work_sql(names, params.add(today, 'DATE'))}) AS open_, COUNT_IF({ok} AND {held}) AS held_, "
             f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({closed})) AS closed_, COUNT_IF(NOT {ok}) AS unchecked, "
             f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened}) AND NOT {awake}) AS snoozed_ "
             f"FROM {table_name(page['result_table'])} WHERE {scope}")
@@ -3045,11 +3050,17 @@ def genie_money_query(page: dict, kpi: dict) -> tuple:
     return money_expression(page, dataset, kpi["expression"]), money_source(page, dataset, _dataset(page, dataset)), quote(by) if by else ""
 
 
-def kpi_query(page: dict, ident: str, values: dict, previous: str = None) -> tuple:
+# The columns a result table has when the App built it (SCHEMA); used when a caller does not pass the table's real columns.
+RESULT_COLUMNS = frozenset({"is_current", "change_source", "action_status", "held_back", "data_quality_flag", SNOOZE_COLUMN})
+
+
+def kpi_query(page: dict, ident: str, values: dict, previous: str = None, names=None) -> tuple:
     kpi = _item(page, "kpis", ident)
     money = kpi.get("format") == "currency"
     dataset = _dataset(page, kpi["dataset"])
     sql, params = (money_source(page, kpi["dataset"], dataset) if money else future_source(page, kpi["dataset"], dataset)), _Params()
+    if kpi.get("open_work"):  # a count of open work reads the one open-work scope, never the raw rows
+        sql = f"SELECT * FROM ({sql}) AS o WHERE {shell_facts.open_work_sql(names or RESULT_COLUMNS, 'current_date')}"
     expression = money_expression(page, kpi["dataset"], kpi["expression"]) if money else kpi["expression"]
     where = _where(page, kpi["dataset"], values, params)
     by = money_currency_column(page, kpi)
@@ -3513,8 +3524,8 @@ def default_values(page: dict, bounds: dict) -> dict:
     return values
 
 
-def page_queries(page: dict, values: dict, tables=None, previous=None, types=None, sorts=None, searches=None) -> list:
-    out = [("kpi", k["id"]) + kpi_query(page, k["id"], values, (previous or {}).get(k["dataset"])) for k in page.get("kpis") or []]
+def page_queries(page: dict, values: dict, tables=None, previous=None, types=None, sorts=None, searches=None, names=None) -> list:
+    out = [("kpi", k["id"]) + kpi_query(page, k["id"], values, (previous or {}).get(k["dataset"]), names) for k in page.get("kpis") or []]
     out += [("chart", c["id"]) + chart_query(page, c["id"], values) for c in page.get("charts") or []]
     out += [("table", t["id"]) + table_query(page, t["id"], values, (tables or {}).get(t["id"]), (types or {}).get(t["id"]),
                                              (sorts or {}).get(t["id"]), (searches or {}).get(t["id"], "")) for t in page.get("tables") or []]

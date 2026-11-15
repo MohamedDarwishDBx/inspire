@@ -2903,8 +2903,12 @@ class Shell:
             previous, failed = self.previous_datasets(ws, who, page), {}
         except (QueryError, HttpError) as error:
             previous, failed = {}, {key: getattr(error, "message", None) or str(error) for key in compared}
+        try:
+            names = {f["name"] for f in self.table_fields(ws, who, page)} if page.get("result_table") and self.lakebase is None else set()
+        except (QueryError, HttpError):
+            names = set()  # an unreadable table keeps its own error on the KPI, with no scope line
         jobs, sqls = {}, {}
-        for kind, item_id, sql, params in shell_sql.page_queries(page, values or {}, tables, previous, types, sorts, searches):
+        for kind, item_id, sql, params in shell_sql.page_queries(page, values or {}, tables, previous, types, sorts, searches, names):
             sqls[(kind, item_id)] = sql
             if (kind, item_id) not in failed:
                 limit = shell_sql.CAPS["kpi_rows" if kind == "kpi" else "table_rows" if kind == "table" else "chart_rows"]
@@ -2915,10 +2919,6 @@ class Shell:
                 jobs[("left", kpi["id"])] = (lambda s=left[0], p=left[1]: self.run(ws, who, s, p, 1))
         if page.get(shell_sql.RUN_SCOPES) and page.get("result_table"):
             jobs[("scope", "runs")] = lambda: self.summary_rows(ws, who, shell_sql.summary_query(page, 2), 2)
-        try:
-            names = {f["name"] for f in self.table_fields(ws, who, page)} if page.get("result_table") and self.lakebase is None else set()
-        except (QueryError, HttpError):
-            names = set()  # an unreadable table keeps its own error on the KPI, with no scope line
         counted = shell_sql.scope_counts_query(page, names, shell_sql.window_bounds("all", self.now())["today"]) if names else None
         if counted:
             jobs[("scope", "counts")] = (lambda s=counted[0], p=counted[1]: self.run(ws, who, s, p, 1))
@@ -3102,7 +3102,7 @@ class Shell:
         first = lambda name: ((done.get(("list", name)) or {}).get("rows") or [{}])[0]
         summary = {}
         if ("list", "impact") in done:
-            summary.update(open=int(first("impact").get("open_n") or 0), done=int(first("impact").get("done_n") or 0),
+            summary.update(done=int(first("impact").get("done_n") or 0),
                            resolved=int(first("impact").get("resolved_n") or 0))
         if ("list", "left") in done:
             summary["left"] = int(first("left").get("left_n") or 0)
