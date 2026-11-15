@@ -103,6 +103,8 @@ export default function App() {
   const [page, setPage] = useState('loading');
   const [bootError, setBootError] = useState('');
   const [bootAttempt, setBootAttempt] = useState(0);
+  // The release a person installed (/api/defaults.agentVersion, the installer's tag or the package version). Empty when the API has none.
+  const [releaseTag, setReleaseTag] = useState('');
 
   // Settings: server defaults (from /api/defaults) are the source of truth.
   // localStorage is just a cache for non-App mode (local dev with PAT).
@@ -229,6 +231,7 @@ export default function App() {
       try {
         // 1. Fetch server-side defaults (always available, no auth needed)
         const defaults = (await bootRead('/api/defaults')) || {};
+        setReleaseTag(typeof defaults.agentVersion === 'string' ? defaults.agentVersion.trim() : '');
 
         // 2. Build initial settings: server defaults > localStorage cache > empty
         const resolved = {
@@ -512,6 +515,7 @@ export default function App() {
           canMonitor={canMonitor}
           canResults={canResults}
           canImplement={Boolean(implementSessionId)}
+          releaseTag={releaseTag}
         />
       )}
       {!bare && inDemo && page !== 'landing' && (
@@ -537,6 +541,7 @@ export default function App() {
           <LandingPage
             onStart={() => nav('choose')}
             onOpenSetup={setupManaged ? undefined : () => nav('setup')}
+            releaseTag={releaseTag}
           />
         )}
 
