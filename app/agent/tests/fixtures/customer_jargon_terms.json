@@ -27,9 +27,9 @@
     },
     {
       "id": "internal_object",
-      "pattern": "\\b\\w*__[a-z]\\w*",
+      "pattern": "(?<![\\w.])\\w*__[a-z]\\w*",
       "flags": "",
-      "why": "Inspire's internal object names such as __constraints (REQ-227: a Genie change line named one)"
+      "why": "Inspire's bare internal object names such as __constraints (REQ-227: a Genie change line named one). A catalog.schema.table name is not a bare token and is kept (D-NAMES)"
     },
     {
       "id": "companion",

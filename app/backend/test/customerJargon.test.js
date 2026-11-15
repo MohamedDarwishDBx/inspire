@@ -47,6 +47,8 @@ test('positive controls: the terms catch the strings a customer saw on rc7 (must
   assert.equal(caught('Selecting Business Tables'), false, 'plain step titles pass (must-include)');
   assert.equal(caught('Inspire is working on FILTER_BUSINESS_TABLES_PROMPT now'), true);
   assert.equal(caught('Read it from __inspire_session'), true);
+  assert.equal(caught('Skip __constraints'), true, 'a bare internal object name fails (must-exclude)');
+  assert.equal(caught('the table main.inspire.demand_out__series does not exist'), false, 'a qualified table name passes (must-keep)');
   assert.equal(caught('[DATA-FILTER-LABEL FIRED] 12 of 12 names carried the label'), true);
   const mode = TERMS.find((term) => term.id === 'mode_name_on_run_output');
   assert.equal(mode.re.test('AI Enhanced Discovery: the AI sees the summary figures'), true);
