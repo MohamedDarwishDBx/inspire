@@ -118,7 +118,7 @@ The context's data_through is the latest date in the data, not the run date: say
 To mark records done, not an issue, snoozed, assigned or reopened, call propose_action: it never changes anything by itself, it shows the person a confirmation card that lists every affected record, and only their click saves it. Never say a change is saved. When the person says fix this, or asks what to do about records, call offer_actions: it shows buttons on those records, and their click prepares the change for confirmation; do not also list the buttons in text.
 A change_view change lasts until the page reloads: never say it stays, is remembered or becomes the default. When the person wants to keep it, tell them to choose Save this view under Saved views.
 A record marked not an issue needs the person's reason; ask for it when they gave none. A snooze needs a date.
-Relative windows such as last 30 days or this month count back from data_through, the page's as-of date, never from today when the two differ. Answer for a narrow chat panel, in plain business words, in US English, with no em dashes. {brief} Use one small markdown table, with a header row, a separator row and at most {table_rows} rows, for any answer that lists {row_table_min} or more rows and for comparing several items on the same measures; never write those rows as bullets. Put every heading, bullet and table row on its own line; never write a table or a list inside a sentence, and never let a bold label run into the sentence after it. Every number comes from the context or a tool result. When the person asks what to do, give the one or two concrete next steps on this page, such as the record to open or the action you can propose. Name what you looked at in a few words."""
+Relative windows such as last 30 days or this month count back from data_through, the page's as-of date, never from today when the two differ. Answer for a narrow chat panel, in plain business words, in US English, with no em dashes. {brief} Use one small markdown table, with a header row, a separator row and at most {table_rows} rows, for any answer that lists {row_table_min} or more rows and for comparing several items on the same measures; never write those rows as bullets. Put every heading, bullet and table row on its own line; never write a table or a list inside a sentence, and never let a bold label run into the sentence after it. Every number comes from the context or a tool result. When the person asks what to do, give the one or two concrete next steps on this page, such as the record to open or the action you can propose. Name what you looked at in a few words. Never call a number sample-based or sampled: say what it counted, the whole table or the first-run sample."""
 FINAL_NOTE = "Answer now from what you have, without calling a tool."
 
 DRAFT_ROWS = 10
@@ -790,8 +790,56 @@ def listing_note(answer: str, listed, key_numbers: list, nouns: dict) -> str:
     return ""
 
 
+def markdown_tables(text: str) -> tuple:
+    """The text's lines, and each markdown table as (first line, end line, header, body rows), read the way answer_blocks reads them."""
+    lines = str(text or "").replace("\r\n", "\n").split("\n")
+    found, at = [], 0
+    while at < len(lines):
+        if "|" in lines[at] and at + 1 < len(lines) and TABLE_RULE.match(lines[at + 1]) and "|" in lines[at + 1]:
+            end = at + 2
+            while end < len(lines) and "|" in lines[end] and lines[end].strip():
+                end += 1
+            found.append((at, end, lines[at], lines[at + 2:end]))
+            at = end
+        else:
+            at += 1
+    return lines, found
+
+
+def table_cells(line: str) -> list:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def drop_tables(text: str, genie=None) -> str:
+    """The answer's tables that the App would show twice or misaligned. A Genie answer with rows already shows those rows as its own
+    table, with the Genie column names, so a table written into the text from them is dropped. A table whose body rows do not have
+    as many cells as its header is never shown, because its headers would not match its values."""
+    shown = any(len((g or {}).get("rows") or []) for g in genie or [])
+    lines, found = markdown_tables(text)
+    out, at = [], 0
+    for start, end, head, body in found:
+        out += lines[at:start]
+        at = end
+        if shown or any(len(table_cells(row)) != len(table_cells(head)) for row in body):
+            continue
+        out += lines[start:end]
+    return "\n".join(out + lines[at:])
+
+
+SAMPLE_LABEL = re.compile(r"\s*\((?:sample-based|sampled|based on a sample)\)|\bsample-based\b", re.I)
+
+
+def read_sample(genie=None) -> bool:
+    """True only when a Genie count read a run-scoped slice of the data (the scope words the SQL carries), never for a whole-table count."""
+    return any(sql_scope((g or {}).get("sql")) != ALL_ROWS for g in genie or [])
+
+
 def finish_text(text, question: str = "", key_numbers=None, genie=None, rows: int = 0, listed=None, nouns=None) -> str:
-    content = bullets_to_table(text) if rows_as_bullets(text, rows) else text
+    text = drop_tables(text, genie)
+    if not read_sample(genie):
+        text = SAMPLE_LABEL.sub("", text)
+    shown = any(len((g or {}).get("rows") or []) for g in genie or [])
+    content = text if shown or not rows_as_bullets(text, rows) else bullets_to_table(text)
     shaped = shape_answer(content)
     clashes, notes = number_scopes(shaped, question, key_numbers or [], genie or [])
     if not clashes and not notes and listed is not None:
