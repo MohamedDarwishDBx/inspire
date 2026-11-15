@@ -1,27 +1,9 @@
 import { useSyncExternalStore } from 'react';
+import { SLOW_MS, listen, read, runWrite } from './writeGate.js';
 
-export const SLOW_MS = 10000;
+export { SLOW_MS, runWrite };
 export const SAVING = 'Saving…';
 export const STILL_SAVING = 'Still saving…';
-const IDLE = { key: '', rows: [], slow: false };
-let now = IDLE;
-const heard = new Set();
-const tell = (next) => { now = next; heard.forEach((f) => f()); };
-const listen = (f) => { heard.add(f); return () => heard.delete(f); };
-const read = () => now;
-
-export async function runWrite(key, fn, { rows = [], inside = false } = {}) {
-  if (now.key) return inside ? fn() : undefined;
-  const mine = String(key);
-  tell({ key: mine, rows: (rows || []).map(String), slow: false });
-  const timer = setTimeout(() => { if (now.key === mine) tell({ ...now, slow: true }); }, SLOW_MS);
-  try {
-    return await fn();
-  } finally {
-    clearTimeout(timer);
-    if (now.key === mine) tell(IDLE);
-  }
-}
 
 export function useWrite() {
   const state = useSyncExternalStore(listen, read, read);
