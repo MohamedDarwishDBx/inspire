@@ -36,7 +36,7 @@ PAGE = {
          "y": [{"expression": "SUM(value_at_stake)", "format": "currency", "currency": "USD"}]},
     ],
     "kpis": [
-        {"id": "exposure", "label": "Revenue at stake", "dataset": "rows", "expression": "SUM(value_at_stake)",
+        {"id": "exposure", "label": "Value at stake", "dataset": "rows", "expression": "SUM(value_at_stake)",
          "format": "currency", "currency": "USD", "good": "down"},
         {"id": "results", "label": "Results", "dataset": "rows", "expression": "COUNT(*)", "format": "integer", "good": "down"},
     ],
