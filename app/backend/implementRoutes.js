@@ -311,6 +311,16 @@ function registerImplementRoutes(app, deps) {
     return read && read.ok ? read.data : null;
   }
 
+  // The name the Genie regeneration job tags with: the user's name for the use case, else its own. Empty when unreadable, so no name is invented.
+  async function regenUseCaseName(req, warehouseId, catalog, schema, sid, useCaseId) {
+    try {
+      const row = await loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId);
+      return String((row && (row.user_use_case_name || row.use_case)) || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
   async function loadUseCase(host, token, warehouseId, catalog, schema, sid, useCaseId) {
     const table = `\`${catalog}\`.\`${schema}\`.\`__inspire_usecases\``;
     const rows = await sqlRows(host, token, warehouseId, I.useCaseRowStatement(table, sid, useCaseId));
@@ -579,6 +589,7 @@ function registerImplementRoutes(app, deps) {
           asker: req,
           jobName: genieNotebookJobName(sidStr),
           useCaseIds: safeIds,
+          useCaseName: safeIds.length === 1 ? await regenUseCaseName(req, warehouse_id, catalog, schema, sidStr, safeIds[0]) : '',
           launchedBy: (await personOf(req)).username,
         });
       } catch (launchErr) {
@@ -1610,6 +1621,8 @@ function registerImplementRoutes(app, deps) {
       createdBy,
       statusMessage: 'queued',
       changeClasses: plan.summary.classes,
+      useCaseName: spec.use_case_name,
+      warehouseId,
     });
     await executeSql(req.dbHost, req.dbToken, warehouseId, insert.sql, insert.parameters);
 

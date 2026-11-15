@@ -158,11 +158,16 @@ def app_query_tags(app_name) -> list:
 
 
 QUERY_USE_CASE = contextvars.ContextVar("inspire_query_use_case", default="")
+QUERY_USE_CASE_NAME = contextvars.ContextVar("inspire_query_use_case_name", default="")
+QUERY_USE_CASE_NAME_TAG = "dbx_inspire_ai_usecase_name"
 
 
-def use_case_query_tags(use_case_id) -> list:
+def use_case_query_tags(use_case_id, use_case_name_tag="") -> list:
+    """The use case id and its encoded name (written by the notebook on the page) as statement query tags."""
     value = " ".join(str(use_case_id or "").split())[:128]
-    return [{"key": "dbx_inspire_ai_usecase_id", "value": value}] if value else []
+    name = " ".join(str(use_case_name_tag or "").split())[:128]
+    tags = [{"key": "dbx_inspire_ai_usecase_id", "value": value}] if value else []
+    return tags + ([{"key": QUERY_USE_CASE_NAME_TAG, "value": name}] if value and name else [])
 
 
 def submit_in_request(pool, fn, *args):
@@ -227,7 +232,7 @@ class Workspace:
         body = {
             "statement": statement, "warehouse_id": warehouse_id, "parameters": parameters or [], "wait_timeout": "30s",
             "on_wait_timeout": "CONTINUE", "disposition": "INLINE", "format": "JSON_ARRAY", "row_limit": limit + 1}
-        tags = self.query_tags + use_case_query_tags(QUERY_USE_CASE.get())
+        tags = self.query_tags + use_case_query_tags(QUERY_USE_CASE.get(), QUERY_USE_CASE_NAME.get())
         if tags:
             body["query_tags"] = tags
         response = self.call("POST", "/api/2.0/sql/statements", body)

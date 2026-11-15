@@ -2222,6 +2222,7 @@ class Shell:
         request = REQUEST.get()
         if request is not None and request.get("use_case_scope"):
             shell_db.QUERY_USE_CASE.set(str(page.get("use_case_id") or ""))
+            shell_db.QUERY_USE_CASE_NAME.set(str(page.get("use_case_name_tag") or ""))
         return self.with_saved_money(page)
 
     def saved_money_page(self, page: dict, ws, who) -> dict:
@@ -2594,10 +2595,12 @@ class Shell:
         money = (method, path.strip("/")) in MONEY_ROUTES
         token = REQUEST.set({"headers": headers, "rules": {}, "money": money, "use_case_scope": True})
         use_case = shell_db.QUERY_USE_CASE.set("")
+        use_case_name = shell_db.QUERY_USE_CASE_NAME.set("")
         try:
             return self.answer_request(method, path, query, headers, body)
         finally:
             shell_db.QUERY_USE_CASE.reset(use_case)
+            shell_db.QUERY_USE_CASE_NAME.reset(use_case_name)
             REQUEST.reset(token)
 
     def answer_request(self, method: str, path: str, query: dict, headers: dict, body: bytes) -> tuple:

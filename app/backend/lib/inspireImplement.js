@@ -1,5 +1,5 @@
 const { appShellCatalog } = require('./appShell');
-const { IMPLEMENT_RUN_AS_PARAM, IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
+const { IMPLEMENT_RUN_AS_PARAM, IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, useCaseNameTag, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
 const { parseExactJson } = require('./exactJson');
 const { permissionRequired } = require('./permissions');
 const { moneyRuleProblems, moneyRuleClean } = require('./moneyRule');
@@ -152,6 +152,7 @@ const IMPLEMENT_COLUMNS = [
   ['suggested_schedule', 'VARIANT'], ['asset_status', 'VARIANT'], ['created_by', 'STRING'], ['created_at', 'TIMESTAMP'],
   ['updated_at', 'TIMESTAMP'], ['alert_id', 'STRING'], ['alert_url', 'STRING'], ['implement_run_id', 'BIGINT'],
   ['asset_snapshots', 'STRING'], ['ended_by', 'STRING'],
+  ['use_case_name_tag', 'STRING'], ['warehouse_id', 'STRING'],
 ];
 const IMPLEMENT_UNREAD_COLUMNS = ['asset_snapshots'];
 const IMPLEMENT_VARIANT_COLUMNS = IMPLEMENT_COLUMNS.filter(([, t]) => t === 'VARIANT').map(([n]) => n);
@@ -1644,13 +1645,15 @@ function isMissingColumnError(err) {
   return /UNRESOLVED_COLUMN|42703|FIELD_NOT_FOUND|cannot be resolved|cannot resolve/i.test(str(err && err.message ? err.message : err));
 }
 
-function implementInsertStatement(table, { sessionId, useCaseId, specVersion, basedOnVersion, spec, createdBy, statusMessage, changeClasses }) {
+function implementInsertStatement(table, { sessionId, useCaseId, specVersion, basedOnVersion, spec, createdBy, statusMessage, changeClasses, useCaseName = '', warehouseId = '' }) {
   const classes = Array.isArray(changeClasses) ? changeClasses.join(',') : str(changeClasses);
+  // The use case name tag and the warehouse the App queries through: the tracking row carries them so billing rows join on them.
+  const nameTag = useCaseNameTag(useCaseName);
   return {
     sql:
       `INSERT INTO ${table} (session_id, use_case_id, spec_version, based_on_version, spec_json, status, status_message, `
-      + 'change_classes, created_by, created_at, updated_at) VALUES (:sid, :uc, :v, :based, parse_json(:spec), \'queued\', :message, '
-      + ':classes, :by, current_timestamp(), current_timestamp())',
+      + 'change_classes, created_by, created_at, updated_at, use_case_name_tag, warehouse_id) VALUES (:sid, :uc, :v, :based, parse_json(:spec), \'queued\', :message, '
+      + ':classes, :by, current_timestamp(), current_timestamp(), :nametag, :warehouse)',
     parameters: [
       { name: 'sid', value: String(sessionId), type: 'BIGINT' },
       { name: 'uc', value: String(useCaseId), type: 'STRING' },
@@ -1660,6 +1663,8 @@ function implementInsertStatement(table, { sessionId, useCaseId, specVersion, ba
       { name: 'message', value: str(statusMessage).slice(0, 2000), type: 'STRING' },
       { name: 'classes', value: classes.slice(0, 500), type: 'STRING' },
       { name: 'by', value: str(createdBy).slice(0, 320), type: 'STRING' },
+      nameTag ? { name: 'nametag', value: nameTag, type: 'STRING' } : { name: 'nametag', type: 'STRING' },
+      str(warehouseId) ? { name: 'warehouse', value: str(warehouseId).slice(0, 64), type: 'STRING' } : { name: 'warehouse', type: 'STRING' },
     ],
   };
 }
