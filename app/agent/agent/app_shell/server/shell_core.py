@@ -522,7 +522,7 @@ def settings_problems(settings: dict, pages: list) -> list:
         problems += [f"the App lets people change data, but page {p.get('id')} names no result_table to change"
                      for p in pages if not p.get("result_table")]
     problems += genie_problems(settings, "the App's")
-    problems += [f"page {p.get('id')}: {problem}" for p in pages if "genie" in p for problem in genie_problems(p, "its")]
+    problems += [f"{page_label(p)}: {problem}" for p in pages if "genie" in p for problem in genie_problems(p, "its")]
     ids = [str(p.get("id") or "") for p in pages]
     if not pages:
         problems.append("the App has no pages")
@@ -568,7 +568,7 @@ def settings_problems(settings: dict, pages: list) -> list:
     if settings.get("backend") is not None:
         problems += shell_pg.backend_problems(settings["backend"], settings.get("auth"), pages)
     for page in pages:
-        problems += [f"page {page.get('id')}: {p}" for p in shell_sql.spec_problems(page)]
+        problems += [f"{page_label(page)}: {p}" for p in shell_sql.spec_problems(page)]
     return problems
 
 
@@ -4051,7 +4051,7 @@ class Shell:
         failed = lambda texts: found.extend((CHECK_FAILED, t) for t in texts)
         design = lambda texts: found.extend((CHECK_DESIGN, t) for t in texts)
         for page in self.pages:
-            where = f"page {page['id']}"  # internal check problem: keyed by id, the build shows it by title (REQ-237)
+            where = page_label(page)
             bounds, slicing, single = {}, 0, []
             probe = Probe(self.workspace(headers)[0], self.timer)
             meta = self.filters(headers, page["id"], probe)

@@ -1178,7 +1178,11 @@ def run_rows_source(source: str, date_column: str) -> str:
     return future_source(page, RUN_ROWS_DATASET, source)
 
 
-def page_label(page: dict) -> str:
-    # REQ-237: a person sees an App page by its title; the internal page id stays out of the copy.
-    name = " ".join(str(page.get("title") or "").split())
+def page_spot(title) -> str:
+    # REQ-237: the one wording for an App page in person copy: its title, never its internal id. A page with no title says so in plain words.
+    name = " ".join(str(title or "").split())
     return f"page {name}" if name else "the App page"
+
+
+def page_label(page: dict) -> str:
+    return page_spot((page or {}).get("title"))

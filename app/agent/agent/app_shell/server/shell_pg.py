@@ -355,9 +355,9 @@ def backend_problems(backend, auth: str, pages: list) -> list:
             names = {d.get("name") for d in page.get("datasets") or []}
             for dataset, view in (views.items() if isinstance(views, dict) else ()):
                 if dataset not in names:
-                    problems.append(f"the Lakebase backend names {what} {dataset} of page {page_id}, which the page does not have")
+                    problems.append(f"the Lakebase backend names {what} {dataset} of {shell_facts.page_label(page)}, which the page does not have")
                 elif uc_key(view) not in held:
-                    problems.append(f"page {page_id} {what} {dataset} reads {view}, which the Lakebase backend does not hold")
+                    problems.append(f"{shell_facts.page_label(page)} {what} {dataset} reads {view}, which the Lakebase backend does not hold")
     return problems
 
 

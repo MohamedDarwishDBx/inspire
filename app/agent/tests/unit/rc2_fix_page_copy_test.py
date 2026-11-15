@@ -26,11 +26,13 @@ def test_a_page_with_no_title_says_the_app_page_in_plain_words(agent_ns):
     assert where == "the App page, Show the total" and PAGE_ID not in where
 
 
-def test_the_check_problems_a_person_reads_name_the_page_by_title(agent_ns):
+def test_the_build_check_problems_name_the_page_by_title_and_match_it_by_title(agent_ns):
+    """ShellCore.check renders each App page by its title; the build's broken-page match reads the same title."""
     pages = [{"id": PAGE_ID, "title": TITLE}, {"id": "n07_u02", "title": "Stock on hand"}]
-    text = agent_ns["implement_plain_page_text"](f"page {PAGE_ID}: 3 charts are empty; page n07_u02: 1 filter is missing", pages)
-    assert text == f"page {TITLE}: 3 charts are empty; page Stock on hand: 1 filter is missing"
-    assert internal_hits(text) == []
+    problems = [f"{agent_ns['inspire_shell_facts'].page_label(pages[0])}: 3 charts are empty",
+                f"{agent_ns['inspire_shell_facts'].page_label(pages[1])}: 1 filter is missing"]
+    assert problems == [f"page {TITLE}: 3 charts are empty", "page Stock on hand: 1 filter is missing"]
+    assert internal_hits(" ".join(problems)) == [] and PAGE_ID not in " ".join(problems)
 
 
 def test_the_vibe_refusal_for_another_page_names_no_page_id(agent_ns):
@@ -40,8 +42,8 @@ def test_the_vibe_refusal_for_another_page_names_no_page_id(agent_ns):
 
 
 def test_the_page_spot_is_the_one_wording_for_an_app_page(agent_ns):
-    assert agent_ns["implement_page_spot"](TITLE) == f"page {TITLE}"
-    assert agent_ns["implement_page_spot"]("  ") == "the App page"
+    assert agent_ns["inspire_shell_facts"].page_spot(TITLE) == f"page {TITLE}"
+    assert agent_ns["inspire_shell_facts"].page_spot("  ") == "the App page"
 
 
 def test_the_shared_jargon_term_catches_a_literal_page_id_in_customer_copy():
@@ -61,12 +63,3 @@ def test_a_page_with_no_decision_list_is_described_by_its_title_and_never_its_id
     text = shell_core.informational_text(page)
     assert text.startswith(f"page {TITLE}"), text
     assert PAGE_ID not in text and internal_hits(text) == [], text
-
-
-def test_a_check_problem_keeps_its_id_for_matching_and_the_person_reads_the_title(agent_ns):
-    """The build matches a broken page by its id, so the check keeps 'page <id>' keys; only the person's copy renders the title."""
-    pages = [{"id": PAGE_ID, "title": TITLE}]
-    raw = f"page {PAGE_ID} dataset trend reads main.pricing_lb.not_synced; page {PAGE_ID}: 2 charts are empty"
-    assert agent_ns["implement_plain_page_text"](raw, pages) == (
-        f"page {TITLE} dataset trend reads main.pricing_lb.not_synced; page {TITLE}: 2 charts are empty")
-    assert agent_ns["implement_plain_page_text"](f"page {PAGE_ID}2 is not this page", pages) == f"page {PAGE_ID}2 is not this page"

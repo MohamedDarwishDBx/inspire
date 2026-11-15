@@ -231,8 +231,8 @@ def test_the_lakebase_backend_checks_each_previous_copy_and_a_write_never_holds_
     bad = _previous_backend()
     bad["previous"] = {"n01_u05": {"records": "main.pricing_lb.not_synced", "missing": PREVIOUS_VIEW}, "other_page": {}}
     assert shell_pg.backend_problems(bad, "sp", [PAGE]) == [
-        "page n01_u05 the previous run of dataset records reads main.pricing_lb.not_synced, which the Lakebase backend does not hold",
-        "the Lakebase backend names the previous run of dataset missing of page n01_u05, which the page does not have",
+        "page Price-loss decision desk the previous run of dataset records reads main.pricing_lb.not_synced, which the Lakebase backend does not hold",
+        "the Lakebase backend names the previous run of dataset missing of page Price-loss decision desk, which the page does not have",
         "the Lakebase backend names previous runs of datasets of page other_page, which the App does not have"]
     assert any("previous must be an object" in p for p in shell_pg.backend_problems(dict(_previous_backend(), previous=[]), "sp", [PAGE]))
     assert shell_pg.backend_problems(backend(True), "sp", [PAGE]) == [], "a page with no compared dataset needs no previous copy"
