@@ -241,6 +241,7 @@ def test_the_live_case_ends_the_version_with_vibe_not_done(agent_ns, tmp_path):
     inst._implement_app = _built("app", V2)
     _judge(inst, {VIBE: SPLIT}, [{"status": "done", "evidence": "Priority tier", "where": "filters"}])
     inst._implement_app_served = {"n01_u01": {"filters": {}, "columns": {"records": {}}}}  # the served App, read by its check (REQ-214)
+    inst._implement_app_pages = [V2]  # set with the served App by _implement_app_check: person copy names the page by its title (REQ-237)
     assert _run(inst, _vibed(previous, [PAGE], **{f"{PAGE}_vibes": VIBE})) == "ready_with_warnings", "missed asks never hold the version"
     final = inst.updates[-1]
     assert final["status_message"].startswith("v3 is published with 2 unmet asks (not met or could not be checked), the rest of the vibe is in place: App (page Costliest loss reasons and fixes"), \
