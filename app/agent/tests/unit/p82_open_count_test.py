@@ -171,3 +171,45 @@ def test_an_open_work_kpi_must_be_a_plain_row_count_of_the_result_table():
     page = dict(KPI_PAGE, kpis=[dict(KPI_PAGE["kpis"][0], expression="SUM(`value`)")])
     problems = shell_sql.spec_problems(page)
     assert any("is marked open_work" in p for p in problems), problems
+
+
+# ---- Round 3: the page spec defaults open-count KPIs to open_work, and the example pages mark theirs ----
+import json  # noqa: E402
+
+EXAMPLES = os.path.join(ROOT, "agent", "app_shell", "examples")
+NOTEBOOK = os.path.join(ROOT, "agent", "dbx_inspire_ai_agent.ipynb")
+
+
+def test_a_generated_open_count_kpi_carries_open_work_without_a_flag():
+    generated = dict(KPI_PAGE, kpis=[{"id": "open", "label": "Open claims", "dataset": "rows", "expression": "COUNT(*)"}])
+    assert shell_sql.kpi_open_work(generated, generated["kpis"][0]), "a plain count named open reads the open scope"
+    assert _kpi_value(_db(), generated) == _scope_row(_db())["open_"] == 3
+
+
+def test_a_total_sum_or_unnamed_count_is_never_inferred_as_open_work():
+    for label, expression in (("Items on the list", "COUNT(*)"), ("Open exposure", "SUM(value)"), ("Open ratio", "COUNT(*) / 2")):
+        page = dict(KPI_PAGE, kpis=[{"id": "k", "label": label, "dataset": "rows", "expression": expression}])
+        assert not shell_sql.kpi_open_work(page, page["kpis"][0]), (label, expression)
+
+
+def test_the_example_pages_mark_their_open_count_kpis_and_no_other_count_reads_open_work():
+    marked = {("monitor_triage", "open_n"), ("forecast_cockpit", "orders_open"), ("process_flow", "open")}
+    seen = set()
+    for name in sorted(os.listdir(EXAMPLES)):
+        if not name.endswith(".json"):
+            continue
+        with open(os.path.join(EXAMPLES, name), encoding="utf-8") as f:
+            page = json.load(f)
+        for kpi in page.get("kpis") or []:
+            if kpi.get("open_work") is True:
+                seen.add((name[:-5], kpi["id"]))
+                assert shell_sql.kpi_open_work(page, kpi), (name, kpi["id"])
+                assert shell_sql.kpi_counts_result_rows(page, kpi), (name, kpi["id"], "must count the result table")
+    assert seen == marked, seen
+
+
+def test_the_page_spec_prompt_tells_the_model_to_set_open_work_on_open_counts():
+    with open(NOTEBOOK, encoding="utf-8") as f:
+        text = f.read()
+    assert "- kpi open_work: true on each KPI that counts open work" in json.loads(text)["cells"][0]["source"][0] or \
+        any("- kpi open_work: true on each KPI that counts open work" in "".join(c.get("source", [])) for c in json.loads(text)["cells"])

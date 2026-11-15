@@ -56,7 +56,7 @@ test('a person who cannot grant sees one plain sentence naming the owner, the GR
     assert.match(text, /cannot grant|can grant it|data owner/i, 'one plain sentence names who can grant it');
     assert.ok(live.grants.every(([, token]) => token === PERSON), 'the refused grants ran with the person sign-in only');
     // REQ-131, REQ-260: the owner's commands open in Permission Required, not a clipboard copy
-    await card.locator('[data-app-reads-choice="copy"]').getByRole('button').click();
+    await card.locator('[data-app-reads-primary="copy"]').click();
     await page.locator('[data-permission-dialog] [data-permission-statements]').waitFor({ timeout: 15000 });
     assert.doesNotMatch(await card.innerText(), /GRANT /, 'the card never shows the commands');
     assert.deepEqual(ui.pageErrors, []);

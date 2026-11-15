@@ -939,9 +939,9 @@ def spec_problems(page: dict, stored=None) -> list:
         problems += shape
         if kpi.get("open_work") is not None and not isinstance(kpi.get("open_work"), bool):
             problems.append(f"{where} open_work must be true or false")
-        elif kpi.get("open_work") and not shape and not kpi_counts_result_rows(page, kpi):
+        elif kpi.get("open_work") and not shape and not (kpi_counts_result_rows(page, kpi) and keeps_record_key(page, kpi.get("dataset"))):
             problems.append(f"{where} is marked open_work, so it must be a plain count of the result table "
-                            f"(COUNT(*), COUNT(col) or COUNT(DISTINCT col)) over a dataset that reads it")
+                            f"(COUNT(*), COUNT(col) or COUNT(DISTINCT col)) over a dataset that reads it and keeps record_key")
         problems += _format_problems(where, kpi)
         if kpi.get("good", "neutral") not in GOODS:
             problems.append(f"{where} good must be up, down or neutral")
@@ -2813,6 +2813,25 @@ def kpi_counts_result_rows(page: dict, kpi: dict) -> bool:
     return table_name(page["result_table"]) in sql or page["result_table"] in sql
 
 
+OPEN_NAMES = re.compile(r"\b(open|waiting|to decide|need action|to fix|outstanding)\b", re.I)
+
+
+def keeps_record_key(page: dict, dataset: str) -> bool:
+    """True when the dataset carries record_key: named in its SQL, or passed through by SELECT * over a source."""
+    sql = _dataset_sql(page).get(dataset, "")
+    return "record_key" in sql or re.match(r"\s*SELECT\s+\*", sql, re.I) is not None
+
+
+def kpi_open_work(page: dict, kpi: dict) -> bool:
+    """Whether a KPI counts open work and so reads the one open-work scope. An explicit open_work flag decides. Without one, a plain
+    count of the decision records that names open work in its id or label does (the page-spec default)."""
+    if isinstance(kpi.get("open_work"), bool):
+        return kpi["open_work"]
+    if kpi.get("open_work") is not None or not OPEN_NAMES.search(f"{kpi.get('id') or ''} {kpi.get('label') or ''}"):
+        return False
+    return kpi_counts_result_rows(page, kpi) and keeps_record_key(page, kpi.get("dataset"))
+
+
 def scope_counts_text(rows) -> str:
     row = (rows or [{}])[0]
     open_, held, closed, unchecked, snoozed = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked", "snoozed_"))
@@ -2962,6 +2981,15 @@ def money_label_problems(page: dict) -> list:
         if "value_at_stake" in reads and "value at stake" not in label.lower():
             problems.append(f"the {label or 'unnamed'} card reads value_at_stake, so its label must be the money rule's 'Value at stake', "
                             f"not {label!r}")
+    for chart in page.get("charts") or []:
+        for series in chart.get("y") or []:
+            if not isinstance(series, dict) or series.get("format") != "currency" or not series.get("label"):
+                continue
+            reads = f"{sqls.get(chart.get('dataset'), '')} {series.get('expression') or ''}".lower()
+            label = " ".join(str(series.get("label")).split())
+            if "value_at_stake" in reads and "value at stake" not in label.lower():
+                problems.append(f"the {label} series of the {chart.get('id') or 'unnamed'} chart reads value_at_stake, so its label must be "
+                                f"the money rule's 'Value at stake', not {label!r}")
     return problems
 
 
@@ -3077,8 +3105,9 @@ def kpi_query(page: dict, ident: str, values: dict, previous: str = None, names=
     money = kpi.get("format") == "currency"
     dataset = _dataset(page, kpi["dataset"])
     sql, params = (money_source(page, kpi["dataset"], dataset) if money else future_source(page, kpi["dataset"], dataset)), _Params()
-    if kpi.get("open_work"):  # a count of open work reads the one open-work scope, never the raw rows
-        sql = f"SELECT * FROM ({sql}) AS o WHERE {shell_facts.open_work_sql(names or RESULT_COLUMNS, 'current_date')}"
+    if kpi_open_work(page, kpi):  # a count of open work keeps the rows whose record is open in the result table, never raw rows
+        open_records = f"SELECT `record_key` FROM {table_name(page['result_table'])} WHERE {shell_facts.open_work_sql(names or RESULT_COLUMNS, 'current_date')}"
+        sql = f"SELECT * FROM ({sql}) AS o WHERE o.`record_key` IN ({open_records})"
     expression = money_expression(page, kpi["dataset"], kpi["expression"]) if money else kpi["expression"]
     where = _where(page, kpi["dataset"], values, params)
     by = money_currency_column(page, kpi)
@@ -3125,22 +3154,40 @@ def kpi_rows_query(page: dict, ident: str, values: dict) -> tuple:
     return f"SELECT COUNT(*) AS n FROM ({sql}) AS d{where} LIMIT 1", params.items
 
 
-def kpi_empty_text(page: dict, through: str = "") -> dict:
+def zero_run_checked(summary) -> int | None:
+    """REQ-297: the records the latest run checked when it found nothing to act on (no Act now and no Review record), else None: no
+    summary, a count that is missing, a flagged record, or a run that checked no record."""
+    if not summary:
+        return None
+    flagged = [as_number(summary.get("act_now_records")), as_number(summary.get("review_records"))]
+    records = as_number(summary.get("records"))
+    if None in flagged or records is None or sum(flagged) or records < 1:
+        return None
+    return int(records)
+
+
+def kpi_empty_text(page: dict, through: str = "", checked=None) -> dict:
     """Why a KPI with no rows behind it has no number, in plain words, in every App language: {language code: text}. The words are the
-    tour registry's per-language `reasons` in kinds.json. On a forecast page the reason is the forecast's start."""
-    if plan_contract(page) == "forecast":
+    tour registry's per-language `reasons` in kinds.json. On a forecast page the reason is the forecast's start. When the latest run checked
+    records and found nothing (checked, REQ-297), the reason says what the run did."""
+    if checked is not None:
+        key, through = "run_found_nothing", shown_number(checked)
+    elif plan_contract(page) == "forecast":
         key = "forecast_not_yet" if through else "forecast_no_date"
     else:
         key = "no_rows_dated" if through else "no_rows"
     languages = (kinds_registry().get("tour") or {}).get("languages") or {}
-    return {str(lang.get("code")): str(lang["reasons"][key]).replace("{through}", through)
+    return {str(lang.get("code")): str(lang["reasons"][key]).replace("{through}", through).replace("{checked}", through)
             for lang in languages.values() if isinstance(lang, dict) and isinstance(lang.get("reasons"), dict) and key in lang["reasons"]}
 
 
-def kpi_missing(page: dict, shown: dict, rows: int, through: str = "") -> dict:
-    """A zero or missing KPI value with no rows behind it shows no number and says why. A zero with rows behind it is a measured zero."""
+def kpi_missing(page: dict, shown: dict, rows: int, through: str = "", checked=None) -> dict:
+    """A zero or missing KPI value with no rows behind it says why. REQ-297: when the latest run checked records and found nothing to act
+    on, the KPI is a measured zero with that reason, never a blank number. Otherwise a zero with no rows behind it shows no number."""
     if not kpi_needs_rows_check(shown) or rows:
         return shown
+    if checked is not None:
+        return dict(shown, now=0, empty=kpi_empty_text(page, checked=checked))
     return dict(shown, now=None, empty=kpi_empty_text(page, through))
 
 def split_filters(page: dict, dataset: str) -> list:
@@ -7242,7 +7289,67 @@ def part_table_problems(page: dict, section: str) -> list:
                             f"add {', '.join(gone)}")
         if page.get("result_table") and not reads_table(sqls.get(table.get("dataset")), companion):
             problems.append(f"table {table.get('id')} in {section} reads {companion}; point its dataset at that table")
+        produced = projected_columns(sqls.get(table.get("dataset")))
+        lost = [c for c in PART_COLUMNS[section] if produced is not None and c not in produced]
+        if lost:
+            problems.append(f"table {table.get('id')} in {section} shows {', '.join(lost)}, which its dataset {table.get('dataset')} does not "
+                            f"select; select {', '.join(lost)} from {companion} under those names, or alias the column to that name")
     return problems
+
+
+_SELECT_LIST_END = re.compile(r"\bFROM\b", re.I)
+
+
+def _top_level_items(text: str) -> list:
+    """The comma-separated items of a select list, with commas inside parentheses, quotes and backticks kept whole."""
+    items, depth, quote, start = [], 0, "", 0
+    for i, ch in enumerate(text):
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"`":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            items.append(text[start:i])
+            start = i + 1
+    items.append(text[start:])
+    return [item.strip() for item in items if item.strip()]
+
+
+def projected_columns(sql):
+    """The names the top-level select list of one dataset returns, lower-cased: each item's alias, else its last identifier. None when the
+    names cannot be read (a star, a union, a WITH clause, or no plain SELECT ... FROM), so a check never flags what it cannot see."""
+    text = clean_sql(sql)
+    if not re.match(r"SELECT\b", text, re.I) or re.search(r"\bUNION\b", text, re.I):
+        return None
+    body = text[len("SELECT"):]
+    end = None
+    depth = 0
+    for match in re.finditer(r"[()]|\bFROM\b", body, re.I):
+        if match.group(0) == "(":
+            depth += 1
+        elif match.group(0) == ")":
+            depth -= 1
+        elif depth == 0:
+            end = match.start()
+            break
+    select_list = body[:end] if end is not None else body
+    select_list = re.sub(r"^\s*(DISTINCT\s+)?", "", select_list, flags=re.I)
+    names = set()
+    for item in _top_level_items(select_list):
+        if item == "*" or item.endswith(".*"):
+            return None
+        alias = re.search(r"\bAS\s+`?([A-Za-z_][A-Za-z0-9_]*)`?\s*$", item, re.I)
+        if alias:
+            names.add(alias.group(1).lower())
+            continue
+        last = re.search(r"(?:^|[\s.])`?([A-Za-z_][A-Za-z0-9_]*)`?\s*$", item)
+        if last and not re.search(r"[()]\s*$", item):
+            names.add(last.group(1).lower())
+    return names
 
 
 def segments_problems(page: dict) -> list:

@@ -220,17 +220,42 @@ export function buildSummary(items) {
       return { id: output.id, count, text: `${count} ${DELIVERED_WORDS[output.id][count === 1 ? 0 : 1]}` };
     })
     .filter((entry) => entry.count > 0);
+  const held = inGroup('held');
+  const unmet = inGroup('unmet');
+  const untrusted = held.filter((item) => item.state.hold === 'untrusted');
+  const appOf = (item) => deliveredOutputs(item.latest).includes('app');
   return {
     mvps: mvps.length,
     building: inGroup('in_progress'),
     ready: inGroup('ready').length,
-    held: inGroup('held').length,
-    unmet: inGroup('unmet').length,
+    held: held.length,
+    vibeHeld: held.filter((item) => item.state.hold === 'vibe').length,
+    untrusted: untrusted.length,
+    untrustedPublished: untrusted.filter(appOf).length,
+    heldOther: held.filter((item) => item.state.hold === 'other').length,
+    unmet: unmet.length,
+    unmetPublished: unmet.filter(appOf).length,
     failed: inGroup('failed').length,
     notebooks: list.filter((item) => item.state?.kind === 'notebook' && item.notebook?.state === 'ready').length,
     notStarted: list.filter((item) => item.state?.group === 'not_started').length,
     delivered,
   };
+}
+
+// REQ-295: the Build header lines, read from the same summary counts as its chips. A published App is never "not published".
+export function buildSummaryLines(summary) {
+  const publishedUntrusted = summary.untrustedPublished;
+  const unpublishedUntrusted = summary.untrusted - summary.untrustedPublished;
+  const unmetBuilt = summary.unmet - summary.unmetPublished;
+  return [
+    summary.failed ? `${summary.failed} failed or stopped. Open one to see why.` : '',
+    summary.vibeHeld ? `${summary.vibeHeld} not published, because a vibe was not met. Open one to rephrase, try again or publish anyway.` : '',
+    publishedUntrusted ? `${publishedUntrusted} published, with results not trusted yet. Open one to see why.` : '',
+    unpublishedUntrusted ? `${unpublishedUntrusted} not published until a run passes, because its results are not trusted yet. Open one to see why.` : '',
+    summary.unmetPublished ? `${summary.unmetPublished} published, with a vibe ask not met. Open one to see why.` : '',
+    unmetBuilt ? `${unmetBuilt} built, with a vibe ask not met. Open one to see why.` : '',
+    summary.heldOther ? `${summary.heldOther} incomplete. Open one to see why.` : '',
+  ].filter(Boolean);
 }
 
 const STAGE_PENDING = ['running', 'next', 'waiting'];

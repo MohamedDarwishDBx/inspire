@@ -3,7 +3,7 @@ import { draftOf, ruleOf, ruleSentence } from '../../../agent/agent/app_shell/we
 import '../../../agent/agent/app_shell/web/src/styles/moneyRule.css';
 import { compileExpression } from '../../../agent/agent/app_shell/web/src/moneyValue.js';
 import { moneyPartsOf } from '../lib/moneyParts.js';
-import { ALL_PERIODS, MONEY_CURRENCY_CHOICES, WINDOW_CHOICES, valueTextOf } from '../lib/moneyDefaults.js';
+import { ALL_PERIODS, DEFAULT_CURRENCY, MONEY_CURRENCY_CHOICES, WINDOW_CHOICES, valueTextOf } from '../lib/moneyDefaults.js';
 import AVERAGES from '../../../backend/lib/fxAverages.json';
 import { PlainMessage } from './TechnicalDetails.jsx';
 
@@ -102,8 +102,9 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
   const [proposalRows, setProposalRows] = useState(null);
   const hasCurrencyColumn = Boolean(sample?.currency);
   const effective = effectiveOf(pick);
-  // The currency the rates are read for: the table's currency column, or else the one code the value is written in (REQ-103).
-  const rateKey = hasCurrencyColumn ? sample.currency : (valueOf(effective).value?.currency || '');
+  // The currency the rates are read for: the table's currency column, else the code the value is written in (REQ-103). A value the rule
+  // computes names no code here, so its amounts are taken in the wizard's default currency, as the rest of Measure already says.
+  const rateKey = hasCurrencyColumn ? sample.currency : (valueOf(effective).value?.currency || DEFAULT_CURRENCY);
 
   const save = (nextDraft, nextPick) => {
     if (nextDraft.off) {

@@ -3936,7 +3936,17 @@ function implementJobName(useCaseId, useCaseName, specVersion) {
   return ['Inspire AI - MVP', [String(useCaseId ?? '').trim(), name].filter(Boolean).join(' '), `v${Number(specVersion) || 1}`].filter(Boolean).join(' - ');
 }
 
+// WH (rc7 Build): a group reads as "People in <group> open the App ...", one person as their own name. A principal with an "@" is a person.
+function opensAppSentence(principal, appName = '') {
+  const p = str(principal).trim();
+  const app = appName ? ` ${appName}` : '';
+  return /@/.test(p)
+    ? `${p} opens the App${app} and reads its data with their own access, so they need these grants.`
+    : `People in ${p} open the App${app} and read its data with their own access, so they need these grants.`;
+}
+
 module.exports = {
+  opensAppSentence,
   tableTypeStatement,
   implementJobName,
   IMPLEMENT_RUN_STARTED_MESSAGE,

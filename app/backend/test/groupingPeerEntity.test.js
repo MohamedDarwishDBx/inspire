@@ -30,3 +30,16 @@ test('another family keeps recommending the subject-named column (must-exclude)'
   const d = GP.profileView(franchises('Anomaly Detection'));
   assert.ok(d.recommended.includes('franchiseID'), `recommended ${JSON.stringify(d.recommended)}`);
 });
+
+test('the wizard does not list a peer comparison\'s entity key as a grouping choice, and names it instead (REQ-293)', () => {
+  const d = GP.profileView(franchises('Peer Benchmarking'));
+  assert.ok(!d.columns.some((c) => c.name === 'franchiseID'), `choices ${JSON.stringify(d.columns.map((c) => c.name))}`);
+  assert.deepEqual(d.peer_entity, ['franchiseID']);
+  assert.ok(d.columns.some((c) => c.name === 'region'), 'the other columns stay choosable');
+});
+
+test('another family still lists the subject-named column as a choice (must-exclude)', () => {
+  const d = GP.profileView(franchises('Anomaly Detection'));
+  assert.ok(d.columns.some((c) => c.name === 'franchiseID'), `choices ${JSON.stringify(d.columns.map((c) => c.name))}`);
+  assert.deepEqual(d.peer_entity, []);
+});

@@ -222,6 +222,31 @@ test('Build Now refuses a blocking preflight check plainly in the sibling row an
   }
 });
 
+test('a closed Permission Required dialog stays closed when the next check runs again (REQ-217, REQ-220)', async () => {
+  const log = newLog();
+  const grant = { statements: ['GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `builder@x`'], instructions: [], principal: 'builder@x', why: 'Inspire needs it.' };
+  const ui = await openUi('app', STATE, '', { mount: (app) => mountBuilds(app, log, { preflight: { checks: { app_name: { ok: false, detail: APP_NAME_TAKEN, permission: grant } } } }) });
+  const { page } = ui;
+  try {
+    await go(page, '#/build/42/N01-U01');
+    await page.locator('[data-build-next-step]').waitFor({ timeout: 20000 });
+    await closeDrawer(page);
+    await buildNowOf(page, 'N01-U02').click();
+    const dialog = page.locator('[data-permission-dialog=""]');
+    await dialog.waitFor({ timeout: 15000 });
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached', timeout: 5000 });
+    // the next check runs (a poll or a re-render calls the same raise again): the dialog must not come back
+    await buildNowOf(page, 'N01-U02').click();
+    await sibling(page, 'N01-U02').getByText(/could not start the build/).waitFor({ timeout: 20000 });
+    await page.waitForTimeout(800);
+    assert.equal(await page.locator('[data-permission-dialog=""]').count(), 0, 'closed stays closed for the same grant list (must-exclude)');
+    assert.equal(log.submits.length, 0);
+  } finally {
+    await ui.close();
+  }
+});
+
 test('Build Now names the sibling App with the business prefix the wizard uses', async () => {
   const log = newLog();
   const ui = await openUi('app', STATE, '', { mount: (app) => mountBuilds(app, log) });

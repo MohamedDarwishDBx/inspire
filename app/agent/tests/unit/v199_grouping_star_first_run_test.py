@@ -323,9 +323,10 @@ def test_with_no_column_to_group_by_the_first_run_takes_the_first_records_with_a
 
 def test_with_no_group_of_30_records_the_whole_groups_fall_back_to_the_first_records_with_a_note(fresh_ns):
     chosen = fresh_ns["inspire_scope_choice"](scope=_scope(run_scope="records"))
-    resolved = fresh_ns["inspire_scope_resolve"](FakeSpark(responder=lambda s: []), chosen)
+    # D-AUTO round 2 (P88): a records choice counts its table at resolve time, so the resolved choice carries the table's real count
+    resolved = fresh_ns["inspire_scope_resolve"](FakeSpark(responder=lambda s: [{"n": 718931}] if s.startswith("SELECT COUNT(*)") else []), chosen)
     assert resolved == {"scope": "records", "table": "main.sales.orders", "records": 1000, "key": "order_id", "cut": "Anomaly Detection",
-                        "cut_column": "region"}
+                        "cut_column": "region", "available": 718931}
     assert "has no group of region with 30 records or more, so a group may be cut" in fresh_ns["inspire_scope_text"](resolved)
 
 

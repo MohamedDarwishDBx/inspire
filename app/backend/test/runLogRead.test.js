@@ -60,3 +60,14 @@ test('a session id that is not a number is refused before any read', async () =>
   assert.ok([400, 403].includes(got.status), got.text);
   assert.equal(S.state.calls.filter((c) => /business_name FROM/.test(c.statement)).length, 0);
 });
+
+test('a build-stage log is read by its implement run id through the same access rule, and a bad run id is refused', async () => {
+  const BUILD = '/Volumes/main/inspire/vol_root/logs/Acme_Bank/session_1001/log_implement_111122223333444.log';
+  S.reset({ sessionLaunchers: { 1001: ME }, sessionBusiness: { 1001: 'Acme Bank' }, files: { [BUILD]: 'build line\n', [LOG]: 'live\n' } });
+  const got = await S.request('GET', `${path()}&run_id=111122223333444`, { person: ME });
+  assert.equal(got.status, 200, got.text);
+  assert.equal(got.data.log_path, BUILD);
+  assert.equal(got.data.text, 'build line\n');
+  const bad = await S.request('GET', `${path()}&run_id=../x`, { person: ME });
+  assert.equal(bad.status, 400);
+});

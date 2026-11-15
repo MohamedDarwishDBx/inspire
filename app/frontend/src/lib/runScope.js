@@ -391,6 +391,18 @@ export function groupingLead(profile, choices = groupingChoices(profile), groupB
   return { label: lead.label, groups: groupingCount(lead, profile) ?? (isMap(read) ? groupingCount(lead, read) : null) };
 }
 
+export function groupingOneValueColumns(picked, profile) {
+  const shown = Array.isArray(profile?.columns) ? profile.columns.filter(isMap) : [];
+  const columns = Array.isArray(picked?.columns) ? picked.columns : [];
+  return columns.filter((name) => finite(shown.find((c) => text(c.name).toLowerCase() === String(name).toLowerCase())?.distinct) === 1);
+}
+
+export function groupingOneValueText(picked, profile) {
+  const held = groupingOneValueColumns(picked, profile);
+  if (!held.length) return '';
+  return `${held.map((name) => `${name} has one value in this data, so it makes one group`).join('. ')}. Pick ${GROUPING_GLOBAL_LABEL} or another column.`;
+}
+
 export function groupingOverLimitText(lead, profile) {
   const max = finite(profile?.group_max);
   if (!lead || lead.groups == null || max == null || lead.groups <= max) return '';

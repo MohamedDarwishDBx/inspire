@@ -248,7 +248,7 @@ export default function Page({ app, page, meta, state, onState, look = EMPTY_LOO
       columnMeta={meta?.columns?.list} columnValues={columnValuesIn(state, null, aliases)}
       onColumn={(column, value) => onState(setColumnValueIn(state, null, column, value, aliases))} onClearColumns={() => onState(clearColumnValuesIn(state, null, aliases))}
       onClearFilters={() => onState(clearColumnValues({ ...clearSelections(state), ai: {} }, null))} seeChanged={seeChanged} onShowRuns={showRuns}
-      onOpen={setOpened} {...extra} /></Suspense>
+      onOpen={setOpened} runChecked={data?.zero_state?.rows_checked ?? null} {...extra} /></Suspense>
   ) : null);
   const hubCharts = (bars) => chartCards(trendChart ? [trendChart] : [], [{ key: 'by_reason', item: { id: 'by_reason' }, span: 1, node: bars }], true);
   const review = reviewItem(page, app);

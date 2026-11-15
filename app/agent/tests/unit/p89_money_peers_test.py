@@ -99,3 +99,50 @@ def test_a_currency_card_that_does_not_read_the_value_at_stake_keeps_its_own_lab
     revenue = dict(_page("Peer revenue gap", sql="SELECT revenue_gap, region FROM sales_rows"))
     revenue["kpis"] = [dict(revenue["kpis"][0], expression="SUM(revenue_gap)")]
     assert not any("value at stake" in p.lower() for p in shell_sql.money_page_problems(revenue)), "only the stake card is named by the money rule"
+
+
+def _discovery_profiles(region_groups=1):
+    """A main table of 48 franchises (67 records each) and a region column, as the discovery profile reads them."""
+    return {"main.sales.franchise_sales": {"rows": 3216, "columns": {
+        ENTITY: {"type_family": "string", "distinct": 48, "null_share": 0.0,
+                 "top_values": [{"value": f"3000{i:03d}", "share": 1 / 48} for i in range(48)]},
+        "region": {"type_family": "string", "distinct": region_groups, "null_share": 0.0,
+                   "top_values": [{"value": "east", "share": 1.0}]}}}}
+
+
+def test_the_discovery_profile_never_suggests_the_entity_key_for_a_peer_comparison(agent_ns):
+    found = agent_ns["deep_grouping_suggestion"](PEER, "main.sales.franchise_sales", _discovery_profiles(), (), None, (), (), None,
+                                                 PEER_KIND, entity_key=ENTITY)
+    assert not found or ENTITY not in found.get("group_by", []), found
+
+
+def test_the_discovery_profile_still_suggests_the_entity_key_for_another_family_must_exclude(agent_ns):
+    found = agent_ns["deep_grouping_suggestion"]("Anomaly Detection", "main.sales.franchise_sales", _discovery_profiles(), (), None, (),
+                                                 (), None, "anomaly", entity_key=ENTITY)
+    assert found and ENTITY in found.get("group_by", []), found
+
+
+def test_a_chart_series_that_reads_the_value_at_stake_must_carry_the_money_rule_label(agent_ns):
+    page = dict(_page("Value at stake"), kpis=[], charts=[{"id": "trend", "dataset": "rows", "type": "line",
+                                                           "y": [{"label": "Peer revenue gap", "expression": "SUM(value_at_stake)",
+                                                                  "format": "currency", "currency": "USD"}]}])
+    problems = shell_sql.money_page_problems(page)
+    assert any("Peer revenue gap" in p and "Value at stake" in p and "trend" in p for p in problems), problems
+
+
+def test_a_chart_series_with_the_money_rule_label_or_no_label_passes(agent_ns):
+    named = dict(_page("Value at stake"), kpis=[], charts=[{"id": "trend", "dataset": "rows", "type": "line",
+                                                            "y": [{"label": "Value at stake", "expression": "SUM(value_at_stake)",
+                                                                   "format": "currency", "currency": "USD"}]}])
+    unlabelled = dict(named, charts=[{"id": "trend", "dataset": "rows", "type": "line",
+                                      "y": [{"expression": "SUM(value_at_stake)", "format": "currency", "currency": "USD"}]}])
+    assert shell_sql.money_page_problems(named) == []
+    assert shell_sql.money_page_problems(unlabelled) == []
+
+
+def test_a_chart_series_that_reads_no_stake_keeps_its_own_label_must_exclude(agent_ns):
+    page = dict(_page("Value at stake"), kpis=[], charts=[{"id": "rev", "dataset": "rows", "type": "line",
+                                                           "y": [{"label": "Revenue", "expression": "SUM(revenue_gap)",
+                                                                  "format": "currency", "currency": "USD"}]}])
+    page["datasets"] = [{"name": "rows", "sql": "SELECT revenue_gap, region FROM sales_rows"}]
+    assert not any("value at stake" in p.lower() for p in shell_sql.money_page_problems(page))

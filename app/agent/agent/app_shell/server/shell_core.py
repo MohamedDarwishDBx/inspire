@@ -37,7 +37,7 @@ USER_OFF = ("alerts",)
 OFF_WHEN_UNSET = ("alerts",)
 USER_OFF_PROBLEMS = {"alerts": "an App where each viewer sees only their own data cannot send alerts"}
 TOUR = "tour"
-DEFAULT_RANGE = "default_range"
+DEFAULT_RANGE = shell_facts.DEFAULT_RANGE
 TOUR_KPI = "kpi"
 TOUR_FALLBACK = "English"
 TOUR_PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
@@ -2977,14 +2977,16 @@ class Shell:
         for kpi in page.get("kpis") or []:
             if basis and kpi.get("format") == "currency":
                 out["kpis"].setdefault(kpi["id"], {})["basis"] = basis
-        through = None
+        through, checked = None, False
         for kpi in page.get("kpis") or []:
             shown = out["kpis"].get(kpi["id"])
             if ("kpi", kpi["id"]) in errors or not shell_sql.kpi_needs_rows_check(shown):
                 continue
             through = self.data_through_date(ws, who, page) if through is None else through
+            # REQ-297: a run that checked records and wrote no result row says so; read the run summary once, only when a KPI needs it
+            checked = shell_sql.zero_run_checked(self.run_summary(ws, who, page)) if checked is False else checked
             seen = self.run(ws, who, *shell_sql.kpi_rows_query(page, kpi["id"], values or {}), 1)["rows"]
-            out["kpis"][kpi["id"]] = shell_sql.kpi_missing(page, shown, int((seen or [{}])[0].get("n") or 0), through)
+            out["kpis"][kpi["id"]] = shell_sql.kpi_missing(page, shown, int((seen or [{}])[0].get("n") or 0), through, checked)
         if counts is not None:
             line = {"text": shell_sql.scope_counts_text(counts["rows"])}
             for kpi in page.get("kpis") or []:
@@ -3954,17 +3956,22 @@ class Shell:
                              f"table's key for one record, in the {shell_sql.RECORDS_DATASET} dataset"))
         return problems
 
-    def flagged_records(self, ws, who, page: dict):
-        """The run's own count of the records its rule flagged (Act now plus Review) across the whole scope, read from the run summary
-        row the App already writes (summary_query). None when the page has no result table, no run has written a summary, or the
-        counts are missing, so the caller falls back to the chart measures."""
+    def run_summary(self, ws, who, page: dict):
+        """The latest run summary row the App already writes (summary_query), or None when the page has no result table or no run has
+        written one. The one reader of the summary: the flagged count and the zero-result reason (REQ-297) both read it."""
         if not page.get("result_table"):
             return None
         sql, params = shell_sql.summary_query(page)
         try:
-            row = (self.run(ws, who, sql, params, 1).get("rows") or [None])[0]
+            return (self.run(ws, who, sql, params, 1).get("rows") or [None])[0]
         except (HttpError, QueryError, ValueError):
             return None
+
+    def flagged_records(self, ws, who, page: dict):
+        """The run's own count of the records its rule flagged (Act now plus Review) across the whole scope, read from the run summary
+        row the App already writes (summary_query). None when the page has no result table, no run has written a summary, or the
+        counts are missing, so the caller falls back to the chart measures."""
+        row = self.run_summary(ws, who, page)
         if not row:
             return None
         flagged = [count_of(row.get("act_now_records")), count_of(row.get("review_records"))]

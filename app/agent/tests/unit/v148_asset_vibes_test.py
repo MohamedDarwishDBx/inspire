@@ -651,3 +651,22 @@ def test_every_person_facing_label_names_a_part_by_title_or_kind_and_never_by_it
     assert any("Churn desk" in str(v) for v in rendered["warnings"] + rendered["where"] + rendered["heading"])
     # The Genie-facing form keeps the ids, by design (titles=None is the machine path).
     assert "by_region" in agent_ns["implement_vibes_missed_text"]({chart: [{"ask": "Show it", "evidence": "no bar"}]}, None)
+
+
+def test_the_fill_preview_and_vibes_hold_sites_read_the_part_titles_the_build_carries_on_the_use_case():
+    # §3e sweep (round 5/6): the two person-facing sites that had no title in scope read the titles _implement_one_locked carries on the
+    # use case (the stubbed signatures keep their arity). Source-level, because both run inside the live build.
+    import ast
+    import json
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "agent", "dbx_inspire_ai_agent.ipynb")
+    with open(path, encoding="utf-8") as handle:
+        text = "".join("".join(c["source"]) for c in json.load(handle)["cells"] if c["cell_type"] == "code")
+    functions = {n.name: n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef)}
+    fill, hold, one = functions["_implement_fill_and_preview"], functions["_implement_vibes_hold"], functions["_implement_one_locked"]
+    assert "titles" not in [a.arg for a in fill.args.args] and "titles" not in [a.arg for a in hold.args.args]
+    assert 'use_case.get("_implement_titles") or {}' in ast.unparse(fill).replace("'", '"')
+    assert 'use_case.get("_implement_titles") or {}' in ast.unparse(hold).replace("'", '"')
+    caller = ast.unparse(one).replace("'", '"')
+    assert 'use_case["_implement_titles"] = implement_asset_titles(asset_status)' in caller
+    assert 'use_case["_implement_titles"] = implement_asset_titles(asset_status)' in caller and caller.index(
+        'use_case["_implement_titles"]') < caller.index("self._implement_vibes_hold(")
