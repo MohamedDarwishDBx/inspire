@@ -3126,8 +3126,12 @@ def _access_spark(rows=INSPIRE_OWNS, fail=None, present=()):
     return FakeSpark(responder=respond)
 
 
+# The signed-in builder's name is read before the builder grants its own objects (1d39777f7, AUTO-1/2/3): a read, never a grant.
+BUILDER_NAME_READ = "SELECT current_user() AS me"
+
+
 def _not_access_reads(statements):
-    return [s for s in statements if not s.startswith(("SELECT level, privilege, principal", SHARED_EXISTS, SHARED_READS))]
+    return [s for s in statements if not s.startswith(("SELECT level, privilege, principal", SHARED_EXISTS, SHARED_READS, BUILDER_NAME_READ))]
 
 
 FEEDBACK_SQL = "`main`.`inspire`.`churn_out_feedback`"

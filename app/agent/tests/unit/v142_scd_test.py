@@ -756,6 +756,8 @@ FACTS_PLAIN = {"names", "tier", "scope", "version", "previous", "label", "histor
                "inspire_shell_facts", "floored", "int", "str", "table", "inspire_acted_table", "inspire_closed_table", "inspire_changes_table",
                "inspire_closes_table", "order", "row"}
 HISTORY_COUNTED = "{inspire_table_name(read_table)}"
+# REQ-292 round 2 (D-AUTO): a records First run counts its source under the Table Scope at resolve time, so the one COUNT on the scoped source is allowed.
+HISTORY_SCOPED_COUNT = "{inspire_scoped_from(chosen['table'])}"
 # REQ-022 L1: the scoped source of the First run and run-time reads is read through inspire_scoped_from (the Table Scope), not the bare table.
 HISTORY_SCOPED = "{inspire_scoped_from(source_table)}"
 HISTORY_SCOPED_READS = ("SELECT CAST(", "WITH dated AS (SELECT CAST(")
@@ -804,6 +806,7 @@ def _history_problems(history):
                  if line in grant_lines and not sql.startswith(SHARE_GRANT[2])]
     problems += [f"{kind} {target}" for _, kind, target, sql in bad if target not in HISTORY_OBJECTS
                  and not (kind == "read" and target == HISTORY_COUNTED and sql.startswith(f"SELECT COUNT(*) AS n FROM {HISTORY_COUNTED}"))
+                 and not (kind == "read" and target == HISTORY_SCOPED_COUNT and sql.startswith(f"SELECT COUNT(*) AS n FROM {HISTORY_SCOPED_COUNT}"))
                  and not (kind == "read" and target == HISTORY_SCOPED and sql.startswith(HISTORY_SCOPED_READS))
                  and not (kind == "read" and target == HISTORY_DATED and sql.startswith(HISTORY_DATED_READS))
                  and not (kind == "read" and target == HISTORY_JOINED and sql.startswith(HISTORY_JOINED_READS))]
