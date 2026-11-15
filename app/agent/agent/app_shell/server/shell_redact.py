@@ -29,6 +29,8 @@ _REDACT_DENIAL_RE = _redact_re.compile(
 
 
 INSPIRE_REDACTED_VALUE = "a data value"
+INSPIRE_REDACTED_PATTERN = _redact_re.compile(_redact_re.escape(INSPIRE_REDACTED_VALUE))
+implement_is_redacted = INSPIRE_REDACTED_PATTERN.search
 _REDACT_SINGLE_QUOTED_RE = _redact_re.compile(r"(?<!\w)'((?:[^'\\\n]|\\.|(?<=\w)'(?=\w)){0,400})'(?!\w)")
 _REDACT_DOUBLE_QUOTED_RE = _redact_re.compile(r"(?<!\w)\"([^\"\n]{0,400})\"(?!\w)")
 _REDACT_SPARK_MESSAGE_RE = _redact_re.compile(r"\[[A-Z][A-Z0-9_]*(?:\.[A-Z0-9_]+)*\] [A-Z](?:(?!SQLSTATE: )[^\n])*(?:SQLSTATE: \w{5})?")
