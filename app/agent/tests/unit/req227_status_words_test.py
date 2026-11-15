@@ -86,7 +86,7 @@ def test_a_notebook_gate_verdict_keeps_exact_names_for_genie_and_its_person_copy
     assert "demand_out__series" in verdict and "companion" in verdict
     person = agent_ns["implement_plain_change_text"](verdict)
     assert person == "run r-1 did not write the tables its page draws: main.inspire.demand_out__series does not exist"
-    assert internal_hits(person.replace("main.inspire.demand_out__series", "the table")) == []  # the qualified name is kept by design
+    assert internal_hits(person) == []
     sources = "\n".join("".join(source) for source, _cell in _code_cells())
     for site in ('implement_plain_change_text("; ".join(outcome["gate_problems"]))',
                  "implement_plain_change_text('; '.join(outcome['build_problems']))",

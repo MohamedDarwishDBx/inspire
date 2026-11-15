@@ -150,3 +150,9 @@ def test_the_data_filter_line_keeps_its_tag_in_the_log_and_reads_plainly_for_the
     assert customer.startswith("12 of 12 names carried the label"), customer
     for internal in ("re-asked", "rewrite", "deterministic"):
         assert internal not in customer, f"{internal} is internal wording"
+
+
+def test_a_bare_internal_object_name_still_fails_and_a_qualified_table_name_passes():
+    """D-NAMES / coordinator: the internal_object term catches a bare __token only. A catalog.schema.table name is kept."""
+    assert "internal_object" in internal_hits("Skip __constraints")  # must-exclude: a bare token still fails
+    assert internal_hits("the table main.inspire.demand_out__series does not exist") == []  # must-keep
