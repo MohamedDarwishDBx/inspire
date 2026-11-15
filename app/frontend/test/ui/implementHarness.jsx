@@ -8,7 +8,7 @@ const params = new URLSearchParams(window.location.search);
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <PermissionHost />
+    {params.get('open') !== 'app' && <PermissionHost />}
     <HarnessApp
       open={params.get('open')}
       nest={params.get('nest') === '1'}

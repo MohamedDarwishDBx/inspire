@@ -2,7 +2,6 @@
 // A raise with no subscriber is kept and replayed to the first subscriber, so a grant that fails before the host mounts is not lost.
 // A grant list (its GRANT statements, sorted) opens the dialog once per session: a re-check, a poll or a reload that returns the same grants
 // merges into the open dialog or stays closed. A new grant opens it. An explicit action (explicit: true) always opens.
-const subscribers = new Set();
 // Every GRANT statement the dialog has shown this session: a raise opens the dialog only for a statement it has not shown yet.
 const shown = new Set();
 let pending = null;
@@ -13,14 +12,23 @@ export function grantListKey(permissions) {
   return JSON.stringify(permissions.map((p) => JSON.stringify([...(p?.statements || [])].sort())).sort());
 }
 
+// REQ-216, REQ-131: an optional grant (the App reads Delta until an admin runs it) stays in the dialog with its Copy button, labelled optional.
+// It never gates a build: the submit does not depend on the dialog being open or closed.
+export function grantAsk(p) {
+  if (p?.optional) return 'Optional: pages load faster once your admin runs this.';
+  return `Ask your admin to grant this permission${p?.principal ? ` to ${p.principal}` : ''}:`;
+}
+
+// One host shows the dialog. A host mounted later takes over, so two mounted hosts never stack two dialogs for one raise.
+let activeHost = null;
 export function subscribePermissions(fn) {
-  subscribers.add(fn);
+  activeHost = fn;
   if (pending) {
     const { permissions, extra } = pending;
     pending = null;
     fn(permissions, extra);
   }
-  return () => subscribers.delete(fn);
+  return () => { if (activeHost === fn) activeHost = null; };
 }
 
 export function raisePermissions(permissions, extra = {}, { explicit = false } = {}) {
@@ -30,12 +38,12 @@ export function raisePermissions(permissions, extra = {}, { explicit = false } =
   statements.forEach((s) => shown.add(s));
   if (seen && !explicit) {
     // The same grants again: never reopen. An open dialog for them takes this raise's extras (Try again, Start) through a quiet notice.
-    subscribers.forEach((fn) => fn(permissions, extra, { quiet: true }));
+    if (activeHost) activeHost(permissions, extra, { quiet: true });
     return;
   }
-  if (!subscribers.size) {
+  if (!activeHost) {
     pending = { permissions, extra };
     return;
   }
-  subscribers.forEach((fn) => fn(permissions, extra));
+  activeHost(permissions, extra);
 }
