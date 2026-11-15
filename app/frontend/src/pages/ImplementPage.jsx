@@ -386,7 +386,8 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     session_id: String(sessionId),
   }).toString(), [settings.inspireDatabase, settings.warehouseId, sessionId]);
   // REQ-078: each card reads its rule estimate here, the same route Review and Build next read. A measured figure is never replaced.
-  const estimates = useValueRead(apiFetch, `/api/inspire/value/estimates?${qBase}`, refreshKey);
+  // A showcase or demo run makes no workspace call: its read is skipped, as ChoosePage and ResultsPage skip theirs.
+  const estimates = useValueRead(apiFetch, readOnly ? '' : `/api/inspire/value/estimates?${qBase}`, refreshKey);
 
   const fetchUseCases = useCallback(async () => {
     const [res, rows] = await Promise.allSettled([

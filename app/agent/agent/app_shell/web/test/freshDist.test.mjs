@@ -149,3 +149,18 @@ test('the real dist the suite runs on is current with the sources once the harne
   await import('./harness.mjs');
   assert.equal(staleReason(), '');
 });
+
+test('a shared input changed after the build makes the dist stale, and a shared input missing from the build sources is named', () => {
+  const web = webTree();
+  const shared = mkdtempSync(join(tmpdir(), 'inspire-shared-'));
+  try {
+    for (const name of ['bootGuard.js', 'bootGuardPlugin.mjs']) { writeFileSync(join(shared, name), 'x'); at(join(shared, name), 1000); }
+    built(web);
+    assert.equal(staleReason(web, shared), '');
+    at(join(shared, 'bootGuard.js'), 3000);
+    assert.equal(staleReason(web, shared), 'shared/bootGuard.js changed after dist was built');
+  } finally {
+    rmSync(web, { recursive: true, force: true });
+    rmSync(shared, { recursive: true, force: true });
+  }
+});
