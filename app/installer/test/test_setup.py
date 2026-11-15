@@ -1916,6 +1916,13 @@ class RunAsTest(unittest.TestCase):
         self.assertNotIn("INSPIRE_JOB_ID", without)
         self.assertNotIn("INSPIRE_RUN_AS_PERSON", without)
 
+    def test_app_yaml_carries_the_installed_release_tag_so_the_app_shows_its_rc(self):
+        import tempfile as _t
+        with _t.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "app.yaml")
+            stamped = setup.write_app_yaml_deploy(path, "my.inspire", "wh", "/n", "sp", None, None, {"INSPIRE_RELEASE_TAG": "v1.5.3-rc.2"})
+        self.assertIn('  - name: "INSPIRE_RELEASE_TAG"\n    value: "v1.5.3-rc.2"', stamped)
+
 
 class RunAsPreflightTest(unittest.TestCase):
     """Run-as-me: the App acts as the person, so the preflight checks the person's catalog rights and never the App's principal."""

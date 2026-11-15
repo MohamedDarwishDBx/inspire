@@ -22,7 +22,7 @@ const { triggerDemoDataPipeline } = require('./lib/demoDataPipeline');
 const { unreachableMessage } = require('./lib/unreachable');
 const { resolveInspireAppServicePrincipalId } = require('./lib/inspireSpGrants');
 const {
-  INSPIRE_AGENT_VERSION,
+  inspireReleaseLabel,
   inspireJobEnvironments,
   inspireJobTags,
   inspireTaskCompute,
@@ -1521,7 +1521,7 @@ app.get('/api/health', async (req, res) => {
   const platformAuth = hasDatabricksPlatformAuth();
   res.json({
     status: 'ok',
-    agentVersion: INSPIRE_AGENT_VERSION,
+    agentVersion: inspireReleaseLabel(),
     host: host ? host.replace(/https?:\/\//, '').split('.')[0] + '...' : 'not configured',
     hostFull: host || 'NOT SET',
     hostConfigured: !!host,
@@ -1606,7 +1606,7 @@ app.get('/api/defaults', (req, res) => {
   // Local dev / App: skip Setup Wizard when server has platform auth + host + warehouse + tracking DB.
   const envSkipsSetupWizard = !!(platformAuth && fullHost && DEFAULT_WAREHOUSE_ID && DEFAULT_INSPIRE_DB);
   res.json({
-    agentVersion: INSPIRE_AGENT_VERSION,
+    agentVersion: inspireReleaseLabel(),
     databricksHost: fullHost || '',
     warehouseId: DEFAULT_WAREHOUSE_ID,
     inspireDatabase: DEFAULT_INSPIRE_DB,

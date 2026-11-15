@@ -3,6 +3,12 @@ const { parseStrategicContext, validateStrategy } = require('../../frontend/src/
 const { scopesFromObject, serializeTableScopes, scopeKeyOf } = require('../../frontend/src/lib/tableScope.js');
 
 const INSPIRE_AGENT_VERSION = 'v1.5.3';
+/** The release a person sees: the installer stamps INSPIRE_RELEASE_TAG (e.g. v1.5.3-rc.2) into app.yaml; the package version is the fallback. */
+const INSPIRE_RELEASE_TAG_PATTERN = /^v\d\.\d\.\d(-rc\.\d)?$/;
+function inspireReleaseLabel(env = process.env) {
+  const tag = String(env.INSPIRE_RELEASE_TAG || '').trim();
+  return INSPIRE_RELEASE_TAG_PATTERN.test(tag) ? tag : INSPIRE_AGENT_VERSION;
+}
 const INSPIRE_ENVIRONMENT_KEY = 'Default';
 const INSPIRE_ENVIRONMENT_VERSION = '4';
 
@@ -504,6 +510,7 @@ function normalizeV130UseCaseFields(row) {
 
 module.exports = {
   INSPIRE_AGENT_VERSION,
+  inspireReleaseLabel,
   runAsPerson,
   launchPlanFor,
   RUN_AS_JOB_ENV,
