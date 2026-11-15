@@ -57,12 +57,13 @@ test('What to deliver is the first step, Data and results is one page, and Where
     const measure = page.getByRole('region', { name: 'Measure' });
     await measure.waitFor();
     assert.equal(await measure.locator('[data-money-rule-editor]').count(), 1, 'Measure holds the money rule editor, so the person defines how value at stake is counted');
-    // Value at stake opens one part at a time. With one currency in the data the Currency part shows the picker with its default
-    // and offers no conversion, so no reporting-currency prompt (must-exclude). Rates are covered by measureRule.
+    // Value at stake opens one part at a time. The Currency part starts on keeping each currency separate, and it offers the
+    // reporting-currency choice even with one currency in the data (REQ-103: unify every measure in one currency the person picks).
+    // No reporting-currency prompt until that choice is picked (must-exclude). Rates are covered by measureRule.
     await moneyPart(page, 'Currency');
     assert.equal(await measure.locator('[data-money-currency-mode="per_currency"]').isChecked(), true, 'the Currency part starts on keeping each currency separate');
-    assert.equal(await measure.locator('[data-money-currency-mode="convert"]').count(), 0, 'no conversion choice with one currency in the data (must-exclude)');
-    assert.equal(await measure.locator('[data-money-base-needed]').count(), 0, 'no reporting-currency prompt with one currency in the data (must-exclude)');
+    assert.equal(await measure.locator('[data-money-currency-mode="convert"]').count(), 1, 'the reporting-currency choice is offered with one currency in the data (REQ-103)');
+    assert.equal(await measure.locator('[data-money-base-needed]').count(), 0, 'no reporting-currency prompt while Keep each currency separate is chosen (must-exclude)');
     await snap(page, 'restructure-measure');
 
     await goToStep(page, 'Where it lives');

@@ -2087,13 +2087,21 @@ function registerImplementRoutes(app, deps) {
     if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
     const asked = String(req.body?.base || '').trim().toUpperCase();
     try {
-      const warehouseId = warehouseOf(req);
-      const scopes = await launchScopesOf(req, warehouseId);
-      const made = GP.currencySpreadSql(req.body?.table, req.body?.currency_column, scopes);
-      if (!made || (asked && !/^[A-Z]{3}$/.test(asked))) throw I.badRequest('Name the use case table and its currency column, and the reporting currency as a three-letter code such as USD.');
-      const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.CURRENCY_SPREAD_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
-      const currencies = sqlResultToObjects(found).map((r) => ({ code: String(r.currency ?? '').trim().toUpperCase(), records: Number(r.records) }));
-      const capped = currencies.length >= GP.CURRENCY_SPREAD_ROWS;
+      // A table with no currency column is read for the one code its value is written in (REQ-103): no table read, the codes come from the request.
+      const byColumn = String(req.body?.currency_column || '').trim() !== '';
+      const codes = byColumn ? [] : (Array.isArray(req.body?.codes) ? req.body.codes : []).map((c) => String(c ?? '').trim().toUpperCase()).filter((c) => /^[A-Z]{3}$/.test(c));
+      if (!byColumn && !codes.length) throw I.badRequest('Name the currency the value is written in, as a three-letter code such as USD.');
+      if (asked && !/^[A-Z]{3}$/.test(asked)) throw I.badRequest('Name the reporting currency as a three-letter code such as USD.');
+      const warehouseId = byColumn ? warehouseOf(req) : '';
+      let currencies = codes.map((code) => ({ code, records: null }));
+      if (byColumn) {
+        const scopes = await launchScopesOf(req, warehouseId);
+        const made = GP.currencySpreadSql(req.body?.table, req.body?.currency_column, scopes);
+        if (!made) throw I.badRequest('Name the use case table and its currency column, and the reporting currency as a three-letter code such as USD.');
+        const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.CURRENCY_SPREAD_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
+        currencies = sqlResultToObjects(found).map((r) => ({ code: String(r.currency ?? '').trim().toUpperCase(), records: Number(r.records) }));
+      }
+      const capped = byColumn && currencies.length >= GP.CURRENCY_SPREAD_ROWS;
       const base = asked || (currencies[0] ? currencies[0].code : 'USD');
       const rates = await FX.currencyRates({ base, codes: currencies.map((c) => c.code) });
       return res.json({ ...rates, currencies, capped });
