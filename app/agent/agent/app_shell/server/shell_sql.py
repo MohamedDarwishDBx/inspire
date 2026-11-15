@@ -3473,6 +3473,7 @@ def list_context(page: dict, columns, fields, decisions: bool) -> dict:
     join = "record_key" if versioned and "record_key" in columns else key if versioned and key in columns and key in names else None
     ai = ([n for n in AI_LISTED if n in names] + sorted(n for n in names if AI_CATEGORY.match(n))) if join else []
     return {"table": table_name(page["result_table"]) if join else None, "join": join, "held": bool(join and "held_back" in names),
+            "snoozed": bool(join and SNOOZE_COLUMN in names),
             "checked": bool(join and "data_quality_flag" in names),
             "actions": bool(join and decisions), "changes": bool(join),
             "choice": choice_sql(status_choices(page), names) if join and decisions else None,
@@ -3628,9 +3629,10 @@ def week_edges(bounds: dict, weeks: int) -> list:
     return out
 
 
-WINDOW_EXTRA = ("CAST(`action_due` AS DATE) AS `_inspire_due`", f"CAST(`{SNOOZE_COLUMN}` AS DATE) AS `_inspire_snooze`",
-                f"`{JOINED_COLUMN}` AS `_inspire_joined`")
-WINDOW_PICKED = ("c.`_inspire_due`", "c.`_inspire_snooze`", "c.`_inspire_joined`")
+WINDOW_EXTRA = ("CAST(`action_due` AS DATE) AS `_inspire_due`", f"`{JOINED_COLUMN}` AS `_inspire_joined`")
+WINDOW_PICKED = ("c.`_inspire_due`", "c.`_inspire_joined`")
+# The snooze date is a row field of every tracked list (Wake now), so it is selected in _current_cte and picked in _current_join.
+SNOOZE_EXTRA = f"CAST(`{SNOOZE_COLUMN}` AS DATE) AS `_inspire_snooze`"
 
 
 def checked_sql(alias: str = "c") -> str:
@@ -3679,6 +3681,11 @@ def list_request(page: dict, data: dict, context: dict, now: datetime.datetime =
     unowned, within = data.get("unowned", False), data.get("due_within")
     if not isinstance(unowned, bool):
         raise ValueError("unowned takes true or false")
+    unchecked = data.get("unchecked", False)
+    if not isinstance(unchecked, bool):
+        raise ValueError("unchecked takes true or false")
+    if unchecked and not context["actions"]:
+        raise ValueError("this decision list keeps no actions, so it cannot show the records that could not be checked")
     if unowned and data.get("mine"):
         raise ValueError("send mine or unowned, not both")
     if unowned and not context["actions"]:
@@ -3691,7 +3698,8 @@ def list_request(page: dict, data: dict, context: dict, now: datetime.datetime =
     now = now or datetime.datetime.now(datetime.timezone.utc)
     ranked = not sort and (bool(window) or due_first)
     return dict(_list_request(page, data, context, allowed), window=window, ranked=ranked, due_first=due_first, today=now.date().isoformat(),
-                exclude=list(dict.fromkeys(exclude)), unowned=unowned, due_within=within, focus=focus_request(data, context, now))
+                exclude=list(dict.fromkeys(exclude)), unowned=unowned, unchecked=unchecked, due_within=within,
+                focus=focus_request(data, context, now))
 
 
 def focus_request(data: dict, context: dict, now: datetime.datetime):
@@ -3710,8 +3718,8 @@ def focus_conditions(page: dict, focus: dict, context: dict, params) -> list:
     statuses = page_statuses(page)
     opened = ", ".join(params.add(s) for s in statuses["open"])
     out = [f"COALESCE(c.`_inspire_status`, {params.add(statuses['unset'])}) IN ({opened})"]
-    if context.get("held"):
-        out.append("NOT COALESCE(c.`_inspire_held`, FALSE)")
+    # Held-back rows stay in a focus list: the focus tabs are the Dashboard's "Fix this" lists (trends_query counts held rows as open,
+    # and the All tab that carries a focus sends no window). Only the Open tab hides them (window_conditions).
     if context.get("checked"):
         out.append(checked_sql("c"))
     if focus["focus"] == "overdue":
@@ -3722,6 +3730,15 @@ def focus_conditions(page: dict, focus: dict, context: dict, params) -> list:
         first = f"(SELECT MIN(t.`valid_from`) FROM {context['table']} AS t WHERE t.`record_key` = c.`_inspire_key`)"
         out.append(f"unix_micros(COALESCE(c.`_inspire_joined`, {first})) < {params.add(str(focus['before_us']), 'BIGINT')}")
     return out
+
+
+def unchecked_conditions(page: dict, context: dict, params) -> list:
+    """The 'Could not be checked' tab: open-status rows the notebook did not evaluate (data_quality_flag is not 'ok'). Never Open."""
+    if not context.get("checked"):
+        return ["FALSE"]
+    statuses = page_statuses(page)
+    opened = ", ".join(params.add(s) for s in statuses["open"])
+    return [f"COALESCE(c.`_inspire_status`, {params.add(statuses['unset'])}) IN ({opened})", f"NOT {checked_sql('c')}"]
 
 
 def _list_request(page: dict, data: dict, context: dict, allowed: list) -> dict:
@@ -4566,7 +4583,7 @@ def _current_cte(context: dict, extra=()) -> str:
     join, actions = context["join"], context["actions"]
     mapped = f", CAST({quote(join)} AS STRING) AS `_inspire_join`" if join != "record_key" else ""
     owned = (f", `action_owner` AS `_inspire_owner`, `action_status` AS `_inspire_status`, {context.get('choice') or 'CAST(NULL AS STRING)'} "
-             "AS `_inspire_choice`") if actions else ""
+             "AS `_inspire_choice`" + (f", {SNOOZE_EXTRA}" if context.get("snoozed") else "")) if actions else ""
     explained = "".join(f", CAST({quote(n)} AS STRING) AS {quote(ai_alias(n))}" for n in context["ai"])
     more = "".join(f", {e}" for e in [*extra, f"CAST({quote(KEPT_SINCE)} AS TIMESTAMP) AS `_inspire_missing`", *context.get("money", [])])
     held = context.get("floor") or {}
@@ -4586,10 +4603,11 @@ def _current_on(context: dict, alias: str) -> str:
 
 def _current_join(context: dict, alias: str) -> tuple:
     columns = ["c.`_inspire_key`", "c.`_inspire_version`"] + (["c.`_inspire_owner`", "c.`_inspire_status`", "c.`_inspire_choice`"]
+                                                               + (["c.`_inspire_snooze`"] if context.get("snoozed") else [])
                                                                if context["actions"] else [])
     money = ["c.`_inspire_money`", "c.`_inspire_fx`"] if context.get("money") else []
-    windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else []) + (["c.`_inspire_ok`"] if context.get("checked") else [])
-                ) if context.get("windowed") else []
+    windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else [])
+                + (["c.`_inspire_ok`", "c.`_inspire_flag`"] if context.get("checked") else [])) if context.get("windowed") else []
     joined = " JOIN" if (context.get("floor") or {}).get("on") == "c" else " LEFT JOIN"
     return (f"{joined} c ON {_current_on(context, alias)}",
             columns + [f"c.{quote(ai_alias(n))}" for n in context["ai"]] + money + ["c.`_inspire_missing`"] + windowed)
@@ -4601,7 +4619,8 @@ def _floored(floor: dict, alias: str) -> str:
 
 def _window_extra(context: dict) -> list:
     return list(WINDOW_EXTRA) + (["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else []) + (
-        [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`"] if context.get("checked") else [])
+        [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`", "CAST(`data_quality_flag` AS STRING) AS `_inspire_flag`"]
+        if context.get("checked") else [])
 
 
 def _stake(context: dict, prefix: str = "") -> str:
@@ -4688,7 +4707,7 @@ def list_match_query(page: dict, values: dict, request: dict, context: dict, edi
 def status_counts_query(page: dict, values: dict, request: dict, context: dict, editor: str = "") -> tuple:
     params = _Params()
     columns = {k: v for k, v in (request.get("columns") or {}).items() if k != "action_status"}
-    plan = _list_plan(page, values, dict(request, columns=columns, mine=False, window=None, exclude=[], choice=None, due_first=True), context,
+    plan = _list_plan(page, values, dict(request, columns=columns, mine=False, window=None, exclude=[], choice=None, due_first=True, unchecked=False), context,
                       editor, params, current=True)
     status = f"COALESCE(f.`_inspire_status`, '{NEW}')"
     checked = context.get("checked", False)
@@ -4723,7 +4742,7 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
     records = page.get("records") or {}
     window = request.get("window")
     due_first = bool(request.get("due_first"))
-    context = dict(context, windowed=bool(window) or due_first)
+    context = dict(context, windowed=bool(window) or due_first or bool(request.get("unchecked")))
     listed, money = _listed(page, values, request.get("columns"), context, params)
     ctes = {"d": listed}
     conditions = list(money) + ([_floored(context["floor"], "d")] if (context.get("floor") or {}).get("on") == "d" else [])
@@ -4743,6 +4762,9 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
     if focus:
         early.add("c")
         conditions += focus_conditions(page, focus, context, params)
+    if request.get("unchecked"):
+        early.add("c")
+        conditions += unchecked_conditions(page, context, params)
     if request.get("exclude"):
         conditions.append(f"COALESCE(c.`_inspire_key`, '') NOT IN (SELECT explode(from_json("
                           f"{params.add(json.dumps(request['exclude'], ensure_ascii=False))}, 'ARRAY<STRING>')))")
@@ -4772,13 +4794,15 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
         conditions.append(f"l.`_inspire_ch` IN ({wanted})" if logged_changes(context)
                           else f"(l.`_inspire_lk` IS NOT NULL AND (o.`_inspire_ok` IS NULL OR {_moved(context)}))")
         early |= {"c", "h"}
+    if context.get("snoozed") and context["actions"]:
+        early.add("c")
     filtering = set(early)
     if request["sort"] in ACTION_SORTS or money_sort:
         early.add("c")
     if context["join"]:
         held = context.get("floor")
         ctes["c"] = _current_cte(dict(context, floor=held if held and (held["on"] == "c" or "c" not in early) else None),
-                                 _window_extra(context) if window or focus or request.get("due_first") else ())
+                                 _window_extra(context) if window or focus or request.get("due_first") or request.get("unchecked") else ())
     picked, joins = ["d.*"], ""
     if "c" in early:
         join, columns = _current_join(context, "d")
@@ -4809,7 +4833,7 @@ def counted_total(row) -> tuple:
 def unfiltered(values: dict, request: dict) -> bool:
     return (not any(v not in (None, "", [], {}) for v in (values or {}).values()) and not request["search"] and not request["mine"]
             and not request.get("unowned") and request.get("due_within") is None and not request["changed"] and not request["ai"] and not request["columns"] and not request.get("window")
-            and not request.get("exclude") and request.get("choice") is None and not request.get("focus"))
+            and not request.get("exclude") and request.get("choice") is None and not request.get("focus") and not request.get("unchecked"))
 
 
 def facts_total_query(facts: dict, table: str, names: set) -> tuple:
@@ -4829,7 +4853,7 @@ def list_floor(page: dict, request: dict, context: dict, facts, model, filtered:
     scaled = live and ready and money_scale(model) is not None
     if live and by_money and not scaled:
         selective = (request["mine"] or request.get("unowned") or request["changed"] or request["ai"] or request.get("ranked") or request.get("choice") is not None
-                     or request.get("focus") or MONEY_COLUMN in (request.get("columns") or {}))
+                     or request.get("focus") or request.get("unchecked") or MONEY_COLUMN in (request.get("columns") or {}))
         if selective or context["join"] != "record_key":
             return None
         depth = shell_facts.floor_depth(shell_facts.FLOOR_DEPTHS, int(request["offset"]) + int(request["limit"]), filtered)
@@ -6191,11 +6215,11 @@ def trends_query(page: dict, names: set, now: datetime.datetime, since: datetime
     ctes = {"kv": (f"SELECT `record_key`, `run_id`, `valid_from`, `valid_to`, `is_current`, `change_source`, {raw} AS `_t_raw`, "
                    f"{status} AS `_t_status`, LAG({raw}) OVER (PARTITION BY `record_key` ORDER BY `valid_from`) AS `_t_was`, "
                    f"{text('action_owner')} AS `_t_owner`, {due} AS `_t_due`, {money} AS `_t_money`, {reason} AS `_t_reason`, "
-                   f"{joined} AS `_t_joined`, MIN(`valid_from`) OVER (PARTITION BY `record_key`) AS `_t_first`, "
+                   f"{joined} AS `_t_joined`, COALESCE(({flagged_ok_sql(names)}), FALSE) AS `_t_ok`, MIN(`valid_from`) OVER (PARTITION BY `record_key`) AS `_t_first`, "
                    f"ROW_NUMBER() OVER (PARTITION BY `record_key` ORDER BY `valid_from` DESC) AS `_t_nth` FROM {table}"
                    f"{' WHERE ' + scope if scope else ''}"),
             "kc": "SELECT * FROM kv WHERE `is_current` AND `change_source` <> 'delete'",
-            "ko": f"SELECT * FROM kc WHERE `_t_status` IN ({opened})"}
+            "ko": f"SELECT * FROM kc WHERE `_t_status` IN ({opened}) AND `_t_ok`"}
     age = f"({now_us} - unix_micros(COALESCE(`_t_joined`, `_t_first`)))"
     fresh, month = DAY_US * (AGE_DAYS[0] + 1), DAY_US * (AGE_DAYS[1] + 1)
     open_cells = {"n": "COUNT(*)", "overdue": _count(f"`_t_due` < {today}"), "unowned": _count("NULLIF(TRIM(`_t_owner`), '') IS NULL"),
@@ -6225,13 +6249,13 @@ def trends_query(page: dict, names: set, now: datetime.datetime, since: datetime
     ctes["kr"] = (f"SELECT CAST(`run_id` AS STRING) AS `_t_run`, MAX({ran}) AS `_t_at` FROM {source}{only} GROUP BY CAST(`run_id` AS STRING) "
                   f"ORDER BY `_t_at` DESC LIMIT {CAPS['trend_runs']}")
     ctes["kp"] = (f"SELECT r.`_t_run`, r.`_t_at`, COUNT(v.`record_key`) AS `_t_n` FROM kr AS r LEFT JOIN kv AS v ON v.`valid_from` <= r.`_t_at` "
-                  f"AND (v.`valid_to` IS NULL OR v.`valid_to` > r.`_t_at`) AND v.`change_source` <> 'delete' AND v.`_t_status` IN ({opened}) "
+                  f"AND (v.`valid_to` IS NULL OR v.`valid_to` > r.`_t_at`) AND v.`change_source` <> 'delete' AND v.`_t_status` IN ({opened}) AND v.`_t_ok` "
                   f"GROUP BY r.`_t_run`, r.`_t_at`")
     ctes["kn"] = ("SELECT CAST(`run_id` AS STRING) AS `_t_run`, COUNT(*) AS `_t_n` FROM kv WHERE `valid_from` = `_t_first` AND "
                   "`change_source` = 'run' GROUP BY CAST(`run_id` AS STRING)")
     branches.append(f"{_overview_select('run', {'k': 'p.`_t_run`', 'at': 'p.`_t_at`', 'n': 'p.`_t_n`', 'm': 'COALESCE(n.`_t_n`, 0)'}, TREND_COLUMNS)} "
                     f"FROM kp AS p LEFT JOIN kn AS n ON n.`_t_run` = p.`_t_run`")
-    still = f"CASE WHEN `is_current` AND `change_source` <> 'delete' AND `_t_status` IN ({opened}) THEN 1 ELSE 0 END"
+    still = f"CASE WHEN `is_current` AND `change_source` <> 'delete' AND `_t_status` IN ({opened}) AND `_t_ok` THEN 1 ELSE 0 END"
     ctes["kf"] = (f"SELECT `record_key`, MIN(`_t_first`) AS `_t_first`, MIN(CASE WHEN `change_source` = 'action' THEN `valid_from` END) AS "
                   f"`_t_act`, MAX({still}) AS `_t_open` FROM kv WHERE unix_micros(`_t_first`) >= {since_us} GROUP BY `record_key`")
     secs = "(unix_micros(`_t_act`) - unix_micros(`_t_first`)) / 1000000.0"

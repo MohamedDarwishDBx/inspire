@@ -25,7 +25,7 @@ WEB = os.path.join(ROOT, "agent", "app_shell", "web", "src")
 HOURS_IMPACT = {"kind": "hours", "unit": "hours", "kpi": "Analyst hours"}
 MONEY_IMPACT = {"kind": "money", "unit": "USD", "kpi": "Retained revenue"}
 MWH_IMPACT = {"kind": "number", "unit": "MWh", "kpi": "Energy lost"}
-SAID = re.compile(r"money\s+at\s+stake|money_at_stake", re.I)
+SAID = re.compile(r"money\s+(?:\w+\s+){0,3}at\s+stake|money_at_stake", re.I)
 
 
 def _hours_value(expression, **constants):
@@ -238,8 +238,11 @@ def test_no_text_says_money_at_stake_outside_the_money_only_template():
     helper = next(n.value.value for n in tree.body if isinstance(n, ast.Assign)
                   and getattr(n.targets[0], "id", "") == "IMPLEMENT_RESULT_HISTORY_SOURCE")
     said = [s for s in list(_strings(tree)) + list(_strings(ast.parse(helper))) if SAID.search(s) and s != helper]
-    basis = next(n for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "GENIE_VALUE_AT_STAKE_BASIS")
-    assert said == [s for s in _strings(basis) if SAID.search(s)] and len(said) == 1, said
+    # REQ-208 (b8b1a3bf4) moved the basis template to "value at stake", so no basis text says money any more. The only money-only
+    # sentences are the Genie money clause (GENIE_MONEY_STAKE) and the implement helper's money branch: exactly those two, no more.
+    money_stake = next(n.value.value for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "GENIE_MONEY_STAKE")
+    money_branch = [s for s in _strings(tree) if s.startswith("the money this record puts at stake in the `currency`")]
+    assert sorted(said) == sorted([money_stake] + money_branch) and len(money_branch) == 1, said
     for name in sorted(os.listdir(SERVER)):
         if name.endswith(".py"):
             found = [s for s in _strings(ast.parse(open(os.path.join(SERVER, name), encoding="utf-8").read())) if SAID.search(s)]

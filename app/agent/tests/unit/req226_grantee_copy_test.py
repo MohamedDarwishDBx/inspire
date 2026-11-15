@@ -1,0 +1,18 @@
+"""REQ-226: the Permission Required entry for the App audience says who runs the grant and who receives it.
+
+The grant targets the audience group itself (a user-authorization App reads with each opener's own access), so the principal
+stays; only the copy changed. Fail-pre: the old text said '<group> opens this App ... Ask your workspace admin to run them'.
+"""
+
+
+def test_the_audience_entry_names_who_runs_and_who_receives_the_grant(agent_ns):
+    why = agent_ns["implement_audience_grant_why"]("admins")
+    assert why.startswith("Your workspace admin runs these commands to give admins read access"), why
+    assert "opens this App" not in why and "so it needs" not in why
+
+
+def test_the_audience_entry_is_built_with_that_copy_and_the_audience_principal(agent_ns):
+    entry = agent_ns["implement_permission_entry"]("admins", ["GRANT SELECT ON TABLE `c`.`s`.`t` TO `admins`"],
+                                                   agent_ns["implement_audience_grant_why"]("admins"))
+    assert entry["principal"] == "admins" and entry["statements"] == ["GRANT SELECT ON TABLE `c`.`s`.`t` TO `admins`"]
+    assert entry["why"].endswith("Then click Try again.")

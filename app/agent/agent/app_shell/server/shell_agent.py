@@ -14,6 +14,7 @@ import shell_db
 import shell_pg
 import shell_sql
 from shell_db import HttpError, QueryError
+from shell_redact import inspire_parse_time
 
 GATEWAY_CHAT = "/ai-gateway/openai/v1/chat/completions"
 GATEWAY_MODELS = "/ai-gateway/openai/v1/models"
@@ -715,7 +716,7 @@ def genie_question(question, as_of, today) -> str:
     latest date in the data, so Genie and the page agree without relying on Genie's clock. Fresh data (as-of equals today) is unchanged."""
     if not as_of or as_of == today or not window_phrase(question):
         return question
-    return explicit_question(question, datetime.date.fromisoformat(as_of))
+    return explicit_question(question, inspire_parse_time(as_of).date())
 
 
 def window_note(question, as_of, today) -> str:

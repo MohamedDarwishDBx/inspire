@@ -554,7 +554,7 @@ test('a closed record undoes the change that closed it from its own page, after 
   const ask = drawer.getByRole('group', { name: 'Undo this change' });
   assert.equal(await ask.locator('span').innerText(), 'Undo puts back every record this change touched, as they were before it, and keeps both versions in their history.');
   assert.equal(calls.undos.length, 0, 'nothing is undone until the person says so');
-  await ask.getByRole('button', { name: 'Undo it' }).click();
+  await ask.getByRole('button', { name: 'Reopen', exact: true }).click();
   await until(() => calls.undos.length === 1);
   assert.deepEqual(calls.undos[0], { page: 'n01_u05', batch_id: BATCH_DONE });
   await page.waitForFunction(() => /^Undone: 1 record is back as it was\./.test(document.querySelector('.toast .toast-t')?.textContent || ''));

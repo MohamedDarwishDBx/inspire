@@ -8,7 +8,7 @@ import { askGenieAbout, fixQuestion, genieOn } from './genieAsk.js';
 import { BUSY_TITLE, fieldsOf, tableContext } from './explain.js';
 import { AskGenie } from './AskGenie.jsx';
 import { DraftDialog } from './Draft.jsx';
-import { OPEN_TAB, tabChoice, withRecord, withoutRecord } from './links.js';
+import { OPEN_TAB, UNCHECKED_TAB, tabChoice, withRecord, withoutRecord } from './links.js';
 import { useDock } from './Dock.jsx';
 import { addCounts, addedParts, cap, compareValues, dayLabel, entityName, integer, kindOf, plainText, savedWords, shownUnit, unitOf } from './format.js';
 
@@ -30,9 +30,9 @@ import { recordName, recordSentenceName,
   DRAFT_LABEL, ACT_LIMIT, CHOICE_COLUMN, CLOSED_STATUSES, DONE, HELD, NOTE_CHARS, PAGE_SIZES, REASON_CHARS, UNEXPLAINED, actionForm, actionProblem, actionValues, pageChoices, pickChoice, statusKind, OPEN_STATUSES, isOpenStatus, choiceLabel, closingChoices, isDefaultChoice, QUICK_CLOSE,
   aiValue, askQuestions, changeBadge, doneText, dueText, explainContext, heldBack, heldText, impactText, initials, isOverdue, keptText, leftText, matchOf,
   missingSince, NOT_IN_RUN, notInRunText, overdueFirst, pageText, recordCurrency, recordKeyOf, recordRef, recordView, recordsText, savingText, statusClass,
-  statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf,
+  statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf, WAKE_WORD, WAKE_ASK, WOKE, snoozeOf,
   isStaleRecord, closedText, closedBatchOf, undoBatchOf, undoWordOf, UNDO_CLOSE, isClosed, skippedText, READ_ONLY, READ_ONLY_KEPT, READ_ONLY_THEIRS,
-  CLOSED_PICK, ACCEPTED, acceptable, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
+  CLOSED_PICK, ACCEPTED, acceptable, uncheckedWhy, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
 } from './records.js';
 import { SectionHelp } from './SectionHelp.jsx';
 import { ClusterBar, useChoices } from './KindParts.jsx';
@@ -190,6 +190,22 @@ function SnoozeButton({ action, tomorrow }) {
         </Popover>
       )}
     </>
+  );
+}
+
+/** REQ-223 P52: a row or drawer action that asks first. The trigger and its confirm read the same word (D-UNDO). */
+function AskFirst({ word, ask, name, write, run, ...rest }) {
+  const [asking, setAsking] = useState(false);
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+  if (!asking) {
+    return <button type="button" className="btn btn--sm" onClick={stop(() => setAsking(true))} aria-label={`${word} ${name}`} {...rest}>{word}</button>;
+  }
+  return (
+    <span className="row-ask" role="group" aria-label={`${word} ${name}`} onClick={(e) => e.stopPropagation()}>
+      <span>{ask}</span>
+      <SaveButton write={write} className="btn btn--sm btn--pri" onClick={async () => { if (await run()) setAsking(false); }}>{word}</SaveButton>
+      <button type="button" className="btn btn--sm" onClick={stop(() => setAsking(false))}>Keep it</button>
+    </span>
   );
 }
 
@@ -474,13 +490,17 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                 </>
               );
             })()}
+            {acting && !closed && snoozeOf(current) >= today && (
+              <AskFirst word={WAKE_WORD} ask={WAKE_ASK} name={title} write="drawer:wake" data-wake
+                run={() => action.send({ snooze_until: null }, WOKE, 'drawer:wake')} />
+            )}
             {undoBatch && !work && !undoAsk && (
-              <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{undoWordOf(meta)}</button>
+              <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{undoWordOf(meta, isClosed(current))}</button>
             )}
             {undoBatch && undoAsk && (
               <div className="note note--flat undo-ask" role="group" aria-label="Undo this change">
                 <span>{UNDO_CLOSE}</span>
-                <SaveButton write="drawer:undo" className="btn btn--pri" onClick={async () => { if (await acts.undo(undoBatch, 'drawer:undo')) setUndoAsk(false); }}>{undoWordOf(meta)}</SaveButton>
+                <SaveButton write="drawer:undo" className="btn btn--pri" onClick={async () => { if (await acts.undo(undoBatch, 'drawer:undo')) setUndoAsk(false); }}>{undoWordOf(meta, isClosed(current))}</SaveButton>
                 <button type="button" className="btn" onClick={() => setUndoAsk(false)}>Keep it</button>
               </div>
             )}
@@ -551,6 +571,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
   const choices = pageChoices(app, pageId);
   const tabPick = tab ? tabChoice(choices, tab) : null;
   const tabOpen = tab === OPEN_TAB;
+  const unchecked = tab === UNCHECKED_TAB;
   const mine = tab ? tab === 'mine' : ownMine;
   const dockNow = useDock();
   const dock = docked ? dockNow : null;
@@ -579,6 +600,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
   const matching = picks.scope === scope ? picks.all : null;
   const inWindow = windowed.window ? { window: windowed.window, ...(windowed.time_zone ? { time_zone: windowed.time_zone } : {}) } : {};
   const listed = { page: pageId, filters, ai: aiPicks, search, mine, changed, ...(Object.keys(narrowed).length ? { column_filters: narrowed } : {}), ...(tabPick ? { choice: tabPick.id } : {}), ...inWindow,
+    ...(unchecked ? { unchecked: true } : {}),
     ...(tab || !noActions ? { status_counts: true } : {}), ...(only ? { focus: only } : {}) };
   const room = cap ? Math.max(1, Math.min(size, cap - offset)) : size;
   const asked = { ...listed, ...(cap ? { window_limit: cap } : {}), ...(sort ? { sort } : {}), ...(!sort && !noActions ? { due_first: true } : {}), offset, limit: room, ...(cursor ? { cursor } : {}) };
@@ -735,10 +757,11 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     }
     if (key == null || !row._inspire_version) return;
     try {
-      await acts.act({ record_keys: [String(key)], seen: { [String(key)]: String(row._inspire_version) } }, values,
+      return await acts.act({ record_keys: [String(key)], seen: { [String(key)]: String(row._inspire_version) } }, values,
         { said, about: { record_key: String(key), label: recordSentenceName(row, meta) }, key: write, action });
     } catch (err) {
       toastFailure(toast, err, () => quick(row, values, said, write));
+      return null;
     }
   };
   const clearAll = () => {
@@ -904,6 +927,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
         );
       },
     },
+    ...(unchecked ? [{ key: '_inspire_flag', label: 'Why it was not checked', className: 'wrap', render: (r) => <span data-unchecked-why>{uncheckedWhy(r._inspire_flag)}</span> }] : []),
     ...(meta.tier ? [{ key: meta.tier, label: 'Tier', render: (r) => (r[meta.tier] ? <span className={tierClass(r[meta.tier])}>{r[meta.tier]}</span> : '') }] : []),
     ...recordColumns(meta, data?.money, onFilter),
     ...(tracker ? [
@@ -927,9 +951,14 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
       key: '_next', label: 'Next step', hideLabel: true, fixed: true, className: 'nowrap row-next',
       render: (r) => {
         if (isClosed(r)) return '';
+        const name = recordSentenceName(r, meta);
         const now = rowChoice(choices, r)?.id;
         return (
           <span className="row-acts row-next-acts">
+            {snoozeOf(r) >= today && (
+              <AskFirst word={WAKE_WORD} ask={WAKE_ASK} name={name} write={`wake:${keyOf(r)}`} data-row-wake
+                run={() => quick(r, { snooze_until: null }, WOKE, `wake:${keyOf(r)}`)} />
+            )}
             {closingChoices(choices).filter((c) => c.id !== now).map((c) => {
               const label = isDefaultChoice(c) ? QUICK_CLOSE[statusKind(c.status)]?.[0] || c.label : c.label;
               const name = recordSentenceName(r, meta);

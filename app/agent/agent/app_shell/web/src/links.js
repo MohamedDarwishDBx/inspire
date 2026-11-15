@@ -23,7 +23,10 @@ function decodePart(text) {
 export const SECTIONS = ['dashboard', 'work', 'performance', 'runs', 'alerts', 'settings'];
 export const DEFAULT_SECTION = 'dashboard';
 export const OPEN_TAB = 'open';
-export const workTabs = (choices) => [[OPEN_TAB, 'Open'], ...(choices || []).map((c) => [c.id, c.label]), ['mine', 'Mine'], ['all', 'All']];
+export const UNCHECKED_TAB = 'unchecked';
+export const UNCHECKED_LABEL = 'Could not be checked';
+export const workTabs = (choices) => [[OPEN_TAB, 'Open'], ...(choices || []).map((c) => [c.id, c.label]), [UNCHECKED_TAB, UNCHECKED_LABEL],
+  ['mine', 'Mine'], ['all', 'All']];
 export const tabChoice = (choices, tab) => (choices || []).find((c) => c.id === tab) || null;
 export const DEFAULT_TAB = OPEN_TAB;
 export const FOCUSES = { overdue: 'Past their due date', unassigned: 'With no owner', older: 'On the list more than 30 days' };
@@ -447,5 +450,6 @@ export function tabCount(counts, id) {
   if (id === 'mine') return counts.mine ?? null;
   if (id === 'all') return counts.all ?? null;
   if (id === OPEN_TAB) return counts.open ?? null;
+  if (id === UNCHECKED_TAB) return counts.unchecked ?? null;
   return counts.choices?.[id] ?? null;
 }
