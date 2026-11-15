@@ -136,12 +136,17 @@ def test_the_run_helper_refuses_a_column_the_records_lack_and_a_mixed_grouping(f
         fresh_ns["inspire_group_records"](frame, group_by="region, country", out=lambda *_a: None)
     with pytest.raises(fresh_ns["InspireRunStop"], match="all stands alone"):
         fresh_ns["inspire_group_records"](frame, group_by="region, all", out=lambda *_a: None)
-    for asked, plain, groups in (("custom", "the Grouping all", {"Global"}), ("region, Custom", "the Grouping region", {"EMEA"})):
+    for asked, plain, groups in (("custom", "the Grouping all", {"Global"}),):
         said = []
         got = fresh_ns["inspire_group_records"](frame, group_by=asked, out=said.append)
         assert set(got["inspire_group"]) == groups
         assert fresh_ns["INSPIRE_CUSTOM_SQL_PLAIN"].format(part="Grouping", plain=plain) in said, said
         assert "build the MVP again" in said[0]
+    # REQ-263 round 3: a Grouping whose every column holds one value makes one group, so the run refuses it with the build's wording
+    said = []
+    with pytest.raises(fresh_ns["InspireRunStop"], match="region has one value in this data"):
+        fresh_ns["inspire_group_records"](frame, group_by="region, Custom", out=said.append)
+    assert fresh_ns["INSPIRE_CUSTOM_SQL_PLAIN"].format(part="Grouping", plain="the Grouping region") in said, said
     with pytest.raises(TypeError):
         fresh_ns["inspire_group_records"]([1, 2], group_by="all", out=lambda *_a: None)
     assert not issubclass(fresh_ns["InspireRunStop"], Exception), "a broad except Exception in Genie's code cannot swallow the stop"
