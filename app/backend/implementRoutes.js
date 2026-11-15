@@ -40,6 +40,7 @@ const GC = require('./lib/genieCodeCheck');
 const SA = require('./lib/sourceAccess');
 const D = require('./lib/buildDiagnostics');
 const MV = require('./lib/metricViews');
+const AR = require('./lib/accessRequest');
 
 function sendError(res, err) {
   const code = err && Number.isFinite(err.statusCode) ? err.statusCode : 500;
@@ -2066,6 +2067,30 @@ function registerImplementRoutes(app, deps) {
     const swapped = Object.keys(swaps).find((k) => k.replace(/`/g, '').toLowerCase() === primary.replace(/`/g, '').toLowerCase());
     return swapped === undefined ? primary : String(swaps[swapped] || primary).trim();
   }
+
+  // Request for Access (REQ-311): the Permission Required dialog checks whether a destination is set, then sends the request as the person.
+  // Both routes read the signed-in person's token only; the request names no principal, so it is always the requester's own.
+  const accessRequestCall = (req, token) => (path, opts) => jsonOf(dbFetch, req.dbHost, token, path, opts);
+  app.post('/api/access-request/check', requireToken, async (req, res) => {
+    const token = P.personTokenOf(req);
+    if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
+    try {
+      const who = RP.forwardedPerson(req.headers || {});
+      return res.json(await AR.checkAccessRequest({ call: accessRequestCall(req, token), who, statements: req.body?.statements }));
+    } catch (err) {
+      return sendError(res, err);
+    }
+  });
+  app.post('/api/access-request', requireToken, async (req, res) => {
+    const token = P.personTokenOf(req);
+    if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
+    try {
+      const who = RP.forwardedPerson(req.headers || {});
+      return res.json(await AR.sendAccessRequest({ call: accessRequestCall(req, token), who, statements: req.body?.statements }));
+    } catch (err) {
+      return sendError(res, err);
+    }
+  });
 
   // The three latest rates of a money rule's rate table, into its base currency, read with the person's own sign-in.
   app.post('/api/money/rate-sample', requireToken, async (req, res) => {
