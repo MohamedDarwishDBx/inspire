@@ -2359,13 +2359,15 @@ function scopeWhere(filters = [], window = {}) {
   return { where, parameters };
 }
 
-function readinessStatement(name, { columns = [], filters = [], window = {} } = {}) {
+function readinessStatement(name, { columns = [], filters = [], window = {}, periodColumn = '' } = {}) {
   const table = quoteTable(name);
   const wanted = [...new Set(columns.map((c) => str(c).trim()).filter(Boolean))].slice(0, 20);
   const { where, parameters } = scopeWhere(filters, window);
   const nulls = wanted.map((c, i) => `SUM(CASE WHEN ${quoteColumn(c)} IS NULL THEN 1 ELSE 0 END) AS null_${i}`);
+  // A forecast's data minimum counts periods (distinct dates of its event column), not raw rows, the same count the build's check makes.
+  const periods = str(periodColumn).trim() ? `, COUNT(DISTINCT CAST(${quoteColumn(str(periodColumn).trim())} AS DATE)) AS period_count` : '';
   return {
-    sql: `SELECT COUNT(*) AS row_count${nulls.length ? `, ${nulls.join(', ')}` : ''} FROM ${table}`
+    sql: `SELECT COUNT(*) AS row_count${periods}${nulls.length ? `, ${nulls.join(', ')}` : ''} FROM ${table}`
       + `${where.length ? ` WHERE ${where.join(' AND ')}` : ''}`,
     parameters: parameters.length ? parameters : null,
     columns: wanted,
@@ -2394,21 +2396,29 @@ function groupCountsStatement(name, columns = [], { filters = [], window = {}, t
 
 function readinessFromRow(row, columns) {
   const rows = Number(row && row.row_count) || 0;
+  const counted = row && row.period_count != null ? { period_count: Number(row.period_count) || 0 } : {};
   return {
     row_count: rows,
+    ...counted,
     null_share: Object.fromEntries(columns.map((c, i) => [c, rows ? (Number(row[`null_${i}`]) || 0) / rows : null])),
   };
 }
 
 const { execution_family: EXECUTION_FAMILY, readiness_thresholds: READINESS_THRESHOLDS, technique_min_rows: TECHNIQUE_MIN_ROWS } = require('../../agent/agent/app_shell/kinds.json');
 
+// The execution family a technique's readiness rules belong to ('' when none), e.g. 'E' for Forecasting.
+function analysisFamilyOf(technique) {
+  const wanted = str(technique).split(/\s+/).filter(Boolean).join(' ').toLowerCase();
+  const label = Object.keys(EXECUTION_FAMILY).find((k) => k.toLowerCase() === wanted);
+  return label ? EXECUTION_FAMILY[label] : '';
+}
+
 function analysisMinimumRows(technique) {
   const wanted = str(technique).split(/\s+/).filter(Boolean).join(' ').toLowerCase();
   const named = (table) => Object.keys(table).find((k) => k.toLowerCase() === wanted);
   const own = TECHNIQUE_MIN_ROWS[named(TECHNIQUE_MIN_ROWS) || ''];
   if (Number.isFinite(own)) return own;
-  const label = named(EXECUTION_FAMILY);
-  const minimum = label ? (READINESS_THRESHOLDS[EXECUTION_FAMILY[label]] || {}).min_rows : undefined;
+  const minimum = analysisFamilyOf(technique) ? (READINESS_THRESHOLDS[analysisFamilyOf(technique)] || {}).min_rows : undefined;
   return Number.isFinite(minimum) ? minimum : null;
 }
 
@@ -4110,6 +4120,7 @@ module.exports = {
   GROUP_COUNT_LIMIT,
   readinessFromRow,
   analysisMinimumRows,
+  analysisFamilyOf,
   rerunParams,
   rerunWidgets,
   rerunOverrides,

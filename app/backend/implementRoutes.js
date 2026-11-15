@@ -898,10 +898,14 @@ function registerImplementRoutes(app, deps) {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
       await refuseMetricView(req, warehouseId, table, { unknownType: true });
+      const window = req.body?.window || {};
+      // A forecast (family E) is measured in periods, so its date column is counted too; the wizard's refusal reads period_count.
+      const periodColumn = I.analysisFamilyOf(req.body?.technique) === 'E' ? String(window.column || '').trim() : '';
       const statement = I.readinessStatement(table, {
         columns: req.body?.columns || [],
         filters: req.body?.filters || [],
-        window: req.body?.window || {},
+        window,
+        periodColumn,
       });
       const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
       res.json({ skipped: false, ...I.readinessFromRow(rows[0] || {}, statement.columns), minimum_rows: I.analysisMinimumRows(req.body?.technique) });
