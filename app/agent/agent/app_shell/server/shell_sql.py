@@ -2396,18 +2396,20 @@ def add_months(day: datetime.date, months: int) -> datetime.date:
     return datetime.date(year, month, min(day.day, last))
 
 
+def preset_start(grain: str, last: datetime.date, months: int) -> datetime.date:
+    """The first day of a window of `months` calendar months ending at `last`, at month or day grain: the one rule every preset uses."""
+    if grain == "month":
+        return add_months(last.replace(day=1), -(months - 1))
+    return add_months(last, -months) + datetime.timedelta(days=1)
+
+
 def preset_ranges(grain: str, low, high) -> list:
     if low is None or high is None:
         return []
     first, last = _date(str(low)[:10]), _date(str(high)[:10])
     out = []
     for ident, label, months in PRESETS:
-        if months is None:
-            start = first
-        elif grain == "month":
-            start = add_months(last.replace(day=1), -(months - 1))
-        else:
-            start = add_months(last, -months) + datetime.timedelta(days=1)
+        start = first if months is None else preset_start(grain, last, months)
         out.append({"id": ident, "label": label, "from": max(start, first).isoformat(), "to": last.isoformat()})
     return out
 

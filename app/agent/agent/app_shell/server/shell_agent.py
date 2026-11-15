@@ -646,12 +646,67 @@ def window_phrase(question) -> str:
     return " ".join(found.group(0).lower().split()) if found else ""
 
 
+WINDOW_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+                "twelve": 12, "thirty": 30, "sixty": 60, "ninety": 90}
+
+
+def window_span(phrase: str, as_of: datetime.date):
+    """The inclusive (first, last) days of a relative window counted back from the as-of date. Months and quarters use the page's own
+    preset rule (shell_sql.preset_start), so a Genie question and a page preset agree on every boundary."""
+    if phrase in ("today", "yesterday"):
+        day = as_of - datetime.timedelta(days=0 if phrase == "today" else 1)
+        return day, day
+    if phrase in ("this month", "last month"):
+        if phrase == "this month":
+            return shell_sql.preset_start("month", as_of, 1), as_of
+        previous = as_of.replace(day=1) - datetime.timedelta(days=1)
+        return previous.replace(day=1), previous
+    if phrase in ("this quarter", "last quarter"):
+        quarter = (as_of.month - 1) // 3 * 3 + 1
+        start = datetime.date(as_of.year, quarter, 1)
+        if phrase == "this quarter":
+            return start, as_of
+        previous = start - datetime.timedelta(days=1)
+        return datetime.date(previous.year, (previous.month - 1) // 3 * 3 + 1, 1), previous
+    if phrase in ("this year", "last year"):
+        year = as_of.year if phrase == "this year" else as_of.year - 1
+        return datetime.date(year, 1, 1), (as_of if phrase == "this year" else datetime.date(year, 12, 31))
+    if phrase in ("this week", "last week"):
+        monday = as_of - datetime.timedelta(days=as_of.weekday())
+        if phrase == "this week":
+            return monday, as_of
+        return monday - datetime.timedelta(days=7), monday - datetime.timedelta(days=1)
+    found = re.fullmatch(rf"(?:last|past|previous|prior) ({WINDOW_NUMBER}) (days?|weeks?|months?|quarters?|years?)", phrase)
+    if not found:
+        return None
+    count = int(found.group(1)) if found.group(1).isdigit() else WINDOW_WORDS[found.group(1)]
+    unit = found.group(2).rstrip("s")
+    if unit == "day":
+        return as_of - datetime.timedelta(days=count - 1), as_of
+    if unit == "week":
+        return as_of - datetime.timedelta(days=7 * count - 1), as_of
+    months = count * {"month": 1, "quarter": 3, "year": 12}[unit]
+    return shell_sql.preset_start("month", as_of, months), as_of
+
+
+def explicit_question(question: str, as_of: datetime.date) -> str:
+    """The question with its first relative window rewritten into the explicit dates it covers."""
+    found = RELATIVE_WINDOW.search(question)
+    span = window_span(" ".join(found.group(0).lower().split()), as_of) if found else None
+    if span is None:
+        return question
+    first, last = span
+    text = f"on {last.isoformat()}" if first == last else f"between {first.isoformat()} and {last.isoformat()}"
+    lead = re.sub(r"\b(?:in|over|for|during|within|since)\s+(?:the\s+)?$", "", question[:found.start()], flags=re.I)
+    return lead + text + question[found.end():]
+
+
 def genie_question(question, as_of, today) -> str:
-    """A relative window in a Genie question counts back from the page's as-of date, the latest date in the data, so Genie and the page
-    agree. When the data is fresh the as-of is today and the question is unchanged."""
+    """A relative window in a Genie question is rewritten into the explicit dates it covers, counted back from the page's as-of date, the
+    latest date in the data, so Genie and the page agree without relying on Genie's clock. Fresh data (as-of equals today) is unchanged."""
     if not as_of or as_of == today or not window_phrase(question):
         return question
-    return f"{question} Count relative dates from {as_of}, the latest date in the data, not from today ({today})."
+    return explicit_question(question, datetime.date.fromisoformat(as_of))
 
 
 def window_note(question, as_of, today) -> str:
