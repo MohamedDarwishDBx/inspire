@@ -506,7 +506,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
   const [progressDock, setProgressDock] = useState(null);
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-6 space-y-4 md:flex md:flex-col md:[&>:not(:last-child)]:shrink-0 md:max-h-[calc(100dvh-3.5rem-1px)] md:has-[[data-progress-open=true]]:h-[calc(100dvh-3.5rem-1px)]" data-implement-page="">
+    <div className="max-w-7xl mx-auto px-6 py-6 space-y-4 md:flex md:flex-col md:[&>:not(:last-child)]:shrink-0 md:max-h-[calc(100dvh-3.5rem-1px)] md:has-[[data-progress-open=true]]:h-[calc(100dvh-3.5rem-1px)] md:pe-[calc(var(--dock-width,0px)+1.5rem)]" data-implement-page="">
       <PageHeader summary={summary} loading={listLoading} query={query} onQuery={setQuery} />
       {!listLoading && !listError && <SummaryBanner summary={summary} />}
       {filter && <BuildFilterStrip filter={filter} sessionId={sessionId} onPickRun={onPickRun} onClear={clearFilter} />}
@@ -562,7 +562,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
             !listLoading && !listError && <p className={`${PANEL_CLASS} p-6 text-[12px] text-text-secondary`}>This session has no use cases yet.</p>
           )}
         </section>
-      <div ref={setProgressDock} data-progress-dock="" className="hidden empty:hidden md:flex md:shrink-0 md:sticky md:top-14 md:self-start md:h-[calc(100dvh-3.5rem)]" />
+      <div ref={setProgressDock} data-progress-dock="" className="hidden empty:hidden md:flex" />
       </div>
       </ProgressDock.Provider>
       {wizard && !readOnly && (

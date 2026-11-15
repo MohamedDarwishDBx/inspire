@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import BodyPortal from './BodyPortal';
@@ -30,6 +30,12 @@ export default function DrawerShell({ label, closeLabel, focusKey = null, focusO
   const openerRef = useRef(null);
   const [width, setWidth] = useState(() => loadPaneWidth(DRAWER_WIDTH));
   useEffect(() => { if (!center) savePaneWidth(DRAWER_WIDTH, width); }, [width, center]);
+  // A docked drawer sits fixed under the App header. The page keeps a column for it: the page reserves --dock-width on the right (REQ-143).
+  useLayoutEffect(() => {
+    if (!docked) return undefined;
+    document.documentElement.style.setProperty('--dock-width', `${width}px`);
+    return () => document.documentElement.style.removeProperty('--dock-width');
+  }, [docked, width]);
 
   const openedByPerson = useRef(false);
   useEffect(() => {
@@ -113,7 +119,7 @@ export default function DrawerShell({ label, closeLabel, focusKey = null, focusO
     </div>
     </>
   );
-  if (docked) return createPortal(<div className="flex h-full min-h-0 md:shrink-0" {...rest}>{panel}</div>, dock);
+  if (docked) return createPortal(<div className="flex h-full min-h-0 md:fixed md:top-14 md:end-0 md:h-[calc(100dvh-3.5rem)] md:z-30" {...rest}>{panel}</div>, dock);
   return (
     <BodyPortal>
       <div className={`fixed inset-0 flex ${side ? 'z-[45] pointer-events-none' : 'z-[70]'} ${center ? 'items-center justify-center p-4' : 'justify-end'}`} {...rest}>
