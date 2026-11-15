@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import BodyPortal from './BodyPortal';
@@ -7,7 +7,6 @@ import { DRAWER_WIDTH, loadPaneWidth, paneWidth, savePaneWidth } from '../lib/pa
 import { useModal } from './useModal';
 
 const WIDE = '(min-width: 768px)';
-const DOCK_RESERVE = '(min-width: 1280px)';
 
 function useWide() {
   const [wide, setWide] = useState(() => window.matchMedia(WIDE).matches);
@@ -31,17 +30,6 @@ export default function DrawerShell({ label, closeLabel, focusKey = null, focusO
   const openerRef = useRef(null);
   const [width, setWidth] = useState(() => loadPaneWidth(DRAWER_WIDTH));
   useEffect(() => { if (!center) savePaneWidth(DRAWER_WIDTH, width); }, [width, center]);
-  // A docked drawer sits fixed under the App header. From 1280px up the page keeps a column for it (--dock-width, REQ-143); below
-  // that the drawer overlays the page, because a column there leaves the use case pane no width to read or scroll.
-  useLayoutEffect(() => {
-    if (!docked) return undefined;
-    const root = document.documentElement.style;
-    const media = window.matchMedia(DOCK_RESERVE);
-    const sync = () => { if (media.matches) root.setProperty('--dock-width', `${width}px`); else root.removeProperty('--dock-width'); };
-    sync();
-    media.addEventListener('change', sync);
-    return () => { media.removeEventListener('change', sync); root.removeProperty('--dock-width'); };
-  }, [docked, width]);
 
   const openedByPerson = useRef(false);
   useEffect(() => {
@@ -125,7 +113,7 @@ export default function DrawerShell({ label, closeLabel, focusKey = null, focusO
     </div>
     </>
   );
-  if (docked) return createPortal(<div className="flex h-full min-h-0 md:fixed md:top-14 md:end-0 md:h-[calc(100dvh-3.5rem)] md:z-30" {...rest}>{panel}</div>, dock);
+  if (docked) return createPortal(<div className="flex h-full min-h-0 md:shrink-0" {...rest}>{panel}</div>, dock);
   return (
     <BodyPortal>
       <div className={`fixed inset-0 flex ${side ? 'z-[45] pointer-events-none' : 'z-[70]'} ${center ? 'items-center justify-center p-4' : 'justify-end'}`} {...rest}>
