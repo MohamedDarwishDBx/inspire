@@ -170,6 +170,7 @@ import {
   appPagesOf,
   LAKEVIEW_STYLE_NOTE,
   GENIE_FOR_APP_NOTE,
+  APP_GENIE_NOTE,
   RESULT_TABLE_MOVE_NOTE,
   MERGE_OUTPUTS,
   resultTableParts,
@@ -1848,6 +1849,7 @@ export default function ImplementWizard({
                             <span className="block text-[11px] mt-1 text-text-secondary">
                               {item.blurb}
                               {item.id === 'genie_space' && spec.outputs.app && ` ${GENIE_FOR_APP_NOTE}`}
+                              {item.id === 'app' && ` ${APP_GENIE_NOTE}`}
                               {!cannot && item.id === 'app' && ` ${APP_NEXT_NOTE}`}
                             </span>
                             {cannot && on && <span className="block text-[11px] mt-1 text-error-fg">It cannot be built, so turn it off.</span>}
@@ -2369,7 +2371,7 @@ export default function ImplementWizard({
           <div className="flex items-center gap-2">
             {/* The Build button already reads Checking access while the check runs, so the status is announced, not shown. Absolute, so it takes no room and the footer keeps its height. */}
             {lastStep && checksBusy && (
-              <p data-access-progress="" className="text-[11px] text-text-secondary">{accessCheckingText(spec, checkSeconds)}</p>
+              <p data-access-progress="" className="text-[11px] text-text-secondary">{accessCheckingText(checkSeconds)}</p>
             )}
             {lastStep && (
               <p role="status" data-access-verdict={accessVerdict === 'pending' ? 'pending' : undefined} className="sr-only">

@@ -2,6 +2,10 @@ const { isMissingTableError } = require('./lib/inspireFeedback');
 const { INSPIRE_DB_SHAPE, USE_CASE_ID_SHAPE, noSessionText, stepsStatement } = require('./lib/sqlInputs');
 const I = require('./lib/inspireImplement');
 const { createGenieJobGuard } = require('./lib/genieJobGuard');
+const { mapLimit } = require('./lib/mapLimit');
+
+// REQ-323: how many history rows are enriched at once.
+const HISTORY_ROW_CONCURRENCY = 8;
 const { runWithQueryTags, lookupWithRetry } = require('./lib/sqlStatements');
 const { genieNotebookJobName, latestGenieNotebookRun } = require('./lib/genieNotebookJob');
 const C = require('./lib/implementControl');
@@ -703,10 +707,13 @@ function registerImplementRoutes(app, deps) {
         const live = I.liveBuiltRow(rows);
         return Object.assign(rows[0], { live_version: live ? live.spec_version : null, live_spec_json: live ? live.spec_json : null });
       });
+      // REQ-323: the per-row reads run at most HISTORY_ROW_CONCURRENCY at a time, so one session cannot flood the warehouse or the Jobs API.
       const [notebook] = await Promise.all([
         latestGenieNotebookRun(fetchJsonFor(req), sid).then((run) => ({ run, error: '' }), (err) => ({ run: null, error: err.message })),
-        ...latest.map(async (row) => { row.stalled = await stalledOf(req, row); }),
-        ...latest.map((row) => latestRunOf(req, warehouseId, row, versionsByUc[row.use_case_id])),
+        mapLimit(latest, HISTORY_ROW_CONCURRENCY, async (row) => {
+          row.stalled = await stalledOf(req, row);
+          await latestRunOf(req, warehouseId, row, versionsByUc[row.use_case_id]);
+        }),
       ]);
       res.json({ history, latest, notebook_run: notebook.run, notebook_run_error: notebook.error });
     } catch (err) {

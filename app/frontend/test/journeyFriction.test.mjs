@@ -27,11 +27,7 @@ test('a build that never lands is dropped after the TTL, so the list never shows
   assert.equal(pending.size, 0);
 });
 
-// REQ-324: the Build button's wait says what it checks and for how long.
-test('the access wait names the parts it checks and the seconds so far (REQ-324)', () => {
-  assert.equal(accessCheckingText({ outputs: { app: true } }, 7),
-    'Checking the warehouse, the result table, the source tables and the App name, 7 s so far');
-  assert.equal(accessCheckingText({ outputs: { app: false, alert: true } }, 0),
-    'Checking the warehouse, the result table, the source tables and the alert, 0 s so far');
-  assert.doesNotMatch(accessCheckingText({ outputs: {} }, 1), /App name/, 'no App name check without an App');
+// REQ-324: the Build button's wait names the checks that run together, and for how long.
+test('the access wait names the checks running together and the seconds so far (REQ-324)', () => {
+  assert.equal(accessCheckingText(7), "Checking the source tables, where results go and the App's access, 7 s so far");
 });
