@@ -11,7 +11,7 @@ import {
   vibesProblems, OPEN_ALL_SETTINGS, VIBE_FEATURES_LABEL, CHANGE_CHOICES_LABEL, DATA_STOP_HINT, dataStopped, shownStatusMessage,
   swapParts,
   failureChoices, stoppedChoices, genieNotebookRequest, FAILURE_CHOICES_HEADING, FAILURE_ROUNDS_HEADING, TERMINAL_STOP_HINT, TERMINAL_NEEDS_CHANGE,
-  unreliableHold, olderBuildNote, UNRELIABLE_REBUILD_NOTE, isAppUpdate, APP_UPDATED_TEXT, appReadsOf, appObjectsOf, appReadsChoices, appReadsText, appReadsOwners, viewerRows, tableRows, APP_READS_HEADING, APP_READS_CLEARED, protectionStopOf, protectionChoices, abacGrantText, grantGapPermissions, grantFailurePermissions, liveSourceNow, liveProtection, liveReads,
+  unreliableHold, olderBuildNote, appReadsName, UNRELIABLE_REBUILD_NOTE, isAppUpdate, APP_UPDATED_TEXT, appReadsOf, appObjectsOf, appReadsChoices, appReadsText, appReadsOwners, viewerRows, tableRows, APP_READS_HEADING, APP_READS_CLEARED, protectionStopOf, protectionChoices, abacGrantText, grantGapPermissions, grantFailurePermissions, liveSourceNow, liveProtection, liveReads,
 } from '../lib/implementWizard';
 import { makeApiFetch, makeApiPostJson } from '../lib/apiClient';
 import { buildUseCaseList } from '../lib/useCaseList';
@@ -70,7 +70,6 @@ import { buildFilterText } from '../lib/reviewFigures';
 import ValueEstimateLine from '../components/ValueEstimateLine';
 import { useValueRead } from '../lib/useValueLedger';
 import { BuildNextStep } from '../components/BuildNext';
-import PermissionRequired from '../components/PermissionRequired';
 import { grantListKey, raisePermissions } from '../lib/permissionBus';
 
 const OUTPUT_ICONS = { notebook: NotebookPen, dashboard: LayoutDashboard, genie_space: GenieLogo, app: AppWindow, alert: BellRing };
@@ -961,7 +960,6 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   const [readsResult, setReadsResult] = useState(null);
   // A user-authorization App: the people who may open it and the scope views they cannot read yet (from the last check or grant).
   const [viewerReads, setViewerReads] = useState(null);
-  const [permissionDialog, setPermissionDialog] = useState(null);
   const [readsBusy, setReadsBusy] = useState('');
   const [protectionCopy, setProtectionCopy] = useState('');
   const [protectionFailed, setProtectionFailed] = useState([]);
@@ -1479,18 +1477,19 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
         <div className="min-w-0 space-y-1 text-warning-fg">
           <p className="text-[13px] font-semibold">{readsLeft.tables.length ? APP_READS_HEADING : APP_READS_CLEARED}</p>
           {readsLeft.tables.length > 0 && !readsLeft.viewers && <p>{appReadsText(readsLeft, latest?.app_name || '')}</p>}
+          {readsLeft.tables.length > 0 && <p>Ask your admin to grant access. The exact commands are in Permission Required.</p>}
           {readsLeft.tables.length > 0 && readsLeft.viewers && (
             <ul aria-label="Viewers who still need access" data-viewer-rows="" className="list-disc ps-5 space-y-0.5">
-              {viewerRows(readsLeft).map((r) => <li key={`${r.viewer}|${r.table}`} data-viewer-row={r.viewer}>{`${r.viewer}: needs ${r.needs.join(', ')} on ${r.table}`}</li>)}
+              {viewerRows(readsLeft).map((r) => <li key={`${r.viewer}|${r.table}`} data-viewer-row={r.viewer}>{`Ask your admin to grant ${r.viewer} access to ${appReadsName(r.table)}`}</li>)}
             </ul>
           )}
           {readsLeft.tables.length > 0 && !readsLeft.viewers && (
             <ul aria-label="Tables the App cannot read" data-table-rows="" className="list-disc ps-5 space-y-0.5">
-              {tableRows(readsLeft).map((r) => <li key={r.table} data-table-row={r.table}>{`${r.table}: needs ${r.needs.join(', ')}`}</li>)}
+              {tableRows(readsLeft).map((r) => <li key={r.table} data-table-row={r.table}>{appReadsName(r.table)}</li>)}
             </ul>
           )}
           {(readsResult?.permissions?.length > 0 || mustActPermissions.length > 0) && (
-            <button type="button" data-see-grant="" onClick={() => setPermissionDialog({ permissions: readsResult?.permissions?.length ? readsResult.permissions : mustActPermissions })}
+            <button type="button" data-see-grant="" onClick={() => raisePermissions(readsResult?.permissions?.length ? readsResult.permissions : mustActPermissions, {}, { explicit: true })}
               className="inline-flex h-7 items-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-semibold text-text-primary hover:bg-bg-subtle">
               See the grant
             </button>
@@ -1958,7 +1957,6 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
           error={rebuildError || error} built={builtOn} choices={choices} previous={previous} blocked={rebuildBlocked}
           onPrevious={setPrevious} onAdd={addFeature} onDrop={dropAsk} onRemoveAsk={removeAsk} onRebuild={rebuild} onOpenSettings={onEdit ? openSettings : null} onClose={closeFeatures} />
       )}
-      {permissionDialog && <PermissionRequired permissions={permissionDialog.permissions} onClose={() => setPermissionDialog(null)} />}
     </div>
     </>
   );

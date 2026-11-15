@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AlertCircle, Check, Copy } from 'lucide-react';
 import TechnicalDetails, { PlainMessage } from './TechnicalDetails';
 import { copyText } from '../lib/clipboard';
-import { raisePermissions } from '../lib/permissionBus';
 
 /**
  * Rich error panel when a failure is likely missing UC / workspace permissions.
@@ -10,10 +9,6 @@ import { raisePermissions } from '../lib/permissionBus';
  */
 export default function UcPermissionErrorHelp({ guidance }) {
   const [copied, setCopied] = useState(false);
-  // REQ-131, REQ-137: a permission refusal opens the Permission Required dialog, which holds the exact GRANT statements.
-  useEffect(() => {
-    if (guidance?.permissions?.length) raisePermissions(guidance.permissions);
-  }, [guidance]);
   if (!guidance) return null;
 
   const copyAdminText = async () => {
