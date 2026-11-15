@@ -262,7 +262,7 @@ def test_every_built_output_and_part_gets_its_own_record_and_only_a_missed_ask_w
     assert chart["vibes_checks"] == [
         {"ask": "Make it a horizontal bar chart", "status": "missing",
          "evidence": "the built Customers by region bar chart on the dashboard chart by_region has no horizontal_bar chart; its charts are "
-                     "bar chart by_region",
+                     "bar chart Customers by region",
          "checks": [{"name": "chart_type: horizontal bar", "passed": False}]},
         {"ask": "Keep the biggest regions first", "status": "done", "evidence": "sort: value_desc by value",
          "checks": [{"name": "sort: value", "passed": True}]}]
@@ -394,9 +394,9 @@ def test_the_split_keeps_every_ask_and_only_checks_it_can_trust(agent_ns):
 
 
 @pytest.mark.parametrize("asset,check,status,evidence", [
-    ("dashboard:by_region", {"kind": "chart_type", "value": "Bar chart"}, "done", "chart by_region: type bar"),
+    ("dashboard:by_region", {"kind": "chart_type", "value": "Bar chart"}, "done", "chart Customers by region: type bar"),
     ("dashboard:by_region", {"kind": "chart_type", "value": "horizontal bar"}, "missing",
-     "the built dashboard chart by_region has no horizontal_bar chart; its charts are bar chart by_region"),
+     "the built dashboard chart by_region has no horizontal_bar chart; its charts are bar chart Customers by region"),
     ("dashboard:by_region", {"kind": "sort", "value": "value", "direction": "desc"}, "done", "sort: value_desc"),
     ("dashboard:by_region", {"kind": "sort", "value": "region", "direction": "asc"}, "missing",
      "the built dashboard chart by_region orders by sort value_desc by value, never by region"),
@@ -415,6 +415,17 @@ def test_a_checkable_ask_is_checked_against_exactly_what_was_built(agent_ns, ass
     assert reason == ""
     found = agent_ns["implement_vibes_fact"](check, target, agent_ns["implement_asset_label"](asset), ("bar", "horizontal_bar", "line"))
     assert found[0] == status and evidence in found[1], found
+
+
+def test_a_chart_listing_names_each_chart_by_its_title_and_never_by_its_id(agent_ns):
+    # REQ-237: the listing in person copy names a chart by its title. The internal id must not appear in it (must-exclude).
+    target, reason = agent_ns["implement_vibes_target"]("dashboard:by_region", PAGE)
+    assert reason == ""
+    status, text = agent_ns["implement_vibes_fact"]({"kind": "chart_type", "value": "horizontal bar"}, target, "dashboard", ("bar", "horizontal_bar", "line"))
+    assert status == "missing"
+    listing = text.split("its charts are ", 1)[1]
+    assert listing == "bar chart Customers by region", listing
+    assert "by_region" not in listing
 
 
 def test_an_ask_for_a_part_this_build_does_not_have_says_exactly_why(agent_ns):
