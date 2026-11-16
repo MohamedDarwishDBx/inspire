@@ -62,6 +62,7 @@ import {
   columnsReadOf,
   filterTablesOutside,
   withoutTableFilters,
+  withChosenScope,
   groupPartColumns,
   scopeNarrowing,
   emptyScopeWarningOf,
@@ -296,7 +297,7 @@ import Advanced from '../components/Advanced';
 import CatalogPicker from '../components/CatalogPicker';
 import { PROFILE_WAITING, noMainTableText, useScopeProfiles } from '../lib/groupingProfile';
 import { fieldOf } from '../lib/useCaseFields.js';
-import { normalizeTableScope, scopeEntryOf, tableScopeSummary } from '../lib/tableScope';
+import { chosenTableScopes, normalizeTableScope, rowFilterText, scopeEntryOf, tableScopeSummary, wholeTableScopes, withoutTableRow } from '../lib/tableScope';
 import SamplesCopyOffer from '../components/SamplesCopyOffer';
 import { samplesTarget, validCopyTarget } from '../lib/samplesCopy';
 import { useModal } from '../components/useModal';
@@ -650,7 +651,11 @@ export default function ImplementWizard({
   // REQ-344: the steps between this one and Review & build, which the early Build button submits with their defaults.
   const defaultsLine = buildNowDefaultsText(steps.slice(stepIndex + 1, steps.length - 1).map((x) => x.label));
   const scopeReady = scopeProfile.state !== 'loading';
-  const scopeNow = readinessScope(spec, ucRow, context?.table_scope);
+  // REQ-389: the Table Scope the build reads is the Discover run's, unless the person chose on the Data step.
+  const carriedScope = context?.table_scope || {};
+  const dataScope = chosenTableScopes(spec.data, carriedScope);
+  const setDataScope = (scopes) => setSpec((prev) => withChosenScope(prev, scopes));
+  const scopeNow = readinessScope(spec, ucRow, dataScope);
   const scopeKey = JSON.stringify(scopeNow);
   const readCounted = countedFor(readiness, scopeNow);
   const scopeCounted = Boolean(readCounted);
@@ -791,6 +796,10 @@ export default function ImplementWizard({
       .filter((t) => !removed.some((r) => r.toLowerCase() === t.toLowerCase()))
       .map((t) => spec.data.tables[t] || t);
   }, [ucRow, spec.data.tables, spec.data.removed_tables]);
+  // The Discover row filters on the source tables (REQ-389): the chips, and whether Whole data is the choice now.
+  const carriedRowFilters = sourceTables.reduce((n, table) => n + normalizeTableScope(scopeEntryOf(carriedScope, table) || {}).rows.length, 0);
+  const wholeChosen = carriedRowFilters > 0 && sourceTables.every((table) => normalizeTableScope(scopeEntryOf(dataScope, table) || {}).rows.length === 0);
+  const scopeChosen = spec.data?.table_scope !== undefined;
 
   const loadColumns = useCallback(async (table) => {
     if (!table || columnsByTable[table]) return;
@@ -951,7 +960,7 @@ export default function ImplementWizard({
   }, [scopeKey, stepId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const countDataScope = async () => {
-    const scope = readinessScope(spec, ucRow, context?.table_scope);
+    const scope = readinessScope(spec, ucRow, dataScope);
     if (scope.table) {
       setChecking('Checking the data');
       setDataCheckAt(Date.now());
@@ -2333,7 +2342,7 @@ export default function ImplementWizard({
             <p className="font-semibold text-text-primary">What Inspire reads from each table</p>
             <ul className="list-disc ps-4">
               {sourceTables.map((table) => {
-                const entry = scopeEntryOf(context?.table_scope, table);
+                const entry = scopeEntryOf(dataScope, table);
                 const kept = entry ? normalizeTableScope(entry).columns : [];
                 return (
                   <li key={table} data-scope-table={table}>
@@ -2342,6 +2351,34 @@ export default function ImplementWizard({
                 );
               })}
             </ul>
+            {carriedRowFilters > 0 && (
+              <div data-discover-filters="" className="pt-1 space-y-1.5">
+                <p className="text-text-primary">Row filters from Discover. Remove one, or read whole data.</p>
+                <ul className="flex flex-wrap gap-1.5">
+                  {sourceTables.flatMap((table) => normalizeTableScope(scopeEntryOf(dataScope, table) || {}).rows.map((row, i) => {
+                    const text = rowFilterText(row);
+                    return (
+                      <li key={`${table}-${text}-${i}`} data-scope-chip={table} className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2.5 py-1 text-text-primary">
+                        <span>{text} on {table}</span>
+                        <button type="button" aria-label={`Remove row filter ${text} on ${table}`} data-scope-chip-remove=""
+                          onClick={() => setDataScope(withoutTableRow(dataScope, table, i))} className="hover:text-db-red-fg">
+                          <X size={10} />
+                        </button>
+                      </li>
+                    );
+                  }))}
+                </ul>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" data-whole-data="" aria-pressed={wholeChosen} disabled={wholeChosen}
+                    onClick={() => setDataScope(wholeTableScopes(dataScope))}
+                    className="px-2.5 py-1 rounded-md border border-border font-semibold text-text-primary disabled:text-db-red-fg disabled:border-db-red-fg">Whole data</button>
+                  {wholeChosen && <span data-whole-data-note="">Whole data: the build reads every row of each table. The columns stay as Discover read them.</span>}
+                  {scopeChosen && (
+                    <button type="button" data-discover-filters-restore="" onClick={() => setDataScope(null)} className="font-semibold text-db-red-fg hover:underline">Use the Discover filters again</button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
         {readiness?.warning && (

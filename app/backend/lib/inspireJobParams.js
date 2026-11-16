@@ -169,6 +169,19 @@ function parseTableScopeText(text) {
   return scopesFromObject(parsed);
 }
 
+/** REQ-389: the build reads the scope the person chose on the Data step. No choice (dataSpec.table_scope absent) keeps the Discover
+ * run's scope; an empty choice takes every row filter off, so the build reads whole tables. */
+function withChosenTableScope(params, dataSpec) {
+  const chosen = dataSpec && dataSpec.table_scope;
+  if (!chosen) return params;
+  const { label } = parseTableScopeText(params['17_table_scope']);
+  const text = serializeTableScopes(chosen, Object.keys(chosen), label || '');
+  const next = { ...params };
+  if (text) next['17_table_scope'] = text;
+  else delete next['17_table_scope'];
+  return next;
+}
+
 function validateTableScopeParams(params, picks = params['01_uc_metadata']) {
   const { scopes, problems, label } = parseTableScopeText(params['17_table_scope']);
   if (problems.length) throw paramError(`Table scope: ${joinSentences(...problems)}`);
@@ -610,6 +623,7 @@ module.exports = {
   validateStrategicContextParams,
   validateBestOfBestCountParams,
   validateTableScopeParams,
+  withChosenTableScope,
   validateRelationshipParams,
   parseMaybeJson,
   belowBarLabelFromUseCase,

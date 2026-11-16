@@ -21,6 +21,7 @@ const {
   ownSchemaAllTakenNote, ownSchemaClashNote, ownSchemaFallbackNote, ownSchemaReuseNote, rowKeyOf, USE_CASE_SCHEMA_CLASH_LIMIT,
 } = require('../../frontend/src/lib/implementWizard.js');
 const { quotedIdent } = require('../../frontend/src/lib/tableName.js');
+const { scopesFromObject } = require('../../frontend/src/lib/tableScope.js');
 const { RUN_STATE_UNKNOWN, runStateText } = require('../../frontend/src/lib/runState.js');
 
 const IMPLEMENT_OPERATION = 'Implement Use Cases';
@@ -403,6 +404,13 @@ function validateImplementSpec(input, { shell = null, legacyAccess = '', impact 
       filters.push({ table, column, op, values });
     }
   }
+  // REQ-389: the scope the build reads when the person changed the Discover filters on the Data step. Absent: the Discover scope.
+  let tableScope = null;
+  if (data.table_scope !== undefined && data.table_scope !== null) {
+    const parsed = scopesFromObject(data.table_scope);
+    if (parsed.problems.length) errors.push(`table scope: ${parsed.problems.join(' ')}`);
+    else tableScope = parsed.scopes;
+  }
   const profileText = textValue(data.run_profile);
   const profile = profileText === null ? '' : (profileText || 'preview').toLowerCase();
   if (!IMPLEMENT_RUN_PROFILES.includes(profile)) errors.push(`run_profile must be one of ${IMPLEMENT_RUN_PROFILES.join(', ')}`);
@@ -457,6 +465,7 @@ function validateImplementSpec(input, { shell = null, legacyAccess = '', impact 
   out.data = {
     tables, removed_tables: removedTables, filters, run_profile: profile, column_roles: roles, window: { start, end },
     notes: vibesText(data.notes, 'data.notes', 'notebook', errors),
+    ...(tableScope ? { table_scope: tableScope } : {}),
   };
 
   const config = objectField(spec.config, 'config', errors);
