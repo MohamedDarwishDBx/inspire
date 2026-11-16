@@ -1456,6 +1456,25 @@ def stake_text(value) -> str:
     return "" if value is None else str(value)[:40]
 
 
+def tell_apart(tickets: list) -> list:
+    """Tickets that share a label get the parts of their record key that differ among them (the record's own key fields, such as the
+    hour), so each card says what makes it a different record. A label shared by one ticket is left as it is."""
+    groups = {}
+    for ticket in tickets:
+        groups.setdefault(ticket["label"], []).append(ticket)
+    for label, group in groups.items():
+        if len(group) < 2:
+            continue
+        parts = [str(t["record_key"]).split(" | ") for t in group]
+        width = max(len(p) for p in parts)
+        differs = [i for i in range(width) if len({p[i] if i < len(p) else "" for p in parts}) > 1]
+        if not differs:
+            continue
+        for ticket, p in zip(group, parts):
+            ticket["label"] = cut(f"{label} · " + " | ".join(p[i] for i in differs if i < len(p)), shell_blocks.LABEL_CHARS)
+    return tickets
+
+
 def ticket_of(page: dict, row: dict):
     """A ticket from a list row: the record's own label, value at stake, status, tier and reasons."""
     records = page.get("records") or {}
@@ -2036,7 +2055,7 @@ class Agent:
             return {"page": page["id"], "total": 0, "tickets": [], "actions": [], "chips": chips}
         ws, _who = self.shell.workspace(headers)
         found = self.listing({"page": page, "headers": dict(headers), "ws": ws}, {}, BRIEF_ROWS)
-        tickets = [t for t in (ticket_of(page, r) for r in found["rows"]) if t]
+        tickets = tell_apart([t for t in (ticket_of(page, r) for r in found["rows"]) if t])
         return {"page": page["id"], "total": found["total"], "tickets": tickets,
                 "actions": list(ACTIONS) if self.shell.decides(page) else [], "chips": chips}
 

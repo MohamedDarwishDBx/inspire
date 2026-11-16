@@ -10,7 +10,7 @@ const REFUSED = [401, 403];
 
 function usageColumns(first, lead, kinds) {
   return [
-    { key: 'name', label: first, render: (r) => <><b>{r.name}</b>{r.errors?.map((e) => <small key={e} className="usage-err">{e}</small>)}</> },
+    { key: 'name', label: first, render: (r) => <><b>{r.name}</b>{r.errors?.map((e, i) => <small key={`${i}-${e}`} className="usage-err">{e}</small>)}</> },
     ...lead.map((h, i) => ({ key: `lead_${i}`, label: h.label, num: !!h.num, sortValue: (r) => r.amounts.lead[i], render: (r) => r.lead[i] })),
     ...kinds.map((k, i) => ({ key: `kind_${k.id}`, label: k.label, num: true, sortValue: (r) => r.amounts.cells[i], render: (r) => r.cells[i] })),
     { key: 'total', label: 'All', num: true, sortValue: (r) => r.amounts.total, render: (r) => <b>{r.total}</b> },

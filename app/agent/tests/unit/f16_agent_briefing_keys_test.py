@@ -50,10 +50,22 @@ def test_three_records_with_one_label_give_three_distinct_briefing_tickets():
     assert len(keys) == 3
     assert len(set(keys)) == 3, "one record must not be rendered three times"
     assert keys == ["f1 | 2024-05-19", "f1 | 2024-05-20", "f1 | 2024-05-21"]
-    assert {t["label"] for t in out["tickets"]} == {"Franchise 3000000"}
 
 
 def test_a_row_without_a_key_is_not_turned_into_a_card():
     rows = {"": {"franchise": "Franchise 3000000", "units": "2", "value_at_stake": 1, "tier": "t", "why": "", "status": "open"}}
     out = agent(Shell(rows)).briefing({}, "p")
     assert out["tickets"] == []
+
+
+def test_cards_that_share_a_label_say_what_differs_from_their_own_key():
+    out = agent(Shell(SAME_FRANCHISE)).briefing({}, "p")
+    assert [t["label"] for t in out["tickets"]] == [
+        "Franchise 3000000 · 2024-05-19", "Franchise 3000000 · 2024-05-20", "Franchise 3000000 · 2024-05-21"]
+
+
+def test_a_label_no_other_card_shares_is_left_as_it_is():
+    rows = {"u1 | 2024-05-19": {"franchise": "Unit 1", "units": "2", "value_at_stake": 5, "tier": "t", "why": "", "status": "open"},
+            "u2 | 2024-05-19": {"franchise": "Unit 2", "units": "2", "value_at_stake": 4, "tier": "t", "why": "", "status": "open"}}
+    out = agent(Shell(rows)).briefing({}, "p")
+    assert [t["label"] for t in out["tickets"]] == ["Unit 1", "Unit 2"]

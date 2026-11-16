@@ -2358,7 +2358,7 @@ export default function ImplementWizard({
         )}
         {footerErrors.length > 0 && (
           <div role="alert" className="bg-error-bg border border-error/20 rounded-md px-3 py-2 space-y-0.5">
-            {footerErrors.map((e) => <PlainMessage key={e} text={e} onRetry={footerRetry.get(e) || null} copy={footerRetry.has(e)} className="text-xs text-error-fg" />)}
+            {footerErrors.map((e, i) => <PlainMessage key={`${i}-${e}`} text={e} onRetry={footerRetry.get(e) || null} copy={footerRetry.has(e)} className="text-xs text-error-fg" />)}
           </div>
         )}
         {missingSourcePick(missingTables) && (
@@ -3574,8 +3574,8 @@ function Overlay({ title, uc, steps, stepsReady = true, step, reach = [], done =
                   )}
                   {facts.length > 0 && (
                     <ul aria-label="About this use case" className="flex flex-wrap gap-1.5">
-                      {facts.map(([label, value]) => (
-                        <li key={label} className="rounded-full border border-border bg-bg-subtle px-2 py-0.5 text-[11px] text-text-secondary">
+                      {facts.map(([label, value], i) => (
+                        <li key={`${i}-${label}`} className="rounded-full border border-border bg-bg-subtle px-2 py-0.5 text-[11px] text-text-secondary">
                           <span className="text-text-tertiary">{label}</span> <span className="font-medium text-text-primary">{value}</span>
                         </li>
                       ))}

@@ -1295,8 +1295,8 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                       </span>
                     </div>
                     <div className="max-h-32 overflow-y-auto flex flex-wrap gap-1">
-                      {selectedTables.map((t) => (
-                        <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-db-red-50 text-db-red-fg text-[10px] font-medium border border-db-red/20">
+                      {selectedTables.map((t, i) => (
+                        <span key={`${i}-${t}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-db-red-50 text-db-red-fg text-[10px] font-medium border border-db-red/20">
                           <Table2 size={9} />
                           {t.split('.').pop()}
                           <button aria-label={`Remove ${t}`} onClick={() => setPickedChildren(selectedSchemas, selectedTables.filter((x) => x !== t))} className="hover:text-db-red-fg ms-0.5"><X size={8} /></button>
@@ -1305,14 +1305,14 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                           )}
                         </span>
                       ))}
-                      {selectedSchemas.map((s) => (
-                        <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-subtle text-text-secondary text-[10px] font-medium border border-border">
+                      {selectedSchemas.map((s, i) => (
+                        <span key={`${i}-${s}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-subtle text-text-secondary text-[10px] font-medium border border-border">
                           {s}
                           <button aria-label={`Remove ${s}`} onClick={() => setPickedChildren(selectedSchemas.filter((x) => x !== s), selectedTables)} className="hover:text-db-red-fg ms-0.5"><X size={8} /></button>
                         </span>
                       ))}
-                      {selectedCatalogs.map((c) => (
-                        <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-subtle text-text-secondary text-[10px] font-medium border border-border">
+                      {selectedCatalogs.map((c, i) => (
+                        <span key={`${i}-${c}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-subtle text-text-secondary text-[10px] font-medium border border-border">
                           <Database size={9} />
                           {c}
                           <button aria-label={`Remove ${c}`} onClick={() => { setSelectedCatalogs((p) => p.filter((x) => x !== c)); setWholeCatalogs((p) => p.filter((x) => x !== c)); setSelectedSchemas((p) => p.filter((x) => !x.startsWith(c + '.'))); }} className="hover:text-db-red-fg ms-0.5"><X size={8} /></button>

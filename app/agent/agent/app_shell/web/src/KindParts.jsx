@@ -190,8 +190,8 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
       {skipping && (
         <div className="choice-why" role="group" aria-label={`Why ${skipping.label.toLowerCase()}`}>
           <span>Why?</span>
-          {(skipping.reasons || []).map((r) => (
-            <SaveButton key={r} write={`choice:${key}:${skipping.id}`} className="chip" onClick={async () => { if (await onChoose(row, skipping, r)) setSkipping(null); }}>{r}</SaveButton>
+          {(skipping.reasons || []).map((r, i) => (
+            <SaveButton key={`${i}-${r}`} write={`choice:${key}:${skipping.id}`} className="chip" onClick={async () => { if (await onChoose(row, skipping, r)) setSkipping(null); }}>{r}</SaveButton>
           ))}
           <button type="button" className="link" onClick={() => setSkipping(null)}>Cancel</button>
         </div>
@@ -281,7 +281,7 @@ export function RecList({ page, app, filters, ready, nonce, onChanged }) {
               <ChoiceRow key={recordKeyOf(row)} page={page} app={app} row={row} choices={choices} suggested={suggest(row)} canAct={can}
                 onChoose={decide.choose} onUndo={decide.undo} onOpen={opened.open}
                 detail={row[recs.score] != null && <span className="choice-score">{scoreMeta?.label || 'Score'} {shown(scoreMeta || { format: 'number' }, row[recs.score])}</span>}>
-                {reasonsOf(row[meta.reasons]).length > 0 && <div className="reasons">{reasonsOf(row[meta.reasons]).map((t) => <span key={t} className="chip chip--static">{t}</span>)}</div>}
+                {reasonsOf(row[meta.reasons]).length > 0 && <div className="reasons">{reasonsOf(row[meta.reasons]).map((t, i) => <span key={`${i}-${t}`} className="chip chip--static">{t}</span>)}</div>}
               </ChoiceRow>
             ))}
           </ol>
@@ -423,8 +423,8 @@ export function SegmentCards({ page, app, ready, nonce, filters, onChanged, onPi
                 )}
                 {can && c.actions && (
                   <div className="seg-act" role="group" aria-label={`Treatment for ${row.label}`}>
-                    {(block.treatments || []).map((t) => (
-                      <SaveButton key={t} write={`choice:seg:${id}:${t}`} className={`btn btn--sm ${star === t ? 'btn--pri' : ''}`} disabled={!c.asOf || !c.waiting}
+                    {(block.treatments || []).map((t, i) => (
+                      <SaveButton key={`${i}-${t}`} write={`choice:seg:${id}:${t}`} className={`btn btn--sm ${star === t ? 'btn--pri' : ''}`} disabled={!c.asOf || !c.waiting}
                         why={!c.asOf ? 'This group has no as-of date yet, so a treatment cannot be recorded.' : 'No member of this group waits for a treatment.'}
                         data-treatment={t} onClick={() => choose(row, t)}>{star === t && <span aria-hidden="true">★ </span>}{t}</SaveButton>
                     ))}

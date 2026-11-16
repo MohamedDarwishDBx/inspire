@@ -184,6 +184,18 @@ test('picking a segment card shows that segment: the page filters to it, the car
   await context.close();
 });
 
+test('two equal reasons on one row both show as their own chips', async () => {
+  const rows = CASES.recommendation_desk.rows.map((r) => ({ ...r, top_reasons: ['bought travel before', 'bought travel before'] }));
+  const { page, seen, context } = await open('recommendation_desk', [], rows);
+  try {
+    const chips = page.locator('[data-rec-entity="Ana"] .reasons').first().locator('.chip');
+    assert.equal(await chips.count(), 2, 'both reasons render, even when their text is the same');
+    assert.deepEqual(seen.errors.filter((e) => !/favicon|Failed to load resource/.test(e)), [], 'no page errors');
+  } finally {
+    await context.close();
+  }
+});
+
 test('the recommendation desk groups the top offers per entity with reasons, sends one and records why another was skipped', async () => {
   const acts = [];
   const { page, seen, context } = await open('recommendation_desk', acts);

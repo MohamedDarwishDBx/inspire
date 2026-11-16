@@ -129,7 +129,7 @@ function GroupingPart({ values, onChange, profile, read = null, settings, editab
       ) : reason && <p data-grouping-reason="" className="text-[12px] text-text-primary">{reason}</p>}
       {peerEntityText(profile) && <p data-grouping-peer-entity="" className={NOTE}>{peerEntityText(profile)}</p>}
       {groupingDefaultNote(profile) && <p data-grouping-default-note="" className={NOTE}>{groupingDefaultNote(profile)}</p>}
-      {(profile?.refusals || []).map((reason) => <p key={reason} data-scope-refusal="" role="note" className={NOTE}>{reason}</p>)}
+      {(profile?.refusals || []).map((reason, i) => <p key={`${i}-${reason}`} data-scope-refusal="" role="note" className={NOTE}>{reason}</p>)}
       <details data-grouping-more="" className={NOTE}>
         <summary className="cursor-pointer select-none font-medium text-text-secondary">{GROUPING_MORE}</summary>
         <div className="mt-1 space-y-1">
