@@ -225,6 +225,9 @@
   "O10",
   "O12b"
  ],
+ "POST /api/data-management/columns": [
+  "G16"
+ ],
  "POST /api/relationships": [
   "G16"
  ],

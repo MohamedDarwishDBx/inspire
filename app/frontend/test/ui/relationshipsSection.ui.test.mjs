@@ -5,7 +5,7 @@ import { closeBrowser, idle, openUi } from './uiSupport.mjs';
 test.after(closeBrowser);
 
 // REQ-362, REQ-371: Data Management > Relationships. Two lists of the picked tables (Source, Target) sit side by side, with a Link button
-// between them. Link opens a dialog with the columns of the two tables; the person pairs columns, then Done. The links are listed and removable.
+// between them. Link opens a dialog with the columns of the two tables; the person pairs columns: one click on Link adds each pair. The links are listed and removable.
 const BUSINESS = 'e.g. Contoso, Acme Corp, Retail Division';
 const ORDERS = 'main.s.orders';
 const CUSTOMERS = 'main.s.customers';
@@ -72,7 +72,7 @@ test('two lists, Source and Target, sit side by side; Link is disabled with a re
   }
 });
 
-test('Link opens the dialog with the columns of both tables; the pair is added, a declared key is added only by its button, Done lists the links, and a link can be removed', async () => {
+test('Link opens the dialog; one click on Link adds the pair at once, a declared key is added only by its button, and Close keeps every link', async () => {
   const ui = await openUi('launch', STATE);
   const { page } = ui;
   try {
@@ -83,26 +83,62 @@ test('Link opens the dialog with the columns of both tables; the pair is added, 
     const dialog = page.locator('[data-link-dialog]');
     await dialog.getByRole('list', { name: 'Columns of orders' }).waitFor({ timeout: 15000 });
     await page.setViewportSize({ width: 1280, height: 800 });
-    await dialog.screenshot({ path: `${SHOTS}/req371-dialog-1280x800.png` });
-    assert.equal(await dialog.getByRole('button', { name: 'Add link', exact: true }).isDisabled(), true);
-    assert.match(await dialog.locator('[data-add-link-reason]').innerText(), /Pick one column in each table/);
+    await dialog.screenshot({ path: `${SHOTS}/req376-dialog-1280x800.png` });
+    const link = dialog.getByRole('button', { name: 'Link', exact: true });
+    assert.equal(await link.isDisabled(), true);
+    assert.match(await dialog.locator('[data-link-pick-reason]').innerText(), /Pick one column in each table/);
+    assert.equal(await dialog.getByRole('button', { name: 'Done', exact: true }).count(), 0, 'there is no Done step');
+    assert.equal(await dialog.getByRole('button', { name: 'Add link', exact: true }).count(), 0, 'there is no Add link step');
     await dialog.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'amount', exact: true }).click();
     await dialog.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'name', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Add link', exact: true }).click();
-    assert.equal(await dialog.locator('[data-staged-link="amount → name"]').count(), 0, 'the staged text uses table.column names');
-    assert.equal(await dialog.locator('[data-staged-link="orders.amount → customers.name"]').count(), 1, 'the pair waits in the dialog');
+    await link.click();
+    assert.equal(await dialog.locator('[data-dialog-link="orders.amount → customers.name"]').count(), 1, 'the pair shows in the dialog at once');
+    assert.equal(await page.locator('[data-relationship="orders.amount → customers.name"]').count(), 1, 'the pair is kept at once');
     const suggestion = dialog.locator(`[data-suggested-link="${DECLARED}"]`);
     assert.equal(await suggestion.count(), 1, 'the declared key is suggested in the dialog');
     assert.equal(await page.locator(`[data-relationship="${DECLARED}"]`).count(), 0, 'a suggestion is not added without a click');
     await dialog.getByRole('button', { name: `Add suggested link ${DECLARED}` }).click();
-    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
-    await page.locator('[data-links]').waitFor({ timeout: 5000 });
-    assert.equal(await page.locator(`[data-relationship="${DECLARED}"]`).count(), 1, 'the declared key is listed after Done');
-    assert.equal(await page.locator('[data-relationship="orders.amount → customers.name"]').count(), 1, 'the person pair is listed after Done');
-    await page.locator('[data-links]').screenshot({ path: `${SHOTS}/req371-links-1280x800.png` }).catch(() => {});
+    assert.equal(await page.locator('[data-links]').getByText('Links (2)', { exact: true }).count(), 1, 'the running count shows both links');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    assert.equal(await page.locator('[data-link-dialog]').count(), 0, 'Close closes the dialog');
+    assert.equal(await page.locator(`[data-relationship="${DECLARED}"]`).count(), 1, 'the declared key is kept after Close');
+    assert.equal(await page.locator('[data-relationship="orders.amount → customers.name"]').count(), 1, 'the person pair is kept after Close');
+    await page.locator('[data-links]').screenshot({ path: `${SHOTS}/req376-links-1280x800.png` }).catch(() => {});
     await page.getByRole('button', { name: `Remove relationship ${DECLARED}` }).click();
     assert.equal(await page.locator(`[data-relationship="${DECLARED}"]`).count(), 0, 'a link can be removed');
-    assert.equal(await page.locator('[data-link-dialog]').count(), 0, 'Done closes the dialog');
+  } finally {
+    await ui.close();
+  }
+});
+
+test('the picks stay after a link, one table can be in many links, and Esc or a click outside keep every link', async () => {
+  const ui = await openUi('launch', STATE);
+  const { page } = ui;
+  try {
+    await openRelationships(page);
+    await source(page, 'orders').click();
+    await target(page, 'customers').click();
+    await page.getByRole('button', { name: 'Link', exact: true }).click();
+    const dialog = page.locator('[data-link-dialog]');
+    await dialog.getByRole('list', { name: 'Columns of orders' }).waitFor({ timeout: 15000 });
+    await dialog.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'amount', exact: true }).click();
+    await dialog.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'name', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Link', exact: true }).click();
+    assert.equal(await source(page, 'orders').getAttribute('aria-pressed'), 'true', 'the Source pick stays');
+    assert.equal(await target(page, 'customers').getAttribute('aria-pressed'), 'true', 'the Target pick stays');
+    await dialog.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'order_id', exact: true }).click();
+    await dialog.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'customer_id', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Link', exact: true }).click();
+    assert.equal(await page.locator('[data-relationship]').count(), 2, 'one table is in two links');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('[data-link-dialog]').count(), 0, 'Esc closes the dialog');
+    assert.equal(await page.locator('[data-relationship]').count(), 2, 'Esc keeps both links');
+    await page.getByRole('button', { name: 'Link', exact: true }).click();
+    await page.locator('[data-link-dialog]').waitFor({ timeout: 5000 });
+    await page.getByText('Relationships', { exact: true }).first().click();
+    assert.equal(await page.locator('[data-link-dialog]').count(), 0, 'a click outside closes the dialog');
+    assert.equal(await page.locator('[data-relationship]').count(), 2, 'an outside click keeps both links');
+    assert.equal(await page.locator('[data-links]').getByText('Links (2)', { exact: true }).count(), 1);
   } finally {
     await ui.close();
   }

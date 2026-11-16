@@ -275,12 +275,14 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   // The columns of a table are read one table at a time, only for a table with a saved filter or when the person reads a column of it
   // (REQ-370): a whole-catalog pick is not read table by table. The effects below read the current lists through refs.
   const columnsRef = useRef(columnsOf);
+  const scopeNow = useRef(scope);
   const savedTables = tables.filter((t) => tableScopeOf(scopes, t));
   const savedJson = JSON.stringify(savedTables);
   const savedNow = useRef(savedTables);
   useEffect(() => {
     columnsRef.current = columnsOf;
     savedNow.current = savedTables;
+    scopeNow.current = scope;
   });
   const scopeJson = JSON.stringify(scope || {});
   const namesOf = (table) => (columnsOf[table]?.columns || []).map((c) => c.column_name);
@@ -334,7 +336,7 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
       setSearch((prev) => ({ ...prev, status: 'loading' }));
       withTimeout(apiFetch(`/api/data-management/columns?warehouse_id=${encodeURIComponent(warehouseId || '')}`, {
         method: 'POST',
-        body: JSON.stringify({ scope: JSON.parse(scopeJson), q: searchText }),
+        body: JSON.stringify({ scope: scopeNow.current || {}, q: searchText }),
       }), ANSWER_MS)
         .then((d) => { if (!cancelled) setSearch({ status: 'done', rows: d.hits || [], total: Number(d.total) || 0 }); })
         .catch((e) => {
@@ -526,6 +528,8 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
     return namesOf(table).filter((n) => !kept.includes(n)).map((n) => `${shortName(table)}.${n}`);
   });
   const nothingPicked = !scope.entries.length;
+  // Filters in use lists the row filters and row groups saved on the tables (REQ-377): the block exists only once one exists.
+  const filterCount = withFilters.reduce((n, table) => n + rowsOf(table).length, 0);
   const countLine = (table) => {
     const job = jobs.find((j) => j.table === table);
     if (!job) return '';
@@ -542,10 +546,10 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
       {nothingPicked && <p data-data-filters-empty className="text-text-tertiary">Pick tables, schemas or catalogs under Unity Catalog Metadata to filter them.</p>}
       {!nothingPicked && (
         <>
-          {withFilters.length > 0 && (
+          {filterCount > 0 && (
             <div data-filters-in-use className="rounded-lg border border-border p-3 space-y-2">
-              <p className="font-semibold text-text-primary">Filters in use</p>
-              {withFilters.map((table) => (
+              <p className="font-semibold text-text-primary">Your filters ({filterCount})</p>
+              {withFilters.filter((table) => rowsOf(table).length > 0 || problemsOf(table).length > 0).map((table) => (
                 <div key={table} data-filter-table={table} className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-text-primary" title={table}>{shortName(table)}</span>
@@ -568,14 +572,14 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
                   </ul>
                 </div>
               ))}
-              {leftOutColumns.length > 0 && (
-                <div data-columns-left-out className="space-y-1 border-t border-border pt-2 text-text-secondary">
-                  <p>Columns left out: {leftOutColumns.length}</p>
-                  <ul className="flex flex-wrap gap-1.5">
-                    {leftOutColumns.map((full) => <li key={full} data-left-out-column={full} className="font-mono text-text-tertiary">{full}</li>)}
-                  </ul>
-                </div>
-              )}
+            </div>
+          )}
+          {leftOutColumns.length > 0 && (
+            <div data-columns-left-out className="space-y-1 text-text-secondary">
+              <p>Columns left out: {leftOutColumns.length}</p>
+              <ul className="flex flex-wrap gap-1.5">
+                {leftOutColumns.map((full) => <li key={full} data-left-out-column={full} className="font-mono text-text-tertiary">{full}</li>)}
+              </ul>
             </div>
           )}
           {note && <p data-scope-note="dropped" role="status" className="text-text-secondary">{note}</p>}
@@ -608,7 +612,13 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
                 Showing {answer.rows.length.toLocaleString()} of {answer.total.toLocaleString()} matches. Type more letters to narrow it down.
               </p>
             )}
-            {listing.listErrors.map((message) => <PlainMessage key={message} role="alert" className="text-error-fg" text={message} />)}
+            {listing.listErrors.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2" data-list-errors>
+                <PlainMessage role="alert" className="text-error-fg" text={listing.listErrors[0]} />
+                {listing.listErrors.length > 1 && <span className="text-text-secondary">and {listing.listErrors.length - 1} more</span>}
+                <button type="button" className={BUTTON} onClick={listing.retry}>Try again</button>
+              </div>
+            )}
             {listing.leftOut.map((l) => <p key={`${l.schema}-${l.count}`} data-left-out="" className="text-text-secondary">{leftOutLine(l)}</p>)}
             {hits.slice(0, HITS_SHOWN).map((group) => (
               <section key={group.name.toLowerCase()} data-column-group={group.name} className="rounded-lg border border-border p-3 space-y-2">
