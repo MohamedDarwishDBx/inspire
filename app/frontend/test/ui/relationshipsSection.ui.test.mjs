@@ -169,3 +169,24 @@ test('a schema picked whole: Relationships works on every table of the schema, t
     await ui.close();
   }
 });
+
+test('a metric view in the picked schema is left out of Relationships, with the Data Management line, and is not offered as a table', async () => {
+  const VIEW = 'main.s.orders_v2';
+  const ui = await openUi('launch', { ...STATE, tables: { 'main.s': ['orders', 'customers', 'orders_v2'] }, metricViews: [VIEW] });
+  const { page } = ui;
+  try {
+    await page.getByPlaceholder(BUSINESS).fill('Acme');
+    await page.locator('button[title="main"]').click();
+    await page.locator('button[title="s"]').click();
+    await idle(page);
+    await page.getByRole('button', { name: /Advanced Settings/ }).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
+    await page.locator('[data-relationships-metric-view]').waitFor({ timeout: 15000 });
+    assert.match(await page.locator('[data-relationships-metric-view]').innerText(),
+      /main\.s\.orders_v2 is a metric view, so Inspire leaves it out of Data Management; pick its source table instead\./);
+    const options = await page.getByLabel('Table to see relationships for').locator('option').allInnerTexts();
+    assert.deepEqual(options.sort(), [CUSTOMERS, ORDERS].sort(), 'the metric view is not offered');
+  } finally {
+    await ui.close();
+  }
+});

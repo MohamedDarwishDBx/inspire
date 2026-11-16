@@ -223,7 +223,7 @@ function UseCaseLabel({ scopes, tables, label, onLabel }) {
 }
 
 // One table that has the searched column: its type, the filter on it (if any), and its row groups (categorical columns only).
-function HitRow({ hit, name, rows, valuesOf, loadValues, groupOf, groupState, onLoadGroups, onPickGroups, onAdd }) {
+function HitRow({ hit, name, rows, read, onRead, valuesOf, loadValues, groupOf, groupState, onLoadGroups, onPickGroups, onAdd }) {
   const [groupsOpen, setGroupsOpen] = useState(false);
   const conditions = rows.map((f, index) => ({ f, index })).filter(({ f }) => f.column === name);
   const categorical = columnKindOf(hit.type) === 'categorical';
@@ -231,6 +231,10 @@ function HitRow({ hit, name, rows, valuesOf, loadValues, groupOf, groupState, on
     <li data-scope-row={hit.table} className="flex flex-wrap items-start gap-2 border-t border-border pt-2">
       <span className="font-mono text-text-primary" title={hit.table}>{shortName(hit.table)}</span>
       <span className="text-text-tertiary">{hit.type}</span>
+      <label className="flex items-center gap-1.5 text-text-secondary">
+        <input type="checkbox" aria-label={`Read ${name} in ${shortName(hit.table)}`} checked={read} onChange={(e) => onRead(e.target.checked)} />
+        Read
+      </label>
       <div className="flex flex-wrap gap-1.5 min-w-0">
         {conditions.map(({ f }, i) => <span key={i} data-scope-filtered={name} className="text-text-secondary">{conditionText(f)}</span>)}
       </div>
@@ -258,10 +262,12 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   const [valuesOf, setValuesOf] = useState({});
   const [counts, setCounts] = useState({});
   const [groupsOf, setGroupsOf] = useState({});
+  const [note, setNote] = useState('');
   const requested = useRef(new Set());
   const fired = useRef({});
   const tablesJson = JSON.stringify(tables);
   const rowsOf = (table) => normalizeTableScope(tableScopeOf(scopes, table)).rows;
+  const namesOf = (table) => (columnsOf[table]?.columns || []).map((c) => c.column_name);
   const jobs = tables
     .map((table) => ({ table, filters: rowsOf(table).filter(filterIsComplete) }))
     .filter((job) => job.filters.length)
@@ -359,15 +365,35 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   const commitRows = (updates) => {
     const changed = (name) => updates.some((u) => scopeKeyOf(u.table) === scopeKeyOf(name));
     const next = Object.fromEntries(Object.entries(scopes || {}).filter(([name]) => !changed(name)));
-    for (const { table, rows } of updates) {
+    for (const { table, rows, columns: wanted } of updates) {
       const entry = tableScopeOf(scopes, table);
-      const names = (columnsOf[table]?.columns || []).map((c) => c.column_name);
-      const columns = entry ? normalizeTableScope(entry).columns : names;
-      // With no rows left, the table goes back to a plain read unless it reads only some of its columns.
-      if (!rows.length && (!entry || (names.length && names.every((n) => columns.includes(n))))) continue;
+      const names = namesOf(table);
+      const columns = wanted || (entry ? normalizeTableScope(entry).columns : names);
+      // With no rows left and every column read, the table goes back to a plain read.
+      const whole = names.length ? names.every((n) => columns.includes(n)) : !entry;
+      if (!rows.length && whole) continue;
       next[table] = { columns: names.length ? names.filter((n) => columns.includes(n)) : columns, rows };
     }
     onScopes(next);
+  };
+  // Read for one column of one table: the table's columns with the column added or left out, and the row filters on a column
+  // that is no longer read are dropped (a column Inspire does not read cannot be filtered), with the note saying which.
+  const readUpdate = (table, name, read) => {
+    const entry = tableScopeOf(scopes, table);
+    const current = entry ? normalizeTableScope(entry).columns : namesOf(table);
+    const columns = read ? [...new Set([...current, name])] : current.filter((c) => c !== name);
+    const kept = rowsOf(table).filter((f) => columns.includes(f.column));
+    const dropped = rowsOf(table).filter((f) => !columns.includes(f.column)).map((f) => f.column);
+    return { table, columns, rows: kept, dropped };
+  };
+  const applyRead = (updates) => {
+    commitRows(updates.map(({ table, columns, rows }) => ({ table, columns, rows })));
+    const dropped = updates.filter((u) => u.dropped.length);
+    setNote(dropped.map((u) => `Removed ${u.dropped.length} row filter${u.dropped.length === 1 ? '' : 's'} on ${[...new Set(u.dropped)].join(', ')} in ${shortName(u.table)}: a column Inspire does not read cannot be filtered.`).join(' '));
+  };
+  const readsColumn = (table, name) => {
+    const entry = tableScopeOf(scopes, table);
+    return !entry || normalizeTableScope(entry).columns.includes(name);
   };
   const addRow = (table, condition) => commitRows([{ table, rows: [...rowsOf(table), condition] }]);
   const removeRow = (table, index) => commitRows([{ table, rows: rowsOf(table).filter((_, i) => i !== index) }]);
@@ -392,6 +418,11 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   const loading = tables.filter((t) => !columnsOf[t]).length;
   // Every picked table that has a saved scope is listed, so a problem with it is shown where the person can fix it.
   const withFilters = tables.filter((t) => tableScopeOf(scopes, t));
+  // The columns of a saved table that Inspire does not read, named as table.column (the person can see them without a search).
+  const leftOutColumns = withFilters.flatMap((table) => {
+    const kept = normalizeTableScope(tableScopeOf(scopes, table)).columns;
+    return namesOf(table).filter((n) => !kept.includes(n)).map((n) => `${shortName(table)}.${n}`);
+  });
   const nothingPicked = !scope.entries.length;
   const countLine = (table) => {
     const job = jobs.find((j) => j.table === table);
@@ -440,8 +471,17 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
                   </ul>
                 </div>
               ))}
+              {leftOutColumns.length > 0 && (
+                <div data-columns-left-out className="space-y-1 border-t border-border pt-2 text-text-secondary">
+                  <p>Columns left out: {leftOutColumns.length}</p>
+                  <ul className="flex flex-wrap gap-1.5">
+                    {leftOutColumns.map((full) => <li key={full} data-left-out-column={full} className="font-mono text-text-tertiary">{full}</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
+          {note && <p data-scope-note="dropped" role="status" className="text-text-secondary">{note}</p>}
           <div data-column-search className="space-y-3">
             <input type="search" aria-label="Search column names" value={query} dir="auto" onChange={(e) => setQuery(e.target.value)}
               placeholder="Search a column name, for example brand" className={`${FIELD} h-9 w-full`} />
@@ -468,7 +508,15 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
                   <span className="font-mono font-semibold text-text-primary">{group.name}</span>
                   <span className="text-text-tertiary">in {plural(group.hits.length, 'table')}</span>
                   {group.hits.length > 1 && (
-                    <div className="ms-auto">
+                    <label className="ms-auto flex items-center gap-1.5 text-text-secondary">
+                      <input type="checkbox" aria-label={`Read ${group.name} in all ${group.hits.length} tables`}
+                        checked={group.hits.every((h) => readsColumn(h.table, group.name))}
+                        onChange={(e) => applyRead(group.hits.map((h) => readUpdate(h.table, group.name, e.target.checked)))} />
+                      Read in all {group.hits.length} tables
+                    </label>
+                  )}
+                  {group.hits.length > 1 && (
+                    <div>
                       <AddRowFilter table={group.hits[0].table} column={group.name} who={`${group.name} in ${group.hits.length} tables`}
                         openLabel="Apply to all" commitLabel="Apply to all tables" suggestions={valuesFor(group.hits[0].table, group.name)} loadValues={loadValues}
                         onCommit={(condition) => commitRows(group.hits.map((h) => ({ table: h.table, rows: [...rowsOf(h.table), condition] })))} />
@@ -477,7 +525,8 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
                 </div>
                 <ul className="space-y-1">
                   {group.hits.map((hit) => (
-                    <HitRow key={hit.table} hit={hit} name={group.name} rows={rowsOf(hit.table)} valuesOf={valuesFor} loadValues={loadValues}
+                    <HitRow key={hit.table} hit={hit} name={group.name} rows={rowsOf(hit.table)} read={readsColumn(hit.table, group.name)}
+                      onRead={(next) => applyRead([readUpdate(hit.table, group.name, next)])} valuesOf={valuesFor} loadValues={loadValues}
                       groupOf={groupOf} groupState={groupState} onLoadGroups={loadGroups} onPickGroups={pickGroups}
                       onAdd={addRow} />
                   ))}

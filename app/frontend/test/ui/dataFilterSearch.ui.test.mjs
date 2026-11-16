@@ -22,6 +22,13 @@ const STATE = {
 };
 const SHOTS = '/private/tmp/inspire_v15/shots/u2';
 
+const launchOf = async (page, made) => {
+  await idle(page);
+  await page.getByRole('button', { name: 'Get Started' }).click();
+  await until(() => made.launches.length === 1, 'the launch was sent once');
+  return made.launches[0].params;
+};
+
 async function openSearch(page) {
   await page.getByPlaceholder(BUSINESS).fill('Acme');
   await page.locator('button[title="main"]').click();
@@ -121,6 +128,90 @@ test('the column search fits 1280x800 with filters in use, and the picture is sa
       assert.ok(sideways <= 0, `no sideways scroll at ${width}x${height} (overflow ${sideways}px)`);
       await page.locator('[data-data-management]').screenshot({ path: `${SHOTS}/req363-data-filter-${width}x${height}.png` });
     }
+  } finally {
+    await ui.close();
+  }
+});
+
+// Read (REQ-363, the column ticks of the old grid): a column Inspire does not read is left out of the run scope, listed under
+// Filters in use, and stays left out after a reload.
+async function reopenSearch(page) {
+  await page.getByPlaceholder(BUSINESS).waitFor({ timeout: 20000 });
+  await idle(page);
+  // A reload may restore the Advanced panel open, so each disclosure is opened only when it is closed.
+  for (const name of [/Advanced Settings/, /Data Management \(optional\)/]) {
+    const toggle = page.getByRole('button', { name });
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  }
+  await page.getByRole('searchbox', { name: 'Search column names' }).fill('amount');
+}
+
+test('Read: unticking a column leaves it out of the run scope, names it under Filters in use, and a reload keeps it unticked', async () => {
+  const ui = await openUi('launch', STATE);
+  const { page, made } = ui;
+  try {
+    await openSearch(page);
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('amount');
+    const read = page.getByRole('checkbox', { name: 'Read amount in orders' });
+    await read.waitFor({ timeout: 10000 });
+    assert.equal(await read.isChecked(), true, 'every column starts read');
+    await read.uncheck();
+    await page.locator('[data-left-out-column="orders.amount"]').waitFor({ timeout: 5000 });
+    assert.match(await page.locator('[data-columns-left-out]').innerText(), /Columns left out: 1/);
+    // Reload before the launch: a sent launch clears the Launch draft.
+    await page.reload();
+    await reopenSearch(page);
+    await page.getByRole('checkbox', { name: 'Read amount in orders' }).waitFor({ timeout: 15000 });
+    assert.equal(await page.getByRole('checkbox', { name: 'Read amount in orders' }).isChecked(), false, 'the untick is restored from the draft');
+    const params = await launchOf(page, made);
+    assert.deepEqual(JSON.parse(params['17_table_scope'])[ORDERS].columns, ['order_id', 'brand'], 'the run scope omits amount');
+  } finally {
+    await ui.close();
+  }
+});
+
+test('Read in all tables: one box reads or leaves out a column in every table that has it, and the list follows', async () => {
+  const ui = await openUi('launch', STATE);
+  const { page } = ui;
+  try {
+    await openSearch(page);
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
+    const all = page.getByRole('checkbox', { name: 'Read brand in all 2 tables' });
+    await all.waitFor({ timeout: 10000 });
+    await all.uncheck();
+    assert.equal(await page.getByRole('checkbox', { name: 'Read brand in orders' }).isChecked(), false, 'orders leaves brand out');
+    assert.equal(await page.getByRole('checkbox', { name: 'Read brand in customers' }).isChecked(), false, 'customers leaves brand out');
+    await page.locator('[data-left-out-column="orders.brand"]').waitFor({ timeout: 5000 });
+    await page.locator('[data-left-out-column="customers.brand"]').waitFor({ timeout: 5000 });
+    await all.check();
+    await until(async () => (await page.locator('[data-columns-left-out]').count()) === 0, 're-reading every column clears the list');
+  } finally {
+    await ui.close();
+  }
+});
+
+// The search reads at most 40 tables (the same cap as Relationships). A table past the cap is not searched, and the note says how many.
+test('a schema of more than 40 tables: the search reads 40 and says how many were not searched; a column in a table past the cap is not found', async () => {
+  const names = Array.from({ length: 45 }, (_, i) => `t${String(i + 1).padStart(2, '0')}`);
+  const columnsByTable = Object.fromEntries(names.map((n, i) => [`main.s.${n}`, [COL('id', 'BIGINT', 1), COL(i === 44 ? 'zz_only' : 'name', 'STRING', 2)]]));
+  const ui = await openUi('launch', { ...STATE, tables: { 'main.s': names }, columnsByTable });
+  const { page, made } = ui;
+  try {
+    await page.getByPlaceholder(BUSINESS).fill('Acme');
+    await page.locator('button[title="main"]').click();
+    await page.locator('button[title="s"]').click();
+    await idle(page);
+    await page.getByRole('button', { name: /Advanced Settings/ }).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
+    const note = page.locator('[data-tables-not-searched]');
+    await note.waitFor({ timeout: 15000 });
+    assert.match(await note.innerText(), /5 tables were not searched.*Pick fewer schemas or tables under Unity Catalog Metadata/);
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('zz_only');
+    await page.locator('[data-search-none]').waitFor({ timeout: 15000 });
+    await idle(page);
+    const read = new Set(made.sqlCalls.filter((c) => c.sql.includes('information_schema.columns'))
+      .map((c) => (c.parameters || []).find((p) => p.name === 't')?.value).filter(Boolean));
+    assert.equal(read.size, 40, 'exactly 40 tables have their columns read');
   } finally {
     await ui.close();
   }

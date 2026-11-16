@@ -119,3 +119,31 @@ test('POST /api/relationships with one picked table and no columns refuses the r
     await srv.close();
   }
 });
+
+test('a metric view is left out of the relationships: it is named back, and no key or column read touches it', async () => {
+  const VIEW = 'main.s.orders_v2';
+  const made = makeApp({
+    columnsByTable: {
+      [ORDERS]: [{ column_name: 'customer_id' }],
+      [CUSTOMERS]: [{ column_name: 'customer_id' }],
+    },
+    metricViews: [VIEW],
+    statements: { 'AS ref_table': { rows: [] } },
+  });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/relationships?warehouse_id=wh1`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-email': 'owner@example.com' },
+      body: JSON.stringify({ tables: [ORDERS, VIEW, CUSTOMERS] }),
+    });
+    const body = await resp.json();
+    assert.equal(resp.status, 200, JSON.stringify(body));
+    assert.deepEqual(body.metric_views, [VIEW], 'the metric view is named back');
+    assert.equal(Object.hasOwn(body.tables, VIEW), false, 'it has no columns entry for the pickers');
+    assert.ok(body.suggestions.every((s) => s.from.table !== VIEW && s.to.table !== VIEW), 'no suggestion names it');
+    assert.equal(made.sqlCalls.some((c) => c.sql.includes('information_schema.columns') && c.parameters.some((p) => p.value === 'orders_v2')), false,
+      'no column read touches the metric view');
+  } finally {
+    await srv.close();
+  }
+});

@@ -7,6 +7,11 @@ export default function DataManagement({ scope, scopes, relationships, onRelatio
   const listing = useDataTables({ scope, scopes, apiFetch, warehouseId });
   return (
     <div data-data-management className="space-y-6">
+      {listing.notSearched > 0 && (
+        <p data-tables-not-searched role="status" className="text-warning-fg">
+          {listing.notSearched} table{listing.notSearched === 1 ? ' was' : 's were'} not searched: Inspire reads up to 40 tables. Pick fewer schemas or tables under Unity Catalog Metadata to search the rest.
+        </p>
+      )}
       <section aria-labelledby="data-management-relationships" data-section="relationships" className="space-y-2">
         <h3 id="data-management-relationships" className="text-sm font-bold text-text-primary">Relationships</h3>
         <p className="text-text-secondary">How the tables you picked join. Inspire suggests them from declared keys, then from matching column names.</p>
