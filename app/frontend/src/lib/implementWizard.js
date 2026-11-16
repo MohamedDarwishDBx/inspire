@@ -1,5 +1,6 @@
 import OUTPUT_LABELS from '../../../backend/lib/implementOutputLabels.json' with { type: 'json' };
 import { busySwapRows, unusableSwapRows } from './tableUsability.js';
+import { isInspireOwnName } from './inspireOwnObjects.js';
 import { compareMeetsQualityBarFirst, nameOfUseCase, subtitleOfUseCase } from './useCaseFields.js';
 import { placeholderWords } from './placeholderWords.js';
 import { briefList, plural } from './plural.js';
@@ -2941,12 +2942,11 @@ export function viewerRows(reads) {
   return rows;
 }
 
-// D-NAMES: a source table keeps its name in person copy. Inspire's own working views (…__implement_scope, …__signal, …__inspire) are named by
-// what they are, never by their generated name (REQ-260).
-const INSPIRE_WORKING_VIEW = /__(?:implement|inspire|signal)\w*$/i;
+// D-NAMES: a source table keeps its name in person copy. Inspire's own working views (…__implement_scope, …__signal, __inspire_*) are named by
+// what they are, never by their generated name (REQ-260). The rule is inspireOwnObjects.js (REQ-387).
 export function appReadsName(table) {
   const name = String(table || '');
-  return INSPIRE_WORKING_VIEW.test(name.split('.').pop() || '') ? "this use case's working copy of its data" : name;
+  return isInspireOwnName(name) ? "this use case's working copy of its data" : name;
 }
 
 // One row per table of a service-principal App: the read grants it still needs on that table.

@@ -60,6 +60,7 @@ const { withBusyRetry } = require('./lib/busyRetry');
 const { registerShowcaseRoutes, showcaseWriteGuard } = require('./lib/showcase');
 const { loadSessionList, loadSessionOverviews, sessionListCap, SESSION_LIST_CAP } = require('./lib/reviewFigures');
 const { LIVE_STEP_STATUSES, liveDomainsOf, liveUseCasesOf } = require('../frontend/src/lib/liveUseCases.js');
+const { isInspireOwnName } = require('../frontend/src/lib/inspireOwnObjects.js');
 const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('./lib/runSummary');
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
 const PM_ERROR = require('./lib/permissionError');
@@ -1958,7 +1959,8 @@ app.get('/api/tables/:catalog/:schema', requireToken, async (req, res) => {
         if (!byKey.has(row.full_name) && !hidden.has(row.full_name)) byKey.set(row.full_name, row);
       }
     }
-    const tables = [...byKey.values()].sort((a, b) => a.full_name.localeCompare(b.full_name));
+    // Inspire's own tables and views are not the person's data (REQ-387): the one rule, inspireOwnObjects.js.
+    const tables = [...byKey.values()].filter((t) => !isInspireOwnName(t.full_name)).sort((a, b) => a.full_name.localeCompare(b.full_name));
     console.log(`   📋 tables ${catalog}.${schema}: REST=${raw.length} merged=${tables.length}`);
     if (raw.length === 0 && tables.length === 0 && restErr) {
       return PM_ERROR.sendFailure(res, restStatus, restErr);

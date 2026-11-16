@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { pickedTableNames, scopeKeyOf, tableBrowseQuery } from '../lib/tableScope';
 import { typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
 import { createLimiter, queuedListing } from '../lib/listQueue';
+import { isInspireOwnName } from '../lib/inspireOwnObjects';
 
 // Listing requests in flight at once (REQ-378): a whole-catalog pick lists every schema, and one request per schema at once overran the App.
 const LISTINGS_AT_ONCE = 3;
@@ -57,7 +58,8 @@ export default function useDataTables({ scope, scopes, apiFetch, warehouseId }) 
       queuedListing(limit, () => apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(name)}${tableBrowseQuery(warehouseId)}`))
         .then((d) => {
           // A table whose type check is busy or that is not usable is not listed here; the Launch picker says why.
-          const rows = (d.tables || []).filter((t) => !typeCheckBusyOf(t) && !unusableReasonOf(t));
+          // Inspire's own tables and views are not the person's data (REQ-387): the same rule as the backend lists.
+          const rows = (d.tables || []).filter((t) => !typeCheckBusyOf(t) && !unusableReasonOf(t) && !isInspireOwnName(t.name));
           const metricViews = Array.isArray(d.metric_views) ? d.metric_views : [];
           setListed((prev) => ({ ...prev, [schema]: { tables: rows.map((t) => t.full_name || `${schema}.${t.name}`), metricViews, leftOut: d.left_out || null } }));
         })
