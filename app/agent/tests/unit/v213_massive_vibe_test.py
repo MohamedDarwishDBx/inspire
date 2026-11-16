@@ -132,7 +132,7 @@ def test_each_of_the_six_asks_is_reported_done_or_not_done_with_its_reason_and_t
     assert _asks_in(judge) == [ADD_CHART, RENAME_PAGE, FILTER_DEFAULT, ADD_KPI, THEME], "the remove is decided from the page itself"
     assert [c["ask"] for c in found["resend"]["app"]] == [FILTER_DEFAULT, THEME], "every ask not done goes back to Genie"
     warnings = agent_ns["implement_vibes_warnings"]("app", checks)
-    assert len(warnings) == 2 and all(w.startswith("App vibe not done: ") for w in warnings)
+    assert len(warnings) == 2 and all(w.startswith("Agentic App vibe not done: ") for w in warnings)
 
 
 def test_a_remove_ask_whose_chart_is_still_on_the_page_is_not_done_even_when_the_judge_says_done(agent_ns):

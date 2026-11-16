@@ -18,5 +18,5 @@ def test_a_plain_permission_entry_is_not_optional(agent_ns):
 def test_the_optional_entry_keeps_the_exact_grant_and_the_copy_text(agent_ns):
     entry = agent_ns["implement_lakebase_permission_entry"](RuntimeError(DENIED), BUILDER)
     assert entry["statements"] == [f'GRANT CREATE ON DATABASE databricks_postgres TO "{BUILDER}"']
-    assert entry["why"].startswith("Optional: pages load faster once your admin runs this.")
+    assert entry["why"].startswith("Optional: pages load faster with Lakebase. Until then the App reads Delta tables:")
     assert "needs this grant first" not in entry["why"]
