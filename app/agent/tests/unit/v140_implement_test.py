@@ -3149,7 +3149,7 @@ def _feedback_writes(agent_ns, client="sp-1", fresh=False):
 
 
 def _feedback_refused(warnings):
-    return [w for w in warnings or [] if w.startswith("App: people cannot report issues about this use case from the App")]
+    return [w for w in warnings or [] if w.startswith("Agentic App: people cannot report issues about this use case from the App")]
 
 
 def test_sharing_grants_only_missing_access_and_names_what_inspire_cannot_grant(agent_ns):
