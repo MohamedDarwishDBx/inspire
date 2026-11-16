@@ -30,7 +30,7 @@ test('a page whose rule finds nothing shows one plain panel in place of the flat
 });
 
 test('the zero panel reads the rows the run checked, and shows no count when the run wrote none', async () => {
-  for (const [rows_checked, shown] of [[3333, '3,333 rows checked'], [null, '']]) {
+  for (const [rows_checked, shown] of [[3333, 'This run checked 3,333 records and found nothing to act on'], [null, '']]) {
     const data = FLAT();
     const { page, seen, context } = await openApp(browser, base, appInfo({ layout: 'sidebar' }, 1), {
       routes: { page: ({ json }) => json(200, { ...data, zero_state: { ...data.zero_state, rows_checked } }) }, hash: '#/n01_u05',

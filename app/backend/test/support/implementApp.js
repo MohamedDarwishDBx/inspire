@@ -1,8 +1,9 @@
 const express = require('express');
 const { registerImplementRoutes } = require('../../implementRoutes');
-const { IMPLEMENT_COLUMNS } = require('../../lib/inspireImplement');
+const { IMPLEMENT_COLUMNS, sampleCopyTable } = require('../../lib/inspireImplement');
 const { noPersonTokenBody } = require('../../lib/routePolicy');
 const { sqlCancelledError } = require('../../lib/sqlStatements');
+const { withServicePrincipal } = require('./appRecord');
 
 function sqlResultToObjects(result) {
   return result.rows || [];
@@ -54,6 +55,13 @@ function makeApp(overrides = {}, { mount } = {}) {
   });
   if (mount) mount(app);
   app.use('/api/inspire/implement', async (req, _res, next) => { await (state.hold || {})[req.path]; next(); });
+  // REQ-311: Request for Access. state.accessCheck is the offer the check reads; state.accessSend is the answer to the send, and
+  // state.accessSent records the statements the dialog sent.
+  app.post('/api/access-request/check', (req, res) => res.json(state.accessCheck || { offered: false, destinations: [], reason: 'no one has set up where access requests for these go yet' }));
+  app.post('/api/access-request', (req, res) => {
+    state.accessSent = req.body?.statements || [];
+    res.json(state.accessSend || { sent: false, destinations: [], reason: 'no destination' });
+  });
   registerImplementRoutes(app, {
     ...(state.buildStamp ? { buildStamp: () => state.buildStamp } : {}),
     requireToken: (req, _res, next) => {
@@ -65,7 +73,11 @@ function makeApp(overrides = {}, { mount } = {}) {
     executeSql: async (_h, token, warehouse, sql, parameters, options) => {
       if (options && options.signal && options.signal.aborted) throw sqlCancelledError(null);
       sqlCalls.push({ sql, parameters, token, warehouse, options });
-      for (const [needle, message] of Object.entries(state.sqlErrors || {})) if (sql.includes(needle)) throw new Error(message);
+      // A denial needle matches the statement text and its bound parameters (a picked table is often bound, not written, into the SQL).
+      const denialText = `${sql} ${JSON.stringify(parameters || [])}`;
+      for (const [needle, message] of Object.entries(state.sqlErrors || {})) if (denialText.includes(needle)) throw new Error(message);
+      // sqlDeniedFor: { [token]: { [needle]: message } } refuses a read made with that token only (REQ-267: the person cannot read the App's table).
+      for (const [needle, message] of Object.entries((state.sqlDeniedFor || {})[token] || {})) if (denialText.includes(needle)) throw new Error(message);
       for (const [needle, out] of Object.entries(state.statements || {})) {
         if (sql.includes(needle)) return typeof out === 'function' ? out(sql, parameters, token) : out;
       }
@@ -111,6 +123,11 @@ function makeApp(overrides = {}, { mount } = {}) {
         const asked = ((parameters || []).find((p) => p.name === 'uc') || {}).value;
         const listed = (state.useCases || []).find((row) => asked !== undefined && String(row.id) === String(asked));
         return { rows: listed ? [listed] : (state.useCase ? [state.useCase] : []) };
+      }
+      // The run summary of every use case is one batched statement (REQ-323): each row carries the use_case_id of the parameter it answers.
+      if (sql.includes('AS run_rank')) {
+        const ids = (parameters || []).filter((p) => /^uc\d+$/.test(p.name)).map((p) => p.value);
+        return { rows: ids.flatMap((id) => (state.moneySummary || []).map((row) => ({ use_case_id: id, ...row }))) };
       }
       if (sql.includes('_summary` WHERE use_case_id = :uc')) return { rows: state.moneySummary || [] };
       if (sql.includes('_assumptions` WHERE use_case_id = :uc')) return { rows: state.moneyEdits || [] };
@@ -208,9 +225,9 @@ function makeApp(overrides = {}, { mount } = {}) {
       if (builtApp && !state.appsByName && state.builtAppSp !== undefined) return json({ name: decodeURIComponent(builtApp[1]), service_principal_client_id: state.builtAppSp, service_principal_name: 'app-sp' });
       if (path.match(/\/api\/2\.0\/apps\/.+/) && !path.includes('page_size') && state.appsByName) {
         const found = state.appsByName[decodeURIComponent(path.split('/').pop())];
-        return json(found || { error_code: 'NOT_FOUND' }, found ? found.status_code || 200 : 404);
+        return json(withServicePrincipal(found) || { error_code: 'NOT_FOUND' }, found ? found.status_code || 200 : 404);
       }
-      if (path.match(/\/api\/2\.0\/apps\/.+/ ) && !path.includes('page_size')) return json(state.app, state.appExists ? 200 : 404);
+      if (path.match(/\/api\/2\.0\/apps\/.+/ ) && !path.includes('page_size')) return json(withServicePrincipal(state.app), state.appExists ? 200 : 404);
       if (path.includes('/api/2.0/apps')) return json(state.appsList, state.appsOk ? 200 : 404);
       if (path.includes('/genie/spaces')) return json({}, state.spacesOk ? 200 : 404);
       if (path.startsWith('/api/2.0/lakeview/dashboards/') && path.endsWith('/published')) return json({}, state.dashboardPublished === false ? 404 : 200);
@@ -319,7 +336,17 @@ function makeApp(overrides = {}, { mount } = {}) {
     const scope = `${req.params.catalog}.${req.params.schema}`;
     if (state.tablesRefusal) return require('../../lib/permissionError').sendFailure(res, 403, state.tablesRefusal);
     const names = (state.tables || {})[scope] || [];
-    return res.json({ tables: names.map((name) => ({ name, full_name: `${scope}.${name}`, schema_name: req.params.schema })), count: names.length });
+    // state.unusableTables: full name -> reason (the picker shows the row as not usable); state.leftOut: scope -> {count, schema}.
+    const unusable = state.unusableTables || {};
+    // state.busyTables: full name -> reason (the picker shows the row as busy: not a verdict, and it can be checked again).
+    const busy = state.busyTables || {};
+    const tables = names.map((name) => {
+      const full = `${scope}.${name}`;
+      const flag = unusable[full] ? { usable: false, unusable_reason: unusable[full] }
+        : busy[full] ? { type_check: 'busy', unusable_reason: busy[full] } : {};
+      return { name, full_name: full, schema_name: req.params.schema, ...flag };
+    });
+    return res.json({ tables, count: names.length, ...((state.leftOut || {})[scope] ? { left_out: state.leftOut[scope] } : {}) });
   });
   app.post('/api/output-folder/check', (req, res) => {
     if (state.outputRefusal) return res.status(403).json({ error: state.outputRefusal.message, permissions: state.outputRefusal.permissions });
@@ -351,7 +378,7 @@ function makeApp(overrides = {}, { mount } = {}) {
   });
   app.post('/api/inspire/samples/copy', (req, res) => {
     sampleCopies.push(req.body);
-    const [status, data] = state.sampleCopyAnswer || [200, { destination: String((req.body || {}).destination || ''), copies: (req.body.entries || []).map((source) => ({ source, copy: `${req.body.destination}.${source.split('.')[2]}` })), failed: [] }];
+    const [status, data] = state.sampleCopyAnswer || [200, { destination: String((req.body || {}).destination || ''), copies: (req.body.entries || []).map((source) => ({ source, copy: `${req.body.destination}.${sampleCopyTable(source)}` })), failed: [] }];
     res.status(status).json(data);
   });
   app.get('/api/inspire/feedback', (_req, res) => res.json(state.feedback || { available: false, latest: [], message: '' }));

@@ -7,12 +7,13 @@ import {
   FIRST_RUN_GROUPS_FIND_FROM, FIRST_RUN_GROUPS_MAX_SHOWN, FIRST_RUN_GROUPS_READING, FIRST_RUN_KEEPS, FIRST_RUN_SAVE_LABEL, GROUP_ALL, GROUP_BY, GROUP_KIND_WORDS, GROUPING_COMBINE,
   GROUPING_DEEP_MARK, GROUPING_DEEP_PICKED, GROUPING_PLAIN, GROUPING_SAVE_LABEL, RUN_SCOPE, RUN_SCOPE_UNRECORDED, RUN_SCOPES, SCOPE_DAYS,
   SCOPE_GROUPS, SCOPE_LABELS, SCOPE_RECORDS, deepGrouping, firstRunChoiceOf, firstRunGroupsPick, groupingCombineNote, firstRunChoices, firstRunCoversText, groupByColumns, groupingChoices, groupingExampleText,
-  groupingGroupsOf, groupingMovesUpText, groupingNothingText, groupingOverLimitText, groupingProfiled, groupingReasonText, groupsPickedByRunText, isFirstRunSetting, isGroupingSetting, isScopeSetting,
+  groupingGroupsOf, groupingMovesUpText, groupingNothingText, groupingOf, groupingOneValueText, groupingOverLimitText, groupingProfiled, groupingReasonText, peerEntityText, groupsPickedByRunText, isFirstRunSetting, isGroupingSetting, isScopeSetting,
   isolated, profileHeldText, sameGrouping, scopeChanges, scopeGroupKey, scopeGroupText, scopeGroupsColumn, scopeGroupsOf, scopeGroupsValue, scopeProblems, scopeValues,
-  suggestedGroups, withScopeDefaults, FIRST_RUN_LABEL, GROUPING_FIND, GROUPING_MORE, groupingCount, groupingCountText, groupingLead, topShown, groupingDefaultNote,
+  suggestedGroups, withScopeDefaults, FIRST_RUN_LABEL, GROUPING_FIND, GROUPING_GLOBAL_LABEL, GROUPING_MORE, groupingCount, groupingCountText, groupingLead, topShown, groupingDefaultNote,
 } from '../lib/runScope';
 import { bestFirstRun, bestGrouping, isBest } from '../lib/recommended';
 import Recommended from './Recommended';
+import Advanced from './Advanced';
 import { PlainMessage } from './TechnicalDetails';
 import SaveButton from './SaveButton';
 
@@ -38,6 +39,47 @@ function combinable(profile) {
     .sort((a, b) => (a.distinct ?? 0) - (b.distinct ?? 0) || String(a.name).localeCompare(String(b.name)));
 }
 
+// REQ-272: Load groups on the Data groups step. It lists the groups of a chosen column from the grouping profile (no extra query), and says plainly why it cannot.
+const LOAD_GROUPS = 'Load groups';
+const LOAD_GROUPS_COLUMN = 'Column to load groups for';
+const LOAD_GROUPS_UNREAD = 'Inspire has not read the table yet, so there are no groups to load.';
+const LOAD_GROUPS_ONE_MODEL = 'Inspire fits one model for this use case, so the whole data is one group and there are no groups to load.';
+const LOAD_GROUPS_NO_COLUMN = 'No column of this table can be grouped by, so there are no groups to load.';
+
+function LoadGroups({ profile }) {
+  const columns = combinable(profile);
+  const [chosen, setChosen] = useState({ column: '', shown: false });
+  const column = columns.some((c) => String(c.name) === chosen.column) ? chosen.column : String(columns[0]?.name || '');
+  const why = !profile ? LOAD_GROUPS_UNREAD : profile.one_model === true ? LOAD_GROUPS_ONE_MODEL : columns.length ? '' : LOAD_GROUPS_NO_COLUMN;
+  const groups = !why && chosen.shown ? groupingGroupsOf(profile, column) || [] : [];
+  return (
+    <div data-load-groups="" className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        {!why && (
+          <select aria-label={LOAD_GROUPS_COLUMN} value={column} onChange={(e) => setChosen({ column: e.target.value, shown: false })} className={NUMBER}>
+            {columns.map((c) => <option key={c.name} value={String(c.name)}>{String(c.name)}</option>)}
+          </select>
+        )}
+        <button type="button" disabled={Boolean(why)} onClick={() => setChosen({ column, shown: true })}
+          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle disabled:opacity-50">
+          {LOAD_GROUPS}
+        </button>
+      </div>
+      {why && <p data-load-groups-why="" className={NOTE}>{why}</p>}
+      {!why && chosen.shown && (groups.length ? (
+        <ul aria-label={`Groups of ${column}`} className="grid gap-1 max-h-56 overflow-y-auto">
+          {groups.map((g) => (
+            <li key={g.value} data-load-group={g.value} className="flex items-center gap-2 rounded-md border border-border bg-surface px-2 py-1 text-[12px] text-text-primary">
+              <span dir="auto">{g.value}</span>
+              {g.records != null && <span className="ms-auto text-text-tertiary">{g.records.toLocaleString()}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : <p data-load-groups-none="" className={NOTE}>{column} has no groups in {profile.table || 'this table'}.</p>)}
+    </div>
+  );
+}
+
 function GroupingPart({ values, onChange, profile, read = null, settings, editable, chosenBy }) {
   const setting = settings.find((s) => s.name === GROUP_BY);
   const current = values[GROUP_BY] || GROUP_ALL;
@@ -59,9 +101,12 @@ function GroupingPart({ values, onChange, profile, read = null, settings, editab
   const best = choices.length > 1 ? bestGrouping(profile, choices) : null;
   const lead = groupingLead(profile, choices, current, read);
   const overLimit = groupingOverLimitText(lead, profile);
+  const oneValue = groupingOneValueText(groupingOf(profile, current, choices), profile);
   const nothing = groupingNothingText(profile, choices);
   const [cards, setCards] = useState({ open: false, find: '' });
   const [combine, setCombine] = useState({ open: false, find: '' });
+  // Combining columns is its own decision: it sits behind a Change row after the group choice, and opens by itself only when a combination is set.
+  const [combineOpen, setCombineOpen] = useState(() => ticked.length > 1);
   const keepCard = (c) => !c.columns.length || pickedOf(c) || isBest(best, c.value) || Boolean(c.deep);
   const shownCards = topShown(choices, { keep: keepCard, open: cards.open, query: cards.find, textOf: (c) => c.label });
   const keepColumn = (c) => ticked.includes(String(c.name).toLowerCase());
@@ -73,10 +118,18 @@ function GroupingPart({ values, onChange, profile, read = null, settings, editab
         <p data-grouping-lead="" className="text-[12px] text-text-primary">
           <strong>{lead.label}</strong> splits the data into <strong>{groupingCountText(lead.groups)}</strong>. Inspire models each group on its own.
           {overLimit && <span role="alert" data-grouping-over-limit="" className="block text-warning-fg">{overLimit}</span>}
+          {oneValue && (
+            <span role="alert" data-grouping-one-value="" className="block text-warning-fg">
+              {oneValue}{' '}
+              <button type="button" data-grouping-whole="" disabled={!editable} onClick={() => onChange(GROUP_BY, GROUP_ALL)}
+                className="underline font-medium disabled:no-underline">{GROUPING_GLOBAL_LABEL}</button>
+            </span>
+          )}
         </p>
       ) : reason && <p data-grouping-reason="" className="text-[12px] text-text-primary">{reason}</p>}
+      {peerEntityText(profile) && <p data-grouping-peer-entity="" className={NOTE}>{peerEntityText(profile)}</p>}
       {groupingDefaultNote(profile) && <p data-grouping-default-note="" className={NOTE}>{groupingDefaultNote(profile)}</p>}
-      {(profile?.refusals || []).map((reason) => <p key={reason} data-scope-refusal="" role="note" className={NOTE}>{reason}</p>)}
+      {(profile?.refusals || []).map((reason, i) => <p key={`${i}-${reason}`} data-scope-refusal="" role="note" className={NOTE}>{reason}</p>)}
       <details data-grouping-more="" className={NOTE}>
         <summary className="cursor-pointer select-none font-medium text-text-secondary">{GROUPING_MORE}</summary>
         <div className="mt-1 space-y-1">
@@ -109,20 +162,24 @@ function GroupingPart({ values, onChange, profile, read = null, settings, editab
       </div>
       <ShowAll state={cards} total={choices.filter((c) => c.columns.length === 1).length} hidden={choices.length - topShown(choices, { keep: keepCard }).length}
         onChange={setCards} name="grouping" />
+      <LoadGroups profile={profile} />
       {columns.length > 1 && (
-        <div role="group" aria-label={GROUPING_COMBINE} data-grouping-combine="" className="space-y-1">
-          <p className="text-[12px] font-medium text-text-primary">{GROUPING_COMBINE}</p>
-          <p data-grouping-combine-note="" className={NOTE}>{groupingCombineNote(columns)}</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1">
-            {shownColumns.map((c) => (
-              <label key={c.name} data-grouping-combine-column={c.name} className="flex items-center gap-1.5 text-[12px] text-text-primary">
-                <input type="checkbox" disabled={!editable} checked={keepColumn(c)} onChange={(e) => tick(String(c.name), e.target.checked)} />
-                <span>{c.name}{c.distinct != null ? ` · ${counted(c.distinct, 'group')}` : ''}</span>
-              </label>
-            ))}
+        <Advanced open={combineOpen} onToggle={() => setCombineOpen((open) => !open)} what={GROUPING_COMBINE_WHAT}
+          summary={ticked.length > 1 ? `Grouped by ${ticked.join(' + ')}` : `Grouped by ${ticked[0] || 'the default column'}`}>
+          <div role="group" aria-label={GROUPING_COMBINE} data-grouping-combine="" className="space-y-1">
+            <p className="text-[12px] font-medium text-text-primary">{GROUPING_COMBINE}</p>
+            <p data-grouping-combine-note="" className={NOTE}>{groupingCombineNote(columns)}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {shownColumns.map((c) => (
+                <label key={c.name} data-grouping-combine-column={c.name} className="flex items-center gap-1.5 text-[12px] text-text-primary">
+                  <input type="checkbox" disabled={!editable} checked={keepColumn(c)} onChange={(e) => tick(String(c.name), e.target.checked)} />
+                  <span>{c.name}{c.distinct != null ? ` · ${counted(c.distinct, 'group')}` : ''}</span>
+                </label>
+              ))}
+            </div>
+            <ShowAll state={combine} total={columns.length} hidden={columns.length - topShown(columns, { keep: keepColumn }).length} onChange={setCombine} name="combine" />
           </div>
-          <ShowAll state={combine} total={columns.length} hidden={columns.length - topShown(columns, { keep: keepColumn }).length} onChange={setCombine} name="combine" />
-        </div>
+        </Advanced>
       )}
     </fieldset>
   );
@@ -275,11 +332,13 @@ function FirstRunPart({ values, onChange, profile, groupsState, settings, editab
   );
 }
 
+const GROUPING_COMBINE_WHAT = 'combined columns';
+
 export default function ScopeSettings({
   part = 'both', values, onChange, profile = null, profileState = 'off', profileError = '', groups = null, settings = [], editable = true, children = null,
   unrecorded = false, everything = '', groupingChosenBy = '',
 }) {
-  const problems = scopeProblems(values, part);
+  const problems = scopeProblems(values, part, profile?.one_model === true);
   const editableOf = (name) => editable && settings.find((s) => s.name === name)?.editable !== false;
   const listing = groups || { state: profileState, profile, error: profileError };
   return (
@@ -320,7 +379,7 @@ export function ScopeSection({ settings, editable, scope = null, onSave, childre
   const shown = draft || saved;
   const changed = scopeChanges(saved, shown).filter((name) => list.some((s) => s.name === name && s.editable !== false));
   const canEdit = Boolean(editable) && list.some((s) => s.editable !== false);
-  const blocked = scopeProblems(shown, part).length > 0;
+  const blocked = scopeProblems(shown, part, scope?.profile?.one_model === true).length > 0;
   const save = async () => {
     setSaving(true);
     setMessage('');

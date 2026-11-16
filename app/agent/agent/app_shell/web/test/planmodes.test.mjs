@@ -17,7 +17,7 @@ import ForecastMode from ${JSON.stringify(join(SRC, 'ForecastMode.jsx'))};
 import { MODES, pageMode } from ${JSON.stringify(join(SRC, 'modes.js'))};
 const { app, which, part } = window.props;
 window.labels = { plan: [MODES.plan.work, MODES.plan.performance], forecast: [MODES.forecast.work, MODES.forecast.performance], mode: pageMode(app.pages[0]).id };
-const View = (which === 'plan' ? PlanMode : ForecastMode)[part === 'work' ? 'Work' : 'Performance'];
+const View = (which === 'plan' ? PlanMode : ForecastMode)[{ work: 'Work', plan: 'Plan' }[part] || 'Performance'];
 createRoot(document.getElementById('root')).render(h(ToastProvider, null, h('main', { className: 'main' }, h(View, { app, page: app.pages[0], onRun: (say) => { window.solved = say(); }, running: false }))));
 `;
 
@@ -182,6 +182,7 @@ test('Performance compares the approved plan with the actuals and counts the val
   assert.match(await page.locator('[data-stat="on_plan"]').innerText(), /2 of 3/);
   assert.equal(await page.locator('[data-stat="off_plan"].is-bad').count(), 1);
   assert.match(await page.locator('[data-stat="realized"]').innerText(), /\$4\.5K\s+of \$7K planned/);
+  assert.deepEqual(await page.locator('.plan-t thead th').allInnerTexts(), ['Line', 'Planned', 'Now', 'Gap', 'State', 'Override reason']);
   assert.deepEqual(await page.locator('[data-perf-line]').evaluateAll((els) => els.map((e) => [e.dataset.perfLine, e.dataset.state])), [['K3', 'off'], ['K1', 'on']]);
   assert.match(await page.locator('[data-perf-line="K3"]').innerText(), /Tea tin\s+130\s+90\s+[−-]40\s+Off plan\s+Short of tins/);
   assert.deepEqual(errors, []);
@@ -425,4 +426,41 @@ test('REQ-099: the approve reason Save shows a spinner and Saving… while the p
   } finally {
     await context.close();
   }
+});
+
+const FORECAST_EMPTY = 'Actuals arrive after the first cycle, so there is nothing to compare with the forecast yet.';
+
+test('the forecast Plan section compares each past forecast with its actual, and says when actuals arrive when there are none', async () => {
+  const results = { version: { plan_id: null, label: 'Model forecast', status: 'Model', changed_at: null, changed_by: null }, forecast: true, empty: '',
+    counted: 2, on_plan: 1, off_plan: 1, unknown: 0, value_planned: null, value_realized: null, has_value: false, truncated: false, missing: '',
+    lines: [{ line_key: 'S2|2026-10', label: 'S2 for 2026-10', planned: 50, actual: 30, gap: -20, state: 'off', overridden: false, reason: '', value: null },
+      { line_key: 'S1|2026-10', label: 'S1 for 2026-10', planned: 100, actual: 100.5, gap: 0.5, state: 'on', overridden: false, reason: '', value: null }] };
+  const { page, context, errors } = await open('forecast', 'plan', { 'plans/performance': ({ json }) => json(200, results) });
+  await page.locator('[data-perf-line]').first().waitFor();
+  assert.equal(await page.locator('[data-stat="realized"]').count(), 0);
+  assert.match(await page.locator('[data-stat="version"]').innerText(), /Model forecast/);
+  assert.deepEqual(await page.locator('.plan-t thead th').allInnerTexts(), ['Line', 'Forecast', 'Now', 'Gap', 'State', 'Override reason']);
+  assert.deepEqual(await page.locator('[data-perf-line]').evaluateAll((els) => els.map((e) => [e.dataset.perfLine, e.dataset.state])),
+    [['S2|2026-10', 'off'], ['S1|2026-10', 'on']]);
+  assert.deepEqual(errors, []);
+  await context.close();
+  const none = { version: null, forecast: true, empty: FORECAST_EMPTY, lines: [], counted: 0, missing: '' };
+  const later = await open('forecast', 'plan', { 'plans/performance': ({ json }) => json(200, none) });
+  assert.equal((await later.page.locator('[data-no-plan]').innerText()).trim(), FORECAST_EMPTY);
+  assert.equal(await later.page.locator('[data-perf-line]').count(), 0);
+  await later.context.close();
+});
+
+test('in the App a forecast page names a Plan rail item between Review and Accuracy and opens plan against actuals', async () => {
+  const results = { version: null, forecast: true, empty: FORECAST_EMPTY, lines: [], counted: 0, missing: '' };
+  const { page, context, seen } = await openApp(browser, served.base, INFO.forecast, { routes: { ...forecastRoutes([]), ...reviewRoutes(null, []),
+    'plans/performance': ({ json }) => json(200, results) } });
+  await page.locator('nav.rail [data-rail="plan"]').waitFor();
+  const order = await page.locator('nav.rail [data-rail]').evaluateAll((els) => els.map((e) => e.dataset.rail));
+  assert.ok(order.indexOf('work') < order.indexOf('plan') && order.indexOf('plan') < order.indexOf('performance'), order.join(','));
+  assert.equal(Object.fromEntries(await railText(page)).plan, 'Plan');
+  await page.locator('nav.rail [data-rail="plan"]').click();
+  assert.equal((await page.locator('[data-no-plan]').innerText()).trim(), FORECAST_EMPTY);
+  assert.deepEqual(seen.errors, []);
+  await context.close();
 });

@@ -47,6 +47,7 @@ const BROWSER_ALLOWED = [
   ['lib/ucPermissionErrors.js', 'JSON.parse(raw)', 'an error answer of the App, read for its message'],
   ['lib/strategyContext.js', 'JSON.parse(raw)', 'the strategy text the person types in the widget'],
   ['lib/implementControl.js', 'JSON.parse(storage?.getItem(COLLECTED_VIBES_KEY)', 'the vibes this browser stored itself'],
+  ['lib/implementControl.js', 'JSON.parse(raw) : {}', 'the queued builds this browser stored itself (REQ-323); keys are use case ids as text, values hold no id'],
   ['lib/useCaseFields.js', 'JSON.parse(rawFp)', 'the favorites this browser stored itself'],
   ['lib/useCaseFields.js', "JSON.parse(storage.getItem('inspire_favorites')", 'the favorites this browser stored itself'],
   ['lib/dataGrid.js', 'JSON.parse(storage?.getItem(GRID_ORDER_KEY)', 'the column order this browser stored itself, which names no id'],
@@ -57,6 +58,7 @@ const BROWSER_ALLOWED = [
   ['lib/artifactFiles.js', 'JSON.parse(text);', 'a JSON file read only to check it is valid JSON; the preview prints the file\'s own text, so every id reads as the file holds it'],
   ['lib/useCaseArchive.js', 'JSON.parse(storage.getItem(ARCHIVE_STORAGE_KEY)', 'the use cases this browser archived itself, keyed by text (run id and use case id), so no id passes through a number'],
   ['lib/wizardDraft.js', "JSON.parse(raw || 'null')", 'the wizard draft this browser stored itself from the spec it holds, so every id in it reads back as the wizard wrote it'],
+  ['lib/permissionBus.js', 'JSON.parse(storage.getItem(SHOWN_KEY)', 'the GRANT statements the Permission Required dialog showed in this tab (text, keyed by statement; lines 21 and 31), so no id passes through a number'],
 ];
 
 function sources(dir, ext = ['.js']) {

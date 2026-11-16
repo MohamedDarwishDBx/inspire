@@ -14,14 +14,20 @@ BUNDLED = os.path.join(APP, "dbx_inspire_ai_agent.ipynb")
 BUNDLE_JS = os.path.join(APP, "backend", "notebook_bundle.js")
 LEGACY = ("_INSPIRE_APP_SHELL", "_INSPIRE_KINDS")
 NOTEBOOK_BYTES_CAP = 6_000_000
+# D-SIZE (REQ-298): the notebook must keep this much headroom under the cap, so the next lane that adds code does not fail the cap by surprise.
+NOTEBOOK_BUDGET_MARGIN = 100_000
 # rc.2 (REQ-165) regenerated the three count notices in every curated language, so the guard now covers the rest of the copy.
 COUNT_NOTICE_KEYS = ("doc_fallback_notice", "doc_fallback_notice_one", "doc_bar_partial_notice")
+# REQ-175 (names are short plain phrases, the technique moves to the subtitle) retired the key that joined a name to its technique in
+# all 22 languages. It is removed from the curated copy on purpose, so the frozen text is re-pinned without it.
+RETIRED_KEYS = ("doc_name_using_technique",)
 # The frozen key set: the curated keys as they stood before the asset move (cb11ff5c0^). Only these keys are held, so a curated key added
 # later by any lane never changes the digest. The count notices are in the pre-move set but were regenerated on purpose after the move
-# (REQ-165), so they are left out of the frozen text.
+# (REQ-165), and the retired key was removed on purpose (REQ-175), so both are left out of the frozen text.
 FROZEN_KEYS_FIXTURE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fixtures", "translation_frozen_keys.json")
-FROZEN_KEYS = tuple(k for k in json.load(open(FROZEN_KEYS_FIXTURE, encoding="utf-8"))["keys"] if k not in COUNT_NOTICE_KEYS)
-FROZEN_TRANSLATIONS_SHA256 = "83bdd3fe939fe6f86799e2120ce13ed212a1fd17aff3146a9f7b6e10d9b33787"
+FROZEN_KEYS = tuple(k for k in json.load(open(FROZEN_KEYS_FIXTURE, encoding="utf-8"))["keys"]
+                    if k not in COUNT_NOTICE_KEYS and k not in RETIRED_KEYS)
+FROZEN_TRANSLATIONS_SHA256 = "4c86c8c31667ef5460e6ad0cf6c6320fbaf6dd53beee6644f19e6dfc0ac76e71"
 IMPORT_BYTES_CAP = 8_000_000
 
 
@@ -76,13 +82,14 @@ def test_no_notebook_copy_holds_the_app_shell_or_the_kind_registry_and_each_stay
         assert text.count("INSPIRE_NOTEBOOK_ASSETS = ") == 1, label
         size = len(text.encode("utf-8"))
         assert size < NOTEBOOK_BYTES_CAP, f"{label} is {size:,} bytes"
+        assert size < NOTEBOOK_BYTES_CAP - NOTEBOOK_BUDGET_MARGIN, f"{label} is {size:,} bytes, within {NOTEBOOK_BUDGET_MARGIN:,} of the cap"
         assert len(base64.b64encode(text.encode("utf-8"))) < IMPORT_BYTES_CAP, f"{label} import request is over the cap"
 
 
 def test_every_notebook_copy_pins_the_repo_build_of_each_asset(agent_ns):
     embed = _embed()
     pins = agent_ns["INSPIRE_NOTEBOOK_ASSETS"]
-    assert set(pins) == {"app_shell", "fx_averages", "kinds", "translations"}
+    assert set(pins) == {"app_shell", "fx_averages", "kinds", "prompts", "translations"}
     assert pins == embed.pins()
     for label, text in _texts().items():
         line = next(item for item in json.loads(text)["cells"][1]["source"] if item.startswith("INSPIRE_NOTEBOOK_ASSETS = "))

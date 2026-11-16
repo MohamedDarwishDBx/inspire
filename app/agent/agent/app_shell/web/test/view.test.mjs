@@ -189,15 +189,15 @@ test('the money panel folds to its title, stays folded after a reload, and unfol
     pages: { n01_u05: { ...entry([item('a', 'Blue denim jacket', null)]), money_model: model } } });
   const { routes } = tracked({ overview, money: ({ json }) => json(200, { model, editable: false, why: 'Only the owners of this App can change its assumptions', history: [] }) });
   const { page, seen, context } = await openWith(appInfo(DECIDE, 1, TABLE), routes, { hash: '#/n01_u05/dashboard' });
-  const card = page.getByRole('region', { name: 'How the money at stake is worked out' });
+  const card = page.getByRole('region', { name: 'How the value at stake is worked out' });
   await card.locator('.rule').waitFor();
-  await card.getByRole('button', { name: 'Fold How the money at stake is worked out' }).click();
+  await card.getByRole('button', { name: 'Fold How the value at stake is worked out' }).click();
   await page.waitForFunction(() => document.querySelector('.money--folded'));
   assert.equal(await card.locator('.rule, .tiers').count(), 0, 'a folded panel keeps only its title');
   assert.deepEqual((await mine(page)).folds, { n01_u05: { money: true } });
   await page.reload();
   await page.locator('.money--folded').waitFor();
-  await card.getByRole('button', { name: 'Unfold How the money at stake is worked out' }).click();
+  await card.getByRole('button', { name: 'Unfold How the value at stake is worked out' }).click();
   await card.locator('.rule').waitFor();
   assert.deepEqual((await mine(page)).folds, {});
   assert.deepEqual(seen.errors, []);
@@ -242,7 +242,7 @@ test('Copy a link to a record copies an address that opens that record', async (
   const [copied] = await page.evaluate(() => window.__copied);
   assert.equal(new URL(copied).hash, '#/n01_u05/work?rec=R001');
   const other = await openWith(appInfo(DECIDE, 1, TABLE), tracked().routes, { hash: new URL(copied).hash });
-  await other.page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, LABEL);
+  await other.page.waitForFunction((t) => document.querySelector('dialog.drawer[open] h2')?.textContent === t, `Price-loss decision desk for ${LABEL}`);
   assert.deepEqual([...seen.errors, ...other.seen.errors], []);
   await other.context.close();
   await context.close();
@@ -554,7 +554,7 @@ test('a closed record undoes the change that closed it from its own page, after 
   const ask = drawer.getByRole('group', { name: 'Undo this change' });
   assert.equal(await ask.locator('span').innerText(), 'Undo puts back every record this change touched, as they were before it, and keeps both versions in their history.');
   assert.equal(calls.undos.length, 0, 'nothing is undone until the person says so');
-  await ask.getByRole('button', { name: 'Undo it' }).click();
+  await ask.getByRole('button', { name: 'Reopen', exact: true }).click();
   await until(() => calls.undos.length === 1);
   assert.deepEqual(calls.undos[0], { page: 'n01_u05', batch_id: BATCH_DONE });
   await page.waitForFunction(() => /^Undone: 1 record is back as it was\./.test(document.querySelector('.toast .toast-t')?.textContent || ''));

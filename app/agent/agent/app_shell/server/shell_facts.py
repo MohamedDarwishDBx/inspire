@@ -1,10 +1,12 @@
+import datetime
 import json
 import math
 import re
 
+DEFAULT_RANGE = "default_range"
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 TABLE_PART = re.compile(r"^[^`.\x00-\x1f]{1,255}$")
-FACTS_VERSION = 5
+FACTS_VERSION = 6
 FACTS_COLUMN = "run_facts"
 ACTED_SUFFIX = "_acted"
 RUN_LOG_SUFFIX = "_run_log"
@@ -103,6 +105,19 @@ def table_name(name) -> str:
     return ".".join(f"`{p}`" for p in parts)
 
 
+DATA_QUALITY_FLAG = "data_quality_flag"
+
+
+def flagged_ok_sql(names, segments=(), alias: str = "") -> str:
+    """The one expression for 'this row was evaluated'. The notebook writes 'ok' on every row it could check; any other flag is the
+    reason it could not be checked. Without the column every row counts as evaluated."""
+    prefix = f"{alias}." if alias else ""
+    ok = f"{prefix}`{DATA_QUALITY_FLAG}` = 'ok'" if DATA_QUALITY_FLAG in names else "TRUE"
+    if segments and "segment_or_item" in names:
+        ok += f" AND CAST({prefix}`segment_or_item` AS STRING) IN (" + ", ".join(sql_text(str(s)) for s in segments) + ")"
+    return ok
+
+
 def sql_list(values) -> str:
     return ", ".join(f"'{v}'" for v in values)
 
@@ -130,7 +145,9 @@ def fanning_datasets(page, names) -> dict:
 
 
 def companion(table: str, suffix: str) -> str:
-    return ".".join(p.strip() for p in str(table).split(".")) + suffix
+    """The companion table of a result table: its own name plus the suffix, as the notebook writes it and the App reads it. The one
+    naming rule for the writer, the layout and the App fit check, and every page read (REQ-264)."""
+    return ".".join(p.strip().strip("`") for p in str(table or "").split(".")) + suffix
 
 
 def acted_condition(names) -> str:
@@ -328,6 +345,7 @@ def estimated_cell(names: set, tier, alias: str, stake: str) -> tuple:
         return None, None, None
     shown = f"CAST({alias}.{quote(tier)} AS STRING)"
     opened = f" AND COALESCE({alias}.`action_status`, '{NEW}') IN ({sql_list(OPEN_STATUSES)})" if "action_status" in names else ""
+    opened += f" AND {flagged_ok_sql(names, alias=alias)}" if DATA_QUALITY_FLAG in names else ""
     counted = (f"COALESCE({alias}.`is_current` AND {alias}.`change_source` <> 'delete' AND {shown} IN ({sql_list(FLAGGED_TIERS)}){opened}, "
                f"FALSE)")
     return shown, f"CASE WHEN {counted} THEN 1 ELSE 0 END", f"CASE WHEN {counted} THEN {stake} END"
@@ -508,15 +526,36 @@ def acted_source(acted: str, columns: list) -> str:
             f"a.`valid_from`) UNION ALL SELECT {plain} FROM q)")
 
 
+SNOOZE_NAME = "snooze_until"
+
+
+def open_work_sql(names, today: str, alias: str = "") -> str:
+    """The one open-work predicate: the current, not deleted row, in an open status, flagged ok, not held back, and not snoozed
+    past today. Each part applies only when the result table has its column. The scope line, the KPIs marked open_work and
+    the Actions line read this expression; the Work list applies the same rule to its own CTE columns (window_conditions)."""
+    p = f"{alias}." if alias else ""
+    parts = [f"{p}`is_current`", f"{p}`change_source` <> 'delete'"]
+    if "action_status" in names:
+        parts.append(f"COALESCE({p}`action_status`, '{NEW}') IN ({sql_list(OPEN_STATUSES)})")
+    if DATA_QUALITY_FLAG in names:
+        parts.append(f"COALESCE(({flagged_ok_sql(names, alias=alias)}), FALSE)")
+    if "held_back" in names:
+        parts.append(f"NOT COALESCE({p}`held_back`, FALSE)")
+    if SNOOZE_NAME in names:
+        parts.append(f"({p}`{SNOOZE_NAME}` IS NULL OR CAST({p}`{SNOOZE_NAME}` AS DATE) <= {today})")
+    return " AND ".join(parts)
+
+
 def action_cells(alias: str) -> dict:
+    """Done and resolved cells per record. Open work is not counted here: it is open_work_sql, read live, because a snooze
+    wakes on a date and an incremental fact never sees that change."""
     live = f"{alias}.`change_source` <> 'delete'"
     done = f"{live} AND {alias}.`action_status` = '{DONE}'"
-    return {"open_n": f"CASE WHEN {live} AND {alias}.`is_current` AND {alias}.`action_status` IN ({sql_list(OPEN_STATUSES)}) THEN 1 ELSE 0 END",
-            "done_n": f"CASE WHEN {done} THEN 1 ELSE 0 END",
+    return {"done_n": f"CASE WHEN {done} THEN 1 ELSE 0 END",
             "resolved_n": f"CASE WHEN {done} AND (NOT {alias}.`is_current` OR {alias}.`action_outcome` = '{RESOLVED}') THEN 1 ELSE 0 END"}
 
 
-ACTION_NUMBERS = ("open_n", "done_n", "resolved_n")
+ACTION_NUMBERS = ("done_n", "resolved_n")
 
 
 def action_counts_sql(source: str) -> str:
@@ -1096,6 +1135,19 @@ def money_joined(page: dict, dataset: str, sql: str) -> str:
                 f"AND CAST(c.{quote(scope['period'])} AS DATE) = r.rate_date")
     return sql
 
+def window_anchor(page: dict, dataset: str, column: str) -> str:
+    """The date a money window counts back from. A page that stores its default range at publish (P85) counts from the data's own
+    last date, so a historical as-of never shows an empty window; never later than today. A page with no stored range counts from today."""
+    ident = next((f.get("id") for f in page.get("filters") or [] if f.get("type") == "date_range"
+                  and (f.get("columns") or {}).get(dataset) == column), "")
+    high = ((page.get(DEFAULT_RANGE) or {}).get(ident) or {}).get("high") if ident else None
+    try:
+        last = datetime.datetime.strptime(str(high)[:10], "%Y-%m-%d").date() if high else None
+    except ValueError:
+        last = None
+    return f"LEAST(current_date(), DATE '{last.isoformat()}')" if last else "current_date()"
+
+
 def money_source(page: dict, dataset: str, sql: str) -> str:
     """Rows a money total may add: a dated row in a period that has closed, in the window the rule sets, converted when the rule converts,
     and one row per group when the rule counts each group once."""
@@ -1111,8 +1163,9 @@ def money_source(page: dict, dataset: str, sql: str) -> str:
     column, grain = quote(scope["period"]), scope["grain"]
     closed = f"{column} < date_trunc('{grain}', current_date())"
     if scope["window"]:
-        lookback = (f"date_sub(date_trunc('week', current_date()), {7 * scope['window']})" if grain == "week"
-                    else f"add_months(date_trunc('{grain}', current_date()), -{scope['window'] * MONTHS_PER_PERIOD[grain]})")
+        anchor = window_anchor(page, dataset, scope["period"])
+        lookback = (f"date_sub(date_trunc('week', {anchor}), {7 * scope['window']})" if grain == "week"
+                    else f"add_months(date_trunc('{grain}', {anchor}), -{scope['window'] * MONTHS_PER_PERIOD[grain]})")
         closed += f" AND {column} >= {lookback}"
     return f"SELECT * FROM ({inner}) AS m WHERE {column} IS NOT NULL AND {closed}"
 
@@ -1120,12 +1173,24 @@ def date_column(page: dict, dataset: str) -> str:
     return next((column for f in page.get("filters") or [] if f.get("type") == "date_range"
                  for column in [(f.get("columns") or {}).get(dataset)] if column), "")
 
+DATE_TEXT_FORMATS = ("MMM d yyyy", "M/d/yyyy", "d/M/yyyy", "yyyy/M/d")
+
+
+def read_date(target: str) -> str:
+    """One date read of a quoted column, the same in the bounds, the scope probe, a filter's WHERE and the future rule: a date, a
+    timestamp (its day), ISO text (TRY_CAST), or text in one of DATE_TEXT_FORMATS, tried in order. Text in none of them reads NULL,
+    never an error. The slash forms take one or two digits: 5/3/2016 reads month first (5 March), and 25/05/2016 falls through
+    to day first (25 May), because month first has no month 25."""
+    reads = [f"TRY_CAST({target} AS DATE)"] + [f"TRY_TO_DATE({target}, '{text}')" for text in DATE_TEXT_FORMATS]
+    return f"COALESCE({', '.join(reads)})"
+
+
 def future_source(page: dict, dataset: str, sql: str) -> str:
     """Rows a KPI or chart may read: rows dated after today are left out, undated rows stay (a money total also drops them)."""
     column = date_column(page, dataset)
     if not column or column not in sql:
         return sql
-    return f"SELECT * FROM ({sql}) AS f WHERE {quote(column)} IS NULL OR {quote(column)} <= current_date"
+    return f"SELECT * FROM ({sql}) AS f WHERE {quote(column)} IS NULL OR {read_date(quote(column))} <= current_date"
 
 def money_expression(page: dict, dataset: str, expression: str) -> str:
     """A money expression reads the converted amount when the rule converts, and the stake amount otherwise."""
@@ -1162,3 +1227,67 @@ def run_rows_source(source: str, date_column: str) -> str:
     page = {"datasets": [{"name": RUN_ROWS_DATASET, "sql": source}],
             "filters": [{"id": "as_of", "type": "date_range", "columns": {RUN_ROWS_DATASET: date_column}}]}
     return future_source(page, RUN_ROWS_DATASET, source)
+
+
+def page_spot(title) -> str:
+    # REQ-237: the one wording for an App page in person copy: its title, never its internal id. A page with no title says so in plain words.
+    name = " ".join(str(title or "").split())
+    return f"page {name}" if name else "the App page"
+
+
+def page_label(page: dict) -> str:
+    return page_spot((page or {}).get("title"))
+
+
+ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
+
+
+def _ordinal(index: int) -> str:
+    return ORDINALS[index] if index < len(ORDINALS) else f"{index + 1}th"
+
+
+def _person_names(items, noun: str, untitled_phrase: str) -> dict:
+    # REQ-237: one naming rule for App pages and charts in person copy. A title names the item; a title that two items share, or
+    # no title at all, is told apart by position among its siblings ('the second Overview page'), never by its internal id.
+    titles = [" ".join(str((item or {}).get("title") or "").split()) for item in items]
+    untitled = [j for j, title in enumerate(titles) if not title]
+    names = {}
+    for index, (item, title) in enumerate(zip(items, titles)):
+        siblings = [j for j, other in enumerate(titles) if other == title]
+        if title and len(siblings) == 1:
+            spot = f"{noun} {title}"
+        elif title:
+            spot = f"the {_ordinal(siblings.index(index))} {title} {noun}"
+        elif len(untitled) == 1:
+            spot = untitled_phrase
+        else:
+            spot = f"the {_ordinal(untitled.index(index))} {noun}"
+        names[str(item.get("id"))] = spot
+    return names
+
+
+def page_names(pages) -> dict:
+    """Person name of each App page, keyed by its id (the check keeps the id for matching)."""
+    return _person_names(list(pages or []), "page", "the App page")
+
+
+def chart_names(page) -> dict:
+    """Person name of each chart on one App page, keyed by the chart id."""
+    return _person_names(list((page or {}).get("charts") or []), "chart", "one chart")
+
+
+def plain_chart_text(text, page) -> str:
+    for ident, spot in chart_names(page).items():
+        text = re.sub(rf"chart {re.escape(ident)}(?!\w)", lambda found, spot=spot: spot, text)
+    return text
+
+
+def plain_check_text(text, pages) -> str:
+    """Person copy of text that names App pages and their charts by id: each chart of a named page, then each page, by its name."""
+    pages = list(pages or [])
+    for page in pages:
+        if re.search(rf"page {re.escape(str(page.get('id')))}(?!\w)", text):
+            text = plain_chart_text(text, page)
+    for ident, spot in page_names(pages).items():
+        text = re.sub(rf"page {re.escape(ident)}(?!\w)", lambda found, spot=spot: spot, text)
+    return text

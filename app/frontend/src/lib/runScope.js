@@ -280,6 +280,8 @@ export const GROUPING_DEEP_MARK = 'Suggested by discovery';
 export const GROUPING_DEEP_PICKED = 'Discovery picked this grouping. It becomes your choice when you pick it or another one.';
 
 export function deepGrouping(profile) {
+  // A use case that fits one model (one_model) is built on the whole data, so no suggested column is its default or a choice.
+  if (profile?.one_model === true) return [];
   const columns = Array.isArray(profile?.deep_suggestion?.columns) ? profile.deep_suggestion.columns : [];
   return groupByColumns(columns.map(text).filter(Boolean).join(', '));
 }
@@ -319,11 +321,12 @@ export function withGroupingDefault(values, profile, raw = '') {
 }
 
 export function groupingChoices(profile, settingChoices = []) {
-  const recommended = (Array.isArray(profile?.recommended) ? profile.recommended : []).map(text).filter(Boolean);
-  const columns = (Array.isArray(profile?.columns) ? profile.columns : []).filter(isMap);
+  const oneModel = profile?.one_model === true;
+  const recommended = oneModel ? [] : (Array.isArray(profile?.recommended) ? profile.recommended : []).map(text).filter(Boolean);
+  const columns = oneModel ? [] : (Array.isArray(profile?.columns) ? profile.columns : []).filter(isMap);
   const shown = columns.map((c) => text(c.name)).filter(Boolean);
   const joinOf = new Map(columns.filter((c) => isMap(c.join)).map((c) => [text(c.name), c.join]));
-  const extra = recommended.length || shown.length ? [] : (settingChoices || []).map(text).filter((c) => c && ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
+  const extra = recommended.length || shown.length || oneModel ? [] : (settingChoices || []).map(text).filter((c) => c && ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
   const known = [...new Set([...recommended, ...shown, ...extra])];
   const withJoin = (choice) => {
     const via = choice.columns.filter((c) => joinOf.has(c)).map((c) => `${c} joins on ${text(joinOf.get(c).key)} = ${text(joinOf.get(c).ref_column)}`);
@@ -388,6 +391,18 @@ export function groupingLead(profile, choices = groupingChoices(profile), groupB
   return { label: lead.label, groups: groupingCount(lead, profile) ?? (isMap(read) ? groupingCount(lead, read) : null) };
 }
 
+export function groupingOneValueColumns(picked, profile) {
+  const shown = Array.isArray(profile?.columns) ? profile.columns.filter(isMap) : [];
+  const columns = Array.isArray(picked?.columns) ? picked.columns : [];
+  return columns.filter((name) => finite(shown.find((c) => text(c.name).toLowerCase() === String(name).toLowerCase())?.distinct) === 1);
+}
+
+export function groupingOneValueText(picked, profile) {
+  const held = groupingOneValueColumns(picked, profile);
+  if (!held.length) return '';
+  return `${held.map((name) => `${name} has one value in this data, so it makes one group`).join('. ')}. Pick ${GROUPING_GLOBAL_LABEL} or another column.`;
+}
+
 export function groupingOverLimitText(lead, profile) {
   const max = finite(profile?.group_max);
   if (!lead || lead.groups == null || max == null || lead.groups <= max) return '';
@@ -409,6 +424,12 @@ export function groupingDefaultNote(profile) {
   return isMap(profile) && profile.recommended_by === 'use_case' ? GROUPING_NAMED_DEFAULT : '';
 }
 
+// REQ-293: a peer comparison's entity key is what each record compares, so it cannot also be the group.
+export function peerEntityText(profile) {
+  const [entity] = Array.isArray(profile?.peer_entity) ? profile.peer_entity.map(text).filter(Boolean) : [];
+  return entity ? `${entity} is what each record compares, so it cannot also be the group.` : '';
+}
+
 export function groupingReasonText(profile) {
   return isMap(profile) && profile.applies === true ? text(profile.reason) : '';
 }
@@ -417,7 +438,9 @@ export function groupingNothingText(profile, choices) {
   if (!isMap(profile) || (Array.isArray(choices) ? choices : []).length > 1) return '';
   if (profileRecords(profile) === 0) return `${text(profile.table) || 'The main table'} holds no records yet, so there is nothing to split and nothing to pick here.`;
   const reason = groupingReasonText(profile) || 'No column splits the data into fair groups, so Inspire models the whole data as one group.';
-  return `${/[.!?]$/.test(reason) ? reason : `${reason}.`} There is nothing else to pick here.`;
+  const sentence = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+  // A one-model use case says plainly that the whole data is one group; this step never carries a refusal or "nothing else to pick".
+  return profile.one_model === true ? sentence : `${sentence} There is nothing else to pick here.`;
 }
 
 export function groupingExampleText(profile) {
@@ -635,8 +658,21 @@ export function firstRunCoversText(profile, values, everything = '') {
   return `${FIRST_RUN_COVERS} everything${size}.${found.estimate ? ` ${found.estimate}.` : ''}`;
 }
 
-export function groupingProblems(values) {
+// REQ-193: a family C use case (segmentation, clustering) fits one registered model, so a Grouping of columns is refused on save,
+// in the wizard and in the run. The text matches the notebook's INSPIRE_ONE_MODEL_REFUSED.
+export const ONE_MODEL_REFUSED = 'this use case fits one model across all of the data, and Inspire registers one model per use case, so '
+  + 'splitting the data into groups would need one registered model per group, which Inspire does not register; choose all, the whole data as one group';
+
+export function oneModelProblem(value, oneModel = false) {
+  const columns = groupByColumns(value).filter((c) => ![GROUP_ALL, GROUP_CUSTOM].includes(c.toLowerCase()));
+  if (oneModel !== true || !columns.length) return '';
+  return `${SCOPE_LABELS[GROUP_BY]} is '${text(value)}': ${ONE_MODEL_REFUSED}`;
+}
+
+export function groupingProblems(values, oneModel = false) {
   const problems = [];
+  const refused = oneModelProblem(values?.[GROUP_BY], oneModel);
+  if (refused) problems.push(refused);
   const custom = customSqlProblem(GROUP_BY, values?.[GROUP_BY], SCOPE_LABELS[GROUP_BY]);
   if (custom) problems.push(custom);
   const columns = groupByColumns(values?.[GROUP_BY]);
@@ -692,9 +728,9 @@ export function firstRunContradictions(values) {
   });
 }
 
-export function scopeProblems(values, part = 'both') {
-  if (part === 'grouping') return groupingProblems(values);
-  return part === 'first_run' ? firstRunProblems(values) : [...firstRunProblems(values), ...groupingProblems(values)];
+export function scopeProblems(values, part = 'both', oneModel = false) {
+  if (part === 'grouping') return groupingProblems(values, oneModel);
+  return part === 'first_run' ? firstRunProblems(values) : [...firstRunProblems(values), ...groupingProblems(values, oneModel)];
 }
 
 export const SCOPE_DIFFERENT_NOTE = 'The previous run covered a different scope.';

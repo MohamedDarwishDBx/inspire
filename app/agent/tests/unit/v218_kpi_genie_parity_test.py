@@ -20,7 +20,10 @@ for folder in (SERVER, TESTS):
         sys.path.insert(0, folder)
 
 import shell_core  # noqa: E402
+import shell_facts  # noqa: E402
 import shell_sql  # noqa: E402
+
+_FUTURE_READ = shell_facts.read_date("`as_of_date`")
 from v120_artifacts_support import FakeSpark  # noqa: E402
 from v140_implement_test import _app_shell, _inspire  # noqa: E402
 from v141_app_shell_test import PAGE, ShapedWorkspace, app_dir  # noqa: E402
@@ -73,7 +76,7 @@ def test_a_pareto_whose_bars_are_one_record_each_goes_back_to_the_builder(tmp_pa
         "page n01_u05: chart drivers groups 30 rows into 30 bars by ai_cat_rule at the default filters, so nearly every bar is one "
         "record and the chart shows no concentration; " + shell_sql.CATEGORY_GROUPING]
     counted = [sql for sql, _params, _limit in ws.sql if sql.startswith("SELECT COUNT(*) AS n, COUNT(DISTINCT x) AS k")]
-    assert len(counted) == 1 and "`ai_cat_rule` AS x" in counted[0] and "CAST(`as_of_date` AS DATE) BETWEEN" in counted[0]
+    assert len(counted) == 1 and "`ai_cat_rule` AS x" in counted[0] and "COALESCE(TRY_CAST(`as_of_date` AS DATE)" in counted[0] and ") BETWEEN" in counted[0]
     assert "[CONCENTRATION-CHECK FIRED]" in capsys.readouterr().out
 
 
@@ -196,9 +199,9 @@ def test_the_space_carries_every_page_kpi_label_with_its_exact_query(agent_ns):
     # a count KPI reads the App's rows: dated rows after today are left out, undated rows stay, as the App's future_source keeps them
     assert (f"SELECT COUNT_IF(ai_cat_fix = 'Failed') AS value FROM (\nSELECT * FROM (SELECT record_key, ai_cat_rule, ai_cat_fix, "
             f"priority_tier, value_at_stake, as_of_date\nFROM {RESULT}\nWHERE is_current -- the current rows\nAND change_source = 'run') AS f "
-            f"WHERE `as_of_date` IS NULL OR `as_of_date` <= current_date\n) AS d") in text
+            f"WHERE `as_of_date` IS NULL OR {_FUTURE_READ} <= current_date\n) AS d") in text
     assert f"FROM (\nSELECT * FROM (SELECT as_of_date, value_at_stake FROM {RESULT}_history) AS f " \
-           f"WHERE `as_of_date` IS NULL OR `as_of_date` <= current_date\n) AS d" in text
+           f"WHERE `as_of_date` IS NULL OR {_FUTURE_READ} <= current_date\n) AS d" in text
     assert "The page narrows it with its filters on Run date (as_of_date), Tier (priority_tier)." in text
     assert "never with a count or a sum of every row" in text
     assert "\n\n" not in text[len(OTHER) + 2:], "the KPI block is one block, so it is found and replaced whole"
@@ -246,7 +249,9 @@ def _sync_inst(agent_ns, current, status=None, page=KPI_PAGE):
     inst._implement_genie_read = lambda space_id: {"title": "Desk", "space": copy.deepcopy(current)}
     inst._implement_patch_asset = lambda name, asset_id, body, **kw: patched.append((name, asset_id, json.loads(body["serialized_space"]), kw))
     inst._implement_asset_lock = lambda *a: contextlib.nullcontext()
-    context = {"uc_id": "N01-U03", "key": (5150, "N01-U03", 3), "assets": {"genie_space": "01f0space"}, "page_spec": page,
+    # The page's own SQL names no Table Scope view, so the build's scopes are empty here (REQ-202: the sync renames to live names).
+    inst._implement_build_scopes = lambda context: {}
+    context = {"uc_id": "N01-U03", "use_case": {"No": "N01-U03"}, "key": (5150, "N01-U03", 3), "assets": {"genie_space": "01f0space"}, "page_spec": page,
                "asset_status": status or {"genie_space": {"state": "ready", "spec_version": 3},
                                           "app": {"state": "ready", "spec_version": 3, "snapshot": True}}}
     return inst, context, patched

@@ -6,7 +6,7 @@ import sys
 import pytest
 
 from v120_artifacts_support import FakeSpark
-from v140_implement_test import (CHURN_TABLES, OURS_APP, READS, SHELL_FILES, _app_flow, _deploy_inspire, _feedback_writes, _not_access_reads, _spec,
+from v140_implement_test import (CHURN_TABLES, NO_AUDIENCE, OURS_APP, READS, SHELL_FILES, _app_flow, _deploy_inspire, _feedback_writes, _not_access_reads, _spec,
                                   _without_feedback,  # noqa: F401
                                  sdk_stub)
 from v142_scd_test import _describe
@@ -20,12 +20,21 @@ import shell_core  # noqa: E402
 import shell_db  # noqa: E402
 from v141_app_shell_test import call  # noqa: E402
 from v149_app_money_test import OWNER, MoneyWorkspace, _shell  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 RESULT = "main.inspire.churn_out"
 ASSUMPTIONS = "main.inspire.churn_out_assumptions"
 CREATE = ("CREATE TABLE IF NOT EXISTS `main`.`inspire`.`churn_out_assumptions` (use_case_id STRING, name STRING, value DOUBLE, "
           "changed_by STRING, changed_at TIMESTAMP, note STRING, text_value STRING)")
 GRANT = "GRANT {} ON {} TO `sp-1`"
+
+
+def _assumption_writes(agent_ns, fresh=False):
+    """What a per-user App's service principal gets on its companion table, the one its Settings saves write."""
+    catalog = [GRANT.format("USE CATALOG", "CATALOG `main`"), GRANT.format("USE SCHEMA", "SCHEMA `main`.`inspire`")] if fresh else []
+    return [CREATE, "DESCRIBE TABLE `main`.`inspire`.`churn_out_assumptions`"] + catalog + [
+        GRANT.format("SELECT", "TABLE `main`.`inspire`.`churn_out_assumptions`"), GRANT.format("MODIFY", "TABLE `main`.`inspire`.`churn_out_assumptions`")]
 MONEY_SCHEMA = [("entity_id", "string"), ("value_at_stake", "double"), ("units", "bigint")]
 NEW_APP = [RuntimeError("RESOURCE_DOES_NOT_EXIST: app churn-desk"), {"compute_status": {"state": "ACTIVE"}, "service_principal_client_id": "sp-1"},
            {"deployment_id": "dep1", "status": {"state": "SUCCEEDED"}}, {"url": "https://churn-desk.example/"}]
@@ -116,22 +125,23 @@ def test_a_table_without_money_at_stake_gets_no_assumptions_table(agent_ns, sdk_
 
 
 def test_a_per_user_app_gets_a_service_principal_grant_only_on_the_table_it_records_decisions_in(agent_ns, sdk_stub):
-    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"])] + NEW_APP[2:]
+    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"]), NO_AUDIENCE] + NEW_APP[2:]
     spark = Catalog()
     _inst, fields = _deploy(agent_ns, spark, {"app_access": "user", "app_options": {"decisions": False}}, answers)
     assert fields["app_url"] == "https://churn-desk.example"
     ledger = agent_ns["inspire_shell_facts"].ledger_table("main.inspire")
-    assert [s for s in spark.statements if s.startswith(("GRANT", "CREATE TABLE", "DESCRIBE")) and ledger not in s] == _feedback_writes(agent_ns, fresh=True), \
-        "a per-user App stores reported issues as its service principal, so the feedback table is all it gets"
+    assert [s for s in spark.statements if s.startswith(("GRANT", "CREATE TABLE", "DESCRIBE")) and ledger not in s] == \
+        ["DESCRIBE TABLE `main`.`inspire`.`churn_out`"] + _assumption_writes(agent_ns, fresh=True) + _feedback_writes(agent_ns), \
+        "a per-user App's service principal writes its reported issues and its Settings (the companion table), so those two tables are all it gets"
     spark = Catalog()
     _inst, fields = _deploy(agent_ns, spark, {"app_access": "user"}, answers)
     assert "_warnings" not in fields
     ledger = agent_ns["inspire_shell_facts"].ledger_table("main.inspire")
     assert [s for s in spark.statements if s.startswith(("GRANT", "CREATE TABLE", "DESCRIBE")) and ledger not in s] == [
         GRANT.format("USE CATALOG", "CATALOG `main`"), GRANT.format("USE SCHEMA", "SCHEMA `main`.`inspire`"),
-        GRANT.format("SELECT", "TABLE `main`.`inspire`.`churn_out`"), GRANT.format("MODIFY", "TABLE `main`.`inspire`.`churn_out`")] + \
-        _feedback_writes(agent_ns), \
-        "a per-user App records decisions and reported issues as its service principal, so it gets the result and feedback tables only"
+        GRANT.format("SELECT", "TABLE `main`.`inspire`.`churn_out`"), GRANT.format("MODIFY", "TABLE `main`.`inspire`.`churn_out`"),
+        "DESCRIBE TABLE `main`.`inspire`.`churn_out`"] + _assumption_writes(agent_ns) + _feedback_writes(agent_ns), \
+        "a per-user App records decisions, Settings and reported issues as its service principal, so it gets the result, companion and feedback tables only"
     assert [s for s in spark.statements if ledger in s and s.startswith("CREATE TABLE")] and not [s for s in spark.statements if ledger in s and s.startswith("GRANT")], \
         "the job identity creates the value ledger for a per-user App too, and grants it to no service principal"
 
@@ -148,7 +158,7 @@ def test_an_assumptions_grant_that_fails_is_a_plain_warning_and_the_app_still_sh
     _inst, fields = _deploy(agent_ns, spark)
     assert fields["app_url"] == "https://churn-desk.example"
     assert fields["_warnings"] == [
-        f"App: the owners of this use case cannot change its money at stake assumptions in the App until its service principal sp-1 "
+        f"{APP_LABEL}: the owners of this use case cannot change its value at stake assumptions in the App until its service principal sp-1 "
         f"can read and change the result table. {reason}"]
 
 
@@ -168,12 +178,13 @@ def test_an_assumptions_table_inspire_cannot_manage_names_the_grants_to_ask_for(
                                       "me": "inspire-sp"}])
     inst, fields = _deploy(agent_ns, spark, answers=[{"description": OURS_APP, "compute_status": {"state": "ACTIVE"},
                                                       "service_principal_client_id": "sp-1"}] + NEW_APP[2:])
-    owners_warning = [w for w in fields["_warnings"] if "money at stake assumptions" in w]
+    owners_warning = [w for w in fields["_warnings"] if "value at stake assumptions" in w]
     assert owners_warning == [
-        f"App: the owners of this use case cannot change its money at stake assumptions in the App until its service principal sp-1 "
+        f"{APP_LABEL}: the owners of this use case cannot change its value at stake assumptions in the App until its service principal sp-1 "
         "can read and change the result table. Inspire cannot grant these accesses, because it neither owns nor holds MANAGE on them. "
-        "If sp-1 does not have them yet, ask the owner to run: GRANT SELECT ON TABLE `main`.`inspire`.`churn_out_assumptions` TO "
-        "`sp-1`; GRANT MODIFY ON TABLE `main`.`inspire`.`churn_out_assumptions` TO `sp-1`"]
+        "If sp-1 does not have them yet, ask your data owner to grant them: the commands are in Permission Required"]
+    # REQ-260: the GRANT statements are not in the warning; the dialog carries them
+    assert "GRANT " not in owners_warning[0]
     assert not any(s.startswith("GRANT") and "assumptions" in s for s in spark.statements)
 
 
@@ -187,7 +198,7 @@ def test_an_app_that_writes_its_records_gets_modify_on_the_result_table(agent_ns
                       fail={"GRANT MODIFY ON TABLE `main`.`inspire`.`churn_out`": RuntimeError("PERMISSION_DENIED: no MANAGE")})
     _inst, fields = _deploy(agent_ns, failing, {"app_options": dict({"modify": False, "decisions": False}, **options)})
     assert fields["_warnings"] == [
-        f"App: people cannot {what} in this App until its service principal sp-1 can read and change the result table. Inspire could not "
+        f"{APP_LABEL}: people cannot {what} in this App until its service principal sp-1 can read and change the result table. Inspire could not "
         "grant it: GRANT MODIFY ON TABLE `main`.`inspire`.`churn_out` TO `sp-1` failed: PERMISSION_DENIED: no MANAGE"]
 
 
@@ -403,11 +414,11 @@ def test_the_app_service_principal_reads_every_output_table_the_run_wrote_and_no
 
 
 def test_a_per_user_app_never_asks_which_output_tables_exist(agent_ns, sdk_stub):
-    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"])] + NEW_APP[2:]
+    answers = [NEW_APP[0], NEW_APP[1], dict(NEW_APP[1], user_api_scopes=["sql:restricted-query", "genie"]), NO_AUDIENCE] + NEW_APP[2:]
     spark = OutputsCatalog({"churn_out_closed"})
     inst, context, _calls, _imported = _deploy_inspire(agent_ns, list(answers))
     inst.spark = spark
     context["spec"] = dict(context["spec"], outputs=dict(context["spec"]["outputs"], app_access="user", app_options={"decisions": False}))
     inst._implement_deploy_app(context, "churn-desk", SHELL_FILES, READS, poll_s=0, page_tables=[RESULT])
     assert not any(s.startswith("SELECT lower(table_name)") for s in spark.statements)
-    assert [s for s in spark.statements if s.startswith("GRANT")] == _feedback_writes(agent_ns, fresh=True)[2:]
+    assert [s for s in spark.statements if s.startswith("GRANT")] == _assumption_writes(agent_ns, fresh=True)[2:] + _feedback_writes(agent_ns)[2:]

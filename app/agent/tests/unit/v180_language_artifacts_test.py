@@ -59,11 +59,12 @@ def test_arabic_excel_is_written_right_to_left_with_arabic_headers_and_values(ns
     header = [c.value for c in sheet[1]]
     row = dict(zip(header, [c.value for c in sheet[2]]))
     labels = arabic_labels(ns)
-    for key in ("sum_id", "domain", "subdomain", "usecase", "description", "primary_table", "quality"):
+    for key in ("sum_id", "domain", "subdomain", "usecase", "doc_subtitle_header", "primary_table", "quality"):
         assert labels[key] in header, key
     assert "Business Domain" not in header and "Use Case" not in header
-    technique = obj._doc_technique_label("Forecasting", labels, "Arabic")[0]
-    assert row[labels["usecase"]] == ARABIC_TITLE and row[labels["description"]] == f"{ARABIC_NAME} باستخدام {technique}" != f"{ARABIC_NAME} باستخدام Forecasting"
+    assert row[labels["usecase"]] == ARABIC_NAME, "REQ-175: the title is the translated simple name, not the headline"
+    subtitle = obj._inspire_subtitle(arabic_portfolio()["المبيعات"][0], labels, "Arabic")
+    assert row[labels["doc_subtitle_header"]] == subtitle and subtitle.endswith("تقنية التحليل: التنبؤ.")
     assert row[labels["domain"]] == "المبيعات"
     assert row[labels["quality_score_header"]] == labels["doc_not_scored"] != "Not scored"
     assert row[labels["quality"]] == labels["value_priority_high"] != "High"
@@ -80,7 +81,7 @@ def test_arabic_csv_has_a_byte_order_mark_and_arabic_headers(ns):
     labels = arabic_labels(ns)
     header, body = rows[0], rows[1]
     assert header[0] == labels["sum_id"] and labels["usecase"] in header
-    assert body[header.index(labels["usecase"])] == ARABIC_TITLE
+    assert body[header.index(labels["usecase"])] == ARABIC_NAME
     assert body[header.index(labels["quality_score_header"])] == labels["doc_not_scored"]
 
 
@@ -92,7 +93,7 @@ def test_english_csv_keeps_its_headers_and_gains_the_byte_order_mark(ns):
     assert data.startswith(b"\xef\xbb\xbf")
     header = next(csv.reader(io.StringIO(data.decode("utf-8-sig"))))
     assert header == [h for h, _get, _numeric in obj._export_columns(False)]
-    assert header[:6] == ["ID", "Rank", "Business Domain", "Subdomain", "Use Case", "Description"]
+    assert header[:6] == ["ID", "Rank", "Business Domain", "Subdomain", "Use Case", "Subtitle"]
 
 
 def test_arabic_markdown_is_right_to_left_with_arabic_labels(ns):
@@ -105,7 +106,7 @@ def test_arabic_markdown_is_right_to_left_with_arabic_labels(ns):
     labels = arabic_labels(ns)
     assert md.startswith('<div dir="rtl" lang="ar">\n\n') and md.rstrip().endswith("</div>")
     assert f"## {labels['pdf_exec_summary']}\n" in md and "## Executive Summary" not in md
-    assert ARABIC_TITLE in md and f"- **{labels['subdomain']}:** التخطيط" in md
+    assert ARABIC_NAME in md and f"- **{labels['subdomain']}:** التخطيط" in md
     assert f"## {labels['pdf_disclaimer_title']}" in md
 
 

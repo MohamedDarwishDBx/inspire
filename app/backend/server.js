@@ -1,4 +1,5 @@
 const express = require('express');
+const IMPLEMENT_OUTPUT_LABELS = require('./lib/implementOutputLabels.json');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const fs = require('fs');
@@ -22,7 +23,7 @@ const { triggerDemoDataPipeline } = require('./lib/demoDataPipeline');
 const { unreachableMessage } = require('./lib/unreachable');
 const { resolveInspireAppServicePrincipalId } = require('./lib/inspireSpGrants');
 const {
-  INSPIRE_AGENT_VERSION,
+  inspireReleaseLabel,
   inspireJobEnvironments,
   inspireJobTags,
   inspireTaskCompute,
@@ -40,7 +41,7 @@ const { INSPIRE_DB_SHAPE, USE_CASE_ID_SHAPE, splitInspireDatabase, isTimestampTe
 const { valueLedgerTable, inspireSessionTable, valueSessionSql, valueRunsSql, valueOverallSql, sessionCountsSql, valueOfSession, valueOfRuns, overallValue, qualified: qualifiedInspireTable } = require('./lib/inspireValue');
 const VE = require('./lib/valueEstimate');
 const { normalizeUseCaseName, renameStatement } = require('./lib/useCaseName');
-const { createExecuteSql, runWithRequestDeadline } = require('./lib/sqlStatements');
+const { createExecuteSql, lookupWithRetry, runWithRequestDeadline } = require('./lib/sqlStatements');
 const { raceLaunchCheck } = require('./lib/launchDeadline');
 const { answerMs, fetchWithin } = require('./lib/answerWithin');
 const { plural } = require('./lib/plural');
@@ -52,7 +53,7 @@ const {
   discoverReads, discoverWrites, listCatalogs, listSchemas, listTables, outputPlan, runReadPlan, scopeTables, skippedTablesDetail, ucMetadataParts,
   writeRefusalBody,
 } = require('./lib/ucReads');
-const { metricViewSkipLine } = require('./lib/metricViews');
+const { isMetricViewType, metricViewSkipLine, probeTableTypes, tableTypeOfDescribe, tableTypeUnknownLine, TYPE_CHECK_BUSY_REASON, UNUSABLE_REASON } = require('./lib/metricViews');
 const { createSourceAccess } = require('./lib/sourceAccess');
 const { withBusyRetry } = require('./lib/busyRetry');
 const { registerShowcaseRoutes, showcaseWriteGuard } = require('./lib/showcase');
@@ -61,7 +62,8 @@ const { LIVE_STEP_STATUSES, liveDomainsOf, liveUseCasesOf } = require('../fronte
 const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('./lib/runSummary');
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
 const PM_ERROR = require('./lib/permissionError');
-const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
+const { apiRefusalText, logApiBody } = require('./lib/apiRefusal');
+const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
 const { keepLongInteger, parseExactJson } = require('./lib/exactJson');
 const { int64Id, isInt64Id, jsonWithInt64Ids } = require('./lib/int64Id');
 const { dataFiltersOf, scopesOfSessions } = require('./lib/dataFilters');
@@ -384,14 +386,32 @@ async function listSchemasSql(host, token, warehouseId, catalog) {
   }
 }
 
-async function listTablesSql(host, token, warehouseId, catalog, schema) {
-  if (!warehouseId || !catalog || !schema) return [];
+// One table's type from DESCRIBE TABLE EXTENDED ... AS JSON, its documented "type" field (METRIC_VIEW for a metric view).
+// Null when it cannot be read; the caller keeps such a table listed.
+// { type } from DESCRIBE ... AS JSON, or { type: null, transient } when the lookup failed; a transient failure is retried once.
+async function tableTypeByDescribe(host, token, warehouseId, catalog, schema, name) {
+  const got = await lookupWithRetry(() => executeSql(host, token, warehouseId,
+    `DESCRIBE TABLE EXTENDED ${quotedIdent(catalog)}.${quotedIdent(schema)}.${quotedIdent(name)} AS JSON`));
+  if (got.error) return { type: null, transient: got.transient };
+  return { type: tableTypeOfDescribe(got.value.result?.data_array?.[0]?.[0]), transient: false };
+}
+
+// `known` holds the full names the REST listing already typed (and the metric views it hid); only the other names are probed.
+async function listTablesSql(host, token, warehouseId, catalog, schema, known = new Set()) {
+  if (!warehouseId || !catalog || !schema) return { rows: [], leftOut: 0 };
   try {
     const stmt = `SHOW TABLES IN ${quotedIdent(catalog)}.${quotedIdent(schema)}`;
     const result = await executeSql(host, token, warehouseId, stmt);
     const rows = sqlResultToObjects(result);
-    // SHOW TABLES does not say which names are metric views, so the catalog's own table types decide.
+    // SHOW TABLES does not say which names are metric views, so the catalog's own table types decide. When information_schema
+    // cannot be read, each name the REST listing did not type is read with DESCRIBE TABLE EXTENDED ... AS JSON instead.
     const metricViewNames = new Set();
+    const unknownNames = new Set();
+    // A name whose type check the workspace could not answer twice: listed as busy, neither usable nor not usable.
+    const busyNames = new Set();
+    const leftOutNames = new Set();
+    let leftOut = 0;
+    const probedTypes = new Map();
     try {
       const typed = await executeSql(host, token, warehouseId,
         `SELECT table_name FROM ${quotedIdent(catalog)}.information_schema.tables WHERE table_schema = '${escapeSqlStringLiteral(schema)}' `
@@ -399,30 +419,48 @@ async function listTablesSql(host, token, warehouseId, catalog, schema) {
       for (const row of sqlResultToObjects(typed)) if (row.table_name) metricViewNames.add(row.table_name);
     } catch (err) {
       console.warn(`   ⚠️ metric view check failed for ${catalog}.${schema}: ${err.message}`);
+      const names = rows.map((r) => r.tableName ?? r.table_name ?? r.name)
+        .filter((n) => typeof n === 'string' && n && !known.has(`${catalog}.${schema}.${n}`));
+      const { types, beyond } = await probeTableTypes(names,
+        (name) => tableTypeByDescribe(host, token, warehouseId, catalog, schema, name));
+      for (const [name, { type, transient }] of types) {
+        if (type) {
+          if (isMetricViewType(type)) metricViewNames.add(name);
+          else probedTypes.set(name, type);
+        } else if (transient) busyNames.add(name);
+        else unknownNames.add(name);
+      }
+      // Names beyond the probe cap are not typed and not shown: they are counted, and the picker says so.
+      for (const name of beyond) leftOutNames.add(name);
+      leftOut = beyond.length;
+      if (unknownNames.size) console.log(tableTypeUnknownLine(unknownNames.size, `${catalog}.${schema}`));
     }
     if (metricViewNames.size) console.log(metricViewSkipLine([...metricViewNames]));
     const out = [];
     for (const row of rows) {
       const tname = row.tableName ?? row.table_name ?? row.name;
-      if (!tname || typeof tname !== 'string' || metricViewNames.has(tname)) continue;
+      if (!tname || typeof tname !== 'string' || metricViewNames.has(tname) || leftOutNames.has(tname)) continue;
       out.push({
         name: tname,
         full_name: `${catalog}.${schema}.${tname}`,
         catalog_name: catalog,
         schema_name: schema,
-        table_type: 'MANAGED',
+        table_type: busyNames.has(tname) ? '' : (probedTypes.get(tname) || 'MANAGED'),
         data_source_format: '',
         updated_at: null,
         created_at: null,
         comment: '',
         owner: '',
         columns: 0,
+        // Fail closed: a table whose type cannot be read is shown as not usable, with the plain reason.
+        ...(unknownNames.has(tname) ? { usable: false, unusable_reason: UNUSABLE_REASON } : {}),
+        ...(busyNames.has(tname) ? { type_check: 'busy', unusable_reason: TYPE_CHECK_BUSY_REASON } : {}),
       });
     }
-    return out;
+    return { rows: out, leftOut };
   } catch (err) {
     console.warn(`   ⚠️ SHOW TABLES fallback failed for ${catalog}.${schema}: ${err.message}`);
-    return [];
+    return { rows: [], leftOut: 0 };
   }
 }
 
@@ -762,6 +800,17 @@ async function launchSql(host, statement, token) {
   return sqlResultToObjects(await executeSql(host, token, DEFAULT_WAREHOUSE_ID, statement.sql, statement.parameters));
 }
 
+// The route-policy gate runs BEFORE requireToken, so req.dbToken and req.dbHost are not set yet when a policy reader runs (the live
+// read sent no credential: "Credential was not sent" 401, then 403 "no record"). These readers take the App's own credential from the
+// same source requireToken uses for an app-identity route (getToken), which is the credential recordLaunch INSERTed with. A missing
+// credential throws, so the route answers 503 and tries again, never a permanent "no record".
+async function policyReadToken(req) {
+  await refreshSpTokenIfStale();
+  const token = getToken(req);
+  if (!token) throw new Error('Inspire has no credential of its own to read its launch record with');
+  return token;
+}
+
 async function readLaunchRecord(req, target) {
   const table = L.launchTableName(DEFAULT_INSPIRE_DB);
   if (!table || !DEFAULT_WAREHOUSE_ID) return null;
@@ -769,8 +818,9 @@ async function readLaunchRecord(req, target) {
     ? L.runLauncherStatement(table, target.runId)
     : L.sessionLauncherStatement(table, target.inspireDatabase, target.sessionId);
   if (!statement) return null;
+  const token = await policyReadToken(req);
   try {
-    return L.launcherOf(await launchSql(resolveHost(req), statement, req.dbToken));
+    return L.launcherOf(await launchSql(resolveHost(req), statement, token));
   } catch (err) {
     if (isMissingTableError(err)) return null;
     throw err;
@@ -781,8 +831,9 @@ async function runIsRecorded(req, runId) {
   const table = L.launchTableName(DEFAULT_INSPIRE_DB);
   const statement = table && DEFAULT_WAREHOUSE_ID ? L.runLauncherStatement(table, runId) : null;
   if (!statement) return false;
+  const token = await policyReadToken(req);
   try {
-    return (await launchSql(resolveHost(req), statement, req.dbToken)).length > 0;
+    return (await launchSql(resolveHost(req), statement, token)).length > 0;
   } catch (err) {
     if (isMissingTableError(err)) return false;
     throw err;
@@ -792,9 +843,10 @@ async function runIsRecorded(req, runId) {
 async function sessionOutputFolders(req) {
   const statement = DEFAULT_WAREHOUSE_ID ? L.checkedOutputStatement(DEFAULT_INSPIRE_DB) : null;
   if (!statement) return [];
+  const token = await policyReadToken(req);
   let rows;
   try {
-    rows = await launchSql(resolveHost(req), statement, req.dbToken);
+    rows = await launchSql(resolveHost(req), statement, token);
   } catch (err) {
     if (isMissingTableError(err)) return [];
     throw err;
@@ -808,10 +860,12 @@ async function sessionOutputFolders(req) {
 async function readAppDatabaseHistory(req, sessionId) {
   const parsed = splitInspireDatabase(DEFAULT_INSPIRE_DB);
   if (!parsed || !DEFAULT_WAREHOUSE_ID) return [];
-  return implementApi.loadHistory(resolveHost(req), req.dbToken, DEFAULT_WAREHOUSE_ID, parsed.catalog, parsed.schema, sessionId, null);
+  const token = await policyReadToken(req);
+  return implementApi.loadHistory(resolveHost(req), token, DEFAULT_WAREHOUSE_ID, parsed.catalog, parsed.schema, sessionId, null);
 }
 
-async function sessionIsNew(host, token, inspireDatabase, sessionId) {
+// A read that fails is not a new session: a strict caller (the launch check) gets the error and answers 503; the others treat it as not new.
+async function sessionIsNew(host, token, inspireDatabase, sessionId, { strict = false } = {}) {
   const table = L.launchTableName(DEFAULT_INSPIRE_DB);
   const statements = DEFAULT_WAREHOUSE_ID ? L.sessionKnownStatements(table || '', inspireDatabase, sessionId) : null;
   if (!statements) return false;
@@ -819,10 +873,17 @@ async function sessionIsNew(host, token, inspireDatabase, sessionId) {
     try {
       if ((await launchSql(host, statement, token)).length) return false;
     } catch (err) {
-      if (!isMissingTableError(err)) return false;
+      if (!isMissingTableError(err)) {
+        if (strict) throw err;
+        return false;
+      }
     }
   }
   return true;
+}
+
+function launchRecordUnreadable(label, err) {
+  return Object.assign(new Error(`Inspire could not read the launch record of ${label} just now (${String(err.message).replace(/\s+/g, ' ')}), so it cannot tell whether this may be launched; try again`), { statusCode: 503 });
 }
 
 async function isManager(req) {
@@ -846,9 +907,15 @@ async function launchSessionProblem(req, params) {
   if (!policyEnforced() || !sessionId || !splitInspireDatabase(inspireDatabase)) return '';
   if (!isInt64Id(sessionId)) return 'The session id must be a numeric Inspire session id';
   const host = resolveHost(req);
-  const fresh = await sessionIsNew(host, req.dbToken, inspireDatabase, sessionId);
-  if (fresh) return '';
-  const launcher = String(await readLaunchRecord(req, { kind: 'session', inspireDatabase, sessionId }).catch(() => '') || '').trim().toLowerCase();
+  let fresh;
+  let launcher;
+  try {
+    fresh = await sessionIsNew(host, req.dbToken, inspireDatabase, sessionId, { strict: true });
+    if (fresh) return '';
+    launcher = String(await readLaunchRecord(req, { kind: 'session', inspireDatabase, sessionId }) || '').trim().toLowerCase();
+  } catch (err) {
+    throw launchRecordUnreadable(`session ${sessionId}`, err);
+  }
   const person = RP.forwardedPerson(req.headers);
   const owns = Boolean(launcher) && launcher === person;
   return LC.sessionLaunchProblem(sessionId, { fresh, launcher, person, manager: owns ? false : await isManager(req) });
@@ -880,6 +947,21 @@ async function startingSessions(req, inspireDatabase, warehouseId, listed) {
   }
 }
 
+// The record write has a bound: a warehouse that never leaves PENDING must not hold the launch open (executeSql has no deadline of its own).
+const LAUNCH_RECORD_MS = 60000;
+
+// Whether the ledger holds a row for the run: true or false when it could read, null when it could not say.
+async function launchRecordedFor(host, token, runId) {
+  const stmt = L.runLauncherStatement(L.launchTableName(DEFAULT_INSPIRE_DB), runId);
+  if (!stmt || !DEFAULT_WAREHOUSE_ID) return null;
+  try {
+    const got = await executeSql(host, token, DEFAULT_WAREHOUSE_ID, stmt.sql, stmt.parameters, { signal: AbortSignal.timeout(LAUNCH_RECORD_MS) });
+    return (got?.result?.data_array || []).length > 0;
+  } catch (err) {
+    return isMissingTableError(err) ? false : null;
+  }
+}
+
 async function recordLaunch(host, token, record) {
   const table = L.launchTableName(DEFAULT_INSPIRE_DB);
   if (!table || !DEFAULT_WAREHOUSE_ID) {
@@ -891,15 +973,40 @@ async function recordLaunch(host, token, record) {
       launchTableReady = true;
     }
     const insert = L.launchInsertStatement(table, record);
-    await executeSql(host, token, DEFAULT_WAREHOUSE_ID, insert.sql, insert.parameters);
+    await executeSql(host, token, DEFAULT_WAREHOUSE_ID, insert.sql, insert.parameters, { signal: AbortSignal.timeout(LAUNCH_RECORD_MS) });
     return { recorded: true };
   } catch (err) {
     console.warn(`launch record write failed for run ${record.runId}: ${err.message}`);
-    return { recorded: false, note: `Inspire could not record who launched this run (${err.message}), so only App managers can cancel it` };
+    // An answer the warehouse gave (a refused or failed statement) means the insert did not land. Only a write whose answer was lost
+    // (the bound fired and the statement was cancelled, or the network dropped) may have landed.
+    const ambiguous = err.code === 'SQL_CANCELLED' || /^Cannot reach/.test(String(err.message || ''));
+    return { recorded: false, failed: true, ambiguous, note: `Inspire could not record who launched this run (${err.message}), so only App managers can cancel it` };
   }
 }
 
-async function triggerInspireNotebookJob(host, token, { params, notebook_path, cluster_id: askedClusterId, jobType = 'discovery', jobName: requestedJobName = '', useCaseIds = [], launchedBy = '', writeCheck = null, asker = null, scopePicks = undefined }) {
+// The run is already submitted when its record is written, so a write that fails twice must not leave a run nobody can cancel.
+// The write is retried once. If it still fails, the run is stopped (the same credential that submitted it asks Databricks to cancel it)
+// and the launch answers 503. Only when that stop also fails does the run stay, and then the launch carries a warning naming it.
+async function recordLaunchOrStop(host, token, record) {
+  let launch = await recordLaunch(host, token, record);
+  if (launch.recorded || !launch.failed) return launch;
+  launch = await recordLaunch(host, token, record);
+  if (launch.recorded || !launch.failed) return launch;
+  // Only a write whose answer was lost may have landed (see recordLaunch). Then the ledger decides: a row, or a lookup that cannot answer, keeps the run.
+  if (launch.ambiguous && (await launchRecordedFor(host, token, record.runId)) !== false) {
+    return { ...launch, warning: `Inspire started run ${record.runId} but could not confirm its record, so it did not stop the run. Cancel it from the App managers if it is not wanted` };
+  }
+  const stopped = await dbFetch(host, token, '/api/2.1/jobs/runs/cancel', {
+    method: 'POST',
+    body: jsonWithInt64Ids({ run_id: record.runId }, ['run_id']),
+  }).then((r) => r.ok, () => false);
+  if (stopped) {
+    throw Object.assign(new Error(`Inspire could not record run ${record.runId}, so it asked Databricks to stop the run. Start it again.`), { statusCode: 503 });
+  }
+  return { ...launch, warning: `Inspire started run ${record.runId} but could not record it, so Cancel and Run again may refuse it` };
+}
+
+async function triggerInspireNotebookJob(host, token, { params, notebook_path, cluster_id: askedClusterId, jobType = 'discovery', jobName: requestedJobName = '', useCaseIds = [], useCaseName = '', launchedBy = '', writeCheck = null, asker = null, scopePicks = undefined }) {
   normalizeUseCasesQualityParams(params);
   // Discover has no Measure rule yet: it sends the reporting currency and today's rates (or the saved averages offline).
   // Implement sends its own rule's currency and rates from startVersion, so this only fills a Discover launch.
@@ -978,7 +1085,7 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   const launchPlan = launchPlanFor({ runAs: runAsPerson(), jobType });
   const createPayload = {
     name: jobName,
-    tags: inspireJobTags({ runType: inspireRunType, params, businessName, notebookFilename, useCaseIds }),
+    tags: inspireJobTags({ runType: inspireRunType, params, businessName, notebookFilename, useCaseIds, useCaseName }),
     tasks: [{
       task_key: 'inspire_notebook',
       notebook_task: {
@@ -1002,9 +1109,9 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
     });
 
     if (!createResp.ok) {
-      const errText = await createResp.text();
-      console.error(`❌ Job create failed (${createResp.status}): ${errText}`);
-      const err = new Error(`Job creation failed: ${errText}`);
+      const refusalBody = await createResp.text();
+      logApiBody('Job create', createResp.status, refusalBody);
+      const err = new Error(apiRefusalText('create the job for this run', createResp.status, refusalBody));
       err.statusCode = createResp.status;
       throw err;
     }
@@ -1028,11 +1135,9 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    console.error(`❌ Job run failed (${response.status}): ${errText}`);
-    let errorMsg;
-    try { errorMsg = JSON.parse(errText).message || errText; } catch { errorMsg = errText; }
-    const err = new Error(errorMsg);
+    const refusalBody = await response.text();
+    logApiBody('Job run', response.status, refusalBody);
+    const err = new Error(apiRefusalText('start the run', response.status, refusalBody));
     err.statusCode = response.status;
     throw err;
   }
@@ -1043,9 +1148,10 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   const jobRunUrl = databricksJobRunUrl(host, job_id, runId);
   console.log(`✅ Run submitted: ${runId}, job_id=${job_id}, notebook: ${resolvedPath}`);
   const launch = launchedBy
-    ? await recordLaunch(host, token, { runId, jobId: job_id, runType: inspireRunType, inspireDatabase: launchDatabase, sessionId: launchSession, openedSession, launchedBy,
+    ? await recordLaunchOrStop(host, token, { runId, jobId: job_id, runType: inspireRunType, inspireDatabase: launchDatabase, sessionId: launchSession, openedSession, launchedBy,
       outputFolder, outputChecked })
     : { recorded: false, note: 'no signed-in person launched this run, so only App managers can cancel it' };
+  if (launch.warning) warnings.push(launch.warning);
   return {
     run_id: runId,
     job_id,
@@ -1273,7 +1379,7 @@ app.post('/api/auth/sp-token', async (req, res) => {
     if (!resp.ok) {
       const errText = await resp.text();
       console.error(`SP token failed (${resp.status}): ${errText.substring(0, 200)}`);
-      return res.status(resp.status).json({ error: `Azure AD token request failed: ${errText}` });
+      return res.status(resp.status).json({ error: apiRefusalText('get a sign-in token', resp.status, errText) });
     }
 
     const data = await resp.json();
@@ -1328,7 +1434,9 @@ app.get('/api/workspace/list', rejectUnsafeQueryPath, requireToken, async (req, 
         const response = await dbFetch(req.dbHost, req.dbToken, fsApiPath('directories', wsPath));
         if (!response.ok) {
           lastStatus = response.status;
-          lastErr = await response.text();
+          const refusalBody = await response.text();
+          logApiBody('List folder', response.status, refusalBody);
+          lastErr = apiRefusalText('list that folder', response.status, refusalBody);
           continue;
         }
         const data = await response.json();
@@ -1344,7 +1452,9 @@ app.get('/api/workspace/list', rejectUnsafeQueryPath, requireToken, async (req, 
       const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.0/workspace/list?path=${encodeURIComponent(wsPath)}`);
       if (!response.ok) {
         lastStatus = response.status;
-        lastErr = await response.text();
+        const refusalBody = await response.text();
+        logApiBody('List folder', response.status, refusalBody);
+        lastErr = apiRefusalText('list that folder', response.status, refusalBody);
         continue;
       }
       const data = await response.json();
@@ -1377,7 +1487,9 @@ app.get('/api/workspace/export', rejectUnsafeQueryPath, requireToken, async (req
         const response = await dbFetch(req.dbHost, req.dbToken, fsApiPath('files', wsPath));
         if (!response.ok) {
           lastStatus = response.status;
-          lastErr = await response.text();
+          const refusalBody = await response.text();
+          logApiBody('Read file', response.status, refusalBody);
+          lastErr = apiRefusalText('read that file', response.status, refusalBody);
           continue;
         }
         res.setHeader('Content-Disposition', attachmentHeader(baseName));
@@ -1408,7 +1520,9 @@ app.get('/api/workspace/export', rejectUnsafeQueryPath, requireToken, async (req
         return res.send(Buffer.from(await resp2.arrayBuffer()));
       }
       lastStatus = resp2.status;
-      lastErr = await resp2.text();
+      const refusalBody = await resp2.text();
+      logApiBody('Read file', resp2.status, refusalBody);
+      lastErr = apiRefusalText('read that file', resp2.status, refusalBody);
     }
 
     return PM_ERROR.sendFailure(res, lastStatus, lastErr, { tried: candidates });
@@ -1422,7 +1536,7 @@ app.get('/api/workspace/export', rejectUnsafeQueryPath, requireToken, async (req
 // ═══════════════════════════════════════════════════
 
 app.get('/api/health', async (req, res) => {
-  const managerCheckNow = await currentManagerCheck(req).catch((err) => ({ check: `Inspire could not check who manages its App: ${err.message}`, manager: null }));
+  const managerCheckNow = await currentManagerCheck(req).catch((err) => ({ check: `Inspire could not check who manages its ${IMPLEMENT_OUTPUT_LABELS.app}: ${err.message}`, manager: null }));
   const hasBundledNotebook = fs.existsSync(BUNDLED_NOTEBOOK_PATH);
   const host = resolveHost(req);
   const forwardedToken = forwardedTokenOf(req);
@@ -1430,7 +1544,7 @@ app.get('/api/health', async (req, res) => {
   const platformAuth = hasDatabricksPlatformAuth();
   res.json({
     status: 'ok',
-    agentVersion: INSPIRE_AGENT_VERSION,
+    agentVersion: inspireReleaseLabel(),
     host: host ? host.replace(/https?:\/\//, '').split('.')[0] + '...' : 'not configured',
     hostFull: host || 'NOT SET',
     hostConfigured: !!host,
@@ -1515,7 +1629,7 @@ app.get('/api/defaults', (req, res) => {
   // Local dev / App: skip Setup Wizard when server has platform auth + host + warehouse + tracking DB.
   const envSkipsSetupWizard = !!(platformAuth && fullHost && DEFAULT_WAREHOUSE_ID && DEFAULT_INSPIRE_DB);
   res.json({
-    agentVersion: INSPIRE_AGENT_VERSION,
+    agentVersion: inspireReleaseLabel(),
     databricksHost: fullHost || '',
     warehouseId: DEFAULT_WAREHOUSE_ID,
     inspireDatabase: DEFAULT_INSPIRE_DB,
@@ -1646,7 +1760,7 @@ app.post('/api/setup/create-database', requireToken, async (req, res) => {
     await executeSql(req.dbHost, req.dbToken, warehouse_id, createPlaceSql(catalog, schema));
     res.json({ ok: true, message: `Schema ${inspire_database} ready` });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(PM_ERROR.failureStatus(err)).json({ ok: false, ...PM_ERROR.failureBody(res, err.message) });
   }
 });
 
@@ -1826,10 +1940,13 @@ app.get('/api/tables/:catalog/:schema', requireToken, async (req, res) => {
       byKey.set(row.full_name, row);
     }
     const countAfterRest = byKey.size;
+    let leftOut = 0;
     if (warehouseId) {
-      const sqlRows = await listTablesSql(req.dbHost, token, warehouseId, catalog, schema);
+      const listed = await listTablesSql(req.dbHost, token, warehouseId, catalog, schema,
+        new Set([...byKey.keys(), ...hiddenMetricViews]));
+      leftOut = listed.leftOut;
       const hidden = new Set(hiddenMetricViews);
-      for (const row of sqlRows) {
+      for (const row of listed.rows) {
         if (!byKey.has(row.full_name) && !hidden.has(row.full_name)) byKey.set(row.full_name, row);
       }
     }
@@ -1838,7 +1955,9 @@ app.get('/api/tables/:catalog/:schema', requireToken, async (req, res) => {
     if (raw.length === 0 && tables.length === 0 && restErr) {
       return PM_ERROR.sendFailure(res, restStatus, restErr);
     }
-    res.json({ tables, count: tables.length, truncated: restCut && byKey.size === countAfterRest });
+    // Tables past the probe cap are not listed: the count says how many, so the picker can name them (nothing is lost silently).
+    res.json({ tables, count: tables.length, truncated: restCut && byKey.size === countAfterRest,
+      ...(leftOut ? { left_out: { count: leftOut, schema: `${catalog}.${schema}` } } : {}) });
   } catch (err) {
     PM_ERROR.sendFailure(res, 500, err.message);
   }
@@ -1852,8 +1971,10 @@ app.get('/api/warehouses', requireToken, async (req, res) => {
   try {
     const response = await dbFetch(req.dbHost, req.dbToken, '/api/2.0/sql/warehouses');
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = 'list the SQL warehouses';
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     const data = await response.json();
     const warehouses = (data.warehouses || []).map(w => ({
@@ -1907,8 +2028,10 @@ app.post('/api/publish', requireToken, async (req, res) => {
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = 'publish the notebook';
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
 
     let notebookPath = destination_path;
@@ -1965,8 +2088,10 @@ app.post('/api/publish/upload', requireToken, upload.single('file'), async (req,
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = 'publish the notebook';
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
 
     res.json({ success: true, path: destination_path });
@@ -2184,15 +2309,50 @@ app.post('/api/run', requireToken, async (req, res) => {
   return launchDiscover(req, res, { params, notebook_path, cluster_id });
 });
 
+// The job a recorded run belongs to, from Inspire's own launch record (App database). Null when it is not recorded.
+async function runJobIdOf(req, runId) {
+  const table = L.launchTableName(DEFAULT_INSPIRE_DB);
+  const statement = table && DEFAULT_WAREHOUSE_ID ? L.runJobStatement(table, runId) : null;
+  if (!statement) return null;
+  try {
+    return L.jobIdOf(await launchSql(resolveHost(req), statement, req.dbToken));
+  } catch (err) {
+    console.warn(`run again: the job of run ${runId} could not be read from the launch record: ${err.message}`);
+    return null;
+  }
+}
+
+// Databricks refused the person's read of the run. A permission refusal names the job and the grant to ask for; the raw body never reaches the person.
+async function refuseRunAgain(req, res, response) {
+  const runId = req.params.runId;
+  const action = `read run ${runId} to run it again`;
+  const refusalBody = await response.text();
+  logApiBody(action, response.status, refusalBody);
+  if (response.status !== 403) return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
+  const jobId = await runJobIdOf(req, runId);
+  const who = RP.forwardedPerson(req.headers);
+  const job = jobId ? `job ${jobId}` : 'the job of this run';
+  const message = `Inspire could not read run ${runId} to run it again: you need CAN VIEW (or CAN MANAGE RUN) on ${job} in Databricks. `
+    + "Ask an App manager or the job's owner to grant it, then try again.";
+  const steps = jobId
+    ? [`In Databricks, open job ${jobId} > Permissions, and add ${who} with Can view`,
+      `databricks api patch /api/2.0/permissions/jobs/${jobId} --json '{"access_control_list":[{"user_name":"${who}","permission_level":"CAN_VIEW"}]}'`]
+    : [`In Databricks, find the job of run ${runId} and give ${who} Can view on it`];
+  const permission = permissionRequired({ steps, principal: who,
+    why: `Inspire reads run ${runId} with your own sign-in, and your sign-in cannot view its job.` });
+  return PM_ERROR.sendFailure(res, 403, message, { permissions: [permission] });
+}
+
+// The person reads the old run with their own sign-in, so a run the person may see never fails because the App cannot view its job.
+// The launch below keeps the identity launchDiscover always uses (the App's own token).
 app.post('/api/run/:runId/again', requireToken, async (req, res) => {
   const sessionId = String((req.body || {}).session_id || '').trim();
   if (!isInt64Id(sessionId)) return res.status(400).json({ error: 'session_id must be a numeric Inspire session id' });
+  const person = personTokenOf(req);
+  if (!person) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
   try {
-    const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
-    if (!response.ok) {
-      const said = await response.text();
-      return res.status(response.status).json({ error: `Inspire could not read run ${req.params.runId} to run it again: ${said.slice(0, 600)}` });
-    }
+    const response = await dbFetch(req.dbHost, person, `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
+    if (!response.ok) return await refuseRunAgain(req, res, response);
     const again = LC.runAgainOf(parseExactJson(await response.text()), req.params.runId, sessionId);
     if (again.problem) return res.status(409).json({ error: `${again.problem}.` });
     // The re-run repeats the run's own inputs, so it carries the choice that run recorded: no 409 from Monitor.
@@ -2346,6 +2506,8 @@ app.post('/api/inspire/samples/copy', requireToken, async (req, res) => {
     if (!picked.length) throw Object.assign(new Error('Pick samples tables to copy'), { statusCode: 400 });
     const { tables, more } = await scopeTables(dbFetch, req.dbHost, person, picked);
     if (more) throw Object.assign(new Error(`The samples you picked hold more tables than one copy can take (${tables.length} read). Pick fewer tables or schemas`), { statusCode: 409 });
+    const refused = tables.map(sampleCopyRefusal).find(Boolean);
+    if (refused) throw Object.assign(new Error(refused), { statusCode: 409 });
     const copies = [];
     const failed = [];
     let schemaTried = false;
@@ -2419,8 +2581,10 @@ app.get('/api/run/:runId', requireToken, async (req, res) => {
   try {
     const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = `read run ${req.params.runId}`;
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     const data = parseExactJson(await response.text());
     const state = data.state || {};
@@ -2458,8 +2622,10 @@ app.get('/api/run/:runId/output', requireToken, async (req, res) => {
   try {
     const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get-output?run_id=${req.params.runId}`);
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = `read the output of run ${req.params.runId}`;
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     const data = await response.json();
     res.json({
@@ -2486,8 +2652,10 @@ app.post('/api/run/:runId/cancel', requireToken, async (req, res) => {
       body: jsonWithInt64Ids({ run_id: req.params.runId }, ['run_id']),
     });
     if (!response.ok) {
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = `cancel run ${req.params.runId}`;
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     res.json({ success: true });
   } catch (err) {
@@ -2648,7 +2816,7 @@ app.get('/api/inspire/value/estimates', requireToken, async (req, res) => {
     if (invalidSessionId(session_id)) return res.status(400).json({ error: 'session_id must be numeric.' });
     res.json(await estimatesOfSession(req, warehouse_id, parsedDb, String(session_id).trim()));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    PM_ERROR.sendFailure(res, PM_ERROR.failureStatus(err), err.message);
   }
 });
 
@@ -3328,7 +3496,10 @@ app.get('/api/inspire/log', requireToken, async (req, res) => {
     const rows = sqlResultToObjects(await executeSql(req.dbHost, req.dbToken, warehouse_id,
       `SELECT business_name FROM \`${catalog}\`.\`${schema}\`.\`__inspire_session\` WHERE session_id = ${session_id} LIMIT 1`));
     if (!rows.length) return res.status(404).json({ error: `Session ${session_id} is not in ${catalog}.${schema}.` });
-    const logPath = liveLogPath(`${catalog}.${schema}`, rows[0].business_name, session_id);
+    // run_id reads the build-stage log of one implement run (log_implement_<run_id>.log); without it the session's live log.
+    const runId = req.query.run_id === undefined ? '' : String(req.query.run_id);
+    if (runId && !/^\d{1,19}$/.test(runId)) return res.status(400).json({ error: 'run_id must be numeric.' });
+    const logPath = liveLogPath(`${catalog}.${schema}`, rows[0].business_name, session_id, runId);
     const got = await readLogTail(req.dbHost, req.dbToken, logPath);
     if (got.status === 404) return res.json({ log_path: logPath, found: false, text: '', truncated: false, size: 0 });
     if (got.status !== 200) {
@@ -3350,8 +3521,10 @@ app.get('/api/workspace/status', rejectUnsafeQueryPath, requireToken, async (req
     const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.0/workspace/get-status?path=${encodeURIComponent(notebookPath)}`);
     if (!response.ok) {
       if (response.status === 404) return res.json({ exists: false });
-      const err = await response.text();
-      return PM_ERROR.sendFailure(res, response.status, err);
+      const action = 'check the notebook';
+      const refusalBody = await response.text();
+      logApiBody(action, response.status, refusalBody);
+      return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
     }
     const data = await response.json();
     res.json({ exists: true, object_type: data.object_type, path: data.path, language: data.language });

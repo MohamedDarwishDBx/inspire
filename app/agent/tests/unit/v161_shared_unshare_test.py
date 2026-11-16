@@ -9,6 +9,8 @@ from v142_merge_test import HOST_APP, _merge_flow
 from v146_lakebase_build_test import LIVE, NEW_APP, PG, _created, _lakebase, _lakebase_deploy
 from v161_shared_grants_test import OWNER, _builder, _raised, _select, _who
 from v161_shared_take_out_test import KEY, _taker
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 DASH_PERMS = "/api/2.0/permissions/dashboards/d1"
 OLD, NEW = "2026-10-01T10:00:00Z", "2026-10-29T10:00:00Z"
@@ -139,8 +141,9 @@ def test_the_app_service_principal_loses_its_lakebase_reads_of_a_departed_pages_
 
     inst._implement_lakebase_sql = denied
     warnings, _said, left = inst._implement_revoke_app_sp("sales-desk", record, needs)
-    assert warnings == ['App: REVOKE SELECT ON TABLE "sales_desk"."n01_u01__t_aaaa1111" FROM "sp-7" failed on Lakebase, so the App\'s '
-                        "service principal may still read that copy: the identity Inspire runs as has no rights on the Lakebase table "
+    # REQ-260 / D-NAMES (288d9e21e): the warning names the copy in plain words and never shows the REVOKE statement.
+    assert warnings == [f"{APP_LABEL}: removing the App's read access to the Lakebase copy sales_desk.n01_u01__t_aaaa1111 failed, so its service "
+                        "principal may still read that copy: the identity Inspire runs as has no rights on the Lakebase table "
                         "n01_u01__t_aaaa1111; build the App again with Vibe/Add/Remove Features on the Build page"]
     assert left["lakebase"]["tables"] == ["sales_desk.n01_u01__t_aaaa1111"]
 
@@ -159,7 +162,7 @@ def test_a_join_with_an_app_that_was_deleted_and_made_again_under_its_name_takes
     inst = _taker(agent_ns, routes)
     status = {"state": "ready", "merged_into": "sales-desk", "page": "n01_u01_s5150", "created": OLD}
     outcome = inst._implement_delete_output("app", "sales-desk", KEY, status=status)
-    message = f"App: {STALE}, and Inspire left it as it is"
+    message = f"{APP_LABEL}: {STALE}, and Inspire left it as it is"
     assert outcome == {"state": "released", "note": message, "warnings": [], "refused": False}
     assert [c[:2] for c in inst.calls] == [("GET", "/api/2.0/apps/sales-desk")] and inst.selected == [], \
         "nothing is taken out of the new App and nobody else's sharing is read for it"
@@ -201,5 +204,5 @@ def test_sharing_never_opens_a_same_named_app_made_again_after_the_join(agent_ns
     spec = _shared(agent_ns, "planner@example.com")
     status = {"app": {"state": "ready", "merged_into": "sales-desk", "created": OLD}}
     warnings = inst._implement_share("N01-U01", "main.inspire.churn_out", spec, {"app": "sales-desk"}, None, asset_status=status)
-    assert f"Sharing App: {STALE}, and Inspire did not share it" in warnings
+    assert f"Sharing Agentic App: {STALE}, and Inspire did not share it" in warnings
     assert not [c for c in calls if c[1] == "/api/2.0/permissions/apps/sales-desk"]

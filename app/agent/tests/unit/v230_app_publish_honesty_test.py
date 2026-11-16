@@ -23,7 +23,7 @@ RUN_WIDGETS = [
     ("result_table", "main.inspire.supply_out", "Business output table"),
     ("ai_endpoint", "databricks-model", "AI endpoint for explanations"),
     ("as_of_date", "latest", "As-of date (latest = last period complete in every source table)"),
-    ("currency", "USD", "Currency of the money at stake (ISO code)"),
+    ("currency", "USD", "Currency of the value at stake (ISO code)"),
     ("act_now_share", "0.05", "Share of rows to act on now"),
     ("review_share", "0.2", "Share of rows to review next"),
     ("min_rows", "1", "Minimum usable rows"),
@@ -107,7 +107,7 @@ def test_the_run_s_repeated_setting_name_stops_the_app_at_once_and_never_goes_ba
     with pytest.raises(agent_ns["ImplementBlocked"]) as raised:
         build()
     message = str(raised.value)
-    assert message.startswith("Inspire wrote its own part of the App page wrong, and Genie cannot change that part")
+    assert message.startswith("Inspire wrote its own part of the Agentic App page wrong, and Genie cannot change that part")
     assert "repeats the name act_now_capacity of an earlier setting" in message
     assert inst.logger.matching("[INSPIRE-PAGE-PART FIRED] N01-U01")
     assert agent_ns["implement_known_repair"](raised.value, message)["kind"] == "stop", "no attempt repeats the same failure"
@@ -176,8 +176,9 @@ def test_other_widgets_still_refuse_an_empty_default_and_an_unknown_range_form(a
                                   {"name": "max_supplier_shift", "type": "text", "default": "0.25", "allowed": "0 to 1, or empty"},
                                   {"name": "run_profile", "type": "dropdown", "default": "full", "choices": ["full"], "allowed": ""}])
     assert agent_ns["normalize_genie_fill_widgets"](fill, []) == [
-        "widget max_supplier_shift has allowed '0 to 1, or empty', which is not one of Inspire's range forms "
-        f"({agent_ns['GENIE_ALLOWED_FORMS_TEXT']}, or empty for any value)"]
+        "widget max_supplier_shift has an allowed range Inspire cannot read, which is not one of Inspire's range forms "
+        f"({agent_ns['GENIE_ALLOWED_FORMS_TEXT']}, or empty for any value): write allowed for max_supplier_shift as one of those forms "
+        "that holds its default 0.25, in place of the text 0 to 1, or empty"]
     assert agent_ns["validate_genie_fill_result"](fill, []) == ["the default of widget min_line_move is ''; allowed: at least 1"]
 
 

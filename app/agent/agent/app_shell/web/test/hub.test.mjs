@@ -154,7 +154,7 @@ test('a record link opens that record on its use case page, and closing it takes
   await page.goto(`${served.base}#/n01_u05?rec=R002`);
   await page.waitForFunction(() => /^#\/n01_u05\/work\?.*rec=R002/.test(location.hash));
   const panel = page.locator('dialog.drawer[open]');
-  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Item number 2 with a long descriptive name');
+  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Price-loss decision desk for Item number 2 with a long descriptive name');
   await panel.locator('.panel-h [aria-label="Close"]').click();
   await panel.waitFor({ state: 'detached' });
   assert.match(await hashOf(page), /^#\/n01_u05/);
@@ -162,7 +162,7 @@ test('a record link opens that record on its use case page, and closing it takes
   await idle(page);
   assert.equal(await page.locator('dialog.drawer[open]').count(), 0, 'the closed record stays closed');
   await page.goto(`${served.base}#/n02_u01?rec=c`);
-  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Supplier 3381, invoice 77188');
+  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Second desk 1 for Supplier 3381, invoice 77188');
   assert.deepEqual(seen.history.at(-1), { page: 'n02_u01', record_key: 'c' }, 'a record off the first page of the list loads by its key');
   assert.deepEqual(seen.errors, []);
   await context.close();
@@ -351,8 +351,8 @@ test('a use case dashboard leads with its area, title, AI summary, four tiles, t
   assert.doesNotMatch(await page.locator('body').innerText(), /\bN\d\d-U\d\d\b/, 'no use case id shows on the page');
   assert.match(await page.locator('.sum').innerText(), /^AI summary\s+Deep discounts on winter wear are losing margin without selling more\.\s+Ask Genie$/);
   assert.deepEqual(await tileTexts(page), [
-    ['To fix', '3', '2 of them are yours'], ['Could save', '$21,600', 'Money at stake on the 3 things to fix, added up'],
-    ['Fixed so far', '12', 'since Sep 1'], ['Saved so far', '$9,750', 'Money at stake when fixed, less what a later run still finds, on 9 fixes a later run confirmed']]);
+    ['To fix', '3', '2 of them are yours'], ['Could save', '$21,600', 'Value at stake on the 3 things to fix, added up'],
+    ['Fixed so far', '12', 'since Sep 1'], ['Saved so far', '$9,750', 'Value at stake when fixed, less what a later run still finds, on 9 fixes a later run confirmed']]);
   assert.equal(await page.locator('.fbar .fld > span').first().innerText(), 'REASON (FROM AI)');
   assert.deepEqual(await page.locator('.fbar .fld > span').allInnerTexts(), ['REASON (FROM AI)', 'RUN DATE', 'CATEGORY', 'CHANNEL', 'REGION', 'OWNER', 'SHOW']);
   assert.deepEqual(await page.locator('[data-bars="by_reason"] .hb').allInnerTexts(), ['Discount too deep\n$8,400 on 1 record', 'Price below cost\n$7,200 on 1 record',

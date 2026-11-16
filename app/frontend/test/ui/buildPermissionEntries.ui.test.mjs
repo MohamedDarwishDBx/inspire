@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STUDIO_STATE, built } from './implementFixtures.js';
-import { closeBrowser, openUi } from './uiSupport.mjs';
+import { closeBrowser, openUi, sqlStatementsOf } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -9,7 +9,7 @@ test.after(closeBrowser);
 const STATEMENT = 'GRANT SELECT ON TABLE `main`.`inspire`.`churn_scope` TO `app-sp-2`';
 const PERMISSION = {
   statements: [STATEMENT], instructions: [], principal: 'app-sp-2',
-  why: 'The App cannot read its Data Filters view yet, so the filters show nothing. Ask your workspace admin to run these commands, then click Try again.',
+  why: 'The App cannot read its Data Filters view yet, so the filters show nothing.',
 };
 
 function buildWithPermission() {
@@ -30,7 +30,7 @@ test('the Build page opens Permission Required once for the build entry, with it
     await page.waitForTimeout(1500);
     assert.equal(await page.locator('[data-permission-dialog]').count(), 1, 'one dialog, not one per poll');
     assert.match(await dialog.locator('#permission-required-title').innerText(), /^Permission Required$/);
-    const statements = (await dialog.locator('[data-permission-statements=""]').innerText()).split('\n').map((s) => s.replace(/;$/, ''));
+    const statements = sqlStatementsOf(await dialog.locator('[data-permission-statements=""]').textContent());
     assert.deepEqual(statements, [STATEMENT], 'the statement the person copies for the admin');
     await dialog.getByRole('button', { name: 'Close' }).click();
     assert.deepEqual(ui.pageErrors, []);

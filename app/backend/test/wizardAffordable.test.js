@@ -81,9 +81,9 @@ test('the Summary of an MVP build states what is built, never only a notebook, a
   const before = { ...spec, outputs: { ...spec.outputs, app: true, genie_space: true } };
   const after = w.withoutUnavailableOutputs(before, ['app']);
   const dropped = w.droppedOutputs(before, after, blocks);
-  assert.deepEqual(dropped, [{ id: 'app', label: 'App', why }]);
+  assert.deepEqual(dropped, [{ id: 'app', label: 'Agentic App', why }]); // D-LABEL209: one output label
   const rows = w.pickedSummary(after, [], { dropped });
-  assert.deepEqual(rows.find((r) => r.id === 'dropped'), { id: 'dropped', step: 'delivery', label: 'Not built', value: `App: ${why}` });
+  assert.deepEqual(rows.find((r) => r.id === 'dropped'), { id: 'dropped', step: 'delivery', label: 'Not built', value: `Agentic App: ${why}` });
   assert.ok(!rows.find((r) => r.id === 'outputs').value.includes('App,'), 'the dropped App is not listed as built');
   assert.equal(w.pickedSummary(after).some((r) => r.id === 'dropped'), false, 'nothing dropped, no row (must-exclude)');
   assert.deepEqual(w.droppedOutputs(before, after, {}), [], 'a person unticking it is not a drop');
@@ -95,7 +95,8 @@ test('Data & results holds the table place; First run holds Keep it fresh; Measu
   const results = steps.find((s) => s.id === 'data');
   assert.deepEqual(results.sections.filter((x) => x === 'results'), ['results'], 'the result table is on Data & results');
   assert.equal(steps.some((s) => s.id === 'run'), false, 'Run it is gone');
-  assert.deepEqual(steps.find((s) => s.id === 'stake').sections, ['kpi', 'holdout']);
+  // REQ-265: the Measure step checks the money rule first, so Gains only with no sign stops the build (decided).
+  assert.deepEqual(steps.find((s) => s.id === 'stake').sections, ['money', 'kpi', 'holdout']);
   assert.deepEqual(steps.find((s) => s.id === 'stake').panels, ['stake'], 'Measure holds Measure impact');
   assert.deepEqual(results.panels, ['data', 'results'], 'Keep it fresh is not on Data & results');
   assert.deepEqual(steps.find((s) => s.id === 'first_run').panels, ['first_run', 'fresh', 'schedule'], 'Keep it fresh and its schedule sit in First run');
@@ -114,7 +115,7 @@ test('the step list stays the same while the access checks come back; only a per
   assert.deepEqual(w.wizardSteps('mvp', spec).map((s) => s.id), before, 'a failed check blocks Next; it never unticks the App');
   const blocked = w.stepErrors('delivery', { ...w.defaultSpecFromUseCase(UC, { warehouseId: 'wh', inspireDatabase: 'main.inspire' }), outputs: { ...w.defaultSpecFromUseCase(UC, { warehouseId: 'wh', inspireDatabase: 'main.inspire' }).outputs, app: true } },
     { outputBlocks: w.outputBlocks(ON, { app: APP_DENIED }) });
-  assert.ok(blocked.some((e) => e.startsWith('App cannot be built: ')), blocked.join(' | '));
+  assert.ok(blocked.some((e) => e.startsWith('Agentic App cannot be built: ')), blocked.join(' | '));
   assert.notDeepEqual(w.wizardSteps('mvp', { outputs: { app: false, dashboard: true } }).map((s) => s.id), before, 'unticking the App does change the steps');
 });
 
@@ -125,7 +126,7 @@ test('the short reason names the place Inspire lacks access to, never a schema w
   assert.equal(w.blockWhy('its service principal needs USE CATALOG on catalog `main`; Inspire cannot manage the warehouse wh1'),
     'Needs access Inspire does not have on the catalog and the SQL warehouse.');
   assert.equal(w.blockWhy('you lack USE CATALOG, USE SCHEMA and CREATE TABLE'), 'Needs access Inspire does not have yet.', 'a right named alone is no place (must-exclude)');
-  assert.equal(w.blockWhy('its service principal needs USE CATALOG on catalog `main`. Ask the owner to run: GRANT MANAGE ON CATALOG `main`; or choose a result table in a catalog and schema Inspire manages'),
+  assert.equal(w.blockWhy('its service principal needs USE CATALOG on catalog `main`. Ask your data owner to run: GRANT MANAGE ON CATALOG `main`; or choose a result table in a catalog and schema Inspire manages'),
     'Needs access Inspire does not have on the catalog.', 'advice that names a table or schema adds no place (must-exclude)');
   assert.equal(w.blockWhy('the name is taken'), w.CANNOT_HERE, 'not an access gap (must-exclude)');
   const blocks = w.outputBlocks(ON, null, {}, { checks: { app_access: { ok: false, detail: warehouse } } });
@@ -164,7 +165,7 @@ test('Genie Agents turned off blocks only the Genie Agent, not a new App (REQ-15
     assert.doesNotMatch(p, /run the grant/);
   }
   assert.match(w.blockedOutputProblems({ outputs: { app: true } }, { app: { why: 'Needs access.', details: 'GRANT X' } })[0], /run the grant under Details/);
-  assert.equal(w.vibesSkippedText({ outputs: { dashboard: true, genie_space: false, app: false, alert: false } }, blocks), 'Not picked in What to deliver, so not built: the App and the Alert.');
+  assert.equal(w.vibesSkippedText({ outputs: { dashboard: true, genie_space: false, app: false, alert: false } }, blocks), 'Not picked in What to deliver, so not built: the Agentic App and the Alert.'); // D-LABEL209: one output label
 });
 
 test('the Run it cost line does not repeat the schedule the sentence before it names', async () => {

@@ -234,7 +234,9 @@ def test_an_app_deploy_hands_back_every_sql_grant_it_ran_for_the_service_princip
     statements = [agent_ns["implement_grant_sql"](g, "sp-1") for g in granted["sql"]]
     assert statements and all(s in inst.spark.statements for s in statements), "every recorded grant is one Inspire ran"
     reads = sorted({g["table"] for g in granted["sql"] if g["level"] == "table"})
-    assert reads == ["main.inspire.churn_out", "main.inspire.churn_out_feedback", REASONS_VIEW, "main.s.orders"]
+    ledger = agent_ns["inspire_shell_facts"].ledger_table("main.inspire")
+    assert reads == sorted([ledger, "main.inspire.churn_out", "main.inspire.churn_out_feedback", REASONS_VIEW, "main.s.orders"]), \
+        "the value ledger SELECT and MODIFY that Inspire grants the App's principal are handed back with the rest"
     assert GRANT_REASONS.format("sp-1") in statements
 
 

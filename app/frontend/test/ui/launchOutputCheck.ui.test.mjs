@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { FAKE_CLOCK, closeBrowser, holdClock, openUi, until } from './uiSupport.mjs';
+import { FAKE_CLOCK, closeBrowser, holdClock, openUi, until, waitForLaunchReady } from './uiSupport.mjs';
 import { OUTPUT_CHECK_DELAY_MS, OUTPUT_CHECK_URL, outputCheckRequest, outputCheckVerdict } from '../../src/lib/outputFolderCheck.js';
 
 test.after(closeBrowser);
@@ -98,6 +98,7 @@ test('a folder the person cannot write keeps Get Started off and shows the refus
     assert.equal(calls.checks.at(-1), MINE);
     assert.equal(await page.locator('#output-folder-check-field').innerText(), 'Results go to /Users/someone@example.com/inspire_out.');
     assert.equal(await nearLaunch(page).count(), 0, 'nothing blocks Get Started any more');
+    await waitForLaunchReady(page);
     assert.equal(await launchButton(page).isDisabled(), false);
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
@@ -137,6 +138,7 @@ test('changing a passed folder turns Get Started off at once, and a check that c
     await setPath(page, BOSS_FOLDER);
     await until(async () => (await page.locator('#output-folder-check-field').getAttribute('data-output-check')) === 'passed', 'the manager skip');
     assert.equal(await page.locator('#output-folder-check-field').innerText(), 'Results go to /Shared/team_out.');
+    await waitForLaunchReady(page);
     assert.equal(await launchButton(page).isDisabled(), false);
     assert.equal(calls.runs, 0, 'nothing launched');
     assert.deepEqual(notFound(ui.pageErrors), []);
@@ -157,6 +159,7 @@ test('an App manager on Start sees one quiet line naming where results go and ne
     assert.equal(await field.innerText(), 'Results go to /Users/boss@example.com/inspire_output.');
     assert.equal(await page.getByText(/skips the write check|You manage this App|write check/i).count(), 0, 'no line about the write check (must-exclude)');
     assert.equal(await field.locator('[data-output-check-notes]').count(), 0, 'no warning when the folder works');
+    await waitForLaunchReady(page);
     assert.equal(await launchButton(page).isDisabled(), false);
     await shoot(page, 'launch-manager-own-folder');
 

@@ -2,7 +2,11 @@ const { isMissingTableError } = require('./lib/inspireFeedback');
 const { INSPIRE_DB_SHAPE, USE_CASE_ID_SHAPE, noSessionText, stepsStatement } = require('./lib/sqlInputs');
 const I = require('./lib/inspireImplement');
 const { createGenieJobGuard } = require('./lib/genieJobGuard');
-const { runWithQueryTags } = require('./lib/sqlStatements');
+const { mapLimit } = require('./lib/mapLimit');
+
+// REQ-323: how many history rows are enriched at once.
+const HISTORY_ROW_CONCURRENCY = 8;
+const { runWithQueryTags, lookupWithRetry } = require('./lib/sqlStatements');
 const { genieNotebookJobName, latestGenieNotebookRun } = require('./lib/genieNotebookJob');
 const C = require('./lib/implementControl');
 const LE = require('./lib/lakebaseEnforce');
@@ -40,10 +44,10 @@ const GC = require('./lib/genieCodeCheck');
 const SA = require('./lib/sourceAccess');
 const D = require('./lib/buildDiagnostics');
 const MV = require('./lib/metricViews');
+const AR = require('./lib/accessRequest');
 
 function sendError(res, err) {
-  const code = err && Number.isFinite(err.statusCode) ? err.statusCode : 500;
-  return res.status(code).json({ ...(err && err.details), ...PM_ERROR.failureBody(res, err.message || String(err)) });
+  return PM_ERROR.sendFailure(res, PM_ERROR.failureStatus(err), (err && err.message) || String(err), err && err.details, err && err.denial);
 }
 
 function q(req, key) {
@@ -175,15 +179,44 @@ function registerImplementRoutes(app, deps) {
 
   // A metric view is not a table: a route that reads a picked table's rows refuses it first, with one plain line.
   // A failed type lookup does not block the read; the read then reports its own error.
-  async function refuseMetricView(req, warehouseId, table) {
-    if (!table) return;
-    let rows = [];
-    try {
-      rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, I.tableTypeStatement(table));
-    } catch {
-      return;
-    }
-    if (rows.some((r) => MV.isMetricViewType(r.table_type))) throw Object.assign(new Error(MV.metricViewRefusal(table)), { statusCode: 400 });
+  // A metric view is not a table; with unknownType, neither is a table whose type cannot be read (fail closed). Each is refused by
+  // name before any read, from the one type lookup (tableTypeOf). Several tables are checked in order.
+  async function refuseTableTypes(req, warehouseId, tables, { unknownType = false } = {}) {
+    const named = (tables || []).map((t) => String(t || '').trim()).filter(Boolean);
+    if (!named.length) return;
+    const token = personReadToken(req);
+    const looked = await Promise.all(named.map((t) => tableTypeOf(req, () => token, warehouseId, t)));
+    named.forEach((table, i) => {
+      const { type, transient, denied } = looked[i];
+      // A refusal from Unity Catalog is the person's answer: it reaches the route as the Permission Required payload (REQ-313).
+      if (denied) throw denied;
+      if (MV.isMetricViewType(type)) throw tableRefusal(MV.metricViewRefusal(table));
+      if (!unknownType || type) return;
+      // A transient lookup failure is not a verdict on the table: it is retryable, never shown as not usable.
+      throw transient ? tableRetryable(table) : tableRefusal(MV.unknownTypeRefusal(table));
+    });
+  }
+
+  // A refusal is a 400 the caller must surface as-is: a route that catches read errors to keep going never swallows it.
+  function tableRefusal(message) {
+    return Object.assign(new Error(message), { statusCode: 400, refusal: true });
+  }
+
+  function tableRetryable(table) {
+    return Object.assign(new Error(MV.typeCheckBusyRefusal(table)), { statusCode: 503, refusal: true });
+  }
+
+  async function refuseMetricView(req, warehouseId, table, { unknownType = false } = {}) {
+    await refuseTableTypes(req, warehouseId, [table], { unknownType });
+  }
+
+  // The type of one table from information_schema: { type } when it reads (null when the table names no type), and on a failure
+  // { type: null, transient } where transient says a retry can change it. A transient failure is retried once (lookupWithRetry).
+  async function tableTypeOf(req, tokenOf, warehouseId, table) {
+    const got = await lookupWithRetry(() => sqlRows(req.dbHost, tokenOf(), warehouseId, I.tableTypeStatement(table)));
+    if (got.error) return { type: null, transient: got.transient, denied: PM_ERROR.accessDenied(got.error) ? got.error : null };
+    const rows = got.value;
+    return { type: rows.length ? String(rows[0].table_type || '') || null : null, transient: false };
   }
 
 
@@ -241,6 +274,18 @@ function registerImplementRoutes(app, deps) {
     return implementRows(host, token, warehouseId, table, (existing) => I.implementHistoryStatement(table, sid, useCaseId || null, existing));
   }
 
+  // The build record is the App's own tracking table, so it is read as the App, as the Build page's status and history read it. The
+  // Check runs on load for every person: a person who cannot read that table gets a plain reason, never a 500 (REQ-267).
+  async function appRecordOf(req, warehouseId, catalog, schema, sid, useCaseId) {
+    try {
+      return await loadHistory(req.dbHost, await appTokenOf(req), warehouseId, catalog, schema, sid, useCaseId);
+    } catch (err) {
+      if (!I.isReadDenied(err && err.message)) throw err;
+      throw I.badRequest('Inspire cannot read the build record of this use case, so it cannot tell what the App still needs. '
+        + 'Ask your workspace admin to give the Inspire App SELECT on its tracking table, then click Try again.', 403);
+    }
+  }
+
   async function loadMergeTargets(req, warehouseId, catalog, schema, sid, useCaseId, only = null) {
     const table = I.implementTableName(catalog, schema);
     const [rows, hubRows] = await Promise.all([
@@ -266,6 +311,16 @@ function registerImplementRoutes(app, deps) {
     return read && read.ok ? read.data : null;
   }
 
+  // The name the Genie regeneration job tags with: the user's name for the use case, else its own. Empty when unreadable, so no name is invented.
+  async function regenUseCaseName(req, warehouseId, catalog, schema, sid, useCaseId) {
+    try {
+      const row = await loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId);
+      return String((row && (row.user_use_case_name || row.use_case)) || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
   async function loadUseCase(host, token, warehouseId, catalog, schema, sid, useCaseId) {
     const table = `\`${catalog}\`.\`${schema}\`.\`__inspire_usecases\``;
     const rows = await sqlRows(host, token, warehouseId, I.useCaseRowStatement(table, sid, useCaseId));
@@ -280,11 +335,13 @@ function registerImplementRoutes(app, deps) {
     const sid = sessionIdOf(req);
     const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
     if (asked && asked.use_case_id !== useCaseId) throw I.badRequest(`the spec is for use case ${asked.use_case_id || '(none)'}, not ${useCaseId}`, 400);
-    const involved = await useCasesTables(req, warehouseId, catalog, schema, sid, [useCaseId]);
+    // The saved involved tables and the build record are the App's own tracking tables: read as the App (REQ-268 sweep, as REQ-267).
+    const appToken = await appTokenOf(req);
+    const involved = await useCasesTables(req, warehouseId, catalog, schema, sid, [useCaseId], appToken);
     if (!involved.length) throw I.badRequest(`Inspire has no source tables saved for use case ${useCaseId}, so it grants none.`, 409);
     let spec = asked;
     if (!spec) {
-      const history = await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId);
+      const history = await loadHistory(req.dbHost, appToken, warehouseId, catalog, schema, sid, useCaseId);
       const latest = [...(history || [])].sort((a, b) => (Number(b.spec_version) || 0) - (Number(a.spec_version) || 0))[0];
       spec = (latest && latest.spec_json) || {};
     }
@@ -294,9 +351,9 @@ function registerImplementRoutes(app, deps) {
     if (outside.length) throw I.badRequest(`these tables are not source tables of use case ${useCaseId}, so Inspire grants none of them: ${outside.join(', ')}`, 400);
   }
 
-  async function useCasesTables(req, warehouseId, catalog, schema, sid, useCaseIds) {
+  async function useCasesTables(req, warehouseId, catalog, schema, sid, useCaseIds, token = req.dbToken) {
     const table = `\`${catalog}\`.\`${schema}\`.\`__inspire_usecases\``;
-    const rows = await sqlRows(req.dbHost, req.dbToken, warehouseId, I.useCaseTablesStatement(table, sid, useCaseIds));
+    const rows = await sqlRows(req.dbHost, token, warehouseId, I.useCaseTablesStatement(table, sid, useCaseIds));
     return I.uniqueTables(rows.flatMap((row) => I.useCaseTables(row)));
   }
 
@@ -401,7 +458,7 @@ function registerImplementRoutes(app, deps) {
     const held = I.resultTableHolderProblem(table, holder, sid, useCaseId);
     if (held) safety = { ok: false, detail: held };
     else if (access.exists && access.write.ok) {
-      const columns = await sqlRows(req.dbHost, req.dbToken, warehouseId, I.columnsStatement(table));
+      const columns = await I.readPickedTable(table, () => sqlRows(req.dbHost, req.dbToken, warehouseId, I.columnsStatement(table)));
       let problem = I.resultTableProblem(access.table, columns, 0);
       if (!problem && columns.length) {
         const counted = await sqlRows(req.dbHost, req.dbToken, warehouseId, I.otherUseCaseRowsStatement(table, useCaseId));
@@ -532,6 +589,7 @@ function registerImplementRoutes(app, deps) {
           asker: req,
           jobName: genieNotebookJobName(sidStr),
           useCaseIds: safeIds,
+          useCaseName: safeIds.length === 1 ? await regenUseCaseName(req, warehouse_id, catalog, schema, sidStr, safeIds[0]) : '',
           launchedBy: (await personOf(req)).username,
         });
       } catch (launchErr) {
@@ -580,7 +638,7 @@ function registerImplementRoutes(app, deps) {
       const ownSchema = latest ? null : await useCaseSchemaOf(req, warehouseId, `${catalog}.${schema}`, sid, useCaseId, session.business_name);
       const { missing, app_unreadable: appUnreadable } = await sourceVerdict(req, warehouseId, useCase, latest, q(req, 'result_table') || ownSchema?.table || '');
       const widgets = I.implementWidgets(history, useCase.genie_instruction || useCase.generate_genie_code_instruction || '');
-      const assets = I.carriedAssets(history);
+      const assets = I.liveCarriedAssets(history);
       const goneAssets = await goneMergeAssets(req, assets);
       const family = I.executionFamily(useCase.code_structure_mandate);
       res.json({
@@ -657,13 +715,14 @@ function registerImplementRoutes(app, deps) {
       const versionsByUc = {};
       for (const row of history) (versionsByUc[row.use_case_id] || (versionsByUc[row.use_case_id] = [])).push(row);
       const latest = Object.values(versionsByUc).map((rows) => {
-        const live = I.previousBuilt(rows);
+        const live = I.liveBuiltRow(rows);
         return Object.assign(rows[0], { live_version: live ? live.spec_version : null, live_spec_json: live ? live.spec_json : null });
       });
+      // REQ-323: the Jobs API reads run at most HISTORY_ROW_CONCURRENCY at a time; the run summary is one warehouse statement for all rows.
       const [notebook] = await Promise.all([
         latestGenieNotebookRun(fetchJsonFor(req), sid).then((run) => ({ run, error: '' }), (err) => ({ run: null, error: err.message })),
-        ...latest.map(async (row) => { row.stalled = await stalledOf(req, row); }),
-        ...latest.map((row) => latestRunOf(req, warehouseId, row, versionsByUc[row.use_case_id])),
+        mapLimit(latest, HISTORY_ROW_CONCURRENCY, async (row) => { row.stalled = await stalledOf(req, row); }),
+        latestRunsOf(req, warehouseId, latest, (id) => versionsByUc[id]),
       ]);
       res.json({ history, latest, notebook_run: notebook.run, notebook_run_error: notebook.error });
     } catch (err) {
@@ -733,11 +792,12 @@ function registerImplementRoutes(app, deps) {
     try {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
-      await refuseMetricView(req, warehouseId, table);
+      await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.columnsStatement(table);
       const token = personReadToken(req);
-      const [rows, read, keyRows] = await Promise.all([sqlRows(req.dbHost, token, warehouseId, statement), readColumnTags(req, token, warehouseId, [table]),
-        sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table))]);
+      const [rows, read, keyRows] = await I.readPickedTable(table, () => Promise.all([sqlRows(req.dbHost, token, warehouseId, statement),
+        readColumnTags(req, token, warehouseId, [table]), sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table))]));
+      if (!rows.length) throw I.unreadableTableError(table);
       const prefix = String(table).replace(/`/g, '').toLowerCase();
       const columns = rows.map((c) => {
         const tags = read.tags[`${prefix}.${String(c.column_name).toLowerCase()}`] || {};
@@ -759,7 +819,16 @@ function registerImplementRoutes(app, deps) {
       const token = P.personTokenOf(req);
       if (!token) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_NO_SIGN_IN });
       const search = (async () => {
-        const rows = await sqlRows(req.dbHost, token, warehouseId, statement);
+        const candidates = await sqlRows(req.dbHost, token, warehouseId, statement);
+        // A metric view is never a swap: its type is read per candidate and a view is dropped before the probe. A candidate
+        // whose type cannot be read is not offered (fail closed): it is listed as not usable, with the plain reason.
+        const looked = await Promise.all(candidates.map((r) => tableTypeOf(req, () => token, warehouseId, candidateOf(r))));
+        const rows = candidates.filter((_r, i) => looked[i].type && !MV.isMetricViewType(looked[i].type));
+        const unusable = copyOnly ? [] : candidates.filter((_r, i) => !looked[i].type && !looked[i].transient)
+          .map((r) => ({ table: candidateOf(r), reason: MV.UNUSABLE_REASON }));
+        // A type check the workspace could not answer twice is neither a swap nor unusable: it is listed busy, to check again.
+        const busy = copyOnly ? [] : candidates.filter((_r, i) => !looked[i].type && looked[i].transient)
+          .map((r) => ({ table: candidateOf(r), reason: MV.TYPE_CHECK_BUSY_REASON }));
         const readable = await Promise.all(rows.map((r) => sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(candidateOf(r)))
           .then(() => true, () => false)));
         const copies = I.builtInSampleTable(table);
@@ -769,13 +838,14 @@ function registerImplementRoutes(app, deps) {
           const copy = copies && Boolean(Number(r.owned)) && total > 0 && matched === total;
           return { table: candidateOf(r), matched, total, copy };
         });
-        return copyOnly ? swaps.filter((s) => s.copy) : swaps;
+        return { swaps: copyOnly ? swaps.filter((s) => s.copy) : swaps, unusable, busy };
       })();
       const timer = new Promise((resolve) => { setTimeout(() => resolve(null), SWAP_SEARCH_LIMIT_MS).unref(); });
       const found = await Promise.race([search, timer]);
       if (found === null) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_TOO_SLOW });
-      const swaps = found;
-      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)], why: '' });
+      const swaps = found.swaps;
+      return res.json({ table, swaps: [...swaps.filter((s) => s.copy), ...swaps.filter((s) => !s.copy)],
+        ...(found.unusable.length ? { unusable: found.unusable } : {}), ...(found.busy.length ? { busy: found.busy } : {}), why: '' });
     } catch (err) {
       sendError(res, err);
     }
@@ -787,6 +857,14 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       const source = q(req, 'source');
       const token = personReadToken(req);
+      const { type, transient, denied } = await tableTypeOf(req, () => token, warehouseId, table);
+      if (denied) throw denied;
+      if (MV.isMetricViewType(type)) {
+        return res.json({ table, readable: false, reason: MV.metricViewRefusal(table) });
+      }
+      // A busy type check is a retryable 503 with the plain line, never "not usable".
+      if (!type && transient) return res.status(503).json({ error: MV.typeCheckBusyRefusal(table) });
+      if (!type) return res.json({ table, readable: false, reason: MV.unknownTypeRefusal(table) });
       try {
         await sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(table));
       } catch (err) {
@@ -839,7 +917,7 @@ function registerImplementRoutes(app, deps) {
     try {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
-      await refuseMetricView(req, warehouseId, table);
+      await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.columnValuesStatement(table, q(req, 'column'), q(req, 'limit') || 200);
       const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
       res.json({ values: rows.map((r) => r.value).filter((v) => v != null && v !== '') });
@@ -852,11 +930,15 @@ function registerImplementRoutes(app, deps) {
     try {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
-      await refuseMetricView(req, warehouseId, table);
+      await refuseMetricView(req, warehouseId, table, { unknownType: true });
+      const window = req.body?.window || {};
+      // A forecast (family E) is measured in periods, so its date column is counted too; the wizard's refusal reads period_count.
+      const periodColumn = I.analysisFamilyOf(req.body?.technique) === 'E' ? String(window.column || '').trim() : '';
       const statement = I.readinessStatement(table, {
         columns: req.body?.columns || [],
         filters: req.body?.filters || [],
-        window: req.body?.window || {},
+        window,
+        periodColumn,
       });
       const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
       res.json({ skipped: false, ...I.readinessFromRow(rows[0] || {}, statement.columns), minimum_rows: I.analysisMinimumRows(req.body?.technique) });
@@ -872,7 +954,7 @@ function registerImplementRoutes(app, deps) {
       if (top && (!Number.isInteger(top) || top > GR.GROUP_MAX_GROUPS)) {
         return res.status(400).json({ error: `top must be a whole number up to ${GR.GROUP_MAX_GROUPS}` });
       }
-      await refuseMetricView(req, warehouseId, q(req, 'table'));
+      await refuseMetricView(req, warehouseId, q(req, 'table'), { unknownType: true });
       const statement = I.groupCountsStatement(q(req, 'table'), req.body?.columns || [], {
         filters: req.body?.filters || [],
         window: req.body?.window || {},
@@ -945,9 +1027,10 @@ function registerImplementRoutes(app, deps) {
 
   async function sourceCheckOf(req, warehouseId, useCase, spec, history) {
     if (!sourcesReadBy(spec, history)) return { refusal: null, reads: NO_READS, app_unreadable: null };
-    const sourced = await sourceAccess(req, warehouseId, I.sourceTables(spec, I.useCaseTables(useCase)));
+    // REQ-324: the App's probes and the person's read plan are independent, so they run together.
+    const tables = I.sourceTables(spec, I.useCaseTables(useCase));
+    const [sourced, reads] = await Promise.all([sourceAccess(req, warehouseId, tables), U.runReadPlan(dbFetch, req, { tables })]);
     const blocking = I.blockingMissingTables(sourced.missing, spec, useCase);
-    const reads = await U.runReadPlan(dbFetch, req, { tables: I.sourceTables(spec, I.useCaseTables(useCase)) });
     const refusal = sourced.app_unreadable
       ? Object.assign(I.badRequest(sourced.app_unreadable.text, 409), { details: { missing_tables: sourced.missing, app_unreadable: sourced.app_unreadable } })
       : blocking.length
@@ -997,17 +1080,23 @@ function registerImplementRoutes(app, deps) {
         appName ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.0/apps/${encodeURIComponent(appName)}`) : null,
       ]);
       const warehouseName = warehouses.ok ? (warehouses.data.name || warehouseId) : warehouseId;
-      let output = null;
-      let outputError = '';
-      let moved = null;
-      try {
-        const viewed = [wantsDashboard && 'the dashboard', wantsGenie && 'the Genie Agent'];
-        moved = await movedResultTable(req, warehouseId, useCaseId, resultTable);
-        output = await checkOutput(req, warehouseId, moved ? moved.to : resultTable, useCaseId,
-          { principals, warehouseName, viewed, appWarehouse });
-      } catch (err) {
-        outputError = err.message || String(err);
-      }
+      // REQ-324: the output check and the use case and build record reads do not depend on each other, so they run together.
+      const outputStage = (async () => {
+        try {
+          const viewed = [wantsDashboard && 'the dashboard', wantsGenie && 'the Genie Agent'];
+          const moved = await movedResultTable(req, warehouseId, useCaseId, resultTable);
+          const output = await checkOutput(req, warehouseId, moved ? moved.to : resultTable, useCaseId,
+            { principals, warehouseName, viewed, appWarehouse });
+          return { output, outputError: '', moved };
+        } catch (err) {
+          return { output: null, outputError: err.message || String(err), moved: null };
+        }
+      })();
+      const [{ output, outputError, moved }, useCaseNow, historyNow] = await Promise.all([
+        outputStage,
+        loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
+        loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
+      ]);
       const outputDetail = output && (output.write.ok ? `${output.write.detail}; ${output.safety.detail}` : output.write.detail);
       const denied = !output && I.isReadDenied(outputError);
       const unchecked = denied
@@ -1022,15 +1111,14 @@ function registerImplementRoutes(app, deps) {
           : unchecked,
       };
       if (output && output.model) checks.model = output.model;
-      const [useCaseNow, historyNow] = await Promise.all([
-        loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
-        loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
-      ]);
       const sent = req.body?.spec && typeof req.body.spec === 'object' ? req.body.spec : ((historyNow[0] && historyNow[0].spec_json) || {});
       const checkSpec = I.withResultTable(sent, moved ? moved.to : (resultTable || (sent.config && sent.config.result_table) || ''));
       const verdict = await sourceCheckOf(req, warehouseId, useCaseNow, checkSpec, historyNow);
+      // REQ-131, REQ-260: the detail is plain words; the GRANT statements ride the check's Permission Required entry (BuildNext raises it)
+      const sourcePermission = verdict.refusal?.details?.app_unreadable?.permissions?.[0];
       checks.sources = verdict.refusal
-        ? { ok: false, detail: verdict.refusal.message, ...(verdict.refusal.details?.missing_tables ? { missing: true } : {}) }
+        ? { ok: false, detail: verdict.refusal.message, ...(verdict.refusal.details?.missing_tables ? { missing: true } : {}),
+          ...(sourcePermission ? { permission: sourcePermission } : {}) }
         : { ok: true, detail: 'the App can read every source of this use case' };
       if (shares) checks.result_grant = I.shareCheck(output ? output.grant : null);
       if (appName) {
@@ -1144,17 +1232,17 @@ function registerImplementRoutes(app, deps) {
 
   function appReadsPermissions(left, record, principals, app) {
     if (record.objects) {
+      // REQ-300: one plain reason per grantee; the dialog says the copy line once, so no entry repeats an ask.
       const granted = (principals || []).map((p) => {
         const statements = left.flatMap((t) => t.grants.filter((g) => I.appReadGrantFor(g, p)));
-        return PM.permissionRequired({ statements, principal: p, why: `${p} opens the App ${record.app_name || ''} and reads its data with its own access, `
-          + 'so it needs these grants. Ask the owner of the table to run them, then click Try again.' });
+        return PM.permissionRequired({ statements, principal: p, why: I.opensAppSentence(p, record.app_name || '') });
       }).filter(Boolean);
       // A user-authorization App reads a source table directly: its viewers get the App's views, never the raw table. The App must be
-      // rebuilt to read through a view; nothing here is a grant to run.
+      // rebuilt to read through a view; nothing here is a grant to run, so the sentence is a plain step and never copied (REQ-300, REQ-301).
       const direct = record.mode === 'user' && (record.sources || []).length ? record.sources : [];
       const rebuild = direct.length ? [PM.permissionRequired({ principal: record.app_name || '', instructions: [
-        `The App ${record.app_name || ''} reads ${direct.join(', ')} directly. A user-authorization App does not give its viewers access to a source table, `
-        + 'so they see only its own views. Rebuild the App so it reads through its views, then click Try again.'] })] : [];
+        `The App ${record.app_name || ''} reads ${direct.join(', ')} directly, so its viewers cannot see that data. `
+        + 'A rebuild reads them through the App views.'] })] : [];
       return [...granted, ...rebuild].filter(Boolean);
     }
     // The same statements the card and Check again show: the live plan's grants, never a second list.
@@ -1173,7 +1261,7 @@ function registerImplementRoutes(app, deps) {
       const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
       const action = String((req.body && req.body.action) ?? 'check');
       if (!['check', 'grant'].includes(action)) throw I.badRequest('action must be check or grant');
-      const record = I.appReadsRecord(await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId));
+      const record = I.appReadsRecord(await appRecordOf(req, warehouseId, catalog, schema, sid, useCaseId));
       if (!record) return res.json({ state: 'readable', tables: [], ran: [], failed: [], text: I.appReadsText([], '') });
       const { left, ran, failed, principals, app } = await appReads(req, warehouseId, record, action === 'grant');
       const was = record.tables.map((t) => `${t.table}:${t.owner}:${t.grants.join(';')}`).join('|');
@@ -1229,7 +1317,7 @@ function registerImplementRoutes(app, deps) {
         const grant = I.useCaseSchemaBuilderGrant(catalog, schema, builder.applicationId || builder.userName);
         const { failed } = grant ? await runPersonGrants(req, token, warehouseId, [grant]) : { failed: ['the identity Inspire builds as could not be read'] };
         if (failed.length) {
-          warnings.push(`The identity Inspire builds as may not write to ${catalog}.${schema} until its owner grants `
+          warnings.push(`The identity Inspire builds as may not write to ${catalog}.${schema} until your data owner grants `
             + `${I.USE_CASE_SCHEMA_BUILDER_PRIVILEGES} on it: ${failed.join('; ')}`);
           if (grant) permissions.push(PM.builderPermission(catalog, grant, builder.applicationId || builder.userName));
         }
@@ -1240,15 +1328,43 @@ function registerImplementRoutes(app, deps) {
     }
   });
 
-  async function latestRunOf(req, warehouseId, row, history) {
-    if (!row) return;
-    row.older_build = I.olderBuildNote(history, buildStamp());
-    const summary = I.runSummaryTable(row);
-    if (!summary) return;
+  // REQ-323: the latest run of every row in one warehouse statement (I.latestRunsStatement). If one summary table is missing, the batch
+  // fails, so each summary table is then read on its own: the use cases with a table that exists keep their runs.
+  async function latestRunsOf(req, warehouseId, rows, historyOf) {
+    for (const row of rows) if (row) row.older_build = I.olderBuildNote(historyOf(row.use_case_id), buildStamp());
+    const withRuns = rows.filter((row) => row && I.runSummaryTable(row));
+    if (!withRuns.length) return;
+    const entries = withRuns.map((row) => ({ summaryTable: I.runSummaryTable(row), useCaseId: row.use_case_id }));
+    const readRuns = async (group) => I.latestRunsFrom(await sqlRows(req.dbHost, req.dbToken, warehouseId, I.latestRunsStatement(group)));
+    const missing = (err) => isMissingTableError(err) || I.isMissingColumnError(err);
+    let byUseCase;
     try {
-      row.latest_run = I.latestRunFrom(await sqlRows(req.dbHost, req.dbToken, warehouseId, I.latestRunStatement(summary, row.use_case_id)));
+      byUseCase = await readRuns(entries);
     } catch (err) {
-      if (isMissingTableError(err) || I.isMissingColumnError(err)) row.latest_run = I.latestRunFrom([]);
+      if (!missing(err)) return;
+      byUseCase = new Map();
+      const tables = [...new Set(entries.map((entry) => entry.summaryTable))];
+      for (const table of tables) {
+        const group = entries.filter((entry) => entry.summaryTable === table);
+        try {
+          for (const [id, run] of await readRuns(group)) byUseCase.set(id, run);
+        } catch (groupErr) {
+          if (!missing(groupErr)) continue;
+        }
+      }
+    }
+    for (const row of withRuns) row.latest_run = byUseCase.get(String(row.use_case_id)) || I.latestRunFrom([]);
+  }
+
+  // REQ-231: who pressed Stop on this run, from the control log. A read that fails is no record, so the run reads as outside Inspire.
+  async function stoppedByOf(req, row, runId) {
+    const { catalog, schema } = dbOf(req, splitInspireDatabase);
+    try {
+      const select = C.controlLogSelect(C.controlLogTableName(catalog, schema), { sessionId: sessionIdOf(req), useCaseId: row.use_case_id, limit: 200 });
+      return C.stoppedByRecord(await sqlRows(req.dbHost, req.dbToken, warehouseOf(req), select), { runId, jobId: row.job_id });
+    } catch (err) {
+      console.warn(`implement stop record read failed: ${err.message}`);
+      return null;
     }
   }
 
@@ -1258,7 +1374,9 @@ function registerImplementRoutes(app, deps) {
     const got = /^\d{1,19}$/.test(runId)
       ? await jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${runId}`).catch(() => null)
       : null;
-    const stalled = I.implementStalled(row, got && got.ok ? got.data : null);
+    const runState = got && got.ok && got.data && got.data.state ? got.data.state : {};
+    const stopper = String(runState.result_state || '') === 'CANCELED' ? await stoppedByOf(req, row, runId) : null;
+    const stalled = I.implementStalled(row, got && got.ok ? got.data : null, Date.now(), stopper);
     const { catalog, schema } = dbOf(req, splitInspireDatabase);
     const ended = I.implementRunEndedStatement(I.implementTableName(catalog, schema), { session_id: sessionIdOf(req), ...row }, stalled);
     if (!ended) return stalled;
@@ -1282,7 +1400,8 @@ function registerImplementRoutes(app, deps) {
       ? await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, draftId) : [];
     const legacyAccess = I.legacyAppAccess(history);
     const impact = I.implementNotebookImpact(I.implementCarried(history).status);
-    const { spec: asked, errors } = I.validateImplementSpec(raw, { legacyAccess, impact });
+    const live = I.previousBuilt(history);
+    const { spec: asked, errors } = I.validateImplementSpec(raw, { legacyAccess, impact, appExperience: live ? I.appExperienceOf(live.spec_json) : null });
     if (errors.length) throw I.badRequest(errors.join('; '));
     return { sid, warehouseId, inspire_database, catalog, schema, raw, history, legacyAccess, asked };
   }
@@ -1295,7 +1414,8 @@ function registerImplementRoutes(app, deps) {
     const tables = I.uniqueTables(changes.flatMap((c) => [c.replaced, c.chosen]));
     const token = P.personTokenOf(req);
     if (tables.length && !token) throw I.badRequest(I.IMPLEMENT_TABLES_NO_SIGN_IN, 401);
-    const read = await Promise.all(tables.map((t) => sqlRows(req.dbHost, token, warehouseId, I.columnsStatement(t))));
+    await refuseTableTypes(req, warehouseId, tables, { unknownType: true });
+    const read = await Promise.all(tables.map((t) => I.readPickedTable(t, () => sqlRows(req.dbHost, token, warehouseId, I.columnsStatement(t)))));
     const unseen = tables.filter((_t, i) => !read[i].length);
     if (unseen.length) throw I.badRequest(I.implementTablesUnreadable(unseen), 409);
     const columnsOf = (name) => read[tables.findIndex((t) => t.toLowerCase() === name.toLowerCase())];
@@ -1311,6 +1431,7 @@ function registerImplementRoutes(app, deps) {
       const got = await tableChangeOf(req, warehouseId, history, spec, useCase);
       return { change: got && got.change.class ? got.change : null, error: '' };
     } catch (err) {
+      if (err && err.refusal) throw err;
       return { change: null, error: err.message || String(err) };
     }
   }
@@ -1351,9 +1472,10 @@ function registerImplementRoutes(app, deps) {
     if (widgetIssues.length) throw I.badRequest(`widget values are out of range: ${widgetIssues.join('; ')}`);
     if (I.IMPLEMENT_MERGE_OUTPUTS.some((name) => spec.outputs.merge[name])) {
       const targets = await loadMergeTargets(req, warehouseId, catalog, schema, sid, useCaseId, spec.outputs.merge);
-      const mergeIssues = I.mergeProblems(spec, targets, I.carriedAssets(history));
+      const mergeIssues = I.mergeProblems(spec, targets, I.liveCarriedAssets(history));
       if (mergeIssues.length) throw I.badRequest(mergeIssues.join('; '));
     }
+    if (spec?.money?.rate_table) await refuseTableTypes(req, warehouseId, [spec.money.rate_table.table], { unknownType: true });
     const [stalled, tables, empty, unshared] = await Promise.all([stalledOf(req, history[0]), ownerTableChange(req, warehouseId, history, spec, useCase, person),
       emptyDataWarning(req, warehouseId, spec, useCase, parseTableScopeText(session.table_scope).scopes), newAppReads(req, warehouseId, spec, useCase)]);
     const plan = I.planSubmission(history, spec, stalled, { requester: person.username, tableChange: tables.change });
@@ -1417,6 +1539,7 @@ function registerImplementRoutes(app, deps) {
     const scope = readinessScope(spec, useCase, launchScopes);
     if (!scope.table || !P.personTokenOf(req)) return '';
     const countOf = async (table, narrowing) => {
+      await refuseTableTypes(req, warehouseId, [table], { unknownType: true });
       const statement = I.readinessStatement(table, narrowing);
       const rows = await sqlRows(req.dbHost, P.personTokenOf(req), warehouseId, statement);
       return I.readinessFromRow(rows[0] || {}, statement.columns);
@@ -1426,6 +1549,8 @@ function registerImplementRoutes(app, deps) {
       if (counted.row_count !== 0) return '';
       return await emptyScopeWarningOf(scope, I.sourceTables(spec, I.useCaseTables(useCase)), (table) => countOf(table, { columns: [], filters: [], window: {} }));
     } catch (err) {
+      // A refusal (ours, or the warehouse's access denial) is never downgraded to a warning: it reaches the person as the Permission Required payload (REQ-313).
+      if (err && (err.refusal || PM_ERROR.accessDenied(err))) throw err;
       console.warn(`implement row count failed for ${scope.table}: ${err.message || err}`);
       return `Inspire could not count the rows in ${scope.table}. The build checks the data itself.`;
     }
@@ -1449,7 +1574,7 @@ function registerImplementRoutes(app, deps) {
     try {
       output = await checkOutput(req, warehouseId, planned.config.result_table, useCaseId);
     } catch (err) {
-      if ((err.statusCode && err.statusCode < 500) || I.isReadDenied(err.message)) throw err;
+      if ((err.statusCode && err.statusCode < 500) || I.isReadDenied(err.message) || PM_ERROR.accessDenied(err)) throw err;
       console.warn(`implement output check failed for ${planned.config.result_table}: ${err.message || err}`);
       return { spec: planned, warnings: [`Inspire could not check the result table: ${err.message || err}. The build checks it again.`] };
     }
@@ -1496,6 +1621,8 @@ function registerImplementRoutes(app, deps) {
       createdBy,
       statusMessage: 'queued',
       changeClasses: plan.summary.classes,
+      useCaseName: spec.use_case_name,
+      warehouseId,
     });
     await executeSql(req.dbHost, req.dbToken, warehouseId, insert.sql, insert.parameters);
 
@@ -1511,6 +1638,7 @@ function registerImplementRoutes(app, deps) {
         asker: req,
         jobName: I.implementJobName(useCaseId, spec.use_case_name, plan.nextVersion),
         useCaseIds: [useCaseId],
+        useCaseName: spec.use_case_name,
         launchedBy: createdBy,
       });
     } catch (err) {
@@ -1599,7 +1727,7 @@ function registerImplementRoutes(app, deps) {
         feed = I.genieFeed(text, useCaseId, history[0] && history[0].created_at);
       }
     }
-    const appName = I.carriedAssets(history).app;
+    const appName = I.liveCarriedAssets(history).app;
     const jobId = int64Id((history.find((r) => r.job_id) || {}).job_id);
     const held = history[0] && history[0].status === I.IMPLEMENT_VIBE_NOT_MET ? history[0].spec_version : null;
     const appUpdate = history[0] ? I.appShellUpdate(history, buildStamp()) : null;
@@ -1609,7 +1737,7 @@ function registerImplementRoutes(app, deps) {
       jobId ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/list?job_id=${jobId}&limit=10`) : null,
       stalledOf(req, history[0]),
       held == null && !appUpdate ? null : personOf(req),
-      latestRunOf(req, warehouseId, history[0], history),
+      latestRunsOf(req, warehouseId, [history[0]], () => history),
       builtBy ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
     ]);
     if (history[0]) {
@@ -1733,7 +1861,7 @@ function registerImplementRoutes(app, deps) {
     const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
     const [history, person] = await Promise.all([loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId), personOf(req)]);
     const table = String(history[0]?.spec_json?.config?.result_table || '').trim();
-    const appTable = FB.appFeedbackTable({ database: `${catalog}.${schema}`, appName: history[0]?.app_name, useCaseId });
+    const appTable = FB.appFeedbackTable({ database: `${catalog}.${schema}`, appName: I.liveAppOf(history)?.name, useCaseId });
     const before = I.previousBuilt(history);
     const refused = before ? I.implementSettingsOwnerRefusal(before, person.username) : { status: 409, message: I.IMPLEMENT_SETTINGS_NOT_BUILT };
     return { sid, warehouseId, catalog, schema, useCaseId, history, person, table, appTable, before, refused };
@@ -1844,12 +1972,13 @@ function registerImplementRoutes(app, deps) {
     const warehouseId = warehouseOf(req);
     const { catalog, schema } = dbOf(req, splitInspireDatabase);
     const useCaseId = I.validateUseCaseId(q(req, 'use_case_id'));
-    const history = await loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId);
+    const [history, useCase] = await Promise.all([loadHistory(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId),
+      loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId)]);
     const target = I.implementSettingsTarget(history, useCaseId);
     const built = history.some((row) => I.IMPLEMENT_DONE_STATUSES.includes(row.status));
     const refusal = !built ? [409, I.IMPLEMENT_SETTINGS_NOT_BUILT] : !target ? [409, I.IMPLEMENT_SETTINGS_NO_APP]
       : !I.implementAppUrlOk(target.url) ? [409, I.IMPLEMENT_SETTINGS_NOT_APP_URL] : !P.forwardedTokenOf(req) ? [401, I.IMPLEMENT_SETTINGS_NO_SIGN_IN] : null;
-    return { history, built, target: target && I.implementAppUrlOk(target.url) ? target : null, refusal };
+    return { history, built, useCase, target: target && I.implementAppUrlOk(target.url) ? target : null, refusal };
   }
 
   async function callApp(req, target, method, path, body) {
@@ -1878,6 +2007,7 @@ function registerImplementRoutes(app, deps) {
       try {
         got = await callApp(req, target, 'GET', `/api/settings?page=${encodeURIComponent(target.page)}`);
       } catch (err) {
+        if (PM_ERROR.accessDenied(err)) throw err;
         return recorded(`The App\u2019s settings could not be read: ${err.message}`);
       }
       if (!got.ok) return recorded(String(got.data.error || `The App answered ${got.status} for its settings`));
@@ -1898,6 +2028,7 @@ function registerImplementRoutes(app, deps) {
       try {
         got = await callApp(req, target, 'GET', `/api/runs?page=${encodeURIComponent(target.page)}`);
       } catch (err) {
+        if (PM_ERROR.accessDenied(err)) throw err;
         return none(`The App\u2019s runs could not be read: ${err.message}`);
       }
       if (!got.ok) return none(String(got.data.error || `The App answered ${got.status} for its runs`));
@@ -1912,14 +2043,18 @@ function registerImplementRoutes(app, deps) {
       const sent = req.body || {};
       const custom = keys.includes('name') ? I.customSqlProblem(sent.name, sent.value) : '';
       if (custom) return res.status(400).json({ error: custom });
-      const { history, target, refusal } = await settingsContext(req);
+      const { history, target, refusal, useCase } = await settingsContext(req);
       if (refusal) return res.status(refusal[0]).json({ error: refusal[1] });
+      // REQ-193: a family C use case fits one model, so a column Grouping is refused on save, before the App is asked.
+      const oneModel = sent.name === GR.GROUP_BY && GR.fitsOneModel(useCase && useCase.analytics_technique, useCase && useCase.use_case_kind);
+      const refused = oneModel ? GR.oneModelProblem(sent.value, true) : '';
+      if (refused) return res.status(400).json({ error: refused });
       const body = { page: target.page, ...Object.fromEntries(keys.filter((key) => sent[key] !== undefined).map((key) => [key, sent[key]])) };
       let got;
       try {
         got = await callApp(req, target, 'POST', `/api/settings/${action}`, body);
       } catch (err) {
-        return res.status(502).json({ error: `The App could not be reached: ${err.message}` });
+        return PM_ERROR.sendFailure(res, 502, `The App could not be reached: ${err.message}`);
       }
       const view = got.data && Array.isArray(got.data.settings) ? { ...got.data, settings: I.implementAppSettings(got.data.settings, history) } : got.data;
       return res.status(got.status).json(view);
@@ -1937,10 +2072,11 @@ function registerImplementRoutes(app, deps) {
     const submitted = /^SQL failed \((\d{3})\)/.exec(message);
     const kind = err && err.code === 'SQL_DEADLINE' ? 'deadline'
       : submitted && submitted[1] === '401' ? 'sign_in'
-        : I.isReadDenied(message) || (submitted && submitted[1] === '403') ? 'denied'
+        : I.isReadDenied(message) || PM_ERROR.accessDenied(message) || (submitted && submitted[1] === '403') ? 'denied'
           : submitted ? 'submitted' : isMissingTableError(err) ? 'missing' : 'failed';
     const [status, text] = texts[kind](message);
-    return I.badRequest(text, status);
+    // The plain sentence stays; the warehouse's own refusal text rides along, so the response still carries the Permission Required payload.
+    return Object.assign(I.badRequest(text, status), kind === 'denied' ? { denial: message } : {});
   }
 
   const profileFailures = (table) => ({
@@ -1977,6 +2113,30 @@ function registerImplementRoutes(app, deps) {
     return swapped === undefined ? primary : String(swaps[swapped] || primary).trim();
   }
 
+  // Request for Access (REQ-311): the Permission Required dialog checks whether a destination is set, then sends the request as the person.
+  // Both routes read the signed-in person's token only; the request names no principal, so it is always the requester's own.
+  const accessRequestCall = (req, token) => (path, opts) => jsonOf(dbFetch, req.dbHost, token, path, opts);
+  app.post('/api/access-request/check', requireToken, async (req, res) => {
+    const token = P.personTokenOf(req);
+    if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
+    try {
+      const who = RP.forwardedPerson(req.headers || {});
+      return res.json(await AR.checkAccessRequest({ call: accessRequestCall(req, token), who, statements: req.body?.statements }));
+    } catch (err) {
+      return sendError(res, err);
+    }
+  });
+  app.post('/api/access-request', requireToken, async (req, res) => {
+    const token = P.personTokenOf(req);
+    if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
+    try {
+      const who = RP.forwardedPerson(req.headers || {});
+      return res.json(await AR.sendAccessRequest({ call: accessRequestCall(req, token), who, statements: req.body?.statements }));
+    } catch (err) {
+      return sendError(res, err);
+    }
+  });
+
   // The three latest rates of a money rule's rate table, into its base currency, read with the person's own sign-in.
   app.post('/api/money/rate-sample', requireToken, async (req, res) => {
     const token = P.personTokenOf(req);
@@ -2000,13 +2160,21 @@ function registerImplementRoutes(app, deps) {
     if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
     const asked = String(req.body?.base || '').trim().toUpperCase();
     try {
-      const warehouseId = warehouseOf(req);
-      const scopes = await launchScopesOf(req, warehouseId);
-      const made = GP.currencySpreadSql(req.body?.table, req.body?.currency_column, scopes);
-      if (!made || (asked && !/^[A-Z]{3}$/.test(asked))) throw I.badRequest('Name the use case table and its currency column, and the reporting currency as a three-letter code such as USD.');
-      const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.CURRENCY_SPREAD_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
-      const currencies = sqlResultToObjects(found).map((r) => ({ code: String(r.currency ?? '').trim().toUpperCase(), records: Number(r.records) }));
-      const capped = currencies.length >= GP.CURRENCY_SPREAD_ROWS;
+      // A table with no currency column is read for the one code its value is written in (REQ-103): no table read, the codes come from the request.
+      const byColumn = String(req.body?.currency_column || '').trim() !== '';
+      const codes = byColumn ? [] : (Array.isArray(req.body?.codes) ? req.body.codes : []).map((c) => String(c ?? '').trim().toUpperCase()).filter((c) => /^[A-Z]{3}$/.test(c));
+      if (!byColumn && !codes.length) throw I.badRequest('Name the currency the value is written in, as a three-letter code such as USD.');
+      if (asked && !/^[A-Z]{3}$/.test(asked)) throw I.badRequest('Name the reporting currency as a three-letter code such as USD.');
+      const warehouseId = byColumn ? warehouseOf(req) : '';
+      let currencies = codes.map((code) => ({ code, records: null }));
+      if (byColumn) {
+        const scopes = await launchScopesOf(req, warehouseId);
+        const made = GP.currencySpreadSql(req.body?.table, req.body?.currency_column, scopes);
+        if (!made) throw I.badRequest('Name the use case table and its currency column, and the reporting currency as a three-letter code such as USD.');
+        const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.CURRENCY_SPREAD_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
+        currencies = sqlResultToObjects(found).map((r) => ({ code: String(r.currency ?? '').trim().toUpperCase(), records: Number(r.records) }));
+      }
+      const capped = byColumn && currencies.length >= GP.CURRENCY_SPREAD_ROWS;
       const base = asked || (currencies[0] ? currencies[0].code : 'USD');
       const rates = await FX.currencyRates({ base, codes: currencies.map((c) => c.code) });
       return res.json({ ...rates, currencies, capped });
@@ -2080,6 +2248,7 @@ function registerImplementRoutes(app, deps) {
       if (!main || !/^[^`]+\.[^`]+\.[^`]+$/.test(table)) {
         throw I.badRequest(`${String(useCase.use_case ?? '').trim() || 'This use case'} names no main table as catalog.schema.table, so Inspire cannot read it for Data groups.`);
       }
+      await refuseTableTypes(req, warehouseId, [table], { unknownType: true });
       const launchScopes = parseTableScopeText(session?.table_scope).scopes;
       const options = (rowLimit) => ({ rowLimit, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s', signal: stop.signal });
       const rows = async (sql, parameters, rowLimit) => sqlResultToObjects(await executeSql(req.dbHost, token, warehouseId, sql, parameters, options(rowLimit)));
@@ -2088,7 +2257,7 @@ function registerImplementRoutes(app, deps) {
         const [cat, sch, tbl] = table.split('.');
         const columnsAsked = I.columnsStatement(table);
         const keysAsked = GP.keysStatement(cat, sch, tbl);
-        const [allColumns, keyRows] = await Promise.all([rows(columnsAsked.sql, columnsAsked.parameters, GP.PROFILE_META_ROWS),
+        const [allColumns, keyRows] = await Promise.all([I.readPickedTable(table, () => rows(columnsAsked.sql, columnsAsked.parameters, GP.PROFILE_META_ROWS)),
           rows(keysAsked.sql, keysAsked.parameters, GP.PROFILE_META_ROWS).catch((err) => {
             if (['SQL_DEADLINE', 'SQL_CANCELLED'].includes(err && err.code)) throw err;
             console.warn(`grouping profile: the declared keys of ${table} could not be read, so Data groups use no declared key: ${err.message}`);
@@ -2142,7 +2311,7 @@ function registerImplementRoutes(app, deps) {
         const valuesQuery = picked.length ? GP.statement(launchScopes, (ctx) => GP.valuesSql(scan, picked, profiledJoined, ctx), scan.parameters) : null;
         const values = valuesQuery ? await rows(valuesQuery.sql, valuesQuery.parameters, GP.PROFILE_VALUE_ROWS) : [];
         const deep = GP.deepSuggestionOf(useCase);
-        const draft = (paths) => GP.profileView({ table, technique: useCase.analytics_technique, columns, candidates, stats, sample, values, paths,
+        const draft = (paths) => GP.profileView({ table, technique: useCase.analytics_technique, kind: useCase.use_case_kind, columns, candidates, stats, sample, values, paths,
           time, days, joined: profiledJoined, deep: deep ? deep.columns : [], groupBy, readAt: new Date().toISOString(), subject: text });
         const pick = GP.moneySampleColumns(columns);
         const example = pick ? await rows(GP.moneySampleSql(scan, pick), scan.parameters, GP.MONEY_SAMPLE_ROWS) : [];
@@ -2199,6 +2368,7 @@ function registerImplementRoutes(app, deps) {
     try {
       return res.json(await alertsFor(req, ...asked, 'listing'));
     } catch (err) {
+      if (PM_ERROR.accessDenied(err)) return sendError(res, err);
       return res.json(A.unavailableListing(err));
     }
   });
@@ -2322,7 +2492,7 @@ function registerImplementRoutes(app, deps) {
   async function alignControlLogOwner(req, ctx) {
     if (ownedControlLogs.has(ctx.logTable)) return '';
     try {
-      const rows = await sqlRows(req.dbHost, req.dbToken, ctx.warehouseId, C.controlLogOwnerSql(ctx.catalog, ctx.schema));
+      const rows = await I.readPickedTable(ctx.logTable, () => sqlRows(req.dbHost, req.dbToken, ctx.warehouseId, C.controlLogOwnerSql(ctx.catalog, ctx.schema)));
       const fix = C.controlLogOwnerFix(rows, ctx.logTable);
       if (fix) await executeSql(req.dbHost, req.dbToken, ctx.warehouseId, fix);
       ownedControlLogs.add(ctx.logTable);
@@ -2359,11 +2529,21 @@ function registerImplementRoutes(app, deps) {
       await executeSql(req.dbHost, req.dbToken, ctx.warehouseId, C.controlLogCreateSql(ctx.logTable));
       missingControlLogs.delete(ctx.logTable);
       const ownerError = await alignControlLogOwner(req, ctx);
+      const person = await personOf(req);
+      if (C.isRunStop(asset, action)) {
+        // REQ-231: the person is recorded before the run is cancelled. If the record cannot be written, nothing is cancelled.
+        if (!String(person.username || '').trim()) throw I.badRequest(`Inspire did not ${phrase}: Inspire cannot tell who is stopping it`, 409);
+        const recorded = C.controlLogInsert(ctx.logTable, { sessionId: ctx.sid, useCaseId: ctx.useCaseId, asset, assetId: id, action, result: 'requested', message: `${label} requested by ${person.username} from the Build page`, actedBy: person.username });
+        try {
+          await executeSql(req.dbHost, req.dbToken, ctx.warehouseId, recorded.sql, recorded.parameters);
+        } catch (e) {
+          throw I.badRequest(`Inspire did not ${phrase}: it could not record who stopped it in ${C.CONTROL_LOG_TABLE} (${e.message})`, 502);
+        }
+      }
       const got = await jsonOf(dbFetch, req.dbHost, req.dbToken, request.path,
         { method: request.method, ...(request.body ? { body: jsonWithInt64Ids(request.body, request.int64 || []) } : {}) });
       const failure = got.ok ? '' : String((got.data && (got.data.message || got.data.error || got.data.raw)) || `HTTP ${got.status}`);
       const message = got.ok ? `${label}: done` : `${label} failed: ${failure}`;
-      const person = await personOf(req);
       const insert = C.controlLogInsert(ctx.logTable, {
         sessionId: ctx.sid, useCaseId: ctx.useCaseId, asset, assetId: id, action, result: got.ok ? 'done' : 'failed', message, actedBy: person.username,
       });

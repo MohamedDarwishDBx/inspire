@@ -6,6 +6,8 @@ from pathlib import Path
 
 from _agentload import agent_source
 from v120_genie_support import build_inspire, make_uc
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 MODES_JS = Path(__file__).resolve().parents[2] / "agent" / "app_shell" / "web" / "src" / "modes.js"
 FORECAST = "forecast_cockpit"
@@ -27,13 +29,13 @@ def test_the_generic_performance_name_is_refused_on_a_forecast_app_because_its_n
 
 def test_the_main_part_of_the_app_is_kept_with_a_plain_reason(agent_ns):
     assert _resolve(agent_ns, "Remove the Review page")[3] == [
-        "Review is the App's main part, so it stays in every App: remove a page, tab or Runs instead"]
+        f"Review is the {APP_LABEL}'s main part, so it stays in every {APP_LABEL}: remove a page, tab or Runs instead"]
 
 
 def test_dashboard_and_settings_are_kept_as_main_parts(agent_ns):
     for name in ("Dashboard", "Settings"):
         ids, _labels, _sections, notes = _resolve(agent_ns, f"Remove the {name} page")
-        assert ids == [] and notes and notes[0].startswith(f"{name} is the App's main part"), name
+        assert ids == [] and notes and notes[0].startswith(f"{name} is the {APP_LABEL}'s main part"), name
 
 
 def test_remove_runs_drops_the_runs_screen(agent_ns):
@@ -129,3 +131,14 @@ def test_a_look_change_that_keeps_a_removal_vibe_redeploys_the_app_with_the_scre
     inst._implement_app_restyle(context, host, {"files": {}}, {"shell_core": type("Core", (), {"SETTINGS_VERSION": 1})})
     assert seen["settings"]["screens"]["performance"] is False, seen["settings"]["screens"]
     assert seen["settings"]["screens"]["runs"] is True
+
+
+def test_remove_the_performance_page_from_the_app_on_a_queue_app_turns_the_screen_off(agent_ns):
+    # REQ-246: the user's words "Remove the Performance page from the App" left the nav item in place on a decision-queue App.
+    assert _resolve(agent_ns, "Remove the Performance page from the App", "decision_queue") == (["performance"], ["Performance"], [], [])
+
+
+def test_a_scope_phrase_after_the_nav_name_is_read_as_part_of_the_remove_ask(agent_ns):
+    assert _resolve(agent_ns, "Remove Runs from this App", "decision_queue") == (["runs"], ["Runs"], [], [])
+    assert _resolve(agent_ns, "Remove the Runs tab in the App", "decision_queue") == (["runs"], ["Runs"], [], [])
+    assert _resolve(agent_ns, "Remove the small multiples from the App", FORECAST) == ([], [], ["small_multiples"], [])

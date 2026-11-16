@@ -1,0 +1,93 @@
+{
+  "_about": "Internal terms that must never reach customer copy (REQ-059). Each term is a regular expression. Node (frontend source) and Python (notebook strings) both read this file, so the list lives in one place. Add a term here when a run surfaces a new internal name.",
+  "terms": [
+    {
+      "id": "step_code",
+      "pattern": "\\b(?:batch|depth|attempt|split|pass|retry|worker)\\s*\\d+\\b",
+      "flags": "i",
+      "why": "run bookkeeping numbers such as 'batch 1 depth0 attempt1'"
+    },
+    {
+      "id": "prompt_key",
+      "pattern": "\\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_PROMPT\\b",
+      "flags": "",
+      "why": "prompt registry keys such as FILTER_BUSINESS_TABLES_PROMPT"
+    },
+    {
+      "id": "internal_table",
+      "pattern": "__inspire_\\w*",
+      "flags": "",
+      "why": "Inspire's own tracking tables"
+    },
+    {
+      "id": "log_tag",
+      "pattern": "\\[[A-Z][A-Z0-9-]*\\s+FIRED\\]",
+      "flags": "",
+      "why": "log tags such as [DATA-FILTER-LABEL FIRED]"
+    },
+    {
+      "id": "page_id",
+      "pattern": "\\bpage n\\d+_u\\d+\\b",
+      "flags": "i",
+      "why": "an internal App page id such as 'page n06_u01' (REQ-237): person copy names an App page by its title"
+    },
+    {
+      "id": "internal_object",
+      "pattern": "(?<![\\w.])\\w*__[a-z]\\w*",
+      "flags": "",
+      "why": "Inspire's bare internal object names such as __constraints (REQ-227: a Genie change line named one). A catalog.schema.table name is not a bare token and is kept (D-NAMES)"
+    },
+    {
+      "id": "use_case_id",
+      "pattern": "\\bN\\d{2}-U\\d{2}\\b",
+      "flags": "i",
+      "why": "an internal use case id such as 'N06-U01' (REQ-258): the Ask Genie panel names the use case by its title; the id stays in Genie-facing text (D-NAMES)"
+    },
+    {
+      "id": "companion",
+      "pattern": "\\bcompanions?\\b",
+      "flags": "i",
+      "why": "Inspire's internal word for the extra tables a part draws (REQ-227)"
+    },
+    {
+      "id": "mode_name_on_run_output",
+      "pattern": "AI Enhanced Discovery|Standard Discovery",
+      "flags": "",
+      "why": "the discovery mode name as a label on run output; the chooser may name the modes, run output says Discovery",
+      "scope": "run_output"
+    },
+    {
+      "id": "python_repr",
+      "pattern": "<bound method |<function |<built-in |<class '|object at 0x|\\bdtype: \\w+|\\bName: \\S+,? dtype",
+      "flags": "",
+      "why": "a Python or pandas object dump such as '<bound method Series.prod of ... Name: 165, dtype: object>' (REQ-249): Genie's code formatted a method or a Series instead of its value"
+    },
+    {
+      "id": "error_code",
+      "pattern": "\\[[A-Z]+(?:_[A-Z]+)+\\]",
+      "flags": "",
+      "why": "REQ-260: a Databricks error code is never shown to a person"
+    },
+    {
+      "id": "grant_statement",
+      "pattern": "\\bGRANT\\s+(?:USE|CREATE|SELECT|MODIFY|MANAGE|READ|EXECUTE|ALL)\\b",
+      "flags": "",
+      "dialog_exempt": true,
+      "why": "REQ-260: a GRANT SQL command (upper case, as Databricks prints it) shows only inside the Permission Required dialog; prose 'grant' is not matched"
+    }
+  ],
+  "dialog_marker": "PERMISSION_DIALOG",
+  "_dialog_marker_about": "REQ-131, REQ-137, REQ-260: a term with dialog_exempt is not copy on a source line that carries dialog_marker. That line is a producer whose statements the Permission Required dialog copies (permissionBus raise, or permissionRequired in the backend). Every other line with the term fails the gate.",
+  "run_output_files": [
+    "components/ResultsInsights.jsx",
+    "pages/MonitorPage.jsx",
+    "lib/v130UseCase.js"
+  ],
+  "run_output_forbidden_interpolations": [
+    "\\{access\\.type\\}",
+    "\\$\\{discovery\\}",
+    "\\{discovery\\}",
+    "\\{discoveryType\\}",
+    "\\$\\{discoveryType\\}"
+  ]
+}

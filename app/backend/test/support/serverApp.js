@@ -38,7 +38,7 @@ function reset(overrides = {}) {
   Object.assign(state, {
     managers: [], managerGroups: [], personGroups: [], aclStatus: 200, personAppsScope: true, launchers: {}, sessionLaunchers: {}, history: [], calls: [],
     launches: [], knownSessions: [], ledgerSessions: [], nextRunId: 501, holdFetch: null, createFailure: '', sessionRows: {}, groupParents: {}, indirectGroups: [], conflictOn: null, ucSchemas: null, ucTables: null,
-    createdJob: null, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, files: {}, sessionBusiness: {},
+    createdJob: null, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runViewDenied: null, exportDenied: false, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, tableColumns: {}, files: {}, sessionBusiness: {},
     ...folderModel({ folders: { '/Shared/demos': { id: 7, writers: '*' } } }),
   }, overrides);
 }
@@ -86,6 +86,11 @@ function answerSql(body) {
     const sid = paramOf(body, 'session_id');
     return sqlResult(['seen'], state.ledgerSessions.includes(sid) || state.sessionLaunchers[sid] ? [['1']] : []);
   }
+  if (/^\s*SELECT job_id FROM\b/i.test(sql) && sql.includes('__inspire_launch')) {
+    const run = paramOf(body, 'run_id');
+    const row = state.launches.find((l) => l.run_id === run);
+    return sqlResult(['job_id'], row ? [[row.job_id]] : []);
+  }
   if (/^\s*SELECT\b/i.test(sql) && sql.includes('__inspire_launch') && sql.includes('run_id = :run_id')) {
     const who = state.launchers[paramOf(body, 'run_id')];
     return sqlResult(['launched_by'], who ? [[who]] : []);
@@ -118,6 +123,26 @@ function answerSql(body) {
   }
   if (/^\s*DESCRIBE TABLE\b/i.test(sql) && sql.includes('__inspire_usecases') && state.usecaseColumns) {
     return sqlResult(['col_name', 'data_type'], state.usecaseColumns.map((name) => [name, 'string']));
+  }
+  if (/^\s*DESCRIBE TABLE\b/i.test(sql) && !sql.includes('__inspire_usecases')) {
+    const name = sql.replace(/^\s*DESCRIBE TABLE\s+/i, '').replace(/`/g, '');
+    const cols = (state.tableColumns || {})[name];
+    if (!cols) return { statement_id: 's1', status: { state: 'FAILED', error: { message: `[TABLE_OR_VIEW_NOT_FOUND] The table ${name} cannot be found` } } };
+    return sqlResult(['col_name', 'data_type'], cols.map((c) => [c, 'string']));
+  }
+  // The type read of a picked table: a table the state names columns for is a MANAGED table; any other reads as no row.
+  const infoType = /^\s*SELECT table_type FROM `([^`]+)`\.information_schema\.tables\b/i.exec(sql);
+  if (infoType) {
+    const name = `${infoType[1]}.${paramOf(body, 's')}.${paramOf(body, 't')}`.toLowerCase();
+    return sqlResult(['table_type'], (state.tableColumns || {})[name] ? [['MANAGED']] : []);
+  }
+  // The column read of a picked table answers from the same tableColumns as DESCRIBE, the way information_schema lists what the
+  // caller can see: a table the state does not name reads as no rows.
+  const infoColumns = /^\s*SELECT column_name, data_type, ordinal_position FROM `([^`]+)`\.information_schema\.columns\b/i.exec(sql);
+  if (infoColumns) {
+    const name = `${infoColumns[1]}.${paramOf(body, 's')}.${paramOf(body, 't')}`.toLowerCase();
+    const cols = (state.tableColumns || {})[name] || [];
+    return sqlResult(['column_name', 'data_type', 'ordinal_position'], cols.map((c, i) => [c, 'string', String(i + 1)]));
   }
   if (/^\s*SELECT session_id,/.test(sql) && sql.includes('__inspire_usecases')) {
     const lacking = (state.usecaseColumns ? USECASE_RULE_COLUMNS.filter((c) => !state.usecaseColumns.includes(c) && new RegExp(`\\b${c}\\b`).test(sql)) : []);
@@ -218,6 +243,7 @@ async function stubFetch(url, opts = {}) {
   }
   if (u.pathname === '/api/2.0/sql/statements') return json(answerSql(body));
   if (u.pathname === '/api/2.0/workspace/import') return json({ message: 'stubbed import refused' }, 400);
+  if (u.pathname === '/api/2.0/workspace/export' && state.exportDenied) return json({ error_code: 'PERMISSION_DENIED', message: 'raw workspace detail' }, 403);
   const file = u.pathname.startsWith('/api/2.0/fs/files/') ? decodeURIComponent(u.pathname.slice('/api/2.0/fs/files'.length)) : '';
   if (file && Object.hasOwn(state.files, file)) {
     if (state.files[file] == null) return json({ error_code: 'NOT_FOUND', message: 'not found' }, 404);
@@ -249,6 +275,12 @@ async function stubFetch(url, opts = {}) {
   }
   if (u.pathname === '/api/2.1/jobs/runs/get' && state.runStates) {
     const id = u.searchParams.get('run_id');
+    // runViewDenied = { tokens, jobId, status } answers the listed tokens with Databricks' refusal for a job they cannot view.
+    if (state.runViewDenied && state.runViewDenied.tokens.includes(token)) {
+      const denied = state.runViewDenied;
+      if (denied.status === 404) return json({ error_code: 'RESOURCE_DOES_NOT_EXIST', message: `Run ${id} does not exist.` }, 404);
+      return json({ error_code: 'PERMISSION_DENIED', message: `User 00000000-0000-0000-0000-000000000000 does not have View or Admin or Manage Run or Owner permissions on job ${denied.jobId}.` }, 403);
+    }
     if (!state.runStates[id]) return json({ error_code: 'RESOURCE_DOES_NOT_EXIST', message: `Run ${id} does not exist.` }, 404);
     const job = state.runJobs[id] || {};
     const run = typeof state.runStates[id] === 'object' ? state.runStates[id] : { life_cycle_state: state.runStates[id] };

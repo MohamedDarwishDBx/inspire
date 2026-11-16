@@ -1,6 +1,6 @@
-const { RUN_SCOPES } = require('../../frontend/src/lib/runScope.js');
+const { RUN_SCOPES, oneModelProblem, ONE_MODEL_REFUSED } = require('../../frontend/src/lib/runScope.js');
 const { PERSONAL_NAME_RE, PERSONAL_TAG_RE, personalColumn } = require('../../frontend/src/lib/personalColumns.js');
-const { technique_records: TECHNIQUE_RECORDS } = require('../../agent/agent/app_shell/kinds.json');
+const { technique_records: TECHNIQUE_RECORDS, execution_family: EXECUTION_FAMILY, one_model: ONE_MODEL } = require('../../agent/agent/app_shell/kinds.json');
 const GROUP_BY = 'group_by';
 const GROUP_LABEL = 'Data groups';
 const GROUP_ALL = 'all';
@@ -47,6 +47,21 @@ function techniqueRecords(technique) {
 
 const groupingApplies = (technique) => techniqueRecords(technique) === 'groups';
 const standaloneRecords = (technique) => techniqueRecords(technique) === 'alone';
+
+function familyOf(technique) {
+  const label = lower(technique).split(/\s+/).filter(Boolean).join(' ');
+  const key = Object.keys(EXECUTION_FAMILY).find((name) => name.toLowerCase() === label);
+  return key === undefined ? '' : EXECUTION_FAMILY[key];
+}
+// A per-group fit needs one registered model per group when the use case's kind is in kinds.json one_model.kinds (segmentation, whatever its
+// technique), or when its technique is a family in one_model.families for a kind that lists it (cost_to_serve, peer_benchmarking). The notebook's
+// inspire_grouping_fits_one_model is the same rule. Such a use case is built on the whole data only: a Grouping of columns is refused.
+// A peer comparison's entity key is no Grouping: each entity alone is its own group, with no peers (REQ-293). The notebook's
+// implement_peer_entity is the same rule and refuses such a Grouping at build time.
+const peerComparison = (technique, kind = '') => lower(kind).trim() === 'peer_benchmarking'
+  || lower(technique).split(/\s+/).filter(Boolean).join(' ') === 'peer benchmarking';
+const fitsOneModel = (technique, kind = '') => ONE_MODEL.kinds.includes(lower(kind).trim())
+  || (groupingApplies(technique) && ONE_MODEL.families.includes(familyOf(technique)));
 
 function groupByParts(text) {
   const picked = [];
@@ -319,6 +334,10 @@ module.exports = {
   TEXT_NAME_TOKENS,
   groupingApplies,
   standaloneRecords,
+  fitsOneModel,
+  peerComparison,
+  oneModelProblem,
+  ONE_MODEL_REFUSED,
   groupByParts,
   groupByMode,
   groupByColumns,

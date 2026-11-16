@@ -120,12 +120,19 @@ export function dataSignalLine(signal) {
   return { tone: kind.tone, label: kind.label, text: text.trim() };
 }
 
+// REQ-116: the stored money text of a run that had no reporting currency says "(currency not known)". The App sends a currency on every
+// Discover launch now, so such text only survives on runs from before that. It says what to do instead of a bare "not known".
+const UNKNOWN_CURRENCY_STORED = '(currency not known)';
+const UNRECORDED_CURRENCY_ACTION = '(no currency recorded on this run: run Discover again to convert it to the reporting currency)';
+
 export function valueEstimateOf(uc) {
   const u = uc && typeof uc === 'object' ? uc : {};
   const parsed = parseJson(fieldOf(u, 'Value Estimate', 'value_estimate'));
   const estimate = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  const text = String(u.value_estimate_text || estimate.text || '').trim();
-  return text ? { text, measured: estimate.status === 'measured', currency: estimate.currency || null } : null;
+  const stored = String(u.value_estimate_text || estimate.text || '').trim();
+  const currency = estimate.currency || null;
+  const text = currency ? stored : stored.split(UNKNOWN_CURRENCY_STORED).join(UNRECORDED_CURRENCY_ACTION);
+  return text ? { text, measured: estimate.status === 'measured', currency } : null;
 }
 
 export function v130View(uc) {
@@ -476,6 +483,12 @@ export function latestFeedbackMap(latest) {
     if (key && !map[key]) map[key] = row;
   }
   return map;
+}
+
+// REQ-131, REQ-260: a Discover run's grants (its unreadable tables) are the Permission Required entries the results page raises.
+export function discoverPermissionsOf(results) {
+  const list = results?.data_access?.permissions;
+  return Array.isArray(list) ? list.filter((p) => Array.isArray(p?.statements) && p.statements.length) : [];
 }
 
 export function dataAccessSummary(results) {

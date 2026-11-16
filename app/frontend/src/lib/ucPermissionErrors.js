@@ -64,30 +64,25 @@ export function interpretUcPermissionError(message, opts = {}) {
   )];
   const browseCatalogs = metadataCatalogs.length > 0 ? metadataCatalogs : ['<metadata_catalog>'];
 
-  const principal = '`<your_user_or_group>`';
   const warehouseNote = opts.warehouseId
     ? `SQL warehouse \`${opts.warehouseId}\`: grant **Can use** in SQL Warehouses → Permissions.`
     : 'SQL warehouse selected in Settings: grant **Can use** on that warehouse.';
 
+  // The exact GRANT statements come from the server's Permission Required payload, which names the signed-in person. This helper
+  // never writes a GRANT itself: a placeholder grantee would replace the real list in the dialog (REQ-131, REQ-260).
   const adminBullets = [];
 
   if (opts.context === 'catalog_browse' || CATALOG_SIGNAL.test(text) || SCHEMA_SIGNAL.test(text)) {
     adminBullets.push(
-      'Unity Catalog: browse metadata for the catalogs, schemas and tables you selected in Start:',
-      ...browseCatalogs.flatMap((cat) => [
-        `  GRANT USE CATALOG ON CATALOG \`${cat}\` TO ${principal};`,
-        `  GRANT BROWSE ON CATALOG \`${cat}\` TO ${principal};`,
-      ]),
-      'If schemas/tables are listed via SQL warehouse, also ensure SELECT (or appropriate read) on those schemas.',
+      'Unity Catalog: browse metadata for the catalogs, schemas and tables you selected in Start.',
     );
+    adminBullets.push('If schemas/tables are listed via SQL warehouse, also ensure read access on those schemas.');
   }
 
   adminBullets.push(
     `Inspire tracking schema (\`${inspireCatalog}.${inspireSchema || '_inspire'}\`), with the session and results tables and the run log volume:`,
-    `  GRANT USE CATALOG ON CATALOG \`${inspireCatalog}\` TO ${principal};`,
-    `  GRANT CREATE SCHEMA ON CATALOG \`${inspireCatalog}\` TO ${principal};  -- only if \`${inspireSchema || '_inspire'}\` does not exist yet`,
-    `  GRANT USE SCHEMA ON SCHEMA \`${inspireCatalog}\`.\`${inspireSchema || '_inspire'}\` TO ${principal};`,
-    `  GRANT CREATE TABLE, MODIFY, SELECT, CREATE VOLUME, READ VOLUME, WRITE VOLUME ON SCHEMA \`${inspireCatalog}\`.\`${inspireSchema || '_inspire'}\` TO ${principal};`,
+    '  Use the catalog, and create the schema if it does not exist yet.',
+    '  Use the schema, and create, modify, select and read or write its tables and volumes.',
   );
 
   if (WAREHOUSE_SIGNAL.test(text) || opts.context === 'launch') {
@@ -115,6 +110,7 @@ export function interpretUcPermissionError(message, opts = {}) {
     '',
     'Please grant:',
     ...adminBullets.map((b) => (b.startsWith('  ') ? b : `• ${b}`)),
+    '',
     '',
     'After grants are applied, I will hard-refresh Inspire and try Get Started again.',
   ].join('\n');

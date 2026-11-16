@@ -33,6 +33,14 @@ const render = (props) => lib.renderToStaticMarkup(lib.createElement(lib.MoneyRu
 const checkedRadio = (html, marker) => (html.match(/<input[^>]*>/g) || []).some((tag) => tag.includes(marker) && /\schecked=""/.test(tag));
 const OLD_RULE = { currency: 'convert', base: 'USD', rates: { AED: 0.27, EUR: 1.08 }, window: { periods: 6 }, statuses: ['closed'], status_column: 'status', rule: 'net', value: { method: 'fixed', amount: 120, currency: 'USD' } };
 
+// REQ-103 live payload (kwalk t14_t1 currency_N07): the value is the rule's own amount, so the rule holds no currency code, and the table
+// has no currency column. Convert must still be offered (fail-pre: it was hidden when the rates had no code to read).
+test('a rule-computed value with no currency column still offers the reporting-currency Convert choice (REQ-103 live payload)', () => {
+  const html = render({ part: 'currency', value: { currency: 'per_currency' }, sample: { amount: 'amount', currency: '', status: '' }, table: 'main.s.orders' });
+  assert.ok(html.includes('data-money-currency-mode="convert"'), 'the Convert choice is on the Currency screen');
+  assert.ok(checkedRadio(html, 'data-money-currency-mode="per_currency"'), 'Keep each currency separate is the one chosen by default');
+});
+
 test('the default rule counts the amount column in USD per record, or each record once without one', () => {
   assert.deepEqual(lib.defaultMoneyRule({ money_sample: SAMPLE }), { currency: 'per_currency', value: { method: 'column', column: 'total_amount', currency_column: 'currency_code' } });
   assert.deepEqual(lib.defaultMoneyRule({ money_sample: { amount: 'total_amount', currency: '', status: '' } }), { currency: 'per_currency', value: { method: 'column', column: 'total_amount', currency: 'USD' } });

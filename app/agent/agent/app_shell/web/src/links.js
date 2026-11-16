@@ -20,10 +20,13 @@ function decodePart(text) {
   try { return decodeURIComponent(text); } catch { return text; }
 }
 
-export const SECTIONS = ['dashboard', 'work', 'performance', 'runs', 'alerts', 'settings'];
+export const SECTIONS = ['dashboard', 'work', 'plan', 'performance', 'runs', 'alerts', 'settings'];
 export const DEFAULT_SECTION = 'dashboard';
 export const OPEN_TAB = 'open';
-export const workTabs = (choices) => [[OPEN_TAB, 'Open'], ...(choices || []).map((c) => [c.id, c.label]), ['mine', 'Mine'], ['all', 'All']];
+export const UNCHECKED_TAB = 'unchecked';
+export const UNCHECKED_LABEL = 'Could not be checked';
+export const workTabs = (choices) => [[OPEN_TAB, 'Open'], ...(choices || []).map((c) => [c.id, c.label]), [UNCHECKED_TAB, UNCHECKED_LABEL],
+  ['mine', 'Mine'], ['all', 'All']];
 export const tabChoice = (choices, tab) => (choices || []).find((c) => c.id === tab) || null;
 export const DEFAULT_TAB = OPEN_TAB;
 export const FOCUSES = { overdue: 'Past their due date', unassigned: 'With no owner', older: 'On the list more than 30 days' };
@@ -72,7 +75,7 @@ export function sectionHash(pageId, section, query = new URLSearchParams()) {
 
 export const workRecordHash = (pageId, key) => sectionHash(pageId, 'work', new URLSearchParams({ tab: 'all', rec: String(key) }));
 
-export function canonicalHash(hash, { pages = [], last = '', sectionsOf = () => SECTIONS, queueOf = () => true } = {}) {
+export function canonicalHash(hash, { pages = [], last = '', sectionsOf = () => SECTIONS, queueOf = () => true, landingOf = () => '' } = {}) {
   const link = parseHash(hash);
   const body = String(hash || '').replace(/^#\/?/, '');
   const cut = body.indexOf('?');
@@ -91,7 +94,7 @@ export function canonicalHash(hash, { pages = [], last = '', sectionsOf = () => 
   const legacy = link.v != null ? sectionOfView(link.v) : '';
   query.delete('v');
   const has = sectionsOf(page);
-  const asked = link.section || legacy || ((link.rec || link.changed) && has.includes('work') && queueOf(page) ? 'work' : DEFAULT_SECTION);
+  const asked = link.section || legacy || ((link.rec || link.changed) && has.includes('work') && queueOf(page) ? 'work' : landingOf(page) || DEFAULT_SECTION);
   const section = has.includes(asked) ? asked : DEFAULT_SECTION;
   if (section !== 'work') query.delete('tab');
   else if (query.has('tab') && !workTabs(statusChoices(page)).some(([id]) => id === query.get('tab'))) query.set('tab', OPEN_TAB);
@@ -447,5 +450,6 @@ export function tabCount(counts, id) {
   if (id === 'mine') return counts.mine ?? null;
   if (id === 'all') return counts.all ?? null;
   if (id === OPEN_TAB) return counts.open ?? null;
+  if (id === UNCHECKED_TAB) return counts.unchecked ?? null;
   return counts.choices?.[id] ?? null;
 }

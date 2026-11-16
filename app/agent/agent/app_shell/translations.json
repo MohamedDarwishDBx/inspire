@@ -217,6 +217,7 @@
   "doc_foundation_unlocks": "حالات الاستخدام المتاحة",
   "doc_discovery_standard": "الاكتشاف القياسي",
   "doc_discovery_ai_enhanced": "الاكتشاف المعزز بالذكاء الاصطناعي",
+  "doc_discovery_label": "الاكتشاف",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "لم يقرأ Inspire أي بيانات للعميل. استخدم البيانات الوصفية وتعريفات طرق عرض المقاييس وأعداد الاستخدام فقط.",
   "doc_data_access_read": "قرأ Inspire تجميعات من الجداول المشمولة، وعددها {tables} (أعداد الصفوف، التغطية الزمنية، نسب القيم الفارغة، أعداد القيم المميزة وقوائم قصيرة لقيم الأعمدة غير الشخصية). لم تُرسل أي صفوف بيانات إلى الذكاء الاصطناعي.",
@@ -319,8 +320,7 @@
   "key_measure_note": "المقياس الرئيسي",
   "doc_data_filters": "مرشحات البيانات",
   "doc_filter_all_except": "الكل باستثناء {values}",
-  "doc_filter_and_more": "و{count} أكثر",
-  "doc_name_using_technique": "{name} باستخدام {technique}"
+  "doc_filter_and_more": "و{count} أكثر"
  },
  "Spanish": {
   "main_title": "Generador de Casos de Uso Impulsado por Databricks Genie Code",
@@ -540,6 +540,7 @@
   "doc_foundation_unlocks": "Casos de uso habilitados",
   "doc_discovery_standard": "Descubrimiento estándar",
   "doc_discovery_ai_enhanced": "Descubrimiento mejorado con IA",
+  "doc_discovery_label": "Descubrimiento",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire no leyó datos del cliente. Usó solo metadatos, definiciones de vistas de métricas y recuentos de uso.",
   "doc_data_access_read": "Inspire leyó agregados de las tablas del alcance, {tables} en total (recuentos de filas, cobertura de fechas, tasas de nulos, recuentos de valores distintos y listas cortas de valores de columnas no personales). No se envió ninguna fila de datos a la IA.",
@@ -642,8 +643,7 @@
   "key_measure_note": "Medida clave",
   "doc_data_filters": "Filtros de Datos",
   "doc_filter_all_except": "todos excepto {values}",
-  "doc_filter_and_more": "y {count} más",
-  "doc_name_using_technique": "{name} mediante {technique}"
+  "doc_filter_and_more": "y {count} más"
  },
  "French": {
   "main_title": "Générateur de Cas d'Utilisation Propulsé par Databricks Genie Code",
@@ -863,6 +863,7 @@
   "doc_foundation_unlocks": "Cas d'usage débloqués",
   "doc_discovery_standard": "Découverte standard",
   "doc_discovery_ai_enhanced": "Découverte enrichie par l'IA",
+  "doc_discovery_label": "Découverte",
   "doc_data_access_mode": "{mode} : {read} {ai}",
   "doc_data_access_none": "Inspire n'a lu aucune donnée client. Il a utilisé uniquement les métadonnées, les définitions des vues de métriques et les comptes d'utilisation.",
   "doc_data_access_read": "Inspire a lu des agrégats sur les tables du périmètre, {tables} au total (nombre de lignes, couverture temporelle, taux de valeurs nulles, nombres de valeurs distinctes et courtes listes de valeurs de colonnes non personnelles). Aucune ligne de données n'a été envoyée à l'IA.",
@@ -965,8 +966,7 @@
   "key_measure_note": "Mesure clé",
   "doc_data_filters": "Filtres de Données",
   "doc_filter_all_except": "tout sauf {values}",
-  "doc_filter_and_more": "et {count} de plus",
-  "doc_name_using_technique": "{name} à l'aide de {technique}"
+  "doc_filter_and_more": "et {count} de plus"
  },
  "German": {
   "main_title": "Anwendungsfall-Generator Unterstützt von Databricks Genie Code",
@@ -1186,6 +1186,7 @@
   "doc_foundation_unlocks": "Ermöglichte Anwendungsfälle",
   "doc_discovery_standard": "Standard-Erkennung",
   "doc_discovery_ai_enhanced": "KI-gestützte Erkennung",
+  "doc_discovery_label": "Entdeckung",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire hat keine Kundendaten gelesen. Es nutzte nur Metadaten, Definitionen von Metrik-Views und Nutzungszahlen.",
   "doc_data_access_read": "Inspire hat Aggregate aus den Tabellen im Umfang gelesen, insgesamt {tables} (Zeilenzahlen, Datumsabdeckung, Null-Anteile, Anzahl eindeutiger Werte und kurze Wertelisten nicht personenbezogener Spalten). Es wurden keine Datenzeilen an die KI gesendet.",
@@ -1288,8 +1289,7 @@
   "key_measure_note": "Schlüsselkennzahl",
   "doc_data_filters": "Datenfilter",
   "doc_filter_all_except": "alle außer {values}",
-  "doc_filter_and_more": "und {count} weitere",
-  "doc_name_using_technique": "{name} mit {technique}"
+  "doc_filter_and_more": "und {count} weitere"
  },
  "Portuguese": {
   "main_title": "Gerador de Casos de Uso Impulsionado por Databricks Genie Code",
@@ -1509,6 +1509,7 @@
   "doc_foundation_unlocks": "Casos de uso desbloqueados",
   "doc_discovery_standard": "Descoberta padrão",
   "doc_discovery_ai_enhanced": "Descoberta aprimorada por IA",
+  "doc_discovery_label": "Descoberta",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "O Inspire não leu dados do cliente. Usou apenas metadados, definições de vistas de métricas e contagens de utilização.",
   "doc_data_access_read": "O Inspire leu agregados das tabelas no âmbito, {tables} no total (contagens de linhas, cobertura de datas, taxas de nulos, contagens de valores distintos e listas curtas de valores de colunas não pessoais). Nenhuma linha de dados foi enviada para a IA.",
@@ -1611,8 +1612,7 @@
   "key_measure_note": "Medida-chave",
   "doc_data_filters": "Filtros de Dados",
   "doc_filter_all_except": "todos exceto {values}",
-  "doc_filter_and_more": "e mais {count}",
-  "doc_name_using_technique": "{name} usando {technique}"
+  "doc_filter_and_more": "e mais {count}"
  },
  "Italian": {
   "main_title": "Generatore di Casi d'Uso Alimentato da Databricks Genie Code",
@@ -1832,6 +1832,7 @@
   "doc_foundation_unlocks": "Casi d'uso sbloccati",
   "doc_discovery_standard": "Scoperta standard",
   "doc_discovery_ai_enhanced": "Scoperta potenziata dall'IA",
+  "doc_discovery_label": "Scoperta",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire non ha letto dati del cliente. Ha usato solo metadati, definizioni delle viste metriche e conteggi di utilizzo.",
   "doc_data_access_read": "Inspire ha letto aggregati dalle tabelle nell'ambito, {tables} in totale (conteggi di righe, copertura temporale, percentuali di valori nulli, conteggi di valori distinti e brevi elenchi di valori di colonne non personali). Nessuna riga di dati è stata inviata all'IA.",
@@ -1934,8 +1935,7 @@
   "key_measure_note": "Misura chiave",
   "doc_data_filters": "Filtri Dati",
   "doc_filter_all_except": "tutti tranne {values}",
-  "doc_filter_and_more": "e {count} altri",
-  "doc_name_using_technique": "{name} tramite {technique}"
+  "doc_filter_and_more": "e {count} altri"
  },
  "Chinese (Mandarin)": {
   "main_title": "由 达塔布里克斯 吉尼 科德 驱动的用例生成器",
@@ -2155,6 +2155,7 @@
   "doc_foundation_unlocks": "解锁的用例",
   "doc_discovery_standard": "标准发现",
   "doc_discovery_ai_enhanced": "AI 增强发现",
+  "doc_discovery_label": "探索",
   "doc_data_access_mode": "{mode}：{read}{ai}",
   "doc_data_access_none": "Inspire 未读取任何客户数据，只使用了元数据、指标视图定义和使用次数。",
   "doc_data_access_read": "Inspire 读取了 {tables} 张表的聚合信息（行数、日期覆盖范围、空值比例、不同值数量以及非个人字段的少量取值）。没有任何数据行被发送给 AI。",
@@ -2257,8 +2258,7 @@
   "key_measure_note": "关键指标",
   "doc_data_filters": "数据筛选器",
   "doc_filter_all_except": "除{values}外的所有",
-  "doc_filter_and_more": "以及{count}个更多",
-  "doc_name_using_technique": "{name}（采用{technique}）"
+  "doc_filter_and_more": "以及{count}个更多"
  },
  "Japanese": {
   "main_title": "データブリックス ジーニー コード を活用したユースケースジェネレーター",
@@ -2478,6 +2478,7 @@
   "doc_foundation_unlocks": "利用可能になるユースケース",
   "doc_discovery_standard": "標準検出",
   "doc_discovery_ai_enhanced": "AI 強化検出",
+  "doc_discovery_label": "探索",
   "doc_data_access_mode": "{mode}: {read}{ai}",
   "doc_data_access_none": "Inspire は顧客データを一切読み取っていません。メタデータ、メトリクスビューの定義、利用回数のみを使用しました。",
   "doc_data_access_read": "Inspire は {tables} 個のテーブルから集計値を読み取りました (行数、日付の範囲、NULL の割合、一意の値の数、個人情報ではない列の短い値リスト)。データ行は AI に送信されていません。",
@@ -2580,8 +2581,7 @@
   "key_measure_note": "主要指標",
   "doc_data_filters": "データフィルター",
   "doc_filter_all_except": "{values} 以外のすべて",
-  "doc_filter_and_more": "他 {count} 件",
-  "doc_name_using_technique": "{name}（{technique}を使用）"
+  "doc_filter_and_more": "他 {count} 件"
  },
  "Korean": {
   "main_title": "데이터브릭스 지니 코드 기반의 유스케이스 생성기",
@@ -2801,6 +2801,7 @@
   "doc_foundation_unlocks": "가능해지는 유스케이스",
   "doc_discovery_standard": "표준 탐색",
   "doc_discovery_ai_enhanced": "AI 강화 탐색",
+  "doc_discovery_label": "탐색",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire는 고객 데이터를 읽지 않았습니다. 메타데이터, 메트릭 뷰 정의, 사용 횟수만 사용했습니다.",
   "doc_data_access_read": "Inspire는 {tables}개 테이블에서 집계값을 읽었습니다(행 수, 날짜 범위, NULL 비율, 고유 값 수, 개인 정보가 아닌 열의 짧은 값 목록). AI로 전송된 데이터 행은 없습니다.",
@@ -2903,8 +2904,7 @@
   "key_measure_note": "핵심 지표",
   "doc_data_filters": "데이터 필터",
   "doc_filter_all_except": "{values}을(를) 제외한 전체",
-  "doc_filter_and_more": "및 {count}개 더",
-  "doc_name_using_technique": "{name} ({technique} 활용)"
+  "doc_filter_and_more": "및 {count}개 더"
  },
  "Hindi": {
   "main_title": "डेटाब्रिक्स जीनी कोड द्वारा संचालित उपयोग केस जनरेटर",
@@ -3124,6 +3124,7 @@
   "doc_foundation_unlocks": "संभव होने वाले उपयोग मामले",
   "doc_discovery_standard": "मानक खोज",
   "doc_discovery_ai_enhanced": "AI संवर्धित खोज",
+  "doc_discovery_label": "खोज",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire ने ग्राहक का कोई डेटा नहीं पढ़ा। उसने केवल मेटाडेटा, मेट्रिक व्यू परिभाषाओं और उपयोग गणनाओं का उपयोग किया।",
   "doc_data_access_read": "Inspire ने दायरे की टेबलों से समेकित आँकड़े पढ़े, जिनकी कुल संख्या {tables} है (पंक्तियों की संख्या, तिथि कवरेज, रिक्त मानों का अनुपात, विशिष्ट मानों की संख्या और गैर-व्यक्तिगत कॉलमों के मानों की छोटी सूचियाँ)। कोई भी डेटा पंक्ति AI को नहीं भेजी गई।",
@@ -3226,8 +3227,7 @@
   "key_measure_note": "मुख्य मापदंड",
   "doc_data_filters": "डेटा फ़िल्टर",
   "doc_filter_all_except": "{values} को छोड़कर सभी",
-  "doc_filter_and_more": "और {count} अधिक",
-  "doc_name_using_technique": "{name} ({technique} का उपयोग करके)"
+  "doc_filter_and_more": "और {count} अधिक"
  },
  "Russian": {
   "main_title": "Генератор бизнес-кейсов на базе Датабрикс Джини Код",
@@ -3447,6 +3447,7 @@
   "doc_foundation_unlocks": "Доступные бизнес-кейсы",
   "doc_discovery_standard": "Стандартное обнаружение",
   "doc_discovery_ai_enhanced": "Обнаружение с поддержкой ИИ",
+  "doc_discovery_label": "Обнаружение",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire не читал данные клиента. Использовались только метаданные, определения представлений метрик и счётчики использования.",
   "doc_data_access_read": "Inspire прочитал агрегаты из таблиц в области анализа (всего: {tables}): число строк, охват дат, доля пустых значений, число уникальных значений и короткие списки значений неперсональных столбцов. Ни одна строка данных не была отправлена ИИ.",
@@ -3549,8 +3550,7 @@
   "key_measure_note": "Ключевой показатель",
   "doc_data_filters": "Фильтры данных",
   "doc_filter_all_except": "все, кроме {values}",
-  "doc_filter_and_more": "и ещё {count}",
-  "doc_name_using_technique": "{name} (метод: {technique})"
+  "doc_filter_and_more": "и ещё {count}"
  },
  "Swedish": {
   "main_title": "Användningsfallsgenerator Driven av Databricks Genie Code",
@@ -3770,6 +3770,7 @@
   "doc_foundation_unlocks": "Möjliggjorda användningsfall",
   "doc_discovery_standard": "Standardupptäckt",
   "doc_discovery_ai_enhanced": "AI-förstärkt upptäckt",
+  "doc_discovery_label": "Upptäckt",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire läste inga kunddata. Endast metadata, definitioner av måttvyer och användningsräkningar användes.",
   "doc_data_access_read": "Inspire läste aggregat från tabellerna i omfånget, totalt {tables} (radantal, datumtäckning, andel tomma värden, antal unika värden och korta värdelistor för icke-personliga kolumner). Inga datarader skickades till AI:n.",
@@ -3872,8 +3873,7 @@
   "key_measure_note": "Nyckelmått",
   "doc_data_filters": "Datafilter",
   "doc_filter_all_except": "alla utom {values}",
-  "doc_filter_and_more": "och {count} till",
-  "doc_name_using_technique": "{name} med {technique}"
+  "doc_filter_and_more": "och {count} till"
  },
  "Danish": {
   "main_title": "Anvendelsescase-generator drevet af Databricks Genie Code",
@@ -4093,6 +4093,7 @@
   "doc_foundation_unlocks": "Mulige anvendelsescases",
   "doc_discovery_standard": "Standardopdagelse",
   "doc_discovery_ai_enhanced": "AI-forstærket opdagelse",
+  "doc_discovery_label": "Opdagelse",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire læste ingen kundedata. Der blev kun brugt metadata, definitioner af metrikvisninger og brugsoptællinger.",
   "doc_data_access_read": "Inspire læste aggregater fra tabellerne i omfanget, i alt {tables} (antal rækker, datodækning, andel tomme værdier, antal unikke værdier og korte værdilister for ikke-personlige kolonner). Ingen datarækker blev sendt til AI'en.",
@@ -4195,8 +4196,7 @@
   "key_measure_note": "Nøgletal",
   "doc_data_filters": "Datafiltre",
   "doc_filter_all_except": "alle undtagen {values}",
-  "doc_filter_and_more": "og {count} flere",
-  "doc_name_using_technique": "{name} med {technique}"
+  "doc_filter_and_more": "og {count} flere"
  },
  "Norwegian": {
   "main_title": "Brukscasegenerator drevet av Databricks Genie Code",
@@ -4416,6 +4416,7 @@
   "doc_foundation_unlocks": "Mulige brukscaser",
   "doc_discovery_standard": "Standard oppdagelse",
   "doc_discovery_ai_enhanced": "KI-forsterket oppdagelse",
+  "doc_discovery_label": "Oppdagelse",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire leste ingen kundedata. Bare metadata, definisjoner av metrikkvisninger og brukstellinger ble brukt.",
   "doc_data_access_read": "Inspire leste aggregater fra tabellene i omfanget, totalt {tables} (antall rader, datodekning, andel tomme verdier, antall unike verdier og korte verdilister for ikke-personlige kolonner). Ingen datarader ble sendt til KI-en.",
@@ -4518,8 +4519,7 @@
   "key_measure_note": "Nøkkeltall",
   "doc_data_filters": "Datafiltre",
   "doc_filter_all_except": "alle unntatt {values}",
-  "doc_filter_and_more": "og {count} til",
-  "doc_name_using_technique": "{name} med {technique}"
+  "doc_filter_and_more": "og {count} til"
  },
  "Finnish": {
   "main_title": "Käyttötapausgeneraattori Databricks Genie Coden avulla",
@@ -4739,6 +4739,7 @@
   "doc_foundation_unlocks": "Mahdollistuvat käyttötapaukset",
   "doc_discovery_standard": "Vakiotunnistus",
   "doc_discovery_ai_enhanced": "Tekoälyllä tehostettu tunnistus",
+  "doc_discovery_label": "Löytäminen",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire ei lukenut asiakkaan dataa. Se käytti vain metatietoja, mittarinäkymien määritelmiä ja käyttömääriä.",
   "doc_data_access_read": "Inspire luki koosteita rajauksen tauluista, yhteensä {tables} (rivimäärät, päivämäärien kattavuus, tyhjien arvojen osuudet, erillisten arvojen määrät ja lyhyet arvoluettelot muista kuin henkilötietosarakkeista). Yhtään datariviä ei lähetetty tekoälylle.",
@@ -4841,8 +4842,7 @@
   "key_measure_note": "Avainmittari",
   "doc_data_filters": "Tietosuodattimet",
   "doc_filter_all_except": "kaikki paitsi {values}",
-  "doc_filter_and_more": "ja {count} lisää",
-  "doc_name_using_technique": "{name} (menetelmä: {technique})"
+  "doc_filter_and_more": "ja {count} lisää"
  },
  "Polish": {
   "main_title": "Generator przypadków użycia oparty na Databricks Genie Code",
@@ -5062,6 +5062,7 @@
   "doc_foundation_unlocks": "Umożliwione przypadki użycia",
   "doc_discovery_standard": "Odkrywanie standardowe",
   "doc_discovery_ai_enhanced": "Odkrywanie wspomagane przez AI",
+  "doc_discovery_label": "Odkrywanie",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire nie odczytał żadnych danych klienta. Użyto wyłącznie metadanych, definicji widoków metryk i liczników użycia.",
   "doc_data_access_read": "Inspire odczytał agregaty z tabel w zakresie (łącznie: {tables}): liczby wierszy, zakres dat, odsetki wartości pustych, liczby unikalnych wartości i krótkie listy wartości kolumn niezawierających danych osobowych. Do AI nie wysłano żadnego wiersza danych.",
@@ -5164,8 +5165,7 @@
   "key_measure_note": "Kluczowy miernik",
   "doc_data_filters": "Filtry danych",
   "doc_filter_all_except": "wszystkie oprócz {values}",
-  "doc_filter_and_more": "i {count} więcej",
-  "doc_name_using_technique": "{name} (metoda: {technique})"
+  "doc_filter_and_more": "i {count} więcej"
  },
  "Romanian": {
   "main_title": "Generator de cazuri de utilizare alimentat de Databricks Genie Code",
@@ -5385,6 +5385,7 @@
   "doc_foundation_unlocks": "Cazuri de utilizare deblocate",
   "doc_discovery_standard": "Descoperire standard",
   "doc_discovery_ai_enhanced": "Descoperire îmbunătățită cu AI",
+  "doc_discovery_label": "Descoperire",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire nu a citit date ale clientului. A folosit doar metadate, definiții ale vizualizărilor de metrici și numărători de utilizare.",
   "doc_data_access_read": "Inspire a citit agregate din tabelele incluse, în total {tables} (numere de rânduri, acoperirea datelor, ponderi ale valorilor nule, numere de valori distincte și liste scurte de valori ale coloanelor fără date personale). Niciun rând de date nu a fost trimis către AI.",
@@ -5487,8 +5488,7 @@
   "key_measure_note": "Măsura cheie",
   "doc_data_filters": "Filtre de Date",
   "doc_filter_all_except": "toate cu excepția {values}",
-  "doc_filter_and_more": "și {count} mai multe",
-  "doc_name_using_technique": "{name} folosind {technique}"
+  "doc_filter_and_more": "și {count} mai multe"
  },
  "Ukrainian": {
   "main_title": "Генератор бізнес-кейсів на базі Датабрікс Джіні Код",
@@ -5708,6 +5708,7 @@
   "doc_foundation_unlocks": "Доступні бізнес-кейси",
   "doc_discovery_standard": "Стандартне виявлення",
   "doc_discovery_ai_enhanced": "Виявлення з підтримкою ШІ",
+  "doc_discovery_label": "Виявлення",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire не читав даних клієнта. Використано лише метадані, визначення подань метрик і лічильники використання.",
   "doc_data_access_read": "Inspire прочитав агрегати з таблиць в області аналізу (усього: {tables}): кількість рядків, охоплення дат, частку порожніх значень, кількість унікальних значень і короткі списки значень неперсональних стовпців. Жоден рядок даних не надіслано ШІ.",
@@ -5810,8 +5811,7 @@
   "key_measure_note": "Ключовий показник",
   "doc_data_filters": "Фільтри даних",
   "doc_filter_all_except": "усі, крім {values}",
-  "doc_filter_and_more": "і ще {count}",
-  "doc_name_using_technique": "{name} (метод: {technique})"
+  "doc_filter_and_more": "і ще {count}"
  },
  "Dutch": {
   "main_title": "Gebruikscasegenerator aangedreven door Databricks Genie Code",
@@ -6031,6 +6031,7 @@
   "doc_foundation_unlocks": "Mogelijk gemaakte gebruikscases",
   "doc_discovery_standard": "Standaardontdekking",
   "doc_discovery_ai_enhanced": "AI-versterkte ontdekking",
+  "doc_discovery_label": "Verkenning",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire heeft geen klantgegevens gelezen. Alleen metadata, definities van metric views en gebruikstellingen zijn gebruikt.",
   "doc_data_access_read": "Inspire heeft aggregaten gelezen uit de tabellen in de scope, in totaal {tables} (aantallen rijen, datumdekking, aandelen lege waarden, aantallen unieke waarden en korte waardelijsten van niet-persoonlijke kolommen). Er zijn geen gegevensrijen naar de AI gestuurd.",
@@ -6133,8 +6134,7 @@
   "key_measure_note": "Kernmaatstaf",
   "doc_data_filters": "Gegevensfilters",
   "doc_filter_all_except": "alles behalve {values}",
-  "doc_filter_and_more": "en {count} meer",
-  "doc_name_using_technique": "{name} met {technique}"
+  "doc_filter_and_more": "en {count} meer"
  },
  "Indonesian": {
   "main_title": "Generator Kasus Penggunaan Didukung oleh Databricks Genie Code",
@@ -6354,6 +6354,7 @@
   "doc_foundation_unlocks": "Kasus penggunaan yang terbuka",
   "doc_discovery_standard": "Penemuan standar",
   "doc_discovery_ai_enhanced": "Penemuan yang ditingkatkan AI",
+  "doc_discovery_label": "Penemuan",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire tidak membaca data pelanggan. Hanya metadata, definisi tampilan metrik, dan jumlah penggunaan yang dipakai.",
   "doc_data_access_read": "Inspire membaca agregat dari {tables} tabel (jumlah baris, cakupan tanggal, proporsi nilai kosong, jumlah nilai unik, dan daftar singkat nilai kolom non-pribadi). Tidak ada baris data yang dikirim ke AI.",
@@ -6456,8 +6457,7 @@
   "key_measure_note": "Ukuran kunci",
   "doc_data_filters": "Filter Data",
   "doc_filter_all_except": "semua kecuali {values}",
-  "doc_filter_and_more": "dan {count} lainnya",
-  "doc_name_using_technique": "{name} menggunakan {technique}"
+  "doc_filter_and_more": "dan {count} lainnya"
  },
  "Malay": {
   "main_title": "Penjana Kes Penggunaan Dikuasakan oleh Databricks Genie Code",
@@ -6677,6 +6677,7 @@
   "doc_foundation_unlocks": "Kes penggunaan yang dibuka",
   "doc_discovery_standard": "Penemuan standard",
   "doc_discovery_ai_enhanced": "Penemuan dipertingkat AI",
+  "doc_discovery_label": "Penemuan",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire tidak membaca sebarang data pelanggan. Hanya metadata, definisi paparan metrik dan kiraan penggunaan digunakan.",
   "doc_data_access_read": "Inspire membaca agregat daripada {tables} jadual (bilangan baris, liputan tarikh, kadar nilai kosong, bilangan nilai unik dan senarai pendek nilai lajur bukan peribadi). Tiada baris data dihantar kepada AI.",
@@ -6779,8 +6780,7 @@
   "key_measure_note": "Ukuran utama",
   "doc_data_filters": "Penapis Data",
   "doc_filter_all_except": "semua kecuali {values}",
-  "doc_filter_and_more": "dan {count} lagi",
-  "doc_name_using_technique": "{name} menggunakan {technique}"
+  "doc_filter_and_more": "dan {count} lagi"
  },
  "Tamil": {
   "main_title": "Databricks Genie Code மூலம் இயக்கப்படும் பயன்பாட்டு வழக்கு உருவாக்கி",
@@ -7000,6 +7000,7 @@
   "doc_foundation_unlocks": "சாத்தியமாகும் பயன்பாட்டு வழக்குகள்",
   "doc_discovery_standard": "நிலையான கண்டறிதல்",
   "doc_discovery_ai_enhanced": "AI மேம்படுத்திய கண்டறிதல்",
+  "doc_discovery_label": "கண்டறிதல்",
   "doc_data_access_mode": "{mode}: {read} {ai}",
   "doc_data_access_none": "Inspire வாடிக்கையாளர் தரவு எதையும் படிக்கவில்லை. மெட்டாடேட்டா, அளவீட்டு காட்சி வரையறைகள் மற்றும் பயன்பாட்டு எண்ணிக்கைகள் மட்டுமே பயன்படுத்தப்பட்டன.",
   "doc_data_access_read": "Inspire வரம்பில் உள்ள அட்டவணைகளிலிருந்து தொகுப்பு மதிப்புகளைப் படித்தது, மொத்தம் {tables} (வரிசைகளின் எண்ணிக்கை, தேதி வரம்பு, வெற்று மதிப்புகளின் விகிதம், தனித்த மதிப்புகளின் எண்ணிக்கை மற்றும் தனிப்பட்டதல்லாத நெடுவரிசைகளின் சுருக்கமான மதிப்புப் பட்டியல்கள்). எந்த தரவு வரிசையும் AI-க்கு அனுப்பப்படவில்லை.",
@@ -7102,7 +7103,6 @@
   "key_measure_note": "முக்கிய அளவீடு",
   "doc_data_filters": "தரவு வடிகட்டிகள்",
   "doc_filter_all_except": "{values} தவிர அனைத்தும்",
-  "doc_filter_and_more": "மற்றும் {count} மேலும்",
-  "doc_name_using_technique": "{name} ({technique} மூலம்)"
+  "doc_filter_and_more": "மற்றும் {count} மேலும்"
  }
 }

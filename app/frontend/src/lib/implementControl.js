@@ -1,17 +1,19 @@
+import OUTPUT_LABELS from '../../../backend/lib/implementOutputLabels.json' with { type: 'json' };
 import {
   BUILT_ASSET_STATES, IMPLEMENT_DONE_STATUSES, IMPLEMENT_OUTPUTS, IMPLEMENT_UNINSTALLED, IMPLEMENT_VIBE_NOT_MET, assetLabel, builtVersion, heldAsks,
   holderNames, holdersText, holdoutText, joinWords, partAsks, partLabel, partOf, rebuildableOutputs, statusChip, versionActive, vibesKey, VIBE_NOT_MET_FIRST,
-  APP_INSIDE_PLACEMENT, VIBE_FEATURES_LABEL, VIBE_PREVIOUS_DEFAULT, insideInspire, isAppUpdate, mvpFilterMatches, nextSpecFrom, openVibeAsks, undeliveredOutputs, withCollectedVibes,
+  APP_INSIDE_PLACEMENT, VIBE_FEATURES_LABEL, VIBE_PREVIOUS_DEFAULT, insideInspire, isAppUpdate, liveAppVersion, mvpFilterMatches, sideAppVersion, nextSpecFrom, openVibeAsks, undeliveredOutputs, withCollectedVibes,
 } from './implementWizard.js';
 import { formatWhen } from './formatWhen.js';
+import { noteBuildStarted } from './progressView.js';
 import { plural } from './plural.js';
-import { assetNotes, planActionText, planActions, rephrasableAsks } from './mvpProgress.js';
+import { assetNotes, OUTPUT_STEP, planActionText, planActions, rephrasableAsks } from './mvpProgress.js';
 import { rowImpact, stakeLabel, stakeWords } from './targetKpi.js';
 
 export const CONTROL_REFRESH_MS = 15000;
 
 export const ASSET_TILES = [
-  { id: 'app', label: 'App' }, { id: 'dashboard', label: 'Dashboard' }, { id: 'genie_space', label: 'Genie Agent' },
+  { id: 'app', label: OUTPUT_LABELS.app }, { id: 'dashboard', label: OUTPUT_LABELS.dashboard }, { id: 'genie_space', label: OUTPUT_LABELS.genie_space },
   { id: 'alert', label: 'Alerts' }, { id: 'notebook', label: 'Notebook' }, { id: 'job', label: 'Job' },
 ];
 
@@ -188,7 +190,7 @@ export function controlRows(live, latest) {
   return rows;
 }
 
-const DELIVERED_WORDS = { dashboard: ['dashboard', 'dashboards'], genie_space: ['Genie Agent', 'Genie Agents'], app: ['App', 'Apps'], alert: ['alert', 'alerts'] };
+const DELIVERED_WORDS = { dashboard: ['dashboard', 'dashboards'], genie_space: ['Genie Agent', 'Genie Agents'], app: [OUTPUT_LABELS.app, `${OUTPUT_LABELS.app}s`], alert: ['alert', 'alerts'] };
 
 export function deliveredOutputs(latest) {
   const assets = latest?.asset_status || {};
@@ -210,6 +212,107 @@ export function cardAssetLinks(latest) {
     .filter((link) => delivered.has(link.id) && /^https:\/\//i.test(link.url));
 }
 
+// REQ-323: a build submitted from this app, until the history read shows that version or newer. The store is module level, so it
+// outlives a remount of the Build page (the wizard hands over to a fresh page after submit). A build that never lands is dropped after 15 minutes.
+export const PENDING_BUILD_TTL_MS = 15 * 60 * 1000;
+// The store also lives in sessionStorage, so a reload of the tab (a full page load, a bookmarked #/build) keeps the queued build on screen.
+const PENDING_KEY = 'inspire.pendingBuilds';
+function sessionStore() {
+  try { return globalThis.sessionStorage || null; } catch { return null; }
+}
+function loadPendingBuilds() {
+  try {
+    const raw = sessionStore()?.getItem(PENDING_KEY);
+    return new Map(Object.entries(raw ? JSON.parse(raw) : {}));
+  } catch { return new Map(); }
+}
+const PENDING_BUILDS = loadPendingBuilds();
+function savePendingBuilds() {
+  try { sessionStore()?.setItem(PENDING_KEY, JSON.stringify(Object.fromEntries(PENDING_BUILDS))); } catch { /* no storage: the store stays in memory for this page */ }
+}
+
+// F22 / REQ-352: what the use case's row looked like at the click. `baseline` is the row's spec_version when the build was clicked; 0 when history
+// was read and had no row for the use case; null when no history read has happened yet (then only the version rule can clear the entry).
+// version is null until the server answers with the version it queued.
+const SEEN_VERSIONS = new Map();
+let SEEN_READ = false;
+export function baselineVersionOf(useCaseId) {
+  const id = String(useCaseId);
+  if (SEEN_VERSIONS.has(id)) return SEEN_VERSIONS.get(id);
+  return SEEN_READ ? 0 : null;
+}
+
+export function markBuildPending(useCaseId, { name = '', version = null, baseline = null } = {}, now = Date.now()) {
+  const id = String(useCaseId);
+  const prev = PENDING_BUILDS.get(id);
+  PENDING_BUILDS.set(id, {
+    at: now,
+    name: String(name || ''),
+    version: version == null ? null : Number(version) || 0,
+    baseline: baseline ?? prev?.baseline ?? null,
+  });
+  savePendingBuilds();
+  noteBuildStarted(useCaseId, now);
+}
+
+export function forgetBuildPending(useCaseId) {
+  if (PENDING_BUILDS.delete(String(useCaseId))) savePendingBuilds();
+}
+
+// REQ-323: the one wrapper every build submit goes through (wizard, Build next, Rebuild, Try again, Change choices, Results). The queued build is
+// stored the moment the person submits, not when the server answers: the answer can take about a minute, and a reload during that wait must still show it.
+// A failed submit takes its placeholder back out.
+export async function trackBuildSubmit(spec, send, onQueued = null, now = Date.now()) {
+  const id = String(spec?.use_case_id ?? '').trim();
+  const name = spec?.use_case_name;
+  if (id) markBuildPending(id, { name, version: null, baseline: baselineVersionOf(id) }, now);
+  onQueued?.();
+  try {
+    const data = await send();
+    // The answer may omit use_case_id or spec_version. The use case is then the one submitted, and the baseline rule clears the entry.
+    const answered = String(data?.use_case_id ?? '').trim() || id;
+    if (answered) markBuildPending(answered, { name, version: data?.spec_version ?? null, baseline: baselineVersionOf(answered) }, now);
+    return data;
+  } catch (e) {
+    if (id) forgetBuildPending(id);
+    throw e;
+  }
+}
+
+// REQ-352: the run for a use case that started at or after the click, or a version above the baseline, is the build the person queued.
+function runStartedSince(row, at) {
+  const started = Date.parse(row?.created_at || '');
+  return Number.isFinite(started) && started >= at;
+}
+
+function landed(row, entry) {
+  if (!row) return false;
+  if (runStartedSince(row, entry.at)) return true;
+  if (entry.baseline != null && Number(row.spec_version) > entry.baseline) return true;
+  return entry.version != null && Number(row.spec_version) >= entry.version;
+}
+
+export function withPendingBuilds(latest, now = Date.now()) {
+  const rows = Array.isArray(latest) ? latest : [];
+  const byId = new Map(rows.map((row) => [String(row?.use_case_id ?? ''), row]));
+  const overlay = new Map();
+  const placeholders = [];
+  let changed = false;
+  for (const row of rows) if (row?.use_case_id != null) SEEN_VERSIONS.set(String(row.use_case_id), Number(row.spec_version) || 0);
+  // An empty list is also the mount-time placeholder read, so only a list with rows counts as a history read.
+  if (rows.length) SEEN_READ = true;
+  for (const [id, entry] of [...PENDING_BUILDS]) {
+    const row = byId.get(id);
+    if (landed(row, entry) || now - entry.at > PENDING_BUILD_TTL_MS) { PENDING_BUILDS.delete(id); changed = true; continue; }
+    // A row from an older version still reads as the build in progress until the new version lands.
+    if (row) overlay.set(id, { ...row, status: 'queued', pending: true });
+    else placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, pending: true });
+  }
+  if (changed) savePendingBuilds();
+  if (!overlay.size && !placeholders.length) return rows;
+  return [...rows.map((row) => overlay.get(String(row?.use_case_id ?? '')) || row), ...placeholders];
+}
+
 export function buildSummary(items) {
   const list = Array.isArray(items) ? items : [];
   const mvps = list.filter((item) => item.state?.kind === 'mvp');
@@ -220,17 +323,42 @@ export function buildSummary(items) {
       return { id: output.id, count, text: `${count} ${DELIVERED_WORDS[output.id][count === 1 ? 0 : 1]}` };
     })
     .filter((entry) => entry.count > 0);
+  const held = inGroup('held');
+  const unmet = inGroup('unmet');
+  const untrusted = held.filter((item) => item.state.hold === 'untrusted');
+  const appOf = (item) => deliveredOutputs(item.latest).includes('app');
   return {
     mvps: mvps.length,
     building: inGroup('in_progress'),
     ready: inGroup('ready').length,
-    held: inGroup('held').length,
-    unmet: inGroup('unmet').length,
+    held: held.length,
+    vibeHeld: held.filter((item) => item.state.hold === 'vibe').length,
+    untrusted: untrusted.length,
+    untrustedPublished: untrusted.filter(appOf).length,
+    heldOther: held.filter((item) => item.state.hold === 'other').length,
+    unmet: unmet.length,
+    unmetPublished: unmet.filter(appOf).length,
     failed: inGroup('failed').length,
     notebooks: list.filter((item) => item.state?.kind === 'notebook' && item.notebook?.state === 'ready').length,
     notStarted: list.filter((item) => item.state?.group === 'not_started').length,
     delivered,
   };
+}
+
+// REQ-295: the Build header lines, read from the same summary counts as its chips. A published App is never "not published".
+export function buildSummaryLines(summary) {
+  const publishedUntrusted = summary.untrustedPublished;
+  const unpublishedUntrusted = summary.untrusted - summary.untrustedPublished;
+  const unmetBuilt = summary.unmet - summary.unmetPublished;
+  return [
+    summary.failed ? `${summary.failed} failed or stopped. Open one to see why.` : '',
+    summary.vibeHeld ? `${summary.vibeHeld} not published, because a vibe was not met. Open one to rephrase, try again or publish anyway.` : '',
+    publishedUntrusted ? `${publishedUntrusted} published, with results not trusted yet. Open one to see why.` : '',
+    unpublishedUntrusted ? `${unpublishedUntrusted} not published until a run passes, because its results are not trusted yet. Open one to see why.` : '',
+    summary.unmetPublished ? `${summary.unmetPublished} published, with a vibe ask not met. Open one to see why.` : '',
+    unmetBuilt ? `${unmetBuilt} built, with a vibe ask not met. Open one to see why.` : '',
+    summary.heldOther ? `${summary.heldOther} incomplete. Open one to see why.` : '',
+  ].filter(Boolean);
 }
 
 const STAGE_PENDING = ['running', 'next', 'waiting'];
@@ -240,7 +368,7 @@ function plannedWork(plan, stages, building) {
   return (output) => {
     const act = acts.get(output.id);
     if (!act) return null;
-    const stage = (stages || []).find((s) => s.id === output.label) || null;
+    const stage = (stages || []).find((s) => s.id === OUTPUT_STEP[output.id]) || null;
     if (stage && !STAGE_PENDING.includes(stage.state)) return { settled: true };
     return { now: building.has(output.id), doing: planActionText(act).now };
   };
@@ -371,25 +499,29 @@ export function statusWarnings(row) {
   return [...new Set(messageParts(row).map((w) => w.trim()).filter(Boolean))];
 }
 
+// Builds written before the label rename still say the old label in their warning lines; those lines match too.
+const EARLIER_OUTPUT_LABELS = { app: ['App'] };
+
 export function vibeWarnings(row, id) {
   const label = IMPLEMENT_OUTPUTS.find((o) => o.id === id)?.label || id;
-  const lead = `${label} vibe not done: `;
+  const leads = [label, ...(EARLIER_OUTPUT_LABELS[id] || [])].map((name) => `${name} vibe not done: `);
+  const leadOf = (w) => leads.find((lead) => w.includes(lead));
   const listed = [...messageParts(row), ...builtWarnings(row, id)];
-  return [...new Set(listed.filter((w) => w.includes(lead)).map((w) => w.slice(w.indexOf(lead)).trim()))];
+  return [...new Set(listed.filter(leadOf).map((w) => w.slice(w.indexOf(leadOf(w))).trim()))];
 }
 
 const PART_STATES = [...BUILT_ASSET_STATES, 'failed'];
 const ASSET_WHAT = {
   notebook: 'The Genie Code notebook that finds the rows to act on',
   ai_reasoning: 'Why each row is flagged, what to do, and how sure',
-  app_page: 'A page of the App',
+  app_page: `A page of the ${OUTPUT_LABELS.app}`,
   dashboard_chart: 'A chart on the dashboard',
   dashboard: 'The whole dashboard',
   genie_space: 'How Genie answers questions on this use case',
-  app: 'The whole App',
+  app: `The whole ${OUTPUT_LABELS.app}`,
   alert: 'Emails people when the latest run has rows to act on',
 };
-const ASSET_NOUNS = { app_page: 'page', dashboard_chart: 'chart', ai_reasoning: 'part', value_formula: 'part', notebook: 'notebook', dashboard: 'dashboard', genie_space: 'Genie Agent', app: 'App', alert: 'alert' };
+const ASSET_NOUNS = { app_page: 'page', dashboard_chart: 'chart', ai_reasoning: 'part', value_formula: 'part', notebook: 'notebook', dashboard: 'dashboard', genie_space: 'Genie Agent', app: OUTPUT_LABELS.app, alert: 'alert' };
 const ASSET_PILLS = {
   ready: { label: 'Ready', tone: 'success' },
   ready_with_warnings: { label: 'Ready with warnings', tone: 'warning' },
@@ -534,6 +666,10 @@ export function vibeCards(history, latest, stalled = null, notebookUrl = '', pla
   const updating = Boolean(active) && isAppUpdate(rows, latest);
   const at = (row) => String(row?.updated_at || row?.created_at || '');
   const liveAt = (version) => (version == null ? null : { version, at: at(rows.find((r) => r.spec_version === version)) });
+  // REQ-241 (D-LIVE): the App's live version is the one whose App serves the live App name; the newest build's App is the side App until published.
+  const liveApp = liveAppVersion(rows);
+  const sideApp = sideAppVersion(rows);
+  const sideAt = (version) => (version == null ? null : { version, at: at(rows.find((r) => r.spec_version === version)) });
   const urlOf = (output) => (output === 'notebook' ? String(notebookUrl || '') : String(base[OUTPUT_URLS[output]] || latest[OUTPUT_URLS[output]] || ''));
   const impact = rowImpact(base);
   const open = openVibeAsks(held ? latest : base);
@@ -546,7 +682,7 @@ export function vibeCards(history, latest, stalled = null, notebookUrl = '', pla
     const rollback = doing?.rollback ?? null;
     const asks = rollback ? 0 : Array.isArray(asking[id]) ? asking[id].length : askCount(fields.vibes);
     return {
-      id, output, name: '', versions: [], warnings: [], ...fields, gone, live: liveAt(version), url: urlOf(output), impact,
+      id, output, name: '', versions: [], warnings: [], ...fields, gone, live: liveAt(output === 'app' && liveApp != null ? liveApp : version), url: urlOf(output), impact,
       what, noun: ASSET_NOUNS[kind],
       checks, checkedOn, state: assetPill(entry, checks, Boolean(doing)),
       building: doing ? { step: BUILD_STEP[latest.status] ?? 1, asks, rollback, update: Boolean(rollback) && output === 'app' && updating, alone: false } : null,
@@ -567,23 +703,25 @@ export function vibeCards(history, latest, stalled = null, notebookUrl = '', pla
     : [card('notebook', 'notebook', notebookEntry, notebookVersion, { label: 'notebook', vibes: String(shown.spec_json?.data?.notes ?? '').trim(), rebuild: true })];
   return markAlone([...notebook, ...parts('notebook'), ...IMPLEMENT_OUTPUTS.filter((o) => chosen[o.id]).flatMap((o) => {
     const entry = base.asset_status?.[o.id];
-    const liveVersion = BUILT_ASSET_STATES.includes(entry?.state) ? (entry.spec_version ?? base.spec_version ?? null) : null;
+    const builtVersionOf = BUILT_ASSET_STATES.includes(entry?.state) ? (entry.spec_version ?? base.spec_version ?? null) : null;
+    const liveVersion = o.id === 'app' && liveApp != null ? liveApp : builtVersionOf;
     const versions = rows.filter((r) => {
       const saved = r.asset_status?.[o.id];
-      return saved?.snapshot === true && r.spec_version !== liveVersion && (saved.spec_version ?? r.spec_version) === r.spec_version;
+      return saved?.snapshot === true && r.spec_version !== liveVersion && (o.id !== 'app' || r.spec_version !== sideApp) && (saved.spec_version ?? r.spec_version) === r.spec_version;
     }).map((r) => ({
       version: r.spec_version, at: at(r), status: String(r.status || ''), vibes: savedVibes(r, o.id), checks: builtChecks(rows, r.spec_version, o.id).checks,
     }));
     const whole = card(o.id, o.id, entry, liveVersion, {
       label: o.label, blurb: o.blurb, vibes: String(chosen[vibesKey(o.id)] ?? '').trim(), rebuild: built.includes(o.id), versions,
       appFollows: o.id === 'genie_space' && (planned ? planned.repoint.includes('app') : built.includes('app')),
+      side: o.id === 'app' ? sideAt(sideApp) : null,
     });
     whole.warnings = whole.checks.length ? [] : vibeWarnings(base, o.id);
     return [whole, ...parts(o.id)];
   }).filter((c) => c.rebuild || c.versions.length)], planned);
 }
 
-const PICK_GROUPS = [['notebook', 'Genie Code notebook'], ['results', 'Results'], ['app', 'App'], ['dashboard', 'Dashboard'], ['genie_space', 'Genie Agent'], ['alert', 'Alert']];
+const PICK_GROUPS = [['notebook', 'Genie Code notebook'], ['results', 'Results'], ['app', OUTPUT_LABELS.app], ['dashboard', 'Dashboard'], ['genie_space', 'Genie Agent'], ['alert', 'Alert']];
 const pickGroup = (card) => (card.output === 'notebook' && card.id !== 'notebook' ? 'results' : card.output);
 
 function pickTitle(card, liveName) {
@@ -592,7 +730,7 @@ function pickTitle(card, liveName) {
   if (part?.kind === 'dashboard_chart') return `Chart: ${card.name || part.key}`;
   return {
     notebook: 'Notebook', ai_reasoning: 'AI reasoning', value_formula: stakeLabel(card.impact || null), genie_space: 'Instructions',
-    alert: liveName ? `Alert: ${liveName}` : 'Alert', app: 'The whole App', dashboard: 'The whole dashboard',
+    alert: liveName ? `Alert: ${liveName}` : 'Alert', app: `The whole ${OUTPUT_LABELS.app}`, dashboard: 'The whole dashboard',
   }[card.id];
 }
 
@@ -763,8 +901,9 @@ export function controlActionText(entry) {
 
 const newestFirst = (history) => [...(history || [])].sort((a, b) => (b.spec_version || 0) - (a.spec_version || 0));
 
+// REQ-241: the live version is the one rule liveAppVersion holds (the backend uses it too). Without a live App it is the newest done build.
 export function liveVersion(history) {
-  return newestFirst(history).find((row) => DONE.includes(String(row?.status)))?.spec_version ?? null;
+  return liveAppVersion(history) ?? newestFirst(history).find((row) => DONE.includes(String(row?.status)))?.spec_version ?? null;
 }
 
 export function removeKeptChanges(version) {
@@ -788,7 +927,7 @@ export function keptVersions(history) {
   return [...byVersion.values()].sort((a, b) => b.version - a.version);
 }
 
-export const ASSET_FILTERS = [['notebook', 'Notebook'], ['app', 'App'], ['dashboard', 'Dashboard'], ['genie_space', 'Genie Agent'], ['alert', 'Alert']];
+export const ASSET_FILTERS = [['notebook', 'Notebook'], ['app', OUTPUT_LABELS.app], ['dashboard', 'Dashboard'], ['genie_space', 'Genie Agent'], ['alert', 'Alert']];
 
 export function itemAssets(item) {
   const gone = item?.latest?.status === IMPLEMENT_UNINSTALLED;

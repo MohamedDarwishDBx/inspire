@@ -47,7 +47,7 @@ function fakeWarehouse() {
       const ids = state.manySessions ? Array.from({ length: 21 }, (_, i) => [String(100 + i)]) : [['42'], ['43']];
       return { columns: ['session_id'], rows: ids };
     }
-    if (sql.includes('SELECT id, business_domain FROM')) return { columns: ['id', 'business_domain'], rows: USE_CASE_ROWS };
+    if (sql.includes('SELECT id, business_domain, CAST(value_estimate AS STRING) AS value_estimate FROM')) return { columns: ['id', 'business_domain', 'value_estimate'], rows: USE_CASE_ROWS };
     if (sql.includes('PARTITION BY use_case_id ORDER BY spec_version')) return { columns: ['use_case_id', 'spec'], rows: SPEC_ROWS };
     if (sql.includes('_summary` WHERE use_case_id')) return { columns: ['kpi_baseline'], rows: [['120']] };
     if (sql.includes("'measured' AS part")) return { columns: RUN_COLUMNS, rows: RUN_ROWS };

@@ -1,0 +1,240 @@
+"""REQ-059: no customer copy in the agent notebook carries an internal term (batch/depth/attempt numbers, prompt keys,
+Inspire's own tables, log tags). The terms are shared with the frontend gate (backend/test/customerJargon.test.js) through
+tests/fixtures/customer_jargon_terms.json. Log calls are exempt: the run log is a technical view by design.
+"""
+import ast
+import json
+import os
+import re
+
+import pytest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+NOTEBOOK = os.path.join(ROOT, "agent", "dbx_inspire_ai_agent.ipynb")
+SPEC = json.load(open(os.path.join(ROOT, "tests", "fixtures", "customer_jargon_terms.json"), encoding="utf-8"))
+TERMS = [(t["id"], re.compile(t["pattern"], re.I if "i" in t["flags"] else 0)) for t in SPEC["terms"] if t.get("scope") != "run_output"]
+SQL = re.compile(r"^\s*(SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|WITH|SHOW|DESCRIBE)\b|\bFROM\b", re.I)
+LOG_CALLS = {"info", "debug", "warning", "error", "exception", "critical", "log_print", "print"}
+
+
+def _code_cells():
+    cells = json.load(open(NOTEBOOK, encoding="utf-8"))["cells"]
+    return [("".join(c["source"]), i) for i, c in enumerate(cells) if c["cell_type"] == "code"]
+
+
+# Customer-visible sinks: a string reaches a person only through one of these. Prompt text sent to the LLM, log lines and
+# other code strings are not sinks, so they are not copy.
+SINK_CALLS = {"emit_step", "_emit_pipeline_status", "_emit_prompt_status", "_emit_runtime_warning", "_implement_emit",
+              "_pipeline_step", "T", "ValueError", "RuntimeError", "Exception", "PermissionError"}
+SINK_LISTS = {"errors", "warnings", "validation_errors", "problems", "notes", "held_outputs"}
+RETURNED_TEXT_FUNCS = re.compile(r"(line|label|message|text|reason|note|copy|why)", re.I)
+# Builders whose text is written for the model and read by no person (named, so an exemption stays visible).
+LLM_TEXT_FUNCS = {"_kinds_checklist_lines"}
+SINK_DICTS = re.compile(r"^(PROMPT_STORY_\w+|PROMPT_TRACKING_\w+)$")
+
+
+def _call_name(node):
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        return func.attr, func.value.id if isinstance(func.value, ast.Name) else ""
+    return getattr(func, "id", ""), ""
+
+
+def copy_roots(source):
+    """The expressions that reach a customer-visible sink (the same selection for literal and run-time text)."""
+    roots = []
+
+    def collect(node):
+        roots.append(node)
+
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.FunctionDef) and RETURNED_TEXT_FUNCS.search(node.name) and "prompt" not in node.name.lower() and node.name not in LLM_TEXT_FUNCS:
+            # line and label builders return the text the App shows (the REQ-119 label line reaches Monitor this way).
+            # Prompt builders return LLM instructions, which no person reads, so they are not sinks.
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Return) and sub.value is not None:
+                    collect(sub.value)
+        if isinstance(node, ast.Call):
+            name, receiver = _call_name(node)
+            if name == "implement_gate":
+                # REQ-227: a gate's problems (argument 1) and failure text (argument 4) reach the App. Its feedback (argument 2)
+                # is the repair prompt Genie reads, so it is not copy. A notebook gate's problems are the verdict Genie reads
+                # with exact object names, so they are not copy either: the person's copy is made plain where the warning is
+                # written (implement_plain_change_text), and req227_status_words_test pins that. AI and reply problems stay copy.
+                notebook = bool(node.args) and isinstance(node.args[0], ast.Constant) and node.args[0].value == "notebook"
+                for position in ((4,) if notebook else (1, 4)):
+                    if len(node.args) > position:
+                        collect(node.args[position])
+            elif name in SINK_CALLS or (name in {"append", "extend"} and receiver in SINK_LISTS):
+                for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                    collect(arg)
+        elif isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and SINK_DICTS.match(t.id) for t in node.targets):
+            collect(node.value)
+        elif isinstance(node, ast.Raise) and node.exc is not None:
+            collect(node.exc)
+    return roots
+
+
+# REQ-131, REQ-260: a GRANT statement reaches a person only through the Permission Required dialog. A producer whose statement the
+# dialog copies marks its own line PERMISSION_DIALOG (the same marker the frontend gate reads from the shared fixture).
+DIALOG_MARKER = SPEC["dialog_marker"]
+GRANT_TERM_IDS = {t["id"] for t in SPEC["terms"] if t.get("dialog_exempt")}
+
+
+def customer_strings(source):
+    """(line, text) for every string literal that reaches a customer-visible sink and has a space and is not SQL."""
+    out = []
+    for root in copy_roots(source):
+        for sub in ast.walk(root):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str) and re.search(r"\s", sub.value) and not SQL.search(sub.value):
+                out.append((sub.lineno, sub.value))
+    return sorted(set(out))
+
+
+GRANT_NAME = re.compile(r"(?<![a-z])(grants?|statements?|grant_\w+|\w+_grants?|\w+_statements?)(?![a-z])", re.I)
+
+
+def dynamic_grant_lines(source):
+    """Lines where copy interpolates a value that is a GRANT statement (a name built from grant or statement), off the dialog marker."""
+    lines = source.splitlines()
+    hits = []
+    for root in copy_roots(source):
+        for sub in ast.walk(root):
+            if isinstance(sub, ast.FormattedValue) and GRANT_NAME.search(ast.unparse(sub.value)):
+                if DIALOG_MARKER not in lines[sub.lineno - 1]:
+                    hits.append(sub.lineno)
+    return sorted(set(hits))
+
+
+def customer_form(text):
+    """The sentence a person sees: the log tag is dropped, exactly as inspire_customer_line drops it at the App sink."""
+    return re.sub(r"^\[[A-Z0-9_ -]+ FIRED\]\s*", "", text)
+
+
+def internal_hits(text):
+    return [term_id for term_id, rx in TERMS if rx.search(text)]
+
+
+def test_positive_controls_catch_the_rc7_strings():
+    assert internal_hits("Filter Business Tables batch 1 depth0 attempt1") == ["step_code"]
+    assert internal_hits("Inspire is working on FILTER_BUSINESS_TABLES_PROMPT") == ["prompt_key"]
+    assert "internal_table" in internal_hits("Read it from __inspire_session")
+    assert internal_hits("Write the __constraints dashboard companion") == ["internal_object", "companion"], "REQ-227 class"
+    assert internal_hits("[DATA-FILTER-LABEL FIRED] 12 of 12 names") == ["log_tag"]
+    assert internal_hits("Discovery: the AI sees the summary figures") == [], "the plain Discovery label is clean (must-include)"
+
+
+def test_no_customer_string_in_the_notebook_carries_an_internal_term():
+    hits = []
+    for source, index in _code_cells():
+        lines = source.splitlines()
+        for line, text in customer_strings(source):
+            on_dialog = DIALOG_MARKER in lines[line - 1]
+            for term in internal_hits(customer_form(text)):
+                if term in GRANT_TERM_IDS and on_dialog:
+                    continue
+                hits.append(f"cell {index} line {line} [{term}] {text.strip()[:140]}")
+    assert hits == []
+
+
+def test_grant_sql_is_never_built_into_copy_off_the_dialog():
+    """REQ-260: copy that interpolates a GRANT statement fails unless that line is the Permission Required producer."""
+    hits = [f"cell {index} line {line}" for source, index in _code_cells() for line in dynamic_grant_lines(source)]
+    assert hits == []
+
+
+def test_grant_gate_must_exclude_and_must_keep_controls():
+    prose = 'def status_line(cmd):\n    return f"ask your owner to run {cmd}"\n'
+    dialog = 'def status_line(cmd):\n    return f"Ask your owner to grant it: {cmd}"  # PERMISSION_DIALOG\n'
+    grant_in_text = 'def status_text():\n    return "Ask your owner to run GRANT USE CATALOG ON CATALOG main TO x"\n'
+    statement_builder = 'def statement_for(name):\n    return f"GRANT USE CATALOG ON CATALOG {name} TO x"  # PERMISSION_DIALOG\n'
+    assert dynamic_grant_lines('def status_line(grant):\n    return f"ask your owner to run {grant}"\n') == [2], "a run-time GRANT in copy fails (must-exclude)"
+    assert dynamic_grant_lines('def status_line(grantee):\n    return f"{grantee} can manage the folder"\n') == [], "a grantee name is not a GRANT (must-keep)"
+    assert dynamic_grant_lines(dialog.replace("{cmd}", "{grant_cmd}")) == [], "a marked dialog producer passes (must-keep)"
+    assert dynamic_grant_lines(prose.replace("{cmd}", "{statement}")) == [2], "a run-time statement in copy fails (must-exclude)"
+    assert [t for _, t in customer_strings(grant_in_text)] and any(
+        "GRANT" in t for _, t in customer_strings(grant_in_text)), "a literal GRANT in copy is seen by the scan"
+    assert dynamic_grant_lines(statement_builder) == [], "a statement builder outside copy is not copy"
+
+
+@pytest.fixture
+def story(agent_ns):
+    return object.__new__(agent_ns["DatabricksInspire"])
+
+
+def test_the_filter_step_reads_plain_words_not_its_batch_depth_and_attempt(story):
+    assert story._story_status_line("started", "", "Filter_Business_Tables_Batch_1_Depth0_Attempt1") == "In progress: filter business tables"
+    assert story._story_clean_text("Goal_Alignment_Filter_Batch_3_Attempt2") == "Goal Alignment Filter"
+
+
+def test_the_unmapped_prompt_gets_a_plain_title_and_no_prompt_key(story):
+    stage, title, sub = story._story_prompt_labels("DATA_FILTER_LABEL_RENAME_PROMPT", "DataFilterLabel_Reask", "started", "")
+    assert (stage, title) == ("Use Case Prioritization", "Tidying Data Filter Labels")
+    assert sub == "In progress: data filter label reask"
+    stage, title, sub = story._story_prompt_labels("NOT_A_MAPPED_PROMPT", "", "started", "")
+    assert "PROMPT" not in title and "NOT" not in title, "an unmapped prompt key never reaches the title"
+
+
+def test_every_prompt_template_has_a_customer_title(agent_ns):
+    unmapped = sorted(set(agent_ns["PROMPT_TEMPLATES"]) - set(agent_ns["PROMPT_STORY_TITLES"]))
+    assert unmapped == [], "every prompt the run calls has a title the Monitor can show"
+
+
+def test_every_story_title_and_started_message_is_clean(agent_ns):
+    texts = [t for pair in agent_ns["PROMPT_STORY_TITLES"].values() for t in pair] + list(agent_ns["PROMPT_STORY_STARTED_MESSAGES"].values())
+    assert [t for t in texts if internal_hits(t)] == []
+
+
+def test_the_log_keeps_the_fired_tag_and_the_customer_message_drops_it(agent_ns):
+    """The proof tag is a developer log marker: _implement_emit logs the full line, and the App message is the same sentence without it."""
+    inst = object.__new__(agent_ns["DatabricksInspire"])
+    logged, emitted = [], []
+    inst.logger = type("L", (), {"warning": lambda self, msg: logged.append(msg), "info": lambda self, msg: logged.append(msg),
+                                 "error": lambda self, msg: logged.append(msg)})()
+    inst._emit_pipeline_status = lambda **kw: emitted.append(kw["message"]) or 1
+    inst._implement_emit("N01-U01", "App", "[UNRELIABLE-HOLD FIRED] the latest run's results are not reliable yet", "ended_warning")
+    assert any("[UNRELIABLE-HOLD FIRED] the latest run's results" in line for line in logged), "the log keeps the tag"
+    assert emitted == ["the latest run's results are not reliable yet"], "the customer message has no tag"
+
+
+def test_the_data_filter_line_keeps_its_tag_in_the_log_and_reads_plainly_for_the_app(agent_ns):
+    line = agent_ns["data_filter_label_line"]({"carried": 12, "affected": 12, "reasked": 0, "fallback": 0, "kept_user_named": 0}, "Tokyo Tidbits")
+    assert line.startswith("[DATA-FILTER-LABEL FIRED] ")
+    customer = agent_ns["inspire_customer_line"](line)
+    assert customer.startswith("12 of 12 names carried the label"), customer
+    for internal in ("re-asked", "rewrite", "deterministic"):
+        assert internal not in customer, f"{internal} is internal wording"
+
+
+def test_a_bare_internal_object_name_still_fails_and_a_qualified_table_name_passes():
+    """D-NAMES / coordinator: the internal_object term catches a bare __token only. A catalog.schema.table name is kept."""
+    assert "internal_object" in internal_hits("Skip __constraints")  # must-exclude: a bare token still fails
+    assert internal_hits("the table main.inspire.demand_out__series does not exist") == []  # must-keep
+
+
+def test_req258_bare_use_case_id_fails_in_person_copy_and_the_title_passes():
+    """REQ-258 (D7): a bare use case id is never person copy (must-fail); the use case by its title is kept (must-keep)."""
+    assert "use_case_id" in internal_hits('Genie Agent "N06-U01 Merge Duplicate Customer Records" when it needs the data')
+    assert "use_case_id" in internal_hits("Ask Genie about n06-u01")
+    assert internal_hits('Genie Agent "Merge Duplicate Customer Records" when it needs the data') == [], "must-keep: the title"
+    assert internal_hits("the table main.inspire.n06_u01_scope does not exist") == [], "must-keep: a qualified table name"
+
+
+def test_req258_genie_agent_title_defaults_to_the_use_case_name_not_its_id(story):
+    """REQ-258 (D7): the App shows the Genie Agent's title. With no saved name, the title is the use case name, never 'N06-U01 ...'."""
+    context = {"uc_id": "N06-U01", "use_case": {"Name": "Merge Duplicate Customer Records"},
+               "spec": {"outputs": {"genie_space": True}}, "assets": {"genie_space": "space-1"}}
+    genie, _ = story._implement_app_genie(context)
+    assert genie == {"space_id": "space-1", "title": "Merge Duplicate Customer Records"}
+    named = dict(context, spec={"outputs": {"genie_space": True, "genie_space_name": "Churn questions"}})
+    assert story._implement_app_genie(named)[0]["title"] == "Churn questions", "a saved name still wins"
+
+
+def test_req249_python_repr_fails_and_a_plain_sentence_passes():
+    """REQ-249: a Python or pandas object dump is never customer copy (must-fail); a plain sentence with a number is kept."""
+    dump = "<bound method Series.prod of inspire_group 0 1\nName: 165, dtype: object>"
+    assert "python_repr" in internal_hits(dump), "must-fail: the repr that reached a row explanation on the walker run"
+    assert "python_repr" in internal_hits("the score <function fraud_score at 0x7f3a> was printed"), "must-fail: a function repr"
+    assert internal_hits("Average transaction value rose 12% to 340 USD over the last 30 days.") == [], "must-keep: a plain sentence"
+    assert internal_hits("Name: Acme Corp, the largest account in the region") == [], "must-keep: a name label"

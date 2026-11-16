@@ -187,6 +187,27 @@ test('Run again on a failed Monitor run starts it again in a new session and Mon
   }
 });
 
+test('a refused Run again on a Monitor run asks your workspace admin, never the data owner', async () => {
+  const backend = monitorBackend(FAILED_RUN);
+  const mount = (app) => {
+    app.post('/api/run/777/again', (_req, res) => res.status(403).json({ error: 'PERMISSION_DENIED: User cannot run job 777 again' }));
+    backend.mount(app);
+  };
+  const ui = await openUi('monitor', {}, '', { mount, init: (page) => page.addInitScript(CLIPBOARD) });
+  try {
+    const choices = ui.page.locator('[data-testid="monitor-failure-choices"]');
+    await choices.getByRole('button', { name: 'Run again' }).click();
+    const refused = choices.locator('[data-run-again-error]');
+    await refused.waitFor({ timeout: 15000 });
+    const sentence = await refused.innerText();
+    assert.match(sentence, /so ask your workspace admin to give you access/);
+    assert.doesNotMatch(sentence, /data owner/, 'a workspace object never names the data owner');
+    assert.deepEqual(ui.pageErrors.filter((e) => !/403/.test(e)), []);
+  } finally {
+    await ui.close();
+  }
+});
+
 test('a run Monitor could not read offers Check again, which reads the run again once access is given', async () => {
   const backend = monitorBackend({ life_cycle_state: 'RUNNING', start_time: Date.now() - 600000, tasks: [] }, { refuseFirst: true });
   const ui = await openUi('monitor', {}, '', { mount: backend.mount });
@@ -225,7 +246,7 @@ test('a wizard warehouse list Databricks refused says so in plain words with the
     await openAdvanced(page);
     const box = page.locator('[data-build-warehouse-error]');
     await box.waitFor({ timeout: 15000 });
-    assert.equal(await sentence(box), 'Inspire could not list the SQL warehouses: User is not allowed to list SQL warehouses, so ask its owner or a workspace admin to give you access. Type the warehouse id instead.');
+    assert.equal(await sentence(box), 'Inspire could not list the SQL warehouses: User is not allowed to list SQL warehouses, so ask your workspace admin to give you access. Type the warehouse id instead.');
     await box.locator('summary').click();
     assert.match(await box.locator('[data-technical-details] pre').innerText(), /PERMISSION_DENIED/);
     assert.equal(await page.locator('[data-build-warehouse="typed"]').count(), 1);

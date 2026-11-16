@@ -27,6 +27,9 @@ async function openLaunch(checkPermissions) {
   return { ui, page, made };
 }
 
+// REQ-313: the statements, steps and grantee headings sit under Advanced; open it so the text reads.
+const openAdvanced = (dialog) => dialog.locator('details[data-permission-advanced=""]').evaluate((el) => { el.open = true; });
+
 test('a run whose grants are missing opens Permission Required before the run starts, with the statements and the principal', async () => {
   const { ui, page, made } = await openLaunch([PERMISSION]);
   try {
@@ -34,7 +37,9 @@ test('a run whose grants are missing opens Permission Required before the run st
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     assert.match(await dialog.locator('#permission-required-title').innerText(), /^Permission Required$/);
-    assert.match(await dialog.innerText(), /Ask your admin to grant this permission to 11111111-2222-3333-4444-555555555555:/);
+    await openAdvanced(dialog);
+    assert.match(await dialog.innerText(), /For 11111111-2222-3333-4444-555555555555/, 'the grantee heading is short');
+    assert.doesNotMatch(await dialog.innerText(), /Ask your admin/, 'no repeated Ask your admin sentence');
     assert.equal(await dialog.locator('[data-permission-statements=""]').innerText(), TEXT, 'the three statements are shown, each ending with a semicolon');
     assert.equal(made.launches.filter((l) => !l.check).length, 0, 'no run has started yet');
   } finally {
@@ -119,7 +124,7 @@ test('a folder the App cannot write to shows See the grant under the output chec
   const FOLDER = '/Workspace/Users/pat.lee@example.com/inspire_output';
   const folder = {
     statements: [], principal: 'inspire-sp', why: `The run writes its files to ${FOLDER}, and the App cannot write there yet.`,
-    instructions: [`In Workspace, open ${FOLDER} > Share, add inspire-sp with Can Edit`, `databricks api patch /api/2.0/permissions/directories/<object_id> --json '{"access_control_list":[{"service_principal_name":"inspire-sp","permission_level":"CAN_EDIT"}]}'`],
+    steps: [`In Workspace, open ${FOLDER} > Share, add inspire-sp with Can Edit`, `databricks api patch /api/2.0/permissions/directories/<object_id> --json '{"access_control_list":[{"service_principal_name":"inspire-sp","permission_level":"CAN_EDIT"}]}'`],
   };
   const ui = await openUi('launch', { ...STATE, outputRefusal: { message: `Inspire cannot save to ${FOLDER}.`, permissions: [folder] } });
   const { page } = ui;
@@ -131,8 +136,9 @@ test('a folder the App cannot write to shows See the grant under the output chec
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     assert.match(await dialog.locator('#permission-required-title').innerText(), /^Permission Required$/);
-    assert.match(await dialog.locator('[data-permission-statements=""]').innerText(), /In Workspace, open .* > Share, add inspire-sp with Can Edit/);
-    assert.match(await dialog.locator('[data-permission-statements=""]').innerText(), /databricks api patch \/api\/2\.0\/permissions\/directories\//);
+    await openAdvanced(dialog);
+    assert.match(await dialog.locator('[data-permission-steps=""]').innerText(), /In Workspace, open .* > Share, add inspire-sp with Can Edit/);
+    assert.match(await dialog.locator('[data-permission-steps=""]').innerText(), /databricks api patch \/api\/2\.0\/permissions\/directories\//);
   } finally {
     await ui.close();
   }

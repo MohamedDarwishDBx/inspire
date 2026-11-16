@@ -13,7 +13,7 @@ ORDERS = "main.s.orders"
 SCOPE = {
     ORDERS: {
         "columns": ["order_id", "customer_id", "brand"],
-        "rows": [{"column": "brand", "op": "=", "values": ["Starbucks"]}],
+        "rows": [{"column": "brand", "op": "=", "values": ["Northwind"]}],
     },
 }
 
@@ -35,13 +35,13 @@ def _text(scopes, label=None):
 
 
 def test_the_label_key_is_not_a_table_so_a_labelled_scope_text_parses(agent_ns):
-    scopes = agent_ns["parse_table_scopes"](_text(SCOPE, "Starbucks"))
+    scopes = agent_ns["parse_table_scopes"](_text(SCOPE, "Northwind"))
     assert list(scopes) == [ORDERS], "the reserved label key is read as the label, never as a table"
-    assert scopes[ORDERS]["rows"] == [{"column": "brand", "op": "=", "values": ["Starbucks"]}]
+    assert scopes[ORDERS]["rows"] == [{"column": "brand", "op": "=", "values": ["Northwind"]}]
 
 
 def test_the_label_is_read_from_the_same_scope_text_verbatim_and_trimmed(agent_ns):
-    assert agent_ns["parse_use_case_label"](_text(SCOPE, "  Starbucks  ")) == "Starbucks"
+    assert agent_ns["parse_use_case_label"](_text(SCOPE, "  Northwind  ")) == "Northwind"
     assert agent_ns["parse_use_case_label"](_text(SCOPE)) == "", "no label key means no label"
     assert agent_ns["parse_use_case_label"]("") == ""
     assert agent_ns["parse_use_case_label"](_text(SCOPE, "   ")) == ""
@@ -49,11 +49,11 @@ def test_the_label_is_read_from_the_same_scope_text_verbatim_and_trimmed(agent_n
 
 def test_the_prompt_directive_names_the_label_and_the_filtered_table_when_ticked(labelled):
     labelled["INSPIRE_TABLE_SCOPES"].update(labelled["parse_table_scopes"](_text(SCOPE)))
-    labelled["DATA_FILTER_LABEL"]["text"] = "Starbucks"
+    labelled["DATA_FILTER_LABEL"]["text"] = "Northwind"
     lines = labelled["table_scope_directive_lines"]()
     label_lines = [line for line in lines if "USE CASE LABEL" in line]
     assert len(label_lines) == 1
-    assert '"Starbucks"' in label_lines[0] and f"`{ORDERS}`" in label_lines[0]
+    assert '"Northwind"' in label_lines[0] and f"`{ORDERS}`" in label_lines[0]
     assert "MUST carry the label" in label_lines[0] and "Name" in label_lines[0]
     assert "user directive WINS" in label_lines[0], "the directive is supreme over guidance, per the user-vibes rule"
 
@@ -68,15 +68,15 @@ def test_the_prompt_directive_has_no_label_when_unticked(labelled):
 def test_a_label_with_no_row_filter_to_name_adds_no_directive(labelled):
     columns_only = {ORDERS: {"columns": ["order_id"], "rows": []}}
     labelled["INSPIRE_TABLE_SCOPES"].update(labelled["parse_table_scopes"](_text(columns_only)))
-    labelled["DATA_FILTER_LABEL"]["text"] = "Starbucks"
+    labelled["DATA_FILTER_LABEL"]["text"] = "Northwind"
     assert not [line for line in labelled["table_scope_directive_lines"]() if "USE CASE LABEL" in line], \
         "a column-only scope filters no rows, so there is no filtered table to name"
 
 
 @pytest.mark.parametrize("name, label, expected", [
-    ("Improve customer experience using segmentation", "Starbucks", "Improve Starbucks customer experience using segmentation"),
-    ("Churn", "Starbucks", "Starbucks Churn"),
-    ("Reduce  refund   leakage", "Starbucks", "Reduce Starbucks refund leakage"),
+    ("Improve customer experience using segmentation", "Northwind", "Improve Northwind customer experience using segmentation"),
+    ("Churn", "Northwind", "Northwind Churn"),
+    ("Reduce  refund   leakage", "Northwind", "Reduce Northwind refund leakage"),
 ])
 def test_the_label_is_inserted_after_the_leading_verb_or_before_a_single_word(agent_ns, name, label, expected):
     assert agent_ns["insert_label_into_name"](name, label) == expected
@@ -86,21 +86,21 @@ def test_the_name_check_repairs_a_name_without_the_label_and_keeps_one_that_carr
     labelled["INSPIRE_TABLE_SCOPES"].update(labelled["parse_table_scopes"](_text(SCOPE)))
     use_cases = [
         {"Name": "Improve customer experience using segmentation", "Primary Table": ORDERS},
-        {"Name": "Forecast STARBUCKS order volume", "Primary Table": ORDERS},
+        {"Name": "Forecast NORTHWIND order volume", "Primary Table": ORDERS},
         {"Name": "Track supplier lead times", "Primary Table": "main.s.suppliers"},
     ]
-    stats = labelled["ensure_data_filter_labels"](use_cases, lambda uc: [], "Starbucks", labelled["INSPIRE_TABLE_SCOPES"])
+    stats = labelled["ensure_data_filter_labels"](use_cases, lambda uc: [], "Northwind", labelled["INSPIRE_TABLE_SCOPES"])
     assert stats == {"affected": 2, "carried": 1, "reasked": 0, "fallback": 1, "kept_user_named": 0, "subtitled": 0}
-    assert use_cases[0]["Name"] == "Improve Starbucks customer experience using segmentation"
-    assert use_cases[1]["Name"] == "Forecast STARBUCKS order volume", "a name that carries the label in any case is kept as written"
+    assert use_cases[0]["Name"] == "Improve Northwind Customer Experience Using Segmentation"
+    assert use_cases[1]["Name"] == "Forecast NORTHWIND order volume", "a name that carries the label in any case is kept as written"
     assert use_cases[2]["Name"] == "Track supplier lead times", "a use case on no filtered table is never touched"
 
 
 def test_the_name_check_also_sees_a_filtered_table_read_through_an_involved_table(labelled):
     labelled["INSPIRE_TABLE_SCOPES"].update(labelled["parse_table_scopes"](_text(SCOPE)))
     use_cases = [{"Name": "Rank regions by revenue", "Primary Table": "main.s.regions"}]
-    stats = labelled["ensure_data_filter_labels"](use_cases, lambda uc: [ORDERS], "Starbucks", labelled["INSPIRE_TABLE_SCOPES"])
-    assert stats["affected"] == 1 and "Starbucks" in use_cases[0]["Name"]
+    stats = labelled["ensure_data_filter_labels"](use_cases, lambda uc: [ORDERS], "Northwind", labelled["INSPIRE_TABLE_SCOPES"])
+    assert stats["affected"] == 1 and "Northwind" in use_cases[0]["Name"]
 
 
 def test_an_empty_label_changes_no_name(labelled):
@@ -120,7 +120,7 @@ def test_the_implement_build_keeps_the_launch_row_filter_and_bounds_its_columns(
     text = json.loads(json.dumps(labelled["implement_scope_text"](data, [ORDERS])))
     entry = text[ORDERS]
     assert entry["columns"] == ["order_id"], "the Launch column scope bounds the build: total_price is outside it"
-    assert {"column": "brand", "op": "=", "values": ["Starbucks"]} in entry["rows"], "the Launch row filter always applies"
+    assert {"column": "brand", "op": "=", "values": ["Northwind"]} in entry["rows"], "the Launch row filter always applies"
     assert {"column": "customer_id", "op": "in", "values": ["c1", "c2"]} in entry["rows"], "the Implement filter is added on top"
 
 
@@ -128,7 +128,7 @@ def test_the_implement_build_applies_a_launch_scope_to_a_table_the_wizard_never_
     labelled["INSPIRE_TABLE_SCOPES"].update(labelled["parse_table_scopes"](_text(SCOPE)))
     text = labelled["implement_scope_text"]({"column_roles": {}, "filters": []}, [ORDERS])
     assert text[ORDERS]["columns"] == ["order_id", "customer_id", "brand"]
-    assert text[ORDERS]["rows"] == [{"column": "brand", "op": "=", "values": ["Starbucks"]}]
+    assert text[ORDERS]["rows"] == [{"column": "brand", "op": "=", "values": ["Northwind"]}]
 
 
 def test_without_a_launch_scope_the_implement_build_is_unchanged(labelled):
@@ -187,7 +187,7 @@ def test_the_reask_runs_once_for_only_the_missed_names_with_the_cache_bypassed_a
         use_cases, lambda uc: [], "Contoso", labelled["INSPIRE_TABLE_SCOPES"],
         reask=lambda misses: labelled["reask_data_filter_names"](stub, misses, "Contoso"))
     assert stats == {"affected": 2, "carried": 0, "reasked": 2, "fallback": 0, "kept_user_named": 0, "subtitled": 0}
-    assert [uc["Name"] for uc in use_cases] == ["Improve Contoso customer experience using segmentation", "Forecast Contoso order volume"]
+    assert [uc["Name"] for uc in use_cases] == ["Improve Contoso Customer Experience Using Segmentation", "Forecast Contoso Order Volume"]
     assert len(stub.calls) == 1, "one re-ask for all the missed names, never one per name"
     call = stub.calls[0]
     assert call["worker_prompt_path"] == "DATA_FILTER_LABEL_RENAME_PROMPT"
@@ -201,9 +201,12 @@ def test_the_rename_prompt_is_a_registered_template_with_the_label_and_the_names
 
     template = agent_ns["PROMPT_TEMPLATES"]["DATA_FILTER_LABEL_RENAME_PROMPT"]
     fields = {name for _, name, _, _ in string.Formatter().parse(template) if name}
-    assert fields == {"label_intro", "label_rule", "names_json"}, "the label prompt states the filters and the label rule (REQ-175)"
-    assert "USER DIRECTIVES ARE THE SUPREME AUTHORITY" in template, "every prompt carries the user-vibes preamble"
-    assert "the user directive WINS without exception" in template
+    assert fields == {"label_intro", "label_rule", "strategy_name_rule", "names_json", "retry_note"}, (
+        "the label prompt states the filters and the label rule (REQ-175), and the customer strategy names rule (REQ-299)")
+    assert "USER DIRECTIVES ARE THE SUPREME AUTHORITY" not in template, "the loader adds the preamble, so the template never embeds it"
+    sent = agent_ns["with_user_directive_preamble"](template)
+    assert sent.count("USER DIRECTIVES ARE THE SUPREME AUTHORITY") == 1, "every prompt carries the user-vibes preamble once"
+    assert "the user directive WINS without exception" in sent
 
 
 def test_when_the_reask_still_misses_the_deterministic_rewrite_fires_for_each_name(labelled):
@@ -216,8 +219,8 @@ def test_when_the_reask_still_misses_the_deterministic_rewrite_fires_for_each_na
         use_cases, lambda uc: [], "Contoso", labelled["INSPIRE_TABLE_SCOPES"],
         reask=lambda misses: labelled["reask_data_filter_names"](still_wrong, misses, "Contoso"))
     assert stats == {"affected": 2, "carried": 0, "reasked": 0, "fallback": 2, "kept_user_named": 0, "subtitled": 0}
-    assert use_cases[0]["Name"] == "Improve Contoso customer experience using segmentation"
-    assert use_cases[1]["Name"] == "Forecast Contoso order volume"
+    assert use_cases[0]["Name"] == "Improve Contoso Customer Experience Using Segmentation"
+    assert use_cases[1]["Name"] == "Forecast Contoso Order Volume"
 
 
 @pytest.mark.parametrize("failure", [RuntimeError("endpoint timed out"), "garbage"])
@@ -259,7 +262,7 @@ def test_a_base_name_without_the_label_is_fixed_in_every_name_the_run_derives(la
           "Name": "Improve customer experience using segmentation", "Primary Table": ORDERS}
     stats = labelled["ensure_data_filter_labels"]([uc], lambda u: [], "Contoso", labelled["INSPIRE_TABLE_SCOPES"])
     assert stats["fallback"] == 1
-    assert uc["usecase"] == uc["Name"] == "Improve Contoso customer experience using segmentation", "both fields that name the use case carry it"
+    assert uc["usecase"] == uc["Name"] == "Improve Contoso Customer Experience Using Segmentation", "both fields that name the use case carry it"
     row = labelled["DatabricksInspire"]._uc_to_row(uc, 1, labelled["DatabricksInspire"]._normalize_usecase)
     assert row[4].count("Contoso") == 1, "the tracking use_case column carries the label once"
     assert row[5].count("Contoso") == 1, "the tracking name column carries the label once"
@@ -271,7 +274,7 @@ def test_name_with_technique_has_the_label_exactly_once_and_never_doubled(labell
           "Name": "Improve customer experience using segmentation", "Primary Table": ORDERS}
     labelled["ensure_data_filter_labels"]([uc], lambda u: [], "Contoso", labelled["INSPIRE_TABLE_SCOPES"])
     composed = _composed_name(labelled, uc)
-    assert composed == "Improve Contoso customer experience using segmentation", "the name alone: the technique is in the subtitle (REQ-175)"
+    assert composed == "Improve Contoso Customer Experience Using Segmentation", "the name alone: the technique is in the subtitle (REQ-175)"
     assert composed.count("Contoso") == 1
 
 
@@ -293,17 +296,17 @@ def test_a_user_named_use_case_keeps_the_persons_own_words(labelled):
 
 def test_the_fired_line_carries_the_counts_and_is_written_as_a_step_message(agent_ns):
     line = agent_ns["data_filter_label_line"]({"affected": 2, "carried": 1, "reasked": 1, "fallback": 0, "kept_user_named": 0, "subtitled": 0}, "Contoso")
-    assert line.startswith("[DATA-FILTER-LABEL FIRED] carried at generation 1 of 2; after repair 2 of 2")
-    assert "(re-asked 1, rewrite 0, kept 0 user-named)" in line and 'label "Contoso"' in line
+    assert line.startswith('[DATA-FILTER-LABEL FIRED] 1 of 2 names carried the label "Contoso" when generated; after the fix 2 of 2 carry it')
+    assert "1 asked again, 0 set directly, 0 kept as you named them" in line
 
 
 def test_the_fired_line_separates_the_generation_count_from_the_count_after_repair(agent_ns):
     zero_at_generation = agent_ns["data_filter_label_line"]({"affected": 17, "carried": 0, "reasked": 17, "fallback": 0, "kept_user_named": 0, "subtitled": 0}, "Tokyo Tidbits")
-    assert zero_at_generation.startswith("[DATA-FILTER-LABEL FIRED] carried at generation 0 of 17; after repair 17 of 17")
-    assert "(re-asked 17, rewrite 0, kept 0 user-named)" in zero_at_generation
+    assert zero_at_generation.startswith('[DATA-FILTER-LABEL FIRED] 0 of 17 names carried the label "Tokyo Tidbits" when generated; after the fix 17 of 17 carry it')
+    assert "17 asked again, 0 set directly, 0 kept as you named them" in zero_at_generation
     mixed = agent_ns["data_filter_label_line"]({"affected": 4, "carried": 1, "reasked": 2, "fallback": 1, "kept_user_named": 3, "subtitled": 0}, "Contoso")
-    assert mixed.startswith("[DATA-FILTER-LABEL FIRED] carried at generation 1 of 4; after repair 4 of 4")
-    assert "kept 3 user-named" in mixed
+    assert mixed.startswith('[DATA-FILTER-LABEL FIRED] 1 of 4 names carried the label "Contoso" when generated; after the fix 4 of 4 carry it')
+    assert "3 kept as you named them" in mixed
     import json as _json
     import os
     here = os.path.dirname(os.path.abspath(__file__))
@@ -311,7 +314,7 @@ def test_the_fired_line_separates_the_generation_count_from_the_count_after_repa
     with open(notebook, encoding="utf-8") as handle:
         source = "".join(_json.load(handle)["cells"][1]["source"])
     assert 'step_name="Data Filter Label"' in source and "message=_label_line" in source, "the FIRED line is a step message"
-    assert "log_print(_label_line)" in source, "and it is also written to the log"
+    assert "log_name_fix_lines(self.logger, label_stats" in source, "and it is written through the logger, so it reaches the info log"
 
 
 @pytest.mark.parametrize("label", ["iPhone", "UAE", "McDonald's", "Tokyo Tidbits"])

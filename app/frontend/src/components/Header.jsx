@@ -13,6 +13,7 @@ export default function Header({
   canResults,
   canImplement,
   canRun = true,
+  releaseTag = '',
 }) {
   const { theme, toggle } = useTheme();
   const enabled = {
@@ -38,6 +39,9 @@ export default function Header({
               Inspire AI
             </span>
           </button>
+          {releaseTag && (
+            <span data-release-tag="" className="hidden md:inline shrink-0 whitespace-nowrap font-mono text-[11px] text-text-tertiary">{releaseTag}</span>
+          )}
 
           {/* Navigation */}
           <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto">

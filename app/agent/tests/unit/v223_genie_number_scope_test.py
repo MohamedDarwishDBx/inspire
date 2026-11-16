@@ -15,7 +15,7 @@ from v141_app_shell_test import call  # noqa: E402
 from v211_genie_agent_test import AgentWorkspace, FakeLLM, agent_shell, ask, said, tool_call, topic_of  # noqa: E402
 
 EAST = {"filters": {"region": ["East"]}}
-ITEMS_SCOPE = "the current rows of the runs it picked; from the latest run; Region: East"
+ITEMS_SCOPE = "current rows only, from the runs the page picked; from the latest run; Region: East"
 GENIE_SQL = "SELECT COUNT(*) AS items FROM main.ops.items WHERE status = 'open'"
 
 
@@ -45,36 +45,36 @@ def test_a_genie_count_that_disagrees_with_the_page_kpi_shows_the_page_value_and
     script = [tool_call("ask_genie", {"question": "How many items are on the list?"}), said("Genie found 95 items on the list.")]
     turn, ws = turn_for(tmp_path, script, ws_class=GenieCounts, counted=95)
     assert ws.genie, "Genie was asked"
-    assert turn["answer"] == (f"The page shows Items on the list 120 for {ITEMS_SCOPE}; Genie counted 95 for every row of every run, "
-                              "where status = 'open'.\n\nGenie found 95 items on the list.")
+    assert turn["answer"] == (f"The page shows Items on the list 120 for {ITEMS_SCOPE}; Genie counted 95 across all rows."
+                              "\n\nGenie found 95 items on the list.\n\nCounted over the whole items table.")
 
 
 def test_a_genie_count_that_agrees_with_the_page_is_no_clash_and_only_gets_its_scope(tmp_path):
     script = [tool_call("ask_genie", {"question": "How many items are on the list?"}), said("Genie found 120 items on the list.")]
     turn, _ws = turn_for(tmp_path, script, ws_class=GenieCounts, counted=120)
-    assert turn["answer"] == f"Genie found 120 items on the list.\n\nItems on the list 120 counts {ITEMS_SCOPE}."
+    assert turn["answer"] == f"Genie found 120 items on the list.\n\nItems on the list 120 counts {ITEMS_SCOPE}.\n\nCounted over the whole items table."
 
 
-def test_a_genie_number_about_another_subject_raises_no_clash_and_gets_what_genie_counted(tmp_path):
+def test_a_genie_number_about_another_subject_raises_no_clash_and_no_note_when_it_counts_all_rows(tmp_path):
     script = [tool_call("ask_genie", {"question": "Which region lost the most?"}), said("East lost the most: 95.")]
     turn, _ws = turn_for(tmp_path, script, question="Which region loses the most?", ws_class=GenieCounts, counted=95)
-    assert turn["answer"] == "East lost the most: 95.\n\nGenie counted 95 for every row of every run, where status = 'open'."
+    assert turn["answer"] == "East lost the most: 95.\n\nCounted over the whole items table."
 
 
 def test_a_genie_number_the_answer_does_not_state_gets_nothing_attached(tmp_path):
     script = [tool_call("ask_genie", {"question": "Which region lost the most?"}), said("East lost the most.")]
     turn, _ws = turn_for(tmp_path, script, question="Which region loses the most?", ws_class=GenieCounts, counted=95)
-    assert turn["answer"] == "East lost the most."
+    assert turn["answer"] == "East lost the most.\n\nCounted over the whole items table."
 
 
-def test_a_genie_agent_answer_passed_through_names_what_genie_counted(tmp_path):
+def test_a_genie_agent_answer_passed_through_gets_no_note_when_it_counts_all_rows(tmp_path):
     s, _ws, _made = agent_shell(tmp_path, ws=GenieCounts(95))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
-    assert status == 200 and msg["text"] == "There are 95 items.\n\nGenie counted 95 for every row of every run, where status = 'open'."
+    assert status == 200 and msg["text"] == "There are 95 items.\n\nCounted over the whole items table."
     (tmp_path / "rows").mkdir()
     s, _ws, _made = agent_shell(tmp_path / "rows", ws=AgentWorkspace(genie_text="East lost the most: 120."))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
-    assert status == 200 and msg["text"] == "East lost the most: 120.", "a result of rows, not one number, gets no count line"
+    assert status == 200 and msg["text"] == "East lost the most: 120.\n\nCounted over the whole t table.", "a result of rows, not one number, gets no count line"
 
 
 def test_an_answer_without_a_page_number_gets_nothing_attached(tmp_path):
@@ -96,7 +96,7 @@ def test_a_short_number_counts_only_when_the_answer_names_the_kpi():
     numbers = [{"label": "Open bills", "value": 7, "scope": "Region: East"}]
     assert shell_agent.number_scopes("Call 7 people.", "", numbers, []) == ([], [])
     assert shell_agent.number_scopes("There are 7 open bills.", "", numbers, [])[1] == [
-        "Open bills 7 counts every row of every run; Region: East."]
+        "Open bills 7 counts Region: East."]
 
 
 def test_a_scope_the_answer_already_states_is_not_repeated():
@@ -105,19 +105,31 @@ def test_a_scope_the_answer_already_states_is_not_repeated():
 
 
 @pytest.mark.parametrize("sql, scope", [
-    ("SELECT region, SUM(loss) FROM t GROUP BY region", "every row of every run, with no filter"),
+    ("SELECT region, SUM(loss) FROM t GROUP BY region", "every row of every run"),
     ("SELECT COUNT(*) FROM o WHERE `is_current` AND change_source <> 'delete' AND status = 'open' AND region IN ('East','West')",
-     "the current rows, where status = 'open', region in ('East','West')"),
-    ("SELECT COUNT(*) FROM x WHERE run_id = (SELECT MAX(run_id) FROM x) AND tier = 'High'", "the latest run, where tier = 'High'"),
-    ("SELECT COUNT(*) FROM x WHERE `_inspire_run` = 'latest' AND o.is_current", "the current rows of the latest run, with no filter"),
-    ("SELECT COUNT(*) FROM x WHERE as_of_date >= '2026-01-01'", "the runs it picked, with no filter"),
-    ("SELECT COUNT(*) FROM x WHERE is_current = false", "every row of every run, with no filter"),
-    ("SELECT COUNT(*) FROM x WHERE a = 1 AND b = 2 AND c = 3 AND d = 4", "every row of every run, where a = 1, b = 2, c = 3"),
-    ("SELECT MAX(as_of_date), COUNT(*) FROM o JOIN r ON o.run_id = r.run_id GROUP BY 1", "every row of every run, with no filter"),
-    ("SELECT COUNT(*) FROM o JOIN r ON o.run_id = r.run_id WHERE r.run_id = (SELECT MAX(run_id) FROM r)", "the latest run, with no filter"),
+     "current rows only"),
+    ("SELECT COUNT(*) FROM x WHERE run_id = (SELECT MAX(run_id) FROM x) AND tier = 'High'", "from the latest run"),
+    ("SELECT COUNT(*) FROM x WHERE `_inspire_run` = 'latest' AND o.is_current", "current rows only, from the latest run"),
+    ("SELECT COUNT(*) FROM x WHERE as_of_date >= '2026-01-01'", "from the runs the page picked"),
+    ("SELECT COUNT(*) FROM x WHERE is_current = false", "every row of every run"),
+    ("SELECT COUNT(*) FROM x WHERE a = 1 AND b = 2 AND c = 3 AND d = 4", "every row of every run"),
+    ("SELECT MAX(as_of_date), COUNT(*) FROM o JOIN r ON o.run_id = r.run_id GROUP BY 1", "every row of every run"),
+    ("SELECT COUNT(*) FROM o JOIN r ON o.run_id = r.run_id WHERE r.run_id = (SELECT MAX(run_id) FROM r)", "from the latest run"),
+    ("SELECT COUNT(*) FROM x WHERE rnk = 1 AND is_current", "current rows only"),
 ])
-def test_the_scope_of_a_query_names_its_run_its_rows_and_its_filters(sql, scope):
+def test_the_scope_of_a_query_names_its_run_and_its_rows_in_plain_words(sql, scope):
     assert shell_agent.sql_scope(sql) == scope
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT COUNT(*) FROM x WHERE rnk = 1 AND is_current",
+    "SELECT COUNT(*) FROM x WHERE status = 'open' AND region = 'East' AND tier = 'High'",
+    "SELECT COUNT(*) FROM x WHERE _inspire_run = 'latest' AND o.is_current",
+])
+def test_a_scope_note_never_carries_sql_fragments(sql):
+    scope = shell_agent.sql_scope(sql)
+    for leak in ("where", "rnk", "=", " and ", "status", "region", "tier", "_inspire_run", "is_current", "'"):
+        assert leak not in scope.lower(), f"{leak!r} leaked into the scope note: {scope!r}"
 
 
 def test_the_page_value_is_shown_in_the_kpi_format():
@@ -140,7 +152,7 @@ def test_the_kpi_carries_the_rows_its_query_counts(tmp_path):
     s, ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     ask(s, "How many items are on the list?", view=EAST)
     context = llm.main_calls()[0]["messages"][1]["content"]
-    assert '"counts":"the current rows of the runs it picked"' in context and '"counts":"the runs it picked"' in context
+    assert '"counts":"current rows only, from the runs the page picked"' in context and '"counts":"from the runs the page picked"' in context
 
 
 def test_the_draft_and_the_answer_replace_every_dash_the_same_way():

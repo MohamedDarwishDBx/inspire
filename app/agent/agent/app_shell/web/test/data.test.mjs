@@ -709,11 +709,11 @@ test('under a record name the list and the record panel show only the key and se
   assert.deepEqual(shown, { 'zip 10001': '2016-02-29 00:00 | own series', 'Fleet fare revenue 2016-03-01': null, 'Wool coat': 'R003 · Outerwear' });
   const panel = page.locator('dialog.drawer[open] .panel-meta');
   await page.locator('.card--table tbody .cell-t', { hasText: 'Fleet fare revenue 2016-03-01' }).click();
-  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Fleet fare revenue 2016-03-01');
+  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Price-loss decision desk for Fleet fare revenue 2016-03-01');
   assert.ok(!(await panel.innerText()).includes('2016-03-01'), 'the panel does not repeat a segment the name already shows');
   await page.keyboard.press('Escape');
   await page.locator('.card--table tbody .cell-t', { hasText: 'Wool coat' }).click();
-  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Wool coat');
+  await page.waitForFunction(() => document.querySelector('dialog.drawer[open] h2')?.textContent === 'Price-loss decision desk for Wool coat');
   assert.ok((await panel.innerText()).includes('Outerwear'), 'a segment that adds words still shows in the panel');
   assert.deepEqual(seen.errors, []);
   await context.close();
@@ -728,7 +728,7 @@ test('the record panel shows the saving with its formula, why the AI flagged it,
   await page.locator('.cell-t').first().click();
   const panel = page.locator('dialog.drawer.panel');
   await panel.locator('.dr-act').waitFor();
-  assert.equal(await panel.locator('.panel-h h2').innerText(), LABEL);
+  assert.equal(await panel.locator('.panel-h h2').innerText(), `Price-loss decision desk for ${LABEL}`);
   const meta = await panel.locator('.panel-meta').innerText();
   for (const part of ['Price-loss decision desk', 'Books', PERSON, 'Due Jan 5, 2020']) assert.ok(meta.includes(part), `${part} in ${meta}`);
   assert.equal(await panel.locator('.panel-meta .owner i').innerText(), 'PL');
@@ -752,7 +752,7 @@ test('the record panel shows the saving with its formula, why the AI flagged it,
   assert.match(await panel.locator('.hist-i').first().innerText(), /No value changed\./, 'a new AI reason is never shown as a business change');
   assert.deepEqual(await footerActions(panel), ['Mark done', 'Not an issue', 'Could not fix', 'Snooze…', 'Draft Message to Someone', 'Ask Genie to fix'].sort(), 'every drawer action can be reached');
   assert.deepEqual(await panel.getByLabel('Give to someone').locator('option').allInnerTexts(),
-    [`With ${PERSON}`, `Give to ${OTHER}`, 'Someone else…']);
+    [`With ${PERSON}`, 'Clear the owner', `Give to ${OTHER}`, 'Someone else…'], 'an owned record can be given away or its owner cleared');
   const ask = panel.getByRole('region', { name: 'Ask Genie about this' });
   assert.deepEqual(await ask.locator('.sugg').allInnerTexts(), ['Show the history of this item', 'Are there others like this?', 'What happens if we do nothing?']);
   await ask.getByRole('button', { name: 'Are there others like this?' }).click();
@@ -819,7 +819,7 @@ test('a low confidence record says so, an older table shows only what it has, an
   await done.page.locator('.cell-t').first().click();
   await done.page.locator('dialog.drawer .dr-act').waitFor();
   assert.equal(await done.page.locator('dialog.drawer .done').innerText(), 'Marked done. A later run found it resolved.');
-  assert.deepEqual(await done.page.locator('dialog.drawer .panel-f > button').allInnerTexts(), ['Close']);
+  assert.deepEqual(await done.page.locator('dialog.drawer .panel-f > button').allInnerTexts(), ['Reopen', 'Close'], 'a done record offers Reopen in its drawer (REQ-057, REQ-289 replaces the old no-buttons rule)');
   assert.equal(await done.page.getByLabel('Give to someone').count(), 0);
   assert.deepEqual([...low.errors, ...old.errors, ...done.errors], []);
   await done.context.close();

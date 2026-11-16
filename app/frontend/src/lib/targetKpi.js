@@ -101,13 +101,13 @@ export function liveImpact(run, fallback = null) {
 
 export function stakeLabel(impact) {
   if (!impact) return 'At stake';
-  return impact.kind === 'money' ? 'Money at stake' : `${capital(impact.unit || impact.kind)} at stake`;
+  return impact.kind === 'money' ? 'Value at stake' : `${capital(impact.unit || impact.kind)} at stake`;
 }
 
 export function stakeWords(impact) {
   if (!isMap(impact)) return 'amount at stake';
   const kind = spaced(pyTruthy(impact.kind) ? String(impact.kind) : 'money').toLowerCase();
-  if (kind === 'money') return 'money at stake';
+  if (kind === 'money') return 'value at stake';
   if (!IMPACT_KINDS.includes(kind)) return 'amount at stake';
   return `${spaced(pyTruthy(impact.unit) ? String(impact.unit) : '') || kind} at stake`;
 }
@@ -161,7 +161,7 @@ export function kpiPickText(record) {
 
 export function impactText(impact) {
   if (!impact) return '';
-  return impact.kind === 'money' ? 'Each record is counted in money at stake.' : `Each record is counted in ${stakeWords(impact)}, not money.`;
+  return impact.kind === 'money' ? 'Each record is counted in value at stake.' : `Each record is counted in ${stakeWords(impact)}, not money.`;
 }
 
 export function trackedKpiText(record, impact) {

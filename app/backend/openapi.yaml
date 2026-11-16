@@ -1279,6 +1279,12 @@ paths:
         - $ref: '#/components/parameters/InspireDatabase'
         - $ref: '#/components/parameters/WarehouseId'
         - $ref: '#/components/parameters/SessionId'
+        - name: run_id
+          in: query
+          required: false
+          description: The implement run whose build-stage log to read (its log_implement_<run_id>.log). Empty reads the session's live log.
+          schema:
+            type: string
       responses:
         '200':
           description: The log tail, or found false when the run has not written its log yet

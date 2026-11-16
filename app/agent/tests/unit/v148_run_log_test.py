@@ -231,6 +231,7 @@ def test_a_run_started_from_the_notebook_says_who_started_it(agent_ns):
 
 def test_the_run_controls_carry_the_tables_the_run_reads_and_its_slices(agent_ns):
     inst = build_inspire(agent_ns)
+    inst._implement_scope_columns = lambda table: ["order_id", "region", "amount"]  # the column read a rows-only Table Scope needs
     uc = make_uc()
     spec = inst._genie_notebook_spec(uc)
     involved = inst._genie_involved_tables(uc)

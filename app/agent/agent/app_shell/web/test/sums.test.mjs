@@ -59,8 +59,8 @@ test('every money amount is formatted the one way wholeMoney formats it, and sum
   assert.equal(shownAmount({ money: '12' }), 12);
   assert.equal(amountText(ID, 'money', 'USD'), `${g(BigInt(ID))} USD`);
   assert.equal(amountText(1234.5, 'money', 'USD'), '1,234.5 USD');
-  assert.ok(sumFormula([{ label: 'A', money: ID, currency: 'USD' }, { label: 'B', money: 1, currency: 'USD' }], 'Money at stake')
-    .startsWith(`Money at stake: A $${g(BigInt(ID))} + B $1 = $${g(BigInt(ID) + 1n)}.`));
+  assert.ok(sumFormula([{ label: 'A', money: ID, currency: 'USD' }, { label: 'B', money: 1, currency: 'USD' }], 'Value at stake')
+    .startsWith(`Value at stake: A $${g(BigInt(ID))} + B $1 = $${g(BigInt(ID) + 1n)}.`));
 });
 
 test('the context sent to Genie keeps a value that arrives as text', () => {

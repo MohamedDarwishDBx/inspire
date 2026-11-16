@@ -147,4 +147,9 @@ def test_no_text_about_what_a_fix_saved_says_money_for_every_kpi():
     found = {name: SAVED_MONEY.findall(text) for name, text in joined.items() if SAVED_MONEY.search(text)}
     assert found == {}, found
     assert "Money it saved" not in sources["records.js"] and "Money it saved" not in sources["Records.jsx"]
-    assert not re.search(r"\[A-Z\]\{3\}|\[A-Za-z\]\{3\}", "".join(sources.values())), "no three-capitals currency pattern is left"
+    # f37c9b144 (REQ-327): the Lakebase text-date table reads month names with this exact row. A month name is a date format, not a
+    # currency code, so that one row is exempt and every other three-letter pattern still fails the check.
+    month_name_row = r'r"^([A-Za-z]{3}) ([0-9]{1,2}) ([0-9]{4})$"'
+    assert "MMM d yyyy" in sources["shell_pg.py"] and month_name_row in sources["shell_pg.py"]
+    everything = "".join(sources.values()).replace(month_name_row, "")
+    assert not re.search(r"\[A-Z\]\{3\}|\[A-Za-z\]\{3\}", everything), "no three-capitals currency pattern is left"

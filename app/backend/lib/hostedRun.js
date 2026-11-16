@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { BOOT_GUARD_SCRIPT_HASH } = require('./bootGuardCsp');
 const os = require('os');
 const path = require('path');
 const http = require('http');
@@ -6,6 +7,7 @@ const childProcess = require('child_process');
 const { redactSecrets: redactAny } = require('./redact');
 const { IMPLEMENT_APP_HOSTED_ID_RE: HOSTED_ID_RE } = require('./inspireImplement');
 const { forwardedTokenOf } = require('./requestPerson');
+const { apiRefusalText, logApiBody } = require('./apiRefusal');
 const { parseExactJson } = require('./exactJson');
 const HOSTED_MAX_CHILDREN = 3;
 const HOSTED_IDLE_MS = 15 * 60 * 1000;
@@ -121,7 +123,8 @@ function sameOriginCsp() {
 function pagePolicy(root, assets) {
   return [
     "default-src 'none'",
-    `script-src ${assets}`,
+    // The boot guard is an inline script in the App shell's index.html; its hash is the only inline script the policy allows.
+    `script-src ${assets} '${BOOT_GUARD_SCRIPT_HASH}'`,
     `style-src ${assets}`,
     `img-src ${root} data:`,
     `font-src ${root}`,
@@ -175,13 +178,21 @@ function workspaceFiles(dbFetch) {
   return (host, token) => ({
     async list(folder) {
       const resp = await dbFetch(host, token, `/api/2.0/workspace/list?path=${encodeURIComponent(folder)}`);
-      if (!resp.ok) throw new Error(`the page folder ${folder} could not be listed (${resp.status}): ${String(await resp.text()).slice(0, 300)}`);
+      if (!resp.ok) {
+        const refusalBody = await resp.text();
+        logApiBody(`List the page folder ${folder}`, resp.status, refusalBody);
+        throw new Error(apiRefusalText(`list the page folder ${folder}`, resp.status, refusalBody));
+      }
       const data = await resp.json();
       return Array.isArray(data.objects) ? data.objects : [];
     },
     async read(file) {
       const resp = await dbFetch(host, token, `/api/2.0/workspace/export?path=${encodeURIComponent(file)}&direct_download=true`);
-      if (!resp.ok) throw new Error(`${file} could not be read (${resp.status}): ${String(await resp.text()).slice(0, 300)}`);
+      if (!resp.ok) {
+        const refusalBody = await resp.text();
+        logApiBody(`Read ${file}`, resp.status, refusalBody);
+        throw new Error(apiRefusalText(`read ${file}`, resp.status, refusalBody));
+      }
       return Buffer.from(await resp.arrayBuffer());
     },
   });

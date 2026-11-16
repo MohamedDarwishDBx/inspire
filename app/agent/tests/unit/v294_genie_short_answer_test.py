@@ -48,12 +48,12 @@ def test_a_scope_line_still_names_the_one_number_the_answer_states_first():
     assert clashes == [] and notes == ["Items on the list 120 counts the current rows; Region: East."]
 
 
-def test_a_genie_agent_answer_that_lists_three_rows_is_a_table_on_the_genie_path_too(tmp_path):
+def test_a_genie_agent_answer_that_lists_three_rows_shows_them_once_as_the_rows_table_on_the_genie_path_too(tmp_path):
+    # REQ-330: the rows are already shown as the answer's one table, so the text carries no second table written from the bullets.
     s, _ws, _made = agent_shell(tmp_path, ws=ThreeRows(text=f"{PROFILES}\n\n{BULLETS}"))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
     assert status == 200
-    assert not [line for line in lines_of(msg["text"]) if line.startswith("- ")], msg["text"]
-    assert any(line.startswith("| ") for line in lines_of(msg["text"])), msg["text"]
+    assert not [line for line in lines_of(msg["text"]) if line.startswith("| ")], msg["text"]
 
 
 def test_the_chat_answer_and_the_genie_answer_share_one_shaping_step(tmp_path):
@@ -65,7 +65,9 @@ def test_the_chat_answer_and_the_genie_answer_share_one_shaping_step(tmp_path):
     chat = ask(s, "Which profile source creates the most duplicates?")["answer"]
     s, _ws, _made = agent_shell(tmp_path / "genie", ws=ThreeRows(text=answer))
     status, msg = call(s, "GET", "genie/message", query={"page": "n01_u05", "conversation_id": "c1", "message_id": "m1"})
-    assert status == 200 and msg["text"] == chat, (msg["text"], chat)
+    # The Genie path and the chat path shape the same text; the Genie path adds only its one counted line (REQ-269). The pivot-like table
+    # has other columns from the Genie rows, so it is the model's own table and stays.
+    assert status == 200 and msg["text"] == f"{chat}\n\nCounted over the whole pairs table.", (msg["text"], chat)
 
 
 def test_a_chat_answer_with_bullets_beside_a_table_is_shaped_to_the_lead_and_one_scope_line(tmp_path):

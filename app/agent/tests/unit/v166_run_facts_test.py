@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import random
+import re
 import sys
 
 import psycopg
@@ -146,7 +147,7 @@ def _numbers(engine, sql):
 
 def _facts(people=()):
     return {"v": shell_facts.FACTS_VERSION, "log": LOG, "acted": ACTED, "closed": TABLE + "_closed", "changes": TABLE + "_run_changes",
-            "actions": {"open_n": 1, "done_n": 1, "resolved_n": 1}, "tier": "priority_tier", "label": "entity_label", "stamp_us": STAMP_US,
+            "actions": {"done_n": 1, "resolved_n": 1}, "tier": "priority_tier", "label": "entity_label", "stamp_us": STAMP_US,
             "people": [list(p) for p in people], "latest": "r5", "previous": "r4", "runs": [], "numbers": {}, "names": sorted(NAMES),
             "columns": shell_facts.acted_columns(NAMES, "entity_label"), "scope": "U1", "switched": True}
 
@@ -270,7 +271,7 @@ def test_the_closing_in_one_pass_per_record_equals_the_closing_built_from_joins_
     assert (by_key["l"]["_inspire_status"], by_key["l"]["_inspire_at_close"], by_key["l"]["_inspire_closed"]) == \
         ("Could not fix", 75.0, iso(at(23, 9)))
     assert (by_key["m"]["_inspire_closed"], by_key["m"]["_inspire_at_close"]) == (iso(at(16, 9)), 20.0), \
-        "saving Done again is not a new close, so the money at stake is the one at the first close"
+        "saving Done again is not a new close, so the value at stake is the one at the first close"
 
 
 def test_the_run_keeps_the_latest_close_of_each_closed_record_as_the_key_read_finds_it_on_a_real_postgres(engine):
@@ -317,7 +318,7 @@ def test_the_records_people_acted_on_kept_by_the_run_give_the_same_closing_as_th
     kept = _closing(engine, ctes, "av", closed=shell_facts.table_name(CLOSED))
     assert kept == live, "the stored closing of the records nobody changed, plus the closing rebuilt for a, equals the closing read live"
     counted = engine["rows"](f"{shell_sql._with(ctes, (*shell_facts.CHANGE_ORDER, 'av'))} {shell_facts.action_counts_sql('av')}")
-    assert counted == engine["rows"](shell_facts.action_counts_sql(quoted)) == [{"open_n": 1, "done_n": 2, "resolved_n": 1}]
+    assert counted == engine["rows"](shell_facts.action_counts_sql(quoted)) == [{"done_n": 2, "resolved_n": 1}]
     owners = engine["rows"](f"{shell_sql._with(ctes, (*shell_facts.CHANGE_ORDER, 'av'))} {shell_facts.owners_sql('av')}")
     assert owners == engine["rows"](shell_facts.owners_sql(quoted)) == [{"v": "pat@example.com"}, {"v": "sam@example.com"}]
     engine["write"]("facts_out", COLUMNS, SNAPSHOT)
@@ -363,8 +364,8 @@ def _reopened():
 
 
 @pytest.mark.parametrize("written,expected", [
-    (after_writes, {"open_n": 1, "done_n": 2, "resolved_n": 1}),
-    (_reopened, {"open_n": 1, "done_n": 2, "resolved_n": 0}),
+    (after_writes, {"done_n": 2, "resolved_n": 1}),
+    (_reopened, {"done_n": 2, "resolved_n": 0}),
 ])
 def test_the_action_counts_the_run_kept_plus_the_changes_since_equal_the_counts_read_live_on_a_real_postgres(engine, written, expected):
     quoted, acted = shell_facts.table_name(TABLE), shell_facts.table_name(ACTED)
@@ -373,7 +374,7 @@ def test_the_action_counts_the_run_kept_plus_the_changes_since_equal_the_counts_
     engine["write"]("facts_out_acted", [c for c in COLUMNS if c[0] in columns],
                     engine["rows"](shell_facts.acted_versions_sql(quoted, NAMES, "entity_label", SCOPE, HISTORY)))
     base = shell_facts.action_numbers_of(engine["rows"](shell_facts.action_counts_sql(acted)))
-    assert base == {"open_n": 1, "done_n": 1, "resolved_n": 1}, "b was in progress and c was marked Done and resolved when the run counted"
+    assert base == {"done_n": 1, "resolved_n": 1}, "b was in progress and c was marked Done and resolved when the run counted"
     engine["write"]("facts_out", COLUMNS, written())
     ctes = shell_facts.change_ctes(quoted, STAMP_US, [], [n for n, _t, _pg in COLUMNS], SCOPE)
     added = engine["rows"](f"{shell_sql._with(ctes, shell_facts.CHANGE_ORDER)} {shell_facts.action_delta_sql(acted, base)}")
@@ -513,7 +514,7 @@ def test_facts_of_another_run_or_shape_are_never_used():
     assert shell_sql.state_facts(dict(row, **{shell_sql.RUN_FACTS_COLUMN: "not json"})) is None
     for key in ("changes", "actions"):
         assert shell_sql.state_facts(dict(row, **{shell_sql.RUN_FACTS_COLUMN: json.dumps({k: v for k, v in good.items() if k != key})})) is None
-    assert shell_sql.state_facts(dict(row, **{shell_sql.RUN_FACTS_COLUMN: json.dumps(dict(good, actions={"open_n": 1}))})) is None, \
+    assert shell_sql.state_facts(dict(row, **{shell_sql.RUN_FACTS_COLUMN: json.dumps(dict(good, actions={}))})) is None, \
         "a run that kept only part of its action counts is not used"
     assert shell_sql.state_facts(row, TABLE) is not None and shell_sql.state_facts(row, "main.ops.moved_out") is None, \
         "facts kept for a table the page no longer reads point at another table's run log, so the App counts live"
@@ -565,8 +566,8 @@ class FactsWarehouse:
             raise shell_core.QueryError("TEMPORARILY_UNAVAILABLE")
         if "AS left_n" in sql:
             return rows([{"left_n": 7, shell_facts.MISSED: missed}])
-        if "AS open_n" in sql:
-            return rows([{"open_n": 2, "done_n": 1, "resolved_n": 1, shell_facts.MISSED: missed}])
+        if "AS done_n" in sql:
+            return rows([{"done_n": 1, "resolved_n": 1, shell_facts.MISSED: missed}])
         if "`action_owner` AS v" in sql:
             return rows([{"v": "pat@example.com"}, {"v": "sam@example.com"}])
         if "'counts' AS `kind`" in sql:
@@ -608,7 +609,7 @@ def _ready_facts(**extra):
     from v148_app_hub_test import COLUMNS as HUB_COLUMNS
     names = set(HUB_COLUMNS)
     return dict(_facts(), log=HUB_TABLE + "_run_log", acted=HUB_TABLE + "_acted", closed=HUB_TABLE + "_closed", scope="N01-U05",
-                changes=HUB_TABLE + "_run_changes", actions={"open_n": 2, "done_n": 1, "resolved_n": 1},
+                changes=HUB_TABLE + "_run_changes", actions={"done_n": 1, "resolved_n": 1},
                 names=sorted(names),
                 columns=shell_facts.acted_columns(names, "entity_label"),
                 numbers={"current_n": 9808265, "held_n": 0, "left_n": 7, "estimated": {}, "holdout": {}},
@@ -873,12 +874,12 @@ def test_the_default_rank_order_reads_only_the_rows_ranked_inside_the_floor(tmp_
 def test_the_records_summary_reads_the_records_people_acted_on_and_the_run_count_of_records_that_left(tmp_path):
     s, ws = _facts_shell(tmp_path, _ready_facts())
     status, out = call(s, "POST", "records", body={"page": "n01_u05", "sort": {"key": "rank", "dir": "asc"}, "limit": 25})
-    assert status == 200 and out["summary"]["left"] == 7 and out["summary"]["open"] == 2, out
-    summary = [sql for sql, _p, _l in ws.sql if "AS open_n" in sql or "AS left_n" in sql]
+    assert status == 200 and out["summary"]["left"] == 7 and "open" not in out["summary"], out
+    summary = [sql for sql, _p, _l in ws.sql if "AS done_n" in sql or "AS left_n" in sql]
     assert summary and all(shell_facts.table_name(HUB_TABLE + "_acted") in sql or "AS left_n" in sql for sql in summary)
     assert not [sql for sql in summary if "LEFT ANTI JOIN" in sql], "no request rebuilds the run versions from the log"
-    counted = [sql for sql in summary if "AS open_n" in sql]
-    assert counted and all("2 + COALESCE(SUM(" in sql and "FROM av" not in sql for sql in counted), \
+    counted = [sql for sql in summary if "AS done_n" in sql]
+    assert counted and all(re.search(r"\d+ \+ COALESCE\(SUM\(", sql) and "FROM av" not in sql for sql in counted), \
         "the action counts are the run's counts plus the records changed since, never a recount of every record people acted on"
     owners = [sql for sql, _p, _l in ws.sql if "`action_owner` AS v" in sql]
     assert len(summary) == 2 and len(owners) == 1 and "FROM av WHERE" in owners[0], \
@@ -887,7 +888,7 @@ def test_the_records_summary_reads_the_records_people_acted_on_and_the_run_count
 
 
 def _summary_reads(ws, name):
-    marker = {"left": "AS left_n", "impact": "AS open_n"}[name]
+    marker = {"left": "AS left_n", "impact": "AS done_n"}[name]
     return [sql for sql, _p, _l in ws.sql if marker in sql]
 
 
@@ -895,7 +896,7 @@ def test_the_records_summary_reads_the_run_log_only_for_the_records_changed_sinc
     s, ws = _facts_shell(tmp_path, _ready_facts(), changed_n=2)
     ws.keys = ["k1", "k'2"]
     status, out = call(s, "POST", "records", body={"page": "n01_u05", "sort": {"key": "rank", "dir": "asc"}, "limit": 25})
-    assert status == 200 and out["summary"]["left"] == 7 and out["summary"]["open"] == 2, out
+    assert status == 200 and out["summary"]["left"] == 7 and "open" not in out["summary"], out
     (left,), (impact,) = _summary_reads(ws, "left"), _summary_reads(ws, "impact")
     looked = left.split(f"FROM {shell_facts.table_name(HUB_TABLE + '_run_log')} WHERE ")[1:]
     assert len(looked) == 1 and looked[0].split(") AS p ON ")[0].endswith("AND `record_key` IN ('k1', 'k\\'2')"), \
@@ -911,7 +912,7 @@ def test_a_record_changed_after_the_keys_were_read_makes_the_summary_read_the_lo
     s, ws = _facts_shell(tmp_path, _ready_facts(), changed_n=1)
     ws.keys, ws.missed = ["k1"], 1
     status, out = call(s, "POST", "records", body={"page": "n01_u05", "sort": {"key": "rank", "dir": "asc"}, "limit": 25})
-    assert status == 200 and out["summary"]["left"] == 7 and out["summary"]["open"] == 2 and not out["errors"], out
+    assert status == 200 and out["summary"]["left"] == 7 and "open" not in out["summary"] and not out["errors"], out
     for name in ("left", "impact"):
         first, again = _summary_reads(ws, name)
         assert "IN ('k1')" in first and "IN ('k1')" not in again and f"`record_key` IN ({shell_facts.CHANGED_KEYS})" in again, \
@@ -932,7 +933,7 @@ def test_opening_the_page_reads_the_records_summary_once_so_the_first_records_wa
     ws.sql.clear()
     status, out = call(s, "POST", "records", body={"page": "n01_u05", "sort": {"key": "rank", "dir": "asc"}, "limit": 25})
     assert status == 200 and out["rows"] and not out["errors"], out
-    assert out["summary"] == {"left": 7, "open": 2, "done": 1, "resolved": 1, "owners": ["pat@example.com", "sam@example.com"]}, out
+    assert out["summary"] == {"left": 7, "done": 1, "resolved": 1, "owners": ["pat@example.com", "sam@example.com"]}, out
     assert [sql for sql, _p, _l in ws.sql if "AS total" in sql] and not owners(), "the list reads its rows and count and reuses the summary"
     for name in ("left", "impact"):
         again = _summary_reads(ws, name)
@@ -949,14 +950,14 @@ def test_a_page_with_no_result_table_reads_no_records_summary_when_it_opens(tmp_
                              pages=[page], ws=ws)
     s.stamp_pool = Recorder()
     assert call(s, "GET", "defaults", query={"page": page["id"]})[0] == 200
-    assert not [sql for sql, _p, _l in ws.sql if "AS left_n" in sql or "AS open_n" in sql or "`action_owner` AS v" in sql]
+    assert not [sql for sql, _p, _l in ws.sql if "AS left_n" in sql or "AS done_n" in sql or "`action_owner` AS v" in sql]
 
 
 def test_a_summary_read_again_that_fails_shows_its_error_and_keeps_the_rest_of_the_list(tmp_path):
     s, ws = _facts_shell(tmp_path, _ready_facts(), changed_n=1)
     ws.keys, ws.missed, ws.broken = ["k1"], 1, "AS left_n"
     status, out = call(s, "POST", "records", body={"page": "n01_u05", "sort": {"key": "rank", "dir": "asc"}, "limit": 25})
-    assert status == 200 and out["rows"] and out["summary"]["open"] == 2, out
+    assert status == 200 and out["rows"] and "open" not in out["summary"], out
     assert "left" not in out["summary"] and "TEMPORARILY_UNAVAILABLE" in out["errors"]["left"], \
         "a count read by the short key list is never shown, and the failed read again is named"
 
@@ -966,7 +967,7 @@ def test_the_summary_reads_the_log_by_the_changes_when_the_keys_are_too_many_or_
     s, ws = _facts_shell(tmp_path, _ready_facts(), changed_n=0 if keys == [] else 600)
     ws.keys = keys
     status, out = call(s, "POST", "records", body={"page": "n01_u05", "sort": {"key": "rank", "dir": "asc"}, "limit": 25})
-    assert status == 200 and out["summary"]["left"] == 7 and out["summary"]["open"] == 2, out
+    assert status == 200 and out["summary"]["left"] == 7 and "open" not in out["summary"], out
     for name in ("left", "impact"):
         (sql,) = _summary_reads(ws, name)
         if keys is None:

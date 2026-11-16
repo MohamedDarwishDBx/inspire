@@ -20,6 +20,8 @@ import shell_sql  # noqa: E402
 from v140_implement_test import _app_flow  # noqa: E402
 from v146_lakebase_build_test import FALLBACK, _app_lakebase  # noqa: E402
 from v218_kpi_genie_parity_test import RESULT, _checked, _concentration, _queue_page  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 ENTITY_SQL = (f"SELECT record_key, entity_id, entity_label, priority_tier, ai_cat_rule, top_reasons, recommended_action, value_at_stake, "
               f"as_of_date FROM {RESULT} WHERE is_current")
@@ -191,6 +193,8 @@ def test_the_real_app_check_splits_on_lakebase_and_names_everything_on_delta(age
     calls = []
 
     class Shell:
+        pages = []  # the served App's pages; an App with none has no served read (the real Shell always sets this)
+
         def __init__(self, *a, **k):
             pass
 

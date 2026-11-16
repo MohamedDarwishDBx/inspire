@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, Eye, ListOrdered, Lock, MessageSquareText } from 'lucide-react';
 import {
-  FEEDBACK_EMPTY_TEXT, FEEDBACK_OFF_TEXT, KPI_TRACKING_NOT_MEASURED, dataAccessSummary, excludedFeedbackText, feedbackLabel,
-  formatBaseline, trackedKpiNote, trackedKpiValue,
+  FEEDBACK_EMPTY_TEXT, FEEDBACK_OFF_TEXT, KPI_TRACKING_NOT_MEASURED, dataAccessSummary, discoverPermissionsOf, excludedFeedbackText,
+  feedbackLabel, formatBaseline, trackedKpiNote, trackedKpiValue,
 } from '../lib/v130UseCase';
+import { raisePermissions } from '../lib/permissionBus';
 import { scoreText } from '../lib/reviewFigures';
 import { plural } from '../lib/plural';
 import DataGrid from './DataGrid';
@@ -119,6 +120,11 @@ function InsightCard({ icon, title, summary, children }) {
 }
 
 export function DataAccessBadge({ results }) {
+  // REQ-131, REQ-260: the grants a Discover run could not get open in Permission Required (once per grant list)
+  const grants = discoverPermissionsOf(results);
+  useEffect(() => {
+    if (grants.length) raisePermissions(grants);
+  }, [results]);
   const access = dataAccessSummary(results);
   if (!access) return null;
   if (!access.dataRead) {
@@ -126,7 +132,7 @@ export function DataAccessBadge({ results }) {
       <div className="mb-4 flex items-start gap-2 rounded-xl border border-border bg-surface px-3 py-2.5 text-[11px] text-text-secondary shadow-sm">
         <Lock size={13} className="mt-0.5 shrink-0 text-success-fg" />
         <span>
-          <span className="font-semibold text-text-primary">{access.type}: no data read.</span> Inspire used table and column
+          <span className="font-semibold text-text-primary">Discovery: no data read.</span> Inspire used table and column
           metadata, metric views, lineage and access counts only.
         </span>
       </div>
@@ -138,7 +144,7 @@ export function DataAccessBadge({ results }) {
       <summary className="flex cursor-pointer items-start gap-2 px-3 py-2.5 text-[11px] text-text-secondary">
         <Eye size={13} className="mt-0.5 shrink-0 text-db-red-fg" />
         <span>
-          <span className="font-semibold text-text-primary">{access.type}:</span> read summary figures (counts and totals) from{' '}
+          <span className="font-semibold text-text-primary">Discovery:</span> read summary figures (counts and totals) from{' '}
           {plural(access.tablesReadCount, 'table')} in {plural(access.statements, 'statement')}.{' '}
           {access.piiColumnsExcluded > 0 && `${plural(access.piiColumnsExcluded, 'personal column')} counted only. `}
           {access.aiSeesAggregates ? 'The AI also saw these summary figures' : 'None of these summary figures was sent to the AI'};{' '}
@@ -148,8 +154,8 @@ export function DataAccessBadge({ results }) {
       <div className="px-4 pb-3 space-y-2">
         {access.tablesRead.length > 0 && (
           <ul className="grid gap-0.5 sm:grid-cols-2">
-            {access.tablesRead.map((t) => (
-              <li key={t} className="truncate font-mono text-[10px] text-text-secondary" title={t}>{t}</li>
+            {access.tablesRead.map((t, i) => (
+              <li key={`${i}-${t}`} className="truncate font-mono text-[10px] text-text-secondary" title={t}>{t}</li>
             ))}
           </ul>
         )}

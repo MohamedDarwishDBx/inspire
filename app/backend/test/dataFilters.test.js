@@ -19,9 +19,10 @@ test('every case of the shared fixture gives the same columns and line the noteb
   }
 });
 
-test('a use case over no filtered table has no Data Filters, and a range filter is not one', () => {
+test('a use case over no filtered table has no Data Filters, and a bound is listed with its column (REQ-244)', () => {
   assert.deepEqual(dataFiltersOf({ primary_table: 'main.s.none', tables_involved: 'main.s.none' }, scopes), []);
-  assert.deepEqual(useCaseDataFilters({ primary_table: 'main.s.orders', tables_involved: 'main.s.orders' }, scopes).map((f) => f.column), ['product', 'region', 'channel']);
+  assert.deepEqual(useCaseDataFilters({ primary_table: 'main.s.orders', tables_involved: 'main.s.orders' }, scopes).map((f) => f.column), ['product', 'region', 'sold_on', 'channel']);
+  assert.deepEqual(dataFiltersOf({ primary_table: 'main.s.orders', tables_involved: '' }, scopes).find((f) => f.column === 'sold_on'), { column: 'sold_on', text: '\u2265 2026-01-01' });
 });
 
 test('the reader matches the tables of a use case without regard to case or backticks', () => {

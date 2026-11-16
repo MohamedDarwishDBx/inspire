@@ -94,10 +94,12 @@ def test_an_exception_filter_is_written_as_all_except_its_values(scoped):
     assert by_id["N01-U01"]["product"] == "all except Other Co"
 
 
-def test_a_range_filter_is_not_a_categorical_pick_and_adds_no_column(scoped):
+def test_a_range_bound_is_listed_as_a_column_with_its_bound(scoped):
+    # REQ-244: a bound is a value the reader can see, so the Excel names the column and shows the bound next to the picks.
     set_scope(scoped, scope(SALES, ["sku", "sold_on"], [{"column": "sold_on", "op": ">=", "values": ["2026-01-01"]}]))
-    headers, _ = rows_by_id(excel_sheet(scoped, {"Sales": [use_case("N01-U01", [SALES])]}))
-    assert "sold_on" not in headers
+    headers, rows = rows_by_id(excel_sheet(scoped, {"Sales": [use_case("N01-U01", [SALES])]}))
+    assert "sold_on" in headers
+    assert rows["N01-U01"]["sold_on"] == "\u2265 2026-01-01"
 
 
 def test_a_translated_export_keeps_the_filter_header_as_the_column_name(scoped):
@@ -126,7 +128,8 @@ def test_the_cases_the_app_reads_match_the_shared_fixture_the_writers_are_checke
     agent_ns["INSPIRE_TABLE_SCOPES"].update(agent_ns["parse_table_scopes"](json.dumps(fixture["scopes"])))
     try:
         for case in fixture["cases"]:
-            uc = {"Primary Table": case["uc"]["primary_table"], "Tables Involved": case["uc"]["tables_involved"]}
+            uc = agent_ns["DatabricksInspire"]._stamp_data_filter_scopes(
+                {"Primary Table": case["uc"]["primary_table"], "Tables Involved": case["uc"]["tables_involved"]})
             filters = agent_ns["use_case_data_filters"](uc)
             got = [{"column": n, "text": agent_ns["data_filter_cell"](filters, n)} for n in agent_ns["data_filter_names"](filters)]
             assert got == case["columns"], case["name"]

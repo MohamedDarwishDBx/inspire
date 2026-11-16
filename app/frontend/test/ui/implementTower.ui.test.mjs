@@ -148,10 +148,10 @@ test('the build page has one tile per asset in a fixed order; each asset opens a
     assert.equal(await page.locator('[role="dialog"][aria-modal="true"]').count(), 0);
     await showAsset(page, 'app');
     assert.deepEqual(await partsOf(page).getByRole('tab').evaluateAll((items) => items.map((b) => [b.dataset.tab, b.getAttribute('aria-label'), b.getAttribute('aria-selected')])), [
-      ['app', 'The whole App, Ready', 'true'], [PAGE, 'Page: Decisions, Ready', 'false'], ['app:page:detail', 'Page: Row detail, Ready', 'false'],
+      ['app', 'The whole Agentic App, Ready', 'true'], [PAGE, 'Page: Decisions, Ready', 'false'], ['app:page:detail', 'Page: Row detail, Ready', 'false'],
     ], 'the whole App first, picked from the start, then one tab per page of this App only');
     const whole = picked(page, 'app');
-    assert.equal(await whole.getByRole('heading').textContent(), 'The whole App');
+    assert.equal(await whole.getByRole('heading').textContent(), 'The whole Agentic App'); // D-LABEL209
     assert.equal(await panel(page).locator('textarea').count(), 0, 'no part has a vibe box of its own');
     const live = panel(page).locator('[data-asset-panel="app"]');
     await live.getByRole('link', { name: /^Open/ }).waitFor();
@@ -171,7 +171,7 @@ test('the build page has one tile per asset in a fixed order; each asset opens a
     assert.equal(await card.locator('[data-built-with], [data-held-ask]').count(), 0, 'the asks a part holds are listed in Vibe/Add/Remove Features, not on the part');
     assert.equal(await card.locator('textarea').count(), 0);
     const versions = panel(page).getByRole('region', { name: 'Versions' });
-    await versions.getByText('Roll back puts the whole App of an earlier version live again').waitFor();
+    await versions.getByText('Roll back puts the whole Agentic App of an earlier version live again').waitFor();
     assert.deepEqual(await versions.locator('[data-version]').evaluateAll((rows) => rows.map((r) => r.dataset.version)), ['3', '2', '1']);
     await versions.locator('[data-live-version]').getByText('Live', { exact: true }).waitFor();
     await versions.getByRole('button', { name: 'Roll back to version 2', exact: true }).waitFor();
@@ -194,7 +194,7 @@ test('the build page has one tile per asset in a fixed order; each asset opens a
       assert.equal(await panel(page).locator('[data-vibe-card]').count(), 1, `${output}: one card at a time`);
     }
     assert.deepEqual(parts, {
-      notebook: ['Notebook, Ready', 'AI reasoning, Ready', 'Money at stake, Ready'],
+      notebook: ['Notebook, Ready', 'AI reasoning, Ready', 'Value at stake, Ready'],
       dashboard: ['The whole dashboard, Ready with warnings', 'Chart: Weekly trend, Ready with warnings'], genie_space: [], alert: [],
     }, 'a tab with one part shows its card with no picker, and the whole dashboard comes before its charts');
 
@@ -893,7 +893,7 @@ test('a vibe Inspire sent to the App alone rebuilds only the App: the stepper, t
     const progress = page.locator('[data-mvp-progress]');
     await progress.locator('[data-stage="App"][data-stage-state="running"]').waitFor({ timeout: 15000 });
     assert.deepEqual(await stagesOf(page), [
-      ['Job', 'Vibe, Plan', 'done'], ['Notebook', 'Start Genie Code', 'done'], ['App', 'Rebuild the App', 'running'], ['Finish', 'Done', 'waiting'],
+      ['Job', 'Vibe, Plan', 'done'], ['Notebook', 'Start Genie Code', 'done'], ['App', 'Rebuild the Agentic App', 'running'], ['Finish', 'Done', 'waiting'],
     ], 'only the planned stages, each a chip');
     assert.deepEqual(await arrowsOf(page), ['done', 'done', 'todo'], 'a dark arrow after each done stage, a grey one before what is still to come');
     for (const absent of ['Dashboard', 'Genie Agent', 'Alert', 'Plan', 'Vibe', 'Instruction', 'Genie build', 'Preview run']) {
@@ -902,17 +902,17 @@ test('a vibe Inspire sent to the App alone rebuilds only the App: the stepper, t
     const [stop, chips] = await Promise.all([progress.locator('[data-stop-build]'), progress.getByRole('list', { name: 'Build stages' })].map((el) => el.boundingBox()));
     assert.ok(stop.y + stop.height <= chips.y + 1, 'Stop the build sits at the top, above the stages');
     assert.equal(await text(progress.locator('[data-stop-build]')), 'Stop the build');
-    assert.equal(await text(progress.locator('[data-sorted-to]')), 'This build carries 1 change. Inspire sorted it to: App.');
+    assert.equal(await text(progress.locator('[data-sorted-to]')), 'This build carries 1 change. Inspire sorted it to: Agentic App.'); // D-LABEL209
     const pulse = (id) => progress.locator(`[data-stage="${id}"] [class*="animate-pulse"]`);
     assert.deepEqual([await pulse('App').count(), await pulse('Job').count()], [1, 0], 'only the current stage pulses');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     assert.notEqual(await pulse('App').evaluate((el) => getComputedStyle(el).animationName), 'none');
     await page.emulateMedia({ reducedMotion: 'reduce' });
     assert.equal(await pulse('App').evaluate((el) => getComputedStyle(el).animationName), 'none', 'and holds still for a person who asked for less motion');
-    await progress.locator('[data-build-headline]').getByText('Genie is rebuilding the App…', { exact: true }).waitFor();
+    await progress.locator('[data-build-headline]').getByText('Genie is rebuilding the Agentic App…', { exact: true }).waitFor(); // D-LABEL209
     assert.equal(await text(progress.locator('[data-scope-note="kept"]')), 'Kept as is: the notebook, the Dashboard, the Genie Agent and the Alert');
     assert.equal(await progress.locator('[data-scope-note="refill"]').count(), 0, 'an App vibe never says the notebook is rebuilt');
-    assert.equal(await text(progress.locator('[data-vibe-route="route"]')), `Sent to the App: “${VIBE}”`);
+    assert.equal(await text(progress.locator('[data-vibe-route="route"]')), `Sent to the Agentic App: “${VIBE}”`);
     assert.equal(await progress.locator('[data-vibe-route]').count(), 1, 'one line for the one ask, and no count of asks no part can do');
 
     const building = {};
@@ -926,8 +926,8 @@ test('a vibe Inspire sent to the App alone rebuilds only the App: the stepper, t
     await showAsset(page, 'app');
     await page.locator('[data-asset-panel="app"]').getByText('Genie is rebuilding it now', { exact: true }).waitFor();
     const whole = await pick(page, 'app');
-    const appSteps = whole.getByRole('list', { name: 'Rebuilding the App' }).getByRole('listitem');
-    assert.equal((await appSteps.nth(1).textContent()).slice(1), 'Rebuilding the App only. Nothing else changes.');
+    const appSteps = whole.getByRole('list', { name: 'Rebuilding the Agentic App' }).getByRole('listitem');
+    assert.equal((await appSteps.nth(1).textContent()).slice(1), 'Rebuilding the Agentic App only. Nothing else changes.');
     const dash = await pick(page, 'dashboard');
     assert.equal(await dash.getByRole('list', { name: 'Rebuilding the Dashboard' }).count(), 0, 'the dashboard card is not rebuilding');
     assert.deepEqual(ui.pageErrors, []);
@@ -974,7 +974,7 @@ test('when Inspire puts back what no ask targets, the stepper shows the Self-fix
     const progress = page.locator('[data-mvp-progress]');
     await progress.locator('[data-stage="App"][data-stage-state="done"]').waitFor({ timeout: 15000 });
     assert.deepEqual(await stagesOf(page), [
-      ['Job', 'Vibe, Plan', 'done'], ['Notebook', 'Start Genie Code', 'done'], ['App', 'Rebuild the App', 'done'], ['Finish', 'Self-fix, Done', 'next'],
+      ['Job', 'Vibe, Plan', 'done'], ['Notebook', 'Start Genie Code', 'done'], ['App', 'Rebuild the Agentic App', 'done'], ['Finish', 'Self-fix, Done', 'next'],
     ], 'the Self-fix stage sits in Finish, before Done');
     const list = page.getByRole('region', { name: 'Vibe checklist of v4', exact: true });
     await list.waitFor({ timeout: 15000 });
@@ -1285,7 +1285,7 @@ test('while Genie rebuilds the App, the App card animates and the Job and Notebo
     const progress = page.locator('[data-mvp-progress]');
     await progress.locator('[data-stage="App"][data-stage-state="running"]').waitFor({ timeout: 15000 });
     assert.deepEqual(await stagesOf(page), [
-      ['Job', 'Vibe, Plan', 'done'], ['Notebook', 'Start Genie Code', 'done'], ['App', 'Rebuild the App', 'running'], ['Finish', 'Done', 'waiting'],
+      ['Job', 'Vibe, Plan', 'done'], ['Notebook', 'Start Genie Code', 'done'], ['App', 'Rebuild the Agentic App', 'running'], ['Finish', 'Done', 'waiting'],
     ]);
     assert.match(await text(progress.locator('[data-stage="Job"]')), /^Job5s/, 'the Job chip carries the plan time');
     await page.waitForFunction(() => document.querySelector('[data-asset-tile="app"]')?.classList.contains('asset-building'), null, { timeout: 20000 });
@@ -1741,3 +1741,36 @@ for (const [width, height] of [[1440, 900], [1024, 768], [390, 844]]) {
     }
   });
 }
+
+// REQ-206: the confirm dialog that stops a shared App is a modal: Escape cancels it with nothing sent, its Cancel and Close stay in
+// view at 1024x700, and Tab stays inside it.
+test('the stop confirm is a modal at 1024x700: Escape cancels it with nothing sent, Close stays in view, and Tab stays inside', async () => {
+  const ui = await openTower(JOINER_STATE);
+  const { page } = ui;
+  const controls = [];
+  page.on('request', (r) => { if (r.url().includes('/api/inspire/implement/control')) controls.push(r.url()); });
+  try {
+    await page.setViewportSize({ width: 1024, height: 700 });
+    await showAsset(page, 'app');
+    const app = page.locator('[data-asset-panel="app"]');
+    await app.getByRole('button', { name: 'Stop the App', exact: true }).waitFor({ timeout: 15000 });
+    await app.getByRole('button', { name: 'Stop the App', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Stop the App for every use case in it' });
+    await dialog.waitFor({ timeout: 5000 });
+    const close = dialog.getByRole('button', { name: 'Close', exact: true });
+    const box = await close.boundingBox();
+    assert.ok(box && box.y >= 0 && box.y + box.height <= 700, `Close is inside the 1024x700 viewport: ${JSON.stringify(box)}`);
+    const inside = () => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')?.querySelector('h2')?.textContent === 'Stop the App for every use case in it'));
+    for (let i = 0; i < 15; i += 1) {
+      await page.keyboard.press('Tab');
+      assert.equal(await inside(), true, `Tab ${i + 1} keeps focus in the stop confirm`);
+    }
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached', timeout: 5000 }).catch(() => null);
+    assert.equal(await dialog.count(), 0, 'Escape cancels the stop confirm');
+    assert.deepEqual(controls, [], 'Escape sends nothing');
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});

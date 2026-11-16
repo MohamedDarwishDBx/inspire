@@ -6,6 +6,7 @@ import pytest
 
 from v120_artifacts_support import CapturingLogger, FakeSpark
 from v120_genie_support import build_inspire, make_uc
+from money_currency_split_test import sqlite_text_formats
 from v142_scd_test import QUOTED_SUMMARY, SUMMARY, _describe
 
 TABLE = "main.inspire.churn_out"
@@ -35,6 +36,7 @@ def _sqlite(sql, rows):
         table.set("db", None)
     db = sqlite3.connect(":memory:")
     db.create_aggregate("MODE", 1, _Mode)
+    sqlite_text_formats(db)  # the future rule reads dates with TRY_TO_DATE too (f37c9b144); these fixtures hold ISO dates
     names = list(rows[0]) if rows else COLUMNS + ["is_current", "change_source"]
     for name in {t.name for t in tree.find_all(sqlglot.exp.Table)}:
         db.execute(f'CREATE TABLE "{name}" ({", ".join(chr(34) + n + chr(34) for n in names)})')
@@ -82,7 +84,7 @@ def test_a_measured_use_case_tiers_by_money_at_stake_and_a_predicted_one_by_shar
         rules = inst._genie_platform_rules(spec)
         assert ("acts on measured amounts, so the formula prices what the data already shows" in rules) is measured, technique
         assert ("acts on a prediction, so the formula is the predicted probability" in rules) is (not measured), technique
-        assert ("`act_now_amount` and `review_amount` come from the money at stake in the first full test run" in rules) is measured
+        assert ("`act_now_amount` and `review_amount` come from the value at stake in the first full test run" in rules) is measured
         assert "{basis}" not in rules and "{amounts}" not in rules
         assert inst._find_unsupported_numeric_claims(rules) == [], technique
         stop = inst._genie_acceptance_stop_rule(spec)
@@ -95,7 +97,7 @@ def test_a_measured_use_case_tiers_by_money_at_stake_and_a_predicted_one_by_shar
 def test_a_notebook_without_the_currency_widget_writes_as_it_did_before(fresh_ns):
     config = fresh_ns["inspire_value_run_config"]
     _widgets(fresh_ns)
-    assert config(["entity_id", "priority_tier"]) is None, "a notebook built before the money at stake has no currency widget"
+    assert config(["entity_id", "priority_tier"]) is None, "a notebook built before the value at stake has no currency widget"
     fresh_ns["INSPIRE_RUN"] = {"decision_basis": "measured"}
     _widgets(fresh_ns, currency="USD", act_now_amount="5000", review_amount="1000")
     assert config(["entity_id"]) == dict(MEASURED, kind="money", unit="USD", formula=None, expression=None, expression_required=False,

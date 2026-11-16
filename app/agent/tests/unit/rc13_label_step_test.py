@@ -33,7 +33,8 @@ def test_the_fired_line_is_kept_in_the_step_message_on_a_successful_completion(r
                               status="ended_success", message=LINE, keep_detail=True)
     row = run.atomic_writer.calls[-1]
     assert row["status"] == "ended_success"
-    assert LINE in row["message"], "the FIRED line reaches the message the steps route returns"
+    assert LINE.split("] ", 1)[1] in row["message"], "the label sentence reaches the message the steps route returns"
+    assert "FIRED" not in row["message"], "the proof tag stays in the log, not in the App message (REQ-059)"
 
 
 def test_a_successful_completion_without_keep_detail_keeps_the_old_story_message(run):
@@ -57,4 +58,4 @@ def test_the_run_emits_the_fired_line_as_the_label_step_with_the_detail_kept(age
         source = "".join(json.load(handle)["cells"][1]["source"])
     complete = source.index('sub_step_name="Complete",\n                                                   status="ended_warning" if label_stats["fallback"] else "ended_success", message=_label_line')
     assert "keep_detail=True" in source[complete:complete + 400], "the completion keeps the FIRED line in its message"
-    assert "log_print(_label_line)" in source, "and it is also written to the log"
+    assert "log_name_fix_lines(self.logger, label_stats" in source, "and it is written through the logger, so it reaches the info log"

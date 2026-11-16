@@ -1,5 +1,7 @@
+const { parseExactJson } = require('./exactJson');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { plural } = require('./plural');
+const { busyDelayMs, isTransientStatus } = require('./busyRetry');
 
 const PAGE_SQL_DEADLINE_MS = 240000;
 const READ_ONLY_SQL_RE = /^\s*(SELECT|WITH|SHOW|DESCRIBE|DESC|EXPLAIN)\b/i;
@@ -65,6 +67,15 @@ function sqlCancelledError(statementId) {
   return Object.assign(new Error('The query was cancelled, so Inspire stopped it.'), { code: 'SQL_CANCELLED', statementId });
 }
 
+// The API's error_code is a string enum (REST API errors page). Legacy endpoints send an integer, which is treated as absent.
+function errorCodeOf(source) {
+  let body = source;
+  if (typeof source === 'string') {
+    try { body = parseExactJson(source); } catch { return undefined; }
+  }
+  return body && typeof body.error_code === 'string' && body.error_code ? body.error_code : undefined;
+}
+
 function isDeltaWriteConflict(message) {
   return DELTA_WRITE_CONFLICT_RE.test(String(message || ''));
 }
@@ -107,7 +118,7 @@ function createExecuteSql(dbFetch, { now = Date.now, sleep = (ms) => new Promise
     if (!submitResp.ok) {
       const errText = await submitResp.text();
       console.error(`   ❌ SQL submit failed (${submitResp.status}): ${errText.substring(0, 200)}`);
-      throw new Error(`SQL failed (${submitResp.status}): ${errText}`);
+      throw Object.assign(new Error(`SQL failed (${submitResp.status}): ${errText}`), { http_status: submitResp.status, error_code: errorCodeOf(errText) });
     }
     let result = await submitResp.json();
     console.log(`   📄 SQL state: ${result.status?.state}`);
@@ -135,7 +146,8 @@ function createExecuteSql(dbFetch, { now = Date.now, sleep = (ms) => new Promise
     if (result.status?.state === 'FAILED') {
       const errMsg = result.status?.error?.message || 'SQL statement execution failed';
       console.warn(`   ⚠️ SQL failed: ${errMsg.substring(0, 300)}`);
-      throw new Error(errMsg);
+      // The statement reports FAILED with HTTP 200: its error_code (status.error.error_code) and sql_state are the structured fields.
+      throw Object.assign(new Error(errMsg), { error_code: errorCodeOf(result.status?.error), sql_state: result.status?.sql_state || undefined });
     }
 
     if (result.manifest?.total_chunk_count > 1 && result.manifest?.chunks) {
@@ -172,8 +184,55 @@ function createExecuteSql(dbFetch, { now = Date.now, sleep = (ms) => new Promise
   };
 }
 
+// Documented error_code values (REST API errors page). A permanent code means the request itself is refused: a retry gives the same answer.
+const PERMANENT_ERROR_CODES = new Set(['PERMISSION_DENIED', 'UNAUTHENTICATED', 'NOT_FOUND', 'ENDPOINT_NOT_FOUND', 'INVALID_PARAMETER_VALUE', 'ALREADY_EXISTS']);
+// Documented as transient (TEMPORARILY_UNAVAILABLE, SERVICE_UNDER_MAINTENANCE, the workspace variant), or a busy or late answer to a read
+// (RESOURCE_EXHAUSTED is the 429 class, DEADLINE_EXCEEDED a server timeout). lookupWithRetry only runs reads, so a retry is safe.
+const TRANSIENT_ERROR_CODES = new Set(['TEMPORARILY_UNAVAILABLE', 'WORKSPACE_TEMPORARILY_UNAVAILABLE', 'SERVICE_UNDER_MAINTENANCE', 'RESOURCE_EXHAUSTED', 'DEADLINE_EXCEEDED']);
+// The documented warehouse states (GET /api/2.0/sql/warehouses/{id}) are STARTING, RUNNING, STOPPING, STOPPED, DELETING, DELETED. The
+// statement docs name no code for a warehouse that is starting or stopped (FAILED carries only the text), so this text is the fallback.
+const WAREHOUSE_NOT_READY_RE = /warehouse[^.;]*\b(starting|stopped|not (yet )?running)\b|\b(starting|stopped)\b[^.;]*warehouse/i;
+
+/** True when a failed read can succeed on a retry: a busy or down workspace, a warehouse that is starting or stopped, a statement that
+ *  timed out, or a dropped network. A denial, a missing object or a bad statement is not transient. Structured fields decide first
+ *  (error_code, then the HTTP status of a rejected request); the message text is used only when they give no verdict. */
+function isTransientSqlFailure(err) {
+  if (!err) return false;
+  if (err.code === 'SQL_DEADLINE' || err.timedOut) return true;
+  if (PERMANENT_ERROR_CODES.has(err.error_code)) return false;
+  if (TRANSIENT_ERROR_CODES.has(err.error_code)) return true;
+  if (Number.isInteger(err.http_status)) return isTransientStatus(err.http_status);
+  const message = String(err.message || err || '');
+  const submitted = /^SQL failed \((\d{3})\)/.exec(message);
+  if (submitted) return isTransientStatus(submitted[1]);
+  if (WAREHOUSE_NOT_READY_RE.test(message)) return true;
+  return /^Cannot reach (the )?Databricks/.test(message);
+}
+
+// The errors page says a RESOURCE_EXHAUSTED (quota) answer is not retried automatically: it can take hours to clear. It is still busy.
+function retriesAutomatically(err) {
+  return !(err && err.error_code === 'RESOURCE_EXHAUSTED');
+}
+
+/** Runs one read that feeds a verdict. A transient failure is retried once after the busy delay, except a quota answer (see
+ *  retriesAutomatically). Returns { value } on success, or { error, transient } where transient says whether a later try can change
+ *  the answer (the person can then check again). */
+async function lookupWithRetry(run, { sleep = (ms) => new Promise((done) => setTimeout(done, ms)) } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return { value: await run() };
+    } catch (error) {
+      const transient = isTransientSqlFailure(error);
+      if (!transient || attempt >= 2 || !retriesAutomatically(error)) return { error, transient };
+      await sleep(busyDelayMs(attempt));
+    }
+  }
+}
+
 module.exports = {
   createExecuteSql,
+  isTransientSqlFailure,
+  lookupWithRetry,
   isIdempotentSql,
   sqlQueryTags,
   runWithQueryTags,

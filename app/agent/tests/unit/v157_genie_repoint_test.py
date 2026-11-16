@@ -5,11 +5,13 @@ import pytest
 from v120_artifacts_support import CapturingLogger, FakeSpark
 from v140_implement_test import OURS_APP, VALID, _app_flow, _app_shell, _left_by
 from v142_merge_test import HOST_APP, OWN_SOURCE, _host_files, _host_page, _own_genie_route, _restyle_inspire, _router, _serve_files
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 OWN_APP = {"name": "churn-desk", "description": OURS_APP, "url": "https://churn-desk.example/",
            "active_deployment": {"source_code_path": OWN_SOURCE}, "compute_status": {"state": "ACTIVE"},
            "service_principal_client_id": "sp-1"}
-GENIE = {"space_id": "g1", "title": "N01-U01 Predict churn"}
+GENIE = {"space_id": "g1", "title": "Predict churn"}  # REQ-258: the Genie Agent title is the use case name, never its id
 NOT_READY = "The Genie Agent is not ready: it was not built"
 CHECK_FAILED = "page n01_u01: kpi:revenue failed: TABLE_OR_VIEW_NOT_FOUND"
 
@@ -69,8 +71,8 @@ def test_a_genie_agent_change_without_an_app_rebuild_points_the_built_app_at_it(
     assert (vibed["refresh"], vibed["repoint"]) == (["genie_space"], ["app"]), \
         "a vibed Genie Agent keeps its id, but its page may still ask another use case's Genie Agent or none, so the App page is checked"
     assert plan(dict(VALID, retry_outputs=["dashboard"]))["repoint"] == []
-    assert validate(dict(VALID, outputs=dict(VALID["outputs"], genie_space=False)))[0]["outputs"]["genie_space"] is True, \
-        "an App always has a Genie Agent, so no version takes it away from a built App"
+    assert validate(dict(VALID, outputs=dict(VALID["outputs"], genie_space=False)))[0]["outputs"]["genie_space"] is False, \
+        "the Genie Agent is optional (REQ-152): a version that turns it off keeps it off, and the App answers Ask itself"
     for spec, held, why in ((dict(VALID, retry_outputs=["genie_space", "app"]), None, "the App is rebuilt with it anyway"),
                             (dict(VALID, retry_outputs=["genie_space"]), dict(assets, app=None), "the App is built with it"),
                             (dict(VALID, outputs=dict(VALID["outputs"], app=False), retry_outputs=["genie_space"]), None, "no App is chosen"),
@@ -136,7 +138,7 @@ def test_an_app_page_still_asking_a_genie_agent_this_use_case_no_longer_has_turn
     assert (name, space_id, settings["genie"], settings["genie_note"]) == ("churn-desk", "", None, NOT_READY)
     assert (pages[0]["genie"], pages[0]["genie_note"]) == (None, NOT_READY)
     assert reads == agent_ns["implement_app_page_reads"](pages), "an App without a Genie Agent reads only what its pages show"
-    assert fields["_warnings"] == [f"App: {NOT_READY}"]
+    assert fields["_warnings"] == [f"{APP_LABEL}: {NOT_READY}"]
     assert _messages(inst, "ended_success") == ["the App churn-desk no longer asks a Genie Agent for this use case"]
 
 
@@ -148,7 +150,7 @@ def test_an_app_whose_pages_fail_todays_checks_is_rebuilt_by_genie_to_ask_its_ge
     rebuilt = []
     inst._implement_page_spec = lambda context, runner, name, deploy: rebuilt.append((runner, name)) or {"app_name": "churn-desk"}
     fields = inst._implement_app(context, None)
-    note = (f"App: its pages no longer passed Inspire's checks ({CHECK_FAILED}), so Genie rebuilt them to ask this use case's Genie "
+    note = (f"{APP_LABEL}: its pages no longer passed Inspire's checks ({CHECK_FAILED}), so Genie rebuilt them to ask this use case's Genie "
             "Agent")
     assert seen["deployed"] == [] and len(seen["checked"]) == 2, "the held pages passed as they were, so the repoint caused the problem"
     assert rebuilt == [("runner", "app")] and fields == {"app_name": "churn-desk"}, "Genie rebuilds the page instead of handing it back"
@@ -164,7 +166,7 @@ def test_an_app_whose_pages_already_failed_the_same_check_is_repointed_without_g
     inst._implement_page_spec = lambda context, runner, name, deploy: rebuilt.append((runner, name)) or {"app_name": "churn-desk"}
     fields = inst._implement_app(context, None)
     assert rebuilt == [] and len(seen["deployed"]) == 1 and len(seen["checked"]) == 2, "the repoint caused nothing, so it deploys"
-    kept = f"App: this redeploy kept 1 problem its pages already had; a rebuild of the App fixes: {CHECK_FAILED}"
+    kept = f"{APP_LABEL}: this redeploy kept 1 problem its pages already had; a rebuild of the App fixes: {CHECK_FAILED}"
     assert kept in fields["_warnings"] and "app_rebuild" not in context
 
 

@@ -55,7 +55,7 @@ def test_an_anchored_question_with_its_own_subject_is_judged_with_the_conversati
     s, _ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, question, history=FLAGGED, record_key="k1", view={"element": {"kind": "chart", "title": "Age and status of billing breaks"}})
     assert turn["refused"] is refused, "a conversation and an item on screen never decide the topic of a question with its own subject"
-    assert turn["answer"] == (shell_agent.OFF_TOPIC if refused else "Reconcile the payments on Bill 1133.")
+    assert (turn["answer"].startswith(shell_agent.OFF_TOPIC) if refused else turn["answer"] == "Reconcile the payments on Bill 1133.")
     assert llm.bodies[0]["max_tokens"] == shell_agent.TOPIC_TOKENS and len(llm.main_calls()) == (0 if refused else 1)
     data = guard_data(llm)
     assert data["person_asks"] == question
@@ -72,6 +72,8 @@ def test_the_guard_sees_only_the_last_turns_cut_short():
            "question": "How does the discount policy compare with what the regional teams reported last quarter?"}
 
     class Shell:
+        settings = {}
+
         def app_title(self):
             return "App"
 
@@ -91,7 +93,7 @@ def test_off_topic_and_prompt_probes_are_refused_even_after_an_on_topic_conversa
     llm = FakeLLM([said("Here is a poem.")], related=lambda body: True)
     s, ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, question, history=FLAGGED, record_key="k1")
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[], confirm=None)
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[], confirm=None)
     assert llm.bodies == [], "an on-topic history and a record on screen never let a probe past the rule"
     assert ws.queries("MERGE INTO") == []
 
@@ -111,7 +113,7 @@ def test_a_probe_wrapped_in_page_words_still_reaches_the_check_and_its_refusal_i
     llm = FakeLLM([said("Here is a poem.")], related=lambda body: False)
     s, ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, question, history=FLAGGED, record_key="k1")
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[], confirm=None)
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[], confirm=None)
     assert llm.main_calls() == [] and ws.genie == []
 
 
@@ -235,7 +237,7 @@ def test_an_anchored_question_with_another_subject_is_refused_by_the_model_that_
     llm = FakeLLM([said("Rome collected taxes through provinces.")], related=contract)
     s, ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, question, history=FLAGGED, record_key="k1", view=CHART)
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
     assert len(llm.bodies) == 1 and llm.main_calls() == [] and ws.genie == []
     data = guard_data(llm)
     assert data["person_asks"] == question

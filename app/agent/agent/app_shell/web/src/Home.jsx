@@ -24,5 +24,5 @@ export function ReviewLink({ page, app }) {
 }
 
 export function hubExplain(app, onExplain, page) {
-  return genieOn(app, page) && onExplain ? (kind, title, context) => onExplain({ kind, page, title, context }) : null;
+  return genieOn(app, page) && onExplain ? (kind, title, context, opts) => onExplain({ kind, page, title, context, inPlace: !!opts?.inPlace }) : null;
 }

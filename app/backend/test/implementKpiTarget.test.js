@@ -270,9 +270,9 @@ test('one formatter names what is at stake: money only when the impact is money,
   const hours = K.impactOf({ impact_kind: 'hours', impact_unit: 'hours', currency: 'USD' });
   assert.deepEqual(hours, { kind: 'hours', unit: 'hours' }, 'a currency left on the row never reaches an hours KPI');
   const cases = [
-    [{ impact_kind: 'money', impact_unit: 'EUR' }, 'Money at stake', 'money at stake', '1,234.5 EUR'],
-    [{ impact_kind: 'money', impact_unit: '', currency: 'USD' }, 'Money at stake', 'money at stake', '1,234.5 USD'],
-    [{ currency: 'USD' }, 'Money at stake', 'money at stake', '1,234.5 USD'],
+    [{ impact_kind: 'money', impact_unit: 'EUR' }, 'Value at stake', 'value at stake', '1,234.5 EUR'],
+    [{ impact_kind: 'money', impact_unit: '', currency: 'USD' }, 'Value at stake', 'value at stake', '1,234.5 USD'],
+    [{ currency: 'USD' }, 'Value at stake', 'value at stake', '1,234.5 USD'],
     [{ impact_kind: 'hours', impact_unit: 'hours', currency: 'USD' }, 'Hours at stake', 'hours at stake', '1,234.5 hours'],
     [{ impact_kind: 'count', impact_unit: 'late deliveries' }, 'Late deliveries at stake', 'late deliveries at stake', '1,234.5 late deliveries'],
     [{ impact_kind: 'percent', impact_unit: 'points of churn rate' }, 'Points of churn rate at stake', 'points of churn rate at stake', '1,234.5 points of churn rate'],

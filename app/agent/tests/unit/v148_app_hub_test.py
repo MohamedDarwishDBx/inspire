@@ -106,6 +106,7 @@ class SqliteWorkspace:
         self.lock = threading.Lock()
         self.db = sqlite3.connect(":memory:", check_same_thread=False)
         self.db.create_function("UNIX_MICROS", 1, lambda value: len(str(value)))
+        self.db.create_function("TRY_TO_DATE", 2, lambda text, text_format: None)  # ISO fixtures read through TRY_CAST; formats are checked on Postgres
         for name, rows in ({"loss_desk_out": ROWS} if tables is None else tables).items():
             self.db.execute(f'CREATE TABLE "{name}" ({", ".join(chr(34) + c + chr(34) for c in COLUMNS)})')
             self.db.executemany(f'INSERT INTO "{name}" VALUES ({", ".join("?" for _ in COLUMNS)})', [tuple(r[c] for c in COLUMNS) for r in rows])
@@ -206,7 +207,7 @@ def test_the_overview_measures_fixes_dismissals_and_savings_a_later_run_confirme
     done = page["done"]
     assert (done["fixed"], done["fixed_q"], done["dismissed"], done["dismissed_q"]) == (3, 1, 1, 1)
     assert (done["saved_n"], done["saved"], done["saved_q_n"], done["saved_q"]) == (2, 1800.0, 1, 1100.0), \
-        ("a fix counts its money at stake when it was marked done less what a later run still finds on it, once a later run no longer "
+        ("a fix counts its value at stake when it was marked done less what a later run still finds on it, once a later run no longer "
          "flags it or drops it; still flagged never counts")
     assert done["first_fixed"].startswith("2026-08-10") and done["first_saved"].startswith("2026-09-03")
     weeks = {w["week"]: w["saved"] for w in page["weeks"]}

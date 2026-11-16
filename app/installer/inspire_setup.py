@@ -9,6 +9,7 @@ ASSETS_PARENT = "/Workspace/Shared/inspire-ai/assets"
 APPS_PARENT = "/Workspace/Shared/inspire-ai/apps"
 ASSETS_MANIFEST = "manifest.json"
 ASSETS_FORMAT = 1
+ASSETS_BUILD_ID_LEN = 12
 SCAN_SKIPPED = ("samples", "system", "__databricks_internal", "information_schema")
 SCAN_GRANTS = ("USE CATALOG", "USE SCHEMA", "SELECT", "BROWSE")
 CONSENT_PRIVILEGES = "USE CATALOG, USE SCHEMA, SELECT, BROWSE"
@@ -247,6 +248,27 @@ def _yaml_quote(value):
 FX_RATE_SOURCE = 'https://api.frankfurter.dev/v1/latest'
 
 
+def assets_build_id(files) -> str:
+    """The id that names one Inspire build's assets folder: a short sha256 of the notebook pins its manifest lists.
+
+    The notebook derives the same id from its own INSPIRE_NOTEBOOK_ASSETS pins (inspire_assets_build_id), so the installer
+    and every notebook of one build agree on the folder without sharing state. Two builds of one version never share it.
+    """
+    pins = {}
+    for entry in files:
+        if isinstance(entry, dict) and entry.get("kind") == "notebook":
+            pins[str(entry.get("name"))] = {"file": entry.get("file"), "sha256": entry.get("sha256"), "size": entry.get("size")}
+    if not pins:
+        raise RuntimeError(f"{ASSETS_MANIFEST} lists no notebook file, so its Inspire build cannot be named. Download the release again.")
+    canonical = json.dumps(pins, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()[:ASSETS_BUILD_ID_LEN]
+
+
+def assets_root_for(version_root, build) -> str:
+    """The one folder a build's assets live in: <assets parent>/<version>/<build id>, with version_root the first two parts."""
+    return f"{version_root}/{build}"
+
+
 def write_app_yaml_deploy(path, inspire_db, warehouse_id, notebook_path, sp_resource_name, assets_path=None, test_tag=None, extra_env=None):
     """Emit app.yaml without PyYAML (no extra pip on the cluster)."""
     lines = [
@@ -476,6 +498,9 @@ GENIE_CODE_CONSTANTS = ("UNITY_GATEWAY_CODEX_PATH", "UNITY_GATEWAY_ANTHROPIC_PAT
                         "GENIE_CODE_MODEL_CHECK", "GENIE_CODE_ADMIN_FIX", "GENIE_CODE_UNFIT_MODEL_PATTERN")
 GENIE_CODE_CHECK_TIMEOUT_S = 10
 GENIE_CODE_CODEX_PROBES = 3
+# "unity-catalog" is not an App user scope: the workspace refuses it ("The specified scope unity-catalog ..."), which drops every
+# user scope and installs Inspire without user authorization. Request for Access runs with the scopes the App has and falls back to
+# the copyable SQL when the token cannot send the request (REQ-311/313).
 INSPIRE_APP_OWN_SCOPES = ("apps", "catalog.catalogs:read", "catalog.schemas:read", "catalog.tables:read", "files", "model-serving", "sql",
                           "workspace.workspace")
 USER_SCOPES_REFUSED = ("Inspire was installed without user authorization, so it lists no catalogs, schemas or tables, starts no run "
@@ -808,6 +833,7 @@ def build_runtime_context(env):
               f"{SCHEMA_MODE_CATALOG_NOTE}. Files go under {folders['APPS_PARENT'].rsplit('/', 1)[0]}.")
 
     release_version = str(env["manifest"]["version"])
+    release_tag = str(env["manifest"].get("tag") or release_version)
     source_zip = (env.get("files") or {}).get(APP_ZIP, "")
     if not source_zip:
         raise FileNotFoundError(f"The Inspire {release_version} release holds no {APP_ZIP}. Download the release again.")
@@ -865,6 +891,7 @@ def build_runtime_context(env):
         "SP_NAME": sp_name,
         "USER_GROUPS": [str(getattr(g, "display", "") or "") for g in (getattr(current_user, "groups", None) or [])],
         "RELEASE_VERSION": release_version,
+        "RELEASE_TAG": release_tag,
         "SOURCE_ZIP": source_zip,
         "SCHEMA_MODE": bool(schema_pair),
         "RUN_AS_PERSON": run_as,
@@ -1186,8 +1213,9 @@ def step_create_app_and_find_sp(ctx):
     print(f"SPs before deploy: {len(sp_before)}")
 
     app_yaml_path = f"{source_folder}/app.yaml"
+    release_env = {"INSPIRE_RELEASE_TAG": ctx["RELEASE_TAG"]} if ctx.get("RELEASE_TAG") else {}
     wanted_yaml = write_app_yaml_deploy(app_yaml_path, inspire_db, warehouse_id, notebook_path, sp_name, ctx.get("ASSETS_PATH"),
-                                        ctx.get("TEST_TAG"), ctx.get("APP_EXTRA_ENV"))
+                                        ctx.get("TEST_TAG"), {**(ctx.get("APP_EXTRA_ENV") or {}), **release_env} or None)
     print("app.yaml: ✅")
 
     app_url = ""
@@ -1955,12 +1983,14 @@ def _assets_listing(tar, version):
 
 
 def step_assets(ctx):
-    tar_path, root, version = ctx["ASSETS_TAR"], ctx["ASSETS_ROOT"], ctx["RELEASE_VERSION"]
+    """Install the build's files into its own folder: ASSETS_ROOT holds one folder per build, named by assets_build_id."""
+    tar_path, version_root, version = ctx["ASSETS_TAR"], ctx["ASSETS_ROOT"], ctx["RELEASE_VERSION"]
     print(f"Inspire assets: checking every file in {ASSETS_TAR} ...")
     stage = tempfile.mkdtemp(prefix="inspire_assets_")
     try:
         with tarfile.open(tar_path, "r:") as tar:
             manifest_member, files = _assets_listing(tar, version)
+            root = assets_root_for(version_root, assets_build_id(files))
             for entry in files:
                 try:
                     member = tar.getmember(entry["file"])

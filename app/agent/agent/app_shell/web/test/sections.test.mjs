@@ -191,7 +191,7 @@ test('What to do now counts the records in your window, so closed records outsid
     return json(200, { rows: [], total: 16, offset: 0, limit: body.limit || 25, actions: true, changes: false, summary, errors: {}, ...(body.window ? { window: { window: body.window.window } } : {}) });
   };
   const { page, seen, context } = await openApp(browser, served.base, appInfo(DECIDE, 1, TABLE), { routes: { ...trackedRoutes(), records }, ready: '[data-section="todo"] [data-todo-count]' });
-  assert.equal(await page.locator('[data-section="todo"] [data-todo-count]').innerText(), '16 of 24 waiting for you');
+  assert.equal(await page.locator('[data-section="todo"] [data-todo-count]').innerText(), '16 waiting for you · 8 done');
   assert.ok(seen.records.filter((r) => !r.changed).every((r) => r.window), 'every list the Dashboard asks for carries your window, except the changed-since-visit list the Inbox asks for');
   assert.deepEqual(seen.errors, []);
   await context.close();
@@ -623,7 +623,7 @@ test('proof: What to do now counts only the records in its window, against the s
   await page.waitForFunction(() => document.querySelector('[data-section="todo"] [data-todo-count]')?.textContent?.includes('waiting for you'));
   const text = await page.locator('[data-section="todo"] [data-todo-count]').textContent();
   await page.screenshot({ path: `${SHOTS}/todo_count_1440.png` });
-  assert.equal(text, '16 of 24 waiting for you');
+  assert.equal(text, '16 waiting for you · 8 done');
   await context.close();
 });
 

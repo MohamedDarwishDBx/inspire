@@ -1,3 +1,4 @@
+const { withServicePrincipal } = require('./appRecord');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const os = require('os');
@@ -88,7 +89,7 @@ class AlertsWorkspace {
       const file = this.files[params.get('path')];
       return file ? [file] : [{ error_code: 'RESOURCE_DOES_NOT_EXIST', message: `Path (${params.get('path')}) doesn't exist.` }, 404];
     }
-    if (route.startsWith('/api/2.0/apps/')) return [this.apps[decodeURIComponent(route.split('/').pop())]];
+    if (route.startsWith('/api/2.0/apps/')) return [withServicePrincipal(this.apps[decodeURIComponent(route.split('/').pop())])];
     if (route === '/api/2.0/alerts' && method === 'POST') {
       if (!this.folders.has(body.parent_path)) return [{ error_code: 'RESOURCE_DOES_NOT_EXIST', message: `Parent folder ${body.parent_path} does not exist` }, 404];
       for (const s of body.evaluation.notification.subscriptions || []) {

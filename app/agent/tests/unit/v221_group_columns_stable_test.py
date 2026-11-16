@@ -185,6 +185,8 @@ def test_spark_records_come_back_with_the_same_columns_under_grouping_all_and_a_
     pyspark.sql = sql
     for name, module in (("pyspark", pyspark), ("pyspark.sql", sql), ("pyspark.sql.functions", functions)):
         monkeypatch.setitem(sys.modules, name, module)
+    # The fake frame models columns and groups, not distinct counts; the one-value check has its own tests (p84_residuals_test.py).
+    monkeypatch.setitem(fresh_ns, "inspire_group_one_value_held", lambda frame, columns, spark_frame: [])
     _run(fresh_ns, {"item.category": dict(JOIN)})
     records = _Frame(["item_sk", "net_paid"], level="category")
     session = _Session(["item_sk", "category", "brand"])

@@ -397,7 +397,23 @@ def violations_in(sql):
     return [(kind, target) for kind, target in statement_targets(sql) if classify_target(target) is None]
 
 
+# REQ-263 (P84 r2/r3, D-NESTGROUP): a Grouping column must hold more than one value in the scope before Genie sees it, and no
+# metadata answers that: the one-value check counts the distinct values of one column of the scoped source. It is the one aggregate
+# the Implement operation reads from a user table. The reviewed shape is one COUNT(DISTINCT) per column, read through the same scope
+# Discover uses, and nothing else; any other read in an implement_* function stays a violation.
+ONE_VALUE_FUNCTIONS = ("_implement_one_value_columns", "count")  # "count" is the nested helper that executes the statement
+ONE_VALUE_SOURCE = "{scoped_read_source(table, scopes)}"
+ONE_VALUE_SHAPE = re.compile(r"^SELECT COUNT\(DISTINCT COALESCE\(NULLIF\(TRIM\(CAST\(\{inspire_column\(column\)\} AS STRING\)\), ''\), "
+                             r"'no \{column\}'\)\) AS distinct_values FROM \{scoped_read_source\(table, scopes\)\}$")
+
+
+def is_reviewed_one_value_read(function, kind, target, sql):
+    return function in ONE_VALUE_FUNCTIONS and kind == "read" and target == ONE_VALUE_SOURCE and bool(ONE_VALUE_SHAPE.match(" ".join(sql.split())))
+
+
 def implement_permits(function, kind, target, sql, implement=None):
+    if is_reviewed_one_value_read(function, kind, target, sql):
+        return True
     if not (IMPLEMENT_FUNCTION.match(function or "") if implement is None else implement):
         return False
     return bool(IMPLEMENT_RESULT_PLACEHOLDER.match(target)) or (kind == "read" and bool(ZERO_ROW_PROBE.search(sql)))
@@ -658,8 +674,19 @@ def test_guard_extracts_the_agents_sql_surface(notebook_audit):
         assert expected in joined, f"extractor did not resolve the statement containing {expected!r}"
 
 
+# The App's default filter window (REQ-067): `sql, _params = shell_sql.bounds_query(page, id)` returns the page's own dataset
+# SQL, which exists only at run time, so no static trace can reach its target. The App-shell boundary guard (v166) reviews this
+# exact entry point; the two lists must agree, and this exemption covers only this function's one call.
+RUNTIME_DATASET_SQL_REVIEWED = {("implement_genie_default_values", "spark.sql(sql)")}
+
+
+def queue_worker_sites(unresolved):
+    return [u for u in unresolved if u[1] in QUEUED_SQL_WORKERS and u[2] == "self.spark.sql(sql)"]
+
+
 def queued_worker_leftovers(unresolved):
-    return [u for u in unresolved if not (u[1] in QUEUED_SQL_WORKERS and u[2] == "self.spark.sql(sql)")]
+    queued = queue_worker_sites(unresolved)
+    return [u for u in unresolved if u not in queued and (u[1], u[2]) not in RUNTIME_DATASET_SQL_REVIEWED]
 
 
 def test_every_executed_sql_call_site_is_resolved(notebook_audit):
@@ -667,7 +694,13 @@ def test_every_executed_sql_call_site_is_resolved(notebook_audit):
     leftovers = queued_worker_leftovers(unresolved)
     assert not leftovers, "SQL call sites whose statement cannot be traced to a literal:\n" + "\n".join(
         f"line {line} in {func}: {call} -> {reasons}" for line, func, call, reasons in leftovers)
-    assert len(unresolved) - len(leftovers) <= 1, "only the single-writer queue worker may execute queued SQL"
+    assert len(queue_worker_sites(unresolved)) <= 1, "only the single-writer queue worker may execute queued SQL"
+
+
+def test_the_runtime_dataset_exemption_is_the_reviewed_app_shell_entry_point():
+    from v166_app_shell_boundary_test import SHELL_ENTRY_POINTS
+    assert ("implement_genie_default_values", "shell_sql.bounds_query") in SHELL_ENTRY_POINTS
+    assert RUNTIME_DATASET_SQL_REVIEWED == {("implement_genie_default_values", "spark.sql(sql)")}
 
 
 def test_agent_never_reads_user_table_rows(notebook_audit):
@@ -972,8 +1005,11 @@ def test_implement_reads_only_its_result_tables_and_zero_row_probes():
     _, _, bad, _, implement = audit(agent_source(), with_implement_reads=True)
     assert not bad
     assert {"{inspire_table_name(result_table)}", "{inspire_table_name(table)}"} <= {target for _, _, target, _, _ in implement}
-    assert all(IMPLEMENT_FUNCTION.match(function) for *_, function in implement)
-    probes = [entry for entry in implement if not IMPLEMENT_RESULT_PLACEHOLDER.match(entry[2])]
+    one_value = [entry for entry in implement if entry[4] in ONE_VALUE_FUNCTIONS and entry[2] == ONE_VALUE_SOURCE]
+    assert one_value, "the reviewed REQ-263 one-value read is no longer reached by the Implement operation"
+    rest = [entry for entry in implement if entry not in one_value]
+    assert all(IMPLEMENT_FUNCTION.match(function) for *_, function in rest)
+    probes = [entry for entry in rest if not IMPLEMENT_RESULT_PLACEHOLDER.match(entry[2])]
     assert probes and all(ZERO_ROW_PROBE.search(sql) for _, _, _, sql, _ in probes), probes
 
 
@@ -1250,6 +1286,9 @@ def owned_target_roots(source):
     index = SqlIndex(ast.parse(source))
     roots = set()
     for _lineno, sql, _owner, _function in index.sql_literals():
+        if METADATA_STATEMENT.match(sql) or PERMISSION_STATEMENT.match(sql):
+            # SHOW CREATE TABLE names its object through the CREATE keyword: a metadata read, the same exemption violations_in gives it.
+            continue
         for kind, target in statement_targets(sql):
             found = OWNED_TARGET_PLACEHOLDER.match(target.strip())
             if kind == "write" and found:

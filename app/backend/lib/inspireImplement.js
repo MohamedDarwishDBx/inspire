@@ -1,6 +1,7 @@
 const { appShellCatalog } = require('./appShell');
-const { IMPLEMENT_RUN_AS_PARAM, IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
+const { IMPLEMENT_RUN_AS_PARAM, IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, useCaseNameTag, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
 const { parseExactJson } = require('./exactJson');
+const { permissionRequired } = require('./permissions');
 const { moneyRuleProblems, moneyRuleClean } = require('./moneyRule');
 const { int64Id } = require('./int64Id');
 const { plural } = require('./plural');
@@ -15,7 +16,7 @@ const {
 const { specVibeAsks, vibeRefusalText, vibeRefusals } = require('../../frontend/src/lib/vibeLimits.js');
 const { PERSONAL_KEY_REASON, personalColumn } = require('../../frontend/src/lib/personalColumns.js');
 const {
-  defaultResultTable: defaultUseCaseResultTable, inspireDatabaseKey, isAppUpdate, liveAppVersion, lostTablesAction, lostTablesList,
+  defaultResultTable: defaultUseCaseResultTable, inspireDatabaseKey, isAppUpdate, keptAppEntry, liveAppVersion, lostTablesAction, lostTablesList,
   ownSchemaAllTakenNote, ownSchemaClashNote, ownSchemaFallbackNote, ownSchemaReuseNote, rowKeyOf, USE_CASE_SCHEMA_CLASH_LIMIT,
 } = require('../../frontend/src/lib/implementWizard.js');
 const { quotedIdent } = require('../../frontend/src/lib/tableName.js');
@@ -31,7 +32,8 @@ const IMPLEMENT_STATUSES = ['queued', 'filling', 'previewing', 'building_outputs
 const IMPLEMENT_ACTIVE_STATUSES = ['queued', 'filling', 'previewing', 'building_outputs', 'checking'];
 const IMPLEMENT_DONE_STATUSES = ['ready', 'ready_with_warnings'];
 const IMPLEMENT_OUTPUTS = ['dashboard', 'genie_space', 'app', 'alert'];
-const IMPLEMENT_OUTPUT_LABELS = { dashboard: 'Dashboard', genie_space: 'Genie Agent', app: 'App', alert: 'Alert' };
+// The one label of each output, shared with the wizard (frontend imports the same file): every person-facing text reads it.
+const IMPLEMENT_OUTPUT_LABELS = require('./implementOutputLabels.json');
 const IMPLEMENT_NOTEBOOK = 'notebook';
 const IMPLEMENT_CONTRACT_OUTPUTS = ['genie_space', 'dashboard', 'app', 'alert'];
 const IMPLEMENT_RETRY_TARGETS = [IMPLEMENT_NOTEBOOK, ...IMPLEMENT_CONTRACT_OUTPUTS];
@@ -86,12 +88,18 @@ const IMPLEMENT_OUTPUT_OPTIONS = {
 const IMPLEMENT_APP_LOOK_DEFAULT = { style: 'a', layout: 'sidebar', palette: 'default', theme: 'light' };
 const IMPLEMENT_APP_LOOK_LISTS = { style: 'styles', layout: 'layouts', palette: 'palettes', theme: 'themes' };
 const IMPLEMENT_APP_OPTION_DEFAULTS = { modify: false, replace_edits: false, decisions: true, alerts: false };
+// The experience is a choice, not a switch: the App lands on its Agent page (agentic), its classic pages (ui) or both.
+const IMPLEMENT_APP_EXPERIENCES = ['agentic', 'ui', 'both'];
+const IMPLEMENT_APP_EXPERIENCE_DEFAULT = 'agentic';
+// An App built before the experience choice has no key; that App is the classic one.
+const IMPLEMENT_APP_EXPERIENCE_CLASSIC = 'ui';
 const IMPLEMENT_APP_OPTION_KEYS = Object.keys(IMPLEMENT_APP_OPTION_DEFAULTS);
+const IMPLEMENT_APP_CHOICE_KEYS = ['experience'];
 const IMPLEMENT_PER_USER_OFF = ['alerts'];
 const IMPLEMENT_APP_CHARTS_MIN = 3;
 const IMPLEMENT_MERGE_OUTPUTS = ['dashboard', 'genie_space', 'app'];
-const IMPLEMENT_MERGE_NOUNS = { app: 'an App', dashboard: 'a dashboard', genie_space: 'a Genie Agent' };
-const IMPLEMENT_MERGE_LABELS = { app: 'App', dashboard: 'dashboard', genie_space: 'Genie Agent' };
+const IMPLEMENT_MERGE_NOUNS = { app: `an ${IMPLEMENT_OUTPUT_LABELS.app}`, dashboard: 'a dashboard', genie_space: 'a Genie Agent' };
+const IMPLEMENT_MERGE_LABELS = { app: IMPLEMENT_OUTPUT_LABELS.app, dashboard: 'dashboard', genie_space: 'Genie Agent' };
 const IMPLEMENT_APP_ACCESS_CHOICE = "choose who the App reads its data as: 'user' (each person sees only the rows and columns their Unity Catalog grants allow) or 'sp' (everyone sees the same data through the App's service principal)";
 const IMPLEMENT_APP_BACKEND_CHOICE = "choose where the App reads its data: 'lakebase' (its pages load instantly) or 'delta' (Delta tables, its pages take a few seconds to load)";
 const IMPLEMENT_APP_INSIDE = 'inspire';
@@ -144,6 +152,7 @@ const IMPLEMENT_COLUMNS = [
   ['suggested_schedule', 'VARIANT'], ['asset_status', 'VARIANT'], ['created_by', 'STRING'], ['created_at', 'TIMESTAMP'],
   ['updated_at', 'TIMESTAMP'], ['alert_id', 'STRING'], ['alert_url', 'STRING'], ['implement_run_id', 'BIGINT'],
   ['asset_snapshots', 'STRING'], ['ended_by', 'STRING'],
+  ['use_case_name_tag', 'STRING'], ['warehouse_id', 'STRING'], ['lakebase_project_id', 'STRING'],
 ];
 const IMPLEMENT_UNREAD_COLUMNS = ['asset_snapshots'];
 const IMPLEMENT_VARIANT_COLUMNS = IMPLEMENT_COLUMNS.filter(([, t]) => t === 'VARIANT').map(([n]) => n);
@@ -323,7 +332,7 @@ function personalKeyOf(spec, useCase, tags) {
   return personalColumn(ref.split('.').pop(), tags[ref.toLowerCase()] || {}) ? personalKeyProblem(ref) : '';
 }
 
-function validateImplementSpec(input, { shell = null, legacyAccess = '', impact = null } = {}) {
+function validateImplementSpec(input, { shell = null, legacyAccess = '', impact = null, appExperience = null } = {}) {
   const errors = [];
   let spec = input;
   if (typeof spec === 'string') {
@@ -533,7 +542,9 @@ function validateImplementSpec(input, { shell = null, legacyAccess = '', impact 
   const chosen = {};
   for (const name of IMPLEMENT_OUTPUTS) chosen[name] = flagField(outputs[name], `outputs.${name}`, errors);
   if (!ownKey(spec, 'outputs')) chosen.dashboard = true;
-  const app = appSettings(outputs, chosen.app, shell, errors, legacyAccess);
+  // A rebuild keeps the experience the App already has (appExperience, read from its live build); a new build starts agentic.
+  const experience = appExperience || (spec.based_on_version != null && spec.based_on_version !== '' ? IMPLEMENT_APP_EXPERIENCE_CLASSIC : IMPLEMENT_APP_EXPERIENCE_DEFAULT);
+  const app = appSettings(outputs, chosen.app, shell, errors, legacyAccess, experience);
   const merge = mergeChoices(outputs, chosen, errors);
   const inside = Boolean(chosen.app) && app.placement === IMPLEMENT_APP_INSIDE;
   const appName = inside ? '' : merge.app || (textValue(outputs.app_name) || '').toLowerCase();
@@ -701,7 +712,8 @@ function implementStakeNoun(impact = null) {
 }
 
 function implementStakeWords(impact = null) {
-  return `${implementStakeNoun(impact)} at stake`;
+  const kind = isPlainObject(impact) ? spacedText(pythonFalsy(impact.kind) ? 'money' : String(impact.kind)).toLowerCase() : '';
+  return `${kind === 'money' ? 'value' : implementStakeNoun(impact)} at stake`;
 }
 
 function implementPart(id, impact = null) {
@@ -1008,14 +1020,15 @@ function implementAppUrlOk(url) {
   }
 }
 
+// The live App's settings target: its URL from liveAppOf, its page from the row whose App serves the live name (REQ-241 D-LIVE).
 function implementSettingsTarget(history, useCaseId) {
   const rows = [...(history || [])].sort((a, b) => (b.spec_version || 0) - (a.spec_version || 0));
-  if (!carriedAssets(rows).app) return null;
-  const withUrl = rows.find((r) => str(r.app_url).trim());
-  if (!withUrl) return null;
-  const status = rows.map((r) => (isPlainObject(r.asset_status) && isPlainObject(r.asset_status.app) ? r.asset_status.app : null)).find(Boolean) || {};
+  const live = liveAppOf(rows);
+  if (!live || !live.name || !live.url) return null;
+  const liveRow = liveBuiltRow(rows) || {};
+  const status = isPlainObject(liveRow.asset_status) && isPlainObject(liveRow.asset_status.app) ? liveRow.asset_status.app : {};
   const page = str(status.merged_into).trim() && str(status.page).trim() ? str(status.page).trim() : implementAppPageId(useCaseId);
-  return { url: str(withUrl.app_url).trim().replace(/\/+$/, ''), page };
+  return { url: live.url.replace(/\/+$/, ''), page };
 }
 
 function implementSettingsRecorded(history) {
@@ -1158,9 +1171,9 @@ function appWarehouseLock(target, asked) {
     + "too. Keep the App's SQL warehouse, or create a new App for this use case";
 }
 
-function appSettings(outputs, on, shell, errors, legacyAccess = '') {
+function appSettings(outputs, on, shell, errors, legacyAccess = '', experience = IMPLEMENT_APP_EXPERIENCE_DEFAULT) {
   const look = { ...IMPLEMENT_APP_LOOK_DEFAULT };
-  const options = { ...IMPLEMENT_APP_OPTION_DEFAULTS };
+  const options = { ...IMPLEMENT_APP_OPTION_DEFAULTS, experience };
   if (!on) return { access: '', look: {}, options: {}, backend: '', charts: [], pages: {}, placement: '' };
   const catalog = shell || appShellCatalog();
   if (!catalog.ok) {
@@ -1188,8 +1201,11 @@ function appSettings(outputs, on, shell, errors, legacyAccess = '') {
     else errors.push(`the App ${key} ${shownValue(value)} is not one Inspire offers; pick one of ${list.join(', ')}`);
   }
   for (const [key, value] of Object.entries(objectField(outputs.app_options, 'outputs.app_options', errors))) {
-    if (!IMPLEMENT_APP_OPTION_KEYS.includes(key)) {
+    if (!IMPLEMENT_APP_OPTION_KEYS.includes(key) && !IMPLEMENT_APP_CHOICE_KEYS.includes(key)) {
       errors.push(`the App has no option ${shownValue(key)}; its options are ${IMPLEMENT_APP_OPTION_KEYS.join(', ')}`);
+    } else if (key === 'experience') {
+      if (value != null && !IMPLEMENT_APP_EXPERIENCES.includes(value)) errors.push(`the App experience ${shownValue(value)} is not one Inspire offers; pick one of ${IMPLEMENT_APP_EXPERIENCES.join(', ')}`);
+      else if (value != null) options[key] = value;
     } else if (value != null && typeof value !== 'boolean') {
       errors.push(`the App option ${key} must be true or false, not ${shownValue(value)}`);
     } else if (value != null) {
@@ -1425,7 +1441,7 @@ function registryEntries(rows, { sessionId, useCaseId } = {}) {
       app_placement: IMPLEMENT_APP_PLACEMENTS.includes(outputs.app_placement) ? outputs.app_placement : '',
       updated_at: str(first.updated_at),
     };
-    const assets = carriedAssets(sorted);
+    const assets = liveCarriedAssets(sorted);
     for (const name of IMPLEMENT_MERGE_OUTPUTS) {
       const id = str(assets[name]);
       if (!id) continue;
@@ -1629,13 +1645,15 @@ function isMissingColumnError(err) {
   return /UNRESOLVED_COLUMN|42703|FIELD_NOT_FOUND|cannot be resolved|cannot resolve/i.test(str(err && err.message ? err.message : err));
 }
 
-function implementInsertStatement(table, { sessionId, useCaseId, specVersion, basedOnVersion, spec, createdBy, statusMessage, changeClasses }) {
+function implementInsertStatement(table, { sessionId, useCaseId, specVersion, basedOnVersion, spec, createdBy, statusMessage, changeClasses, useCaseName = '', warehouseId = '' }) {
   const classes = Array.isArray(changeClasses) ? changeClasses.join(',') : str(changeClasses);
+  // The use case name tag and the warehouse the App queries through: the tracking row carries them so billing rows join on them.
+  const nameTag = useCaseNameTag(useCaseName);
   return {
     sql:
       `INSERT INTO ${table} (session_id, use_case_id, spec_version, based_on_version, spec_json, status, status_message, `
-      + 'change_classes, created_by, created_at, updated_at) VALUES (:sid, :uc, :v, :based, parse_json(:spec), \'queued\', :message, '
-      + ':classes, :by, current_timestamp(), current_timestamp())',
+      + 'change_classes, created_by, created_at, updated_at, use_case_name_tag, warehouse_id) VALUES (:sid, :uc, :v, :based, parse_json(:spec), \'queued\', :message, '
+      + ':classes, :by, current_timestamp(), current_timestamp(), :nametag, :warehouse)',
     parameters: [
       { name: 'sid', value: String(sessionId), type: 'BIGINT' },
       { name: 'uc', value: String(useCaseId), type: 'STRING' },
@@ -1645,6 +1663,8 @@ function implementInsertStatement(table, { sessionId, useCaseId, specVersion, ba
       { name: 'message', value: str(statusMessage).slice(0, 2000), type: 'STRING' },
       { name: 'classes', value: classes.slice(0, 500), type: 'STRING' },
       { name: 'by', value: str(createdBy).slice(0, 320), type: 'STRING' },
+      nameTag ? { name: 'nametag', value: nameTag, type: 'STRING' } : { name: 'nametag', type: 'STRING' },
+      str(warehouseId) ? { name: 'warehouse', value: str(warehouseId).slice(0, 64), type: 'STRING' } : { name: 'warehouse', type: 'STRING' },
     ],
   };
 }
@@ -1692,7 +1712,7 @@ function implementRunEndedStatement(table, row, stalled) {
       + 'WHERE session_id = :sid AND use_case_id = :uc AND spec_version = :v AND status = :was AND implement_run_id = :run',
     parameters: [
       { name: 'message', value: str(stalled.reason).slice(0, 2000), type: 'STRING' },
-      { name: 'endedBy', value: stalled.ended_by === 'user' ? 'user' : 'system', type: 'STRING' },
+      { name: 'endedBy', value: IMPLEMENT_ENDED_BY.includes(stalled.ended_by) ? stalled.ended_by : 'system', type: 'STRING' },
       { name: 'was', value: str(row.status), type: 'STRING' },
       { name: 'run', value: str(row.implement_run_id), type: 'BIGINT' },
       ...implementVersionParameters({ sessionId: row.session_id, useCaseId: row.use_case_id, specVersion: row.spec_version }),
@@ -1713,12 +1733,22 @@ function implementBuildRunId(row) {
   return runId;
 }
 
-function implementEndedBy(state, details) {
-  const userCancelled = str(state.result_state) === 'CANCELED' || ['USER_CANCELED', 'CANCELED'].includes(str(details.code));
-  return userCancelled ? 'user' : 'system';
+// REQ-231: Databricks reports every cancel as "Run cancelled by user", so a CANCELED run is read as a person's Stop only when the
+// control log holds that person's Stop record (stopper = { person }). Otherwise it was stopped outside Inspire, never "by user".
+const IMPLEMENT_ENDED_BY = ['user', 'outside', 'system'];
+
+function implementEndedBy(state, details, stopper = null) {
+  const canceled = str(state.result_state) === 'CANCELED' || ['USER_CANCELED', 'CANCELED'].includes(str(details.code));
+  if (!canceled) return 'system';
+  return stopper && str(stopper.person) ? 'user' : 'outside';
 }
 
-function implementStalled(row, run, now = Date.now()) {
+function implementStoppedText(endedBy, stopper) {
+  if (endedBy === 'user') return `stopped by ${str(stopper.person)} from the Build page`;
+  return 'stopped outside Inspire';
+}
+
+function implementStalled(row, run, now = Date.now(), stopper = null) {
   if (implementEndedRecord(row)) {
     return { run_id: str(row.implement_run_id), run_url: str(run && run.run_page_url) || null, reason: str(row.status_message), ended: true, ended_by: str(row.ended_by) || null };
   }
@@ -1732,14 +1762,16 @@ function implementStalled(row, run, now = Date.now()) {
     const lifeCycle = str(state.life_cycle_state || status.state).toUpperCase();
     if (!IMPLEMENT_RUN_ENDED_STATES.includes(lifeCycle)) return null;
     const details = isPlainObject(status.termination_details) ? status.termination_details : {};
-    const how = [runStateText(lifeCycle, state.result_state || details.code) || RUN_STATE_UNKNOWN, str(state.state_message || details.message).trim()]
-      .filter(Boolean).join(': ');
+    const endedBy = implementEndedBy(state, details, stopper);
+    const how = endedBy === 'system'
+      ? [runStateText(lifeCycle, state.result_state || details.code) || RUN_STATE_UNKNOWN, str(state.state_message || details.message).trim()].filter(Boolean).join(': ')
+      : implementStoppedText(endedBy, stopper);
     return {
       run_id: runId,
       run_url: str(run.run_page_url) || null,
       reason: `the run building ${version} ended (${how}) while ${version} was still ${doing}`,
       ended: true,
-      ended_by: implementEndedBy(state, details),
+      ended_by: endedBy,
     };
   }
   const last = Date.parse(str(row.updated_at || row.created_at));
@@ -1775,7 +1807,7 @@ function parseImplementRow(row) {
 function withOfferedAppOptions(spec) {
   const outputs = isPlainObject(spec) && isPlainObject(spec.outputs) ? spec.outputs : null;
   if (!outputs || !isPlainObject(outputs.app_options)) return spec;
-  const options = Object.fromEntries(Object.entries(outputs.app_options).filter(([key]) => IMPLEMENT_APP_OPTION_KEYS.includes(key)));
+  const options = Object.fromEntries(Object.entries(outputs.app_options).filter(([key]) => [...IMPLEMENT_APP_OPTION_KEYS, ...IMPLEMENT_APP_CHOICE_KEYS].includes(key)));
   return { ...spec, outputs: { ...outputs, app_options: options } };
 }
 
@@ -1800,9 +1832,20 @@ function implementCarried(history) {
   return { carried, status };
 }
 
+// The outputs carried by the newest built state. Its `app` is the NEWEST build's App: under keep-previous that is the side App, not live.
+// Use it only to ask about the newest build (built or not, the change the next build makes). Sites that mean the live App use liveCarriedAssets.
 function carriedAssets(history) {
   const { carried } = implementCarried(history);
   return Object.fromEntries(Object.entries(IMPLEMENT_OUTPUT_ID_COLUMNS).filter(([, column]) => ownKey(carried, column)).map(([output, column]) => [output, carried[column]]));
+}
+
+// REQ-241 (D-LIVE): the carried outputs with `app` replaced by the live App (liveAppOf). Every site that means "the App that serves people" uses this.
+// D-LIVE, amended 11-15 (D-AUTO): the App that serves the live name; if no App has ever served (a first build whose App crashed),
+// the newest build's App, so its state still shows in status, diagnostics and control.
+function liveCarriedAssets(history) {
+  const carried = carriedAssets(history);
+  const live = liveAppOf(history);
+  return live && live.name ? { ...carried, app: live.name } : carried;
 }
 
 function implementNotebookImpact(assetStatus) {
@@ -1868,6 +1911,31 @@ function latestRunStatement(summaryTable, useCaseId) {
   };
 }
 
+// REQ-323: the latest run of every use case in one statement. Each distinct run-summary table gets one SELECT whose window keeps the
+// newest row per use case; the SELECTs are joined with UNION ALL, so N use cases cost one warehouse call, not N.
+function latestRunsStatement(entries) {
+  const parameters = [];
+  const byTable = new Map();
+  entries.forEach((entry, index) => {
+    const name = `uc${index}`;
+    parameters.push({ name, value: str(entry.useCaseId), type: 'STRING' });
+    if (!byTable.has(entry.summaryTable)) byTable.set(entry.summaryTable, []);
+    byTable.get(entry.summaryTable).push(`:${name}`);
+  });
+  const selects = [...byTable].map(([table, names]) => 'SELECT use_case_id, CAST(not_reliable AS STRING) AS not_reliable, '
+    + 'CAST(updated_at AS STRING) AS updated_at, ROW_NUMBER() OVER (PARTITION BY use_case_id ORDER BY updated_at DESC NULLS LAST) AS run_rank '
+    + `FROM ${quoteTable(table)} WHERE use_case_id IN (${names.join(', ')})`);
+  return {
+    sql: `SELECT use_case_id, not_reliable, updated_at FROM (${selects.join(' UNION ALL ')}) AS runs WHERE run_rank = 1`,
+    parameters,
+  };
+}
+
+// REQ-323: the rows of latestRunsStatement, keyed by use case id, each shaped as latestRunFrom shapes one run.
+function latestRunsFrom(rows) {
+  return new Map((rows || []).map((row) => [str(row.use_case_id), latestRunFrom([row])]));
+}
+
 function latestRunFrom(rows) {
   const row = (rows || [])[0];
   return { not_reliable: row ? str(row.not_reliable).split(/\s+/).filter(Boolean).join(' ') : '', updated_at: row ? str(row.updated_at) : '' };
@@ -1881,10 +1949,27 @@ function codeStampOf(row) {
   return isPlainObject(assets[IMPLEMENT_BUILT_WITH]) ? assets[IMPLEMENT_BUILT_WITH] : null;
 }
 
-function liveCodeRow(history) {
+// REQ-241 (D-LIVE): the row whose App serves the live App name. Under keep-previous that is the kept older build, not the newest side App.
+function liveBuiltRow(history) {
   const rows = byNewest(history);
   const appVersion = liveAppVersion(rows);
-  return (appVersion != null && rows.find((r) => r.spec_version === appVersion)) || previousBuilt(rows) || rows[0] || null;
+  return (appVersion != null && rows.find((r) => r.spec_version === appVersion)) || previousBuilt(rows);
+}
+
+// REQ-241 (D-LIVE): the App that serves the live App name. Under keep-previous the newest build lists the kept older App (kept.assets, output 'app'):
+// its name and URL are the live ones. Without a kept App the newest built row's own App is live.
+// D-LIVE2: when no build has finished yet (a first build still running, or one whose App crashed), the newest build's own App is the one shown.
+function liveAppOf(history) {
+  const rows = byNewest(history);
+  const newest = previousBuilt(rows) || (rows[0] && str(rows[0].app_name) ? rows[0] : null);
+  if (!newest) return null;
+  const kept = keptAppEntry(newest);
+  if (kept) return { name: str(kept.id), url: str(kept.url), version: Number(kept.version) };
+  return { name: str(newest.app_name), url: str(newest.app_url), version: newest.spec_version };
+}
+
+function liveCodeRow(history) {
+  return liveBuiltRow(history) || byNewest(history)[0] || null;
 }
 
 function stampIsCurrent(built, current) {
@@ -1913,7 +1998,7 @@ function appShellUpdate(history, current) {
   const rows = byNewest(history);
   const live = previousBuilt(rows);
   const version = liveAppVersion(rows);
-  if (version == null || live.asset_status.app.placement === IMPLEMENT_APP_INSIDE || !str(live.app_name)) return null;
+  if (version == null || live.asset_status.app.placement === IMPLEMENT_APP_INSIDE || !liveAppOf(rows)?.name) return null;
   const deployed = rows.find((r) => r.spec_version === version);
   if (!deployed || !isPlainObject(deployed.asset_status) || !isPlainObject(deployed.asset_status.app) || deployed.asset_status.app.snapshot !== true) return null;
   const built = codeStampOf(deployed);
@@ -1959,6 +2044,7 @@ function runPages(rows, scope = [], current = null, names = []) {
       published_at: str(live.updated_at), owners: implementOwners(live), older_build: olderBuildNote(list.filter((r) => (r.spec_version || 0) <= (live.spec_version || 0)), current),
     };
     const hosted = hostedRecord(live);
+    const app = outputs.app ? liveAppOf(list) : null;
     if (hosted) {
       const entry = { ...base, kind: IMPLEMENT_APP_INSIDE, id: hosted.id, version: hosted.version, published_at: hosted.published_at || base.published_at,
         page: hosted.page, hosted };
@@ -1971,8 +2057,8 @@ function runPages(rows, scope = [], current = null, names = []) {
       if (seen) seen.conflict = clash(entry);
       byId.set(hosted.id, entry);
       pages.push(entry);
-    } else if (outputs.app && str(live.app_name)) {
-      pages.push({ ...base, kind: 'app', app_name: str(live.app_name), app_url: str(live.app_url) });
+    } else if (outputs.app && app?.name) {
+      pages.push({ ...base, version: app.version, kind: 'app', app_name: app.name, app_url: app.url });
     }
   }
   return pages.sort((a, b) => a.domain.localeCompare(b.domain) || a.name.localeCompare(b.name) || a.use_case_id.localeCompare(b.use_case_id));
@@ -1999,6 +2085,13 @@ function runPagesServed(pages) {
   return (pages || []).filter((p) => p.kind === IMPLEMENT_APP_INSIDE && !p.conflict);
 }
 
+// The experience a live App already has: its stored choice, or the classic (ui) App when the build never saved one.
+function appExperienceOf(specJson) {
+  const options = specJson && specJson.outputs && specJson.outputs.app_options;
+  const saved = options && typeof options === 'object' ? options.experience : undefined;
+  return IMPLEMENT_APP_EXPERIENCES.includes(saved) ? saved : IMPLEMENT_APP_EXPERIENCE_CLASSIC;
+}
+
 function previousBuilt(history) {
   const rows = [...(history || [])].sort((a, b) => (b.spec_version || 0) - (a.spec_version || 0));
   const row = rows.find((r) => IMPLEMENT_DONE_STATUSES.includes(r.status) || r.status === IMPLEMENT_UNINSTALLED);
@@ -2011,7 +2104,7 @@ function withVibePreviousDefault(history, spec) {
 
 function mvpActionProblems(history, spec) {
   const rows = [...(history || [])].sort((a, b) => (b.spec_version || 0) - (a.spec_version || 0));
-  const built = Object.keys(carriedAssets(rows)).length > 0;
+  const built = Object.keys(carriedAssets(rows)).length > 0; // any output of the newest build, side App included
   const kept = keptAssets(rows);
   const problems = [];
   if (spec.vibes && previousBuilt(rows) && !IMPLEMENT_VIBE_PREVIOUS.includes(spec.vibe_previous)) {
@@ -2091,8 +2184,9 @@ function planSubmission(history, spec, stalled = null, { requester = null, table
   const parts = [...partProblems(built, spec), ...mvpActionProblems(rows, spec)];
   if (parts.length) throw badRequest(parts.join('; '));
   const before = previousBuilt(rows);
-  const previous = before ? validateImplementSpec(before.spec_json, { legacyAccess: legacyAppAccess(rows) }).spec : null;
+  const previous = before ? validateImplementSpec(before.spec_json, { legacyAccess: legacyAppAccess(rows), appExperience: appExperienceOf(before.spec_json) }).spec : null;
   const hasBuiltNotebook = implementHasBuiltNotebook(rows);
+  // carriedAssets: the newest build's outputs, the App the next build changes
   const summary = implementChangeSummary(previous, spec, carriedAssets(rows), implementBuiltSettings(implementCarried(rows).status), hasBuiltNotebook, tableChange);
   if (before && summary.classes.includes('settings')) {
     const refused = implementSettingsOwnerRefusal(before, requester);
@@ -2161,6 +2255,36 @@ function tableParts(name) {
   const parts = plainTable(name).split('.');
   if (parts.length !== 3 || parts.some((p) => !p || p.includes('`'))) throw badRequest(`'${str(name)}' must be catalog.schema.table`);
   return { catalog: parts[0], schema: parts[1], table: parts[2] };
+}
+
+// A picked table in a catalog that is gone fails its per-catalog information_schema read, and the error names the view
+// (information_schema.columns) instead of the table, so Try again cannot help. The error names the picked table instead;
+// any other error passes through as it is. system.information_schema is not the fix: for a missing catalog it returns no
+// rows and no error, so the picked table would read as having no columns.
+const MISSING_OBJECT_CODE = /\b(?:TABLE_OR_VIEW_NOT_FOUND|SCHEMA_NOT_FOUND|CATALOG_NOT_FOUND|NO_SUCH_CATALOG_EXCEPTION)\b/;
+function pickedTableError(err, table) {
+  const message = String((err && err.message) || err || '');
+  if (!MISSING_OBJECT_CODE.test(message) || !/information_schema/i.test(message)) return err;
+  const t = tableParts(table);
+  return Object.assign(new Error(`[TABLE_OR_VIEW_NOT_FOUND] The table or view \`${t.catalog}\`.\`${t.schema}\`.\`${t.table}\` cannot be found.`),
+    { statusCode: (err && err.statusCode) || 400 });
+}
+
+// information_schema.columns lists only the objects the caller can see, so a picked table that reads no columns was dropped,
+// renamed, or cannot be read by the person. Both causes are named, and the next action is the swap the preview also names.
+function unreadableTableError(table) {
+  const t = tableParts(table);
+  return Object.assign(new Error(`${t.catalog}.${t.schema}.${t.table} has no columns Inspire can read. It was dropped or renamed, `
+    + 'or your access does not include it. Swap it in Edit > Data step for the table you mean.'), { statusCode: 404 });
+}
+
+/** Runs one read of a picked table and names the picked table in its error (see pickedTableError). */
+async function readPickedTable(table, read) {
+  try {
+    return await read();
+  } catch (err) {
+    throw pickedTableError(err, table);
+  }
 }
 
 function columnsStatement(name) {
@@ -2316,13 +2440,15 @@ function scopeWhere(filters = [], window = {}) {
   return { where, parameters };
 }
 
-function readinessStatement(name, { columns = [], filters = [], window = {} } = {}) {
+function readinessStatement(name, { columns = [], filters = [], window = {}, periodColumn = '' } = {}) {
   const table = quoteTable(name);
   const wanted = [...new Set(columns.map((c) => str(c).trim()).filter(Boolean))].slice(0, 20);
   const { where, parameters } = scopeWhere(filters, window);
   const nulls = wanted.map((c, i) => `SUM(CASE WHEN ${quoteColumn(c)} IS NULL THEN 1 ELSE 0 END) AS null_${i}`);
+  // A forecast's data minimum counts periods (distinct dates of its event column), not raw rows, the same count the build's check makes.
+  const periods = str(periodColumn).trim() ? `, COUNT(DISTINCT CAST(${quoteColumn(str(periodColumn).trim())} AS DATE)) AS period_count` : '';
   return {
-    sql: `SELECT COUNT(*) AS row_count${nulls.length ? `, ${nulls.join(', ')}` : ''} FROM ${table}`
+    sql: `SELECT COUNT(*) AS row_count${periods}${nulls.length ? `, ${nulls.join(', ')}` : ''} FROM ${table}`
       + `${where.length ? ` WHERE ${where.join(' AND ')}` : ''}`,
     parameters: parameters.length ? parameters : null,
     columns: wanted,
@@ -2351,21 +2477,29 @@ function groupCountsStatement(name, columns = [], { filters = [], window = {}, t
 
 function readinessFromRow(row, columns) {
   const rows = Number(row && row.row_count) || 0;
+  const counted = row && row.period_count != null ? { period_count: Number(row.period_count) || 0 } : {};
   return {
     row_count: rows,
+    ...counted,
     null_share: Object.fromEntries(columns.map((c, i) => [c, rows ? (Number(row[`null_${i}`]) || 0) / rows : null])),
   };
 }
 
 const { execution_family: EXECUTION_FAMILY, readiness_thresholds: READINESS_THRESHOLDS, technique_min_rows: TECHNIQUE_MIN_ROWS } = require('../../agent/agent/app_shell/kinds.json');
 
+// The execution family a technique's readiness rules belong to ('' when none), e.g. 'E' for Forecasting.
+function analysisFamilyOf(technique) {
+  const wanted = str(technique).split(/\s+/).filter(Boolean).join(' ').toLowerCase();
+  const label = Object.keys(EXECUTION_FAMILY).find((k) => k.toLowerCase() === wanted);
+  return label ? EXECUTION_FAMILY[label] : '';
+}
+
 function analysisMinimumRows(technique) {
   const wanted = str(technique).split(/\s+/).filter(Boolean).join(' ').toLowerCase();
   const named = (table) => Object.keys(table).find((k) => k.toLowerCase() === wanted);
   const own = TECHNIQUE_MIN_ROWS[named(TECHNIQUE_MIN_ROWS) || ''];
   if (Number.isFinite(own)) return own;
-  const label = named(EXECUTION_FAMILY);
-  const minimum = label ? (READINESS_THRESHOLDS[EXECUTION_FAMILY[label]] || {}).min_rows : undefined;
+  const minimum = analysisFamilyOf(technique) ? (READINESS_THRESHOLDS[analysisFamilyOf(technique)] || {}).min_rows : undefined;
   return Number.isFinite(minimum) ? minimum : null;
 }
 
@@ -2982,7 +3116,7 @@ function outputAccess(rows, name, options = {}) {
   const readable = accessPlan(name, list, '', options);
   const app = missing ? { ok: false, detail: `a new App cannot read the table: ${missing}` }
     : readable.gaps.length
-      ? { ok: false, detail: appAccessMessage(table, readable.gaps, readable.me), permission: appAccessPermission(readable.gaps, readable.me) }
+      ? { ok: false, detail: appAccessMessage(table, readable.gaps), permission: appAccessPermission(readable.gaps, readable.me) }
       : { ok: true, detail: `Inspire can give a new App read access to ${table}` };
   return { table, exists, identity, write, grant, app };
 }
@@ -3029,11 +3163,13 @@ function accessPlan(name, rows, principal = '', options = {}) {
   }));
   const me = str((list.find((r) => str(r.me).trim()) || {}).me).trim();
   const holders = new Set([IMPLEMENT_ALL_USERS, ...(who ? [who.toLowerCase()] : [])]);
+  // REQ-301: the person is also known by her identity id (SCIM): Unity Catalog reports an owner by that id, not by the email.
+  const ownIds = new Set([who, ...(options.aliases || [])].map((v) => str(v).trim().toLowerCase()).filter(Boolean));
   const tableExists = facts.some((f) => f.level === 'table' && f.privilege === 'OWNER');
   const createsSchema = options.createsSchema === true && schemaNotCreated(list);
   const plan = { grants: [], gaps: [], me };
   for (const [privilege, level, levels] of needs) {
-    const owns = !!who && facts.some((f) => f.level === level && f.privilege === 'OWNER' && f.principal.toLowerCase() === who.toLowerCase());
+    const owns = !!who && facts.some((f) => f.level === level && f.privilege === 'OWNER' && ownIds.has(f.principal.toLowerCase()));
     const covers = [privilege, 'ALL PRIVILEGES', ...(IMPLEMENT_PRIVILEGE_COVERS[privilege] || [])];
     const granted = facts.some((f) => levels.includes(f.level) && covers.includes(f.privilege)
       && holders.has(f.principal.toLowerCase()));
@@ -3127,7 +3263,7 @@ function newAppsAccessText(catalog, decision, real) {
     const shown = real.slice(0, IMPLEMENT_REAL_GRANTS_SHOWN);
     const more = real.length - shown.length;
     return `Inspire did not grant USE CATALOG on ${catalog} to account users: they already hold ${joinAnd(more ? [...shown, `${more} more`] : shown)}, `
-      + 'which USE CATALOG would open to every account user. Ask the catalog owner to grant MANAGE on it to Inspire, or to choose which of them to keep';
+      + 'which USE CATALOG would open to every account user. Ask your data owner to grant MANAGE on it to Inspire, or to choose which of them to keep';
   }
   return `you cannot grant on ${catalog}: you need to own it or hold MANAGE on it`;
 }
@@ -3183,8 +3319,15 @@ function sampleCopyDestination(name) {
   return to;
 }
 
+// A copy's table name is the source schema and the table joined by a double underscore: samples.bakehouse.sales_franchises
+// lands as bakehouse__sales_franchises. One helper names both the statement and the returned copy, so the two cannot drift.
+function sampleCopyTable(source) {
+  const from = tableParts(source);
+  return `${from.schema}__${from.table}`;
+}
+
 function sampleCopyName(source, destination) {
-  return `${destination.catalog}.${destination.schema}.${tableParts(source).table}`;
+  return `${destination.catalog}.${destination.schema}.${sampleCopyTable(source)}`;
 }
 
 // A table name as a quoted three-part reference, e.g. `samples`.`bakehouse`.`sales`.
@@ -3193,9 +3336,19 @@ function sampleTableRef(name) {
   return `\`${t.catalog}\`.\`${t.schema}\`.\`${t.table}\``;
 }
 
+// A copy's table name is <schema>__<table>. The name is unambiguous only when the schema has no double underscore and does not end in an
+// underscore: then the first "__" always marks the end of the schema, so no two (schema, table) pairs share a name, in any request. A
+// source whose schema breaks that rule is refused with the reason, before any copy runs. Returns '' when the source can be copied.
+function sampleCopyRefusal(source) {
+  const { schema } = tableParts(source);
+  if (schema.includes('__') || schema.endsWith('_')) {
+    return `${source} cannot be copied: its schema name has a double underscore or ends in an underscore, so its copy name would not be unambiguous.`;
+  }
+  return '';
+}
+
 function sampleCopyStatement(source, destination) {
-  const from = tableParts(source);
-  return `CREATE TABLE \`${destination.catalog}\`.\`${destination.schema}\`.\`${from.table}\` AS SELECT * FROM ${sampleTableRef(source)}`;
+  return `CREATE TABLE \`${destination.catalog}\`.\`${destination.schema}\`.\`${sampleCopyTable(source)}\` AS SELECT * FROM ${sampleTableRef(source)}`;
 }
 
 // Why a copy failed: 'exists' (the copy's name is already a table), 'no_schema' (the destination schema or catalog is missing), or '' (anything else).
@@ -3262,39 +3415,45 @@ function appUnreadableMessage(offer, job = 'build') {
   const count = one ? 'a source table' : `${offer.tables.length} source tables`;
   const head = `${words.who} cannot read ${count}: ${words.runs} as the App service principal ${app}, and you can read `
     + `${one ? 'this table' : 'these tables'} but the App cannot`;
-  if (!offer.grants.length) return `${head}, and Inspire finds no missing grant to name: ask the table owner why the App cannot read ${one ? 'it' : 'them'}`;
-  return `${head}. ${offer.can_grant ? words.grant : 'Ask the owner to run'}: ${offer.grants.join('; ')}`;
+  if (!offer.grants.length) return `${head}, and Inspire finds no missing grant to name: ask your data owner why the App cannot read ${one ? 'it' : 'them'}`;
+  return `${head}. ${offer.can_grant ? words.grant : 'Ask your data owner to run the commands'}: the exact commands are in Permission Required`;
 }
 
 const APP_READ_GRANT = /^GRANT (USE CATALOG|USE SCHEMA|SELECT|READ METADATA) ON (CATALOG|SCHEMA|TABLE) (`[^`]+`(?:\.`[^`]+`){0,2}) TO `([^`]+)`$/;
 const APP_READ_LEVELS = { 'USE CATALOG': 'CATALOG', 'USE SCHEMA': 'SCHEMA', SELECT: 'TABLE', 'READ METADATA': 'TABLE' };
 
+// REQ-241 (D-LIVE): the App whose reads and grants are checked is the live App: its row is the one that serves the live name, not the newest side build.
 function appReadsRecord(history) {
-  const row = (history || [])[0];
+  const row = liveBuiltRow(history);
   if (!row || !IMPLEMENT_DONE_STATUSES.includes(str(row.status))) return null;
+  const liveName = str((liveAppOf(history) || {}).name).trim();
   const app = isPlainObject(row.asset_status) && isPlainObject(row.asset_status.app) ? row.asset_status.app : null;
   const persisted = (list) => (Array.isArray(list) ? list.map(str).filter((v) => v && !resultTableNameError(v)) : []);
   if (app && (persisted(app.views).length || persisted(app.sources_read).length)) {
     // The App's own read objects, persisted by the build: its Data Filters views, its reasons view, and the source tables its
     // pages read directly. Every grant is derived from these objects and the one needs list, so the build and Check again agree.
-    const name = str(row.app_name).trim();
+    const name = liveName;
     const views = persisted(app.views);
     if (!name || name.includes('`')) return null;
     const reason = str(app.reasons_view).trim();
     const sources = persisted(app.sources_read).filter((s) => !views.includes(s));
-    const objects = [...new Set([...views, ...(reason && !resultTableNameError(reason) ? [reason] : []), ...sources])];
     // views: the App-owned views a user-authorization App's audience may be granted; sources: the source tables it reads directly,
     // which are never granted to a person or group (the rebuild message covers them).
-    return { row, app: '', app_name: name, mode: str(app.access_mode) === 'user' ? 'user' : 'sp', objects: true,
-      views: [...new Set([...views, ...(reason && !resultTableNameError(reason) ? [reason] : [])])], sources,
-      tables: objects.map((table) => ({ table, owner: '', grants: [] })) };
+    // REQ-301: a user-authorization App's audience is granted its own objects only. A source table it reads directly is never a grant to
+    // list or copy, so it sits in `sources` for the rebuild sentence. A service-principal App's live grants include its sources.
+    const own = [...new Set([...views, ...(reason && !resultTableNameError(reason) ? [reason] : [])])];
+    const mode = str(app.access_mode) === 'user' ? 'user' : 'sp';
+    const granted = mode === 'user' ? own : [...new Set([...own, ...sources])];
+    return { row, app: '', app_name: name, mode, objects: true,
+      views: own, sources,
+      tables: granted.map((table) => ({ table, owner: '', grants: [] })) };
   }
   const unread = app && isPlainObject(app.unread) ? app.unread : null;
   const id = str(unread && unread.app).trim();
   if (!id || id.includes('`') || !Array.isArray(unread.tables)) return null;
   const tables = unread.tables.filter((t) => isPlainObject(t) && !resultTableNameError(str(t.table)))
     .map((t) => ({ table: str(t.table), owner: ownerLabel(t.owner), grants: (Array.isArray(t.grants) ? t.grants : []).map(str).filter((g) => appReadGrantFor(g, id)) }));
-  return tables.length ? { row, app: id, app_name: str(row.app_name), tables } : null;
+  return tables.length ? { row, app: id, app_name: liveName, tables } : null;
 }
 
 function appReadGrantFor(sql, appId) {
@@ -3302,9 +3461,12 @@ function appReadGrantFor(sql, appId) {
   return Boolean(m) && APP_READ_LEVELS[m[1]] === m[2] && m[4] === str(appId) && m[3].split('.').length === ['CATALOG', 'SCHEMA', 'TABLE'].indexOf(m[2]) + 1;
 }
 
+// A person or group is named. A service principal id (a UUID) is no one to ask, so the page says "your data owner" instead (REQ-185).
+const SERVICE_PRINCIPAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function ownerLabel(owner) {
   const name = str(owner).trim();
-  return !name || name.includes('@') ? 'your data owner' : name;
+  return !name || name.includes('@') || SERVICE_PRINCIPAL_ID.test(name) ? 'your data owner' : name;
 }
 
 // What the App still needs on each source table: the live plan for the App's service principal `app` (one derivation, shared by
@@ -3342,12 +3504,12 @@ function appAudience(acl) {
 }
 
 // What each principal still needs on each App object, checked live. Service-principal and user-authorization Apps share this path.
-function appReadsLeftFor(record, principals, rows) {
+function appReadsLeftFor(record, principals, rows, aliasesOf = {}) {
   return record.tables.map((t, i) => {
     const grants = [];
     const owners = [];
     for (const principal of principals) {
-      const plan = accessPlan(t.table, rows[i], principal, { needs: IMPLEMENT_SOURCE_NEEDS });
+      const plan = accessPlan(t.table, rows[i], principal, { needs: IMPLEMENT_SOURCE_NEEDS, aliases: aliasesOf[principal] || [] });
       const order = (g) => IMPLEMENT_SOURCE_NEEDS.findIndex(([privilege]) => privilege === g.privilege);
       for (const need of [...plan.grants, ...plan.gaps].sort((a, b) => order(a) - order(b))) {
         const sql = grantSql(need, principal);
@@ -3388,9 +3550,9 @@ function appReadsUpdateStatement(table, row, left) {
 function appReadsText(left, app, refused = []) {
   if (!left.length) return 'The App can read all its data now';
   const tables = joinAnd(left.map((t) => t.table));
-  const owners = joinAnd([...new Set(left.map((t) => t.owner).filter(Boolean))]);
+  const owners = joinAnd([...new Set(left.map((t) => ownerLabel(t.owner)))]);
   const head = `The App ${app ? `${app} ` : ''}cannot read ${left.length === 1 ? 'this table' : `${left.length} tables`}, so its pages show no data from ${left.length === 1 ? 'it' : 'them'}`;
-  const ask = owners ? 'the table owner can grant it' : 'the owner of each table can grant it';
+  const ask = `${owners} can grant it`;
   const plain = `${head}. ${ask[0].toUpperCase()}${ask.slice(1)}`;
   return refused.length ? `${plain}. Your grant was refused; the statements and the error are under Details` : plain;
 }
@@ -3403,8 +3565,8 @@ function newAppReadsGaps(tables, plans) {
 function newAppReadsWarning(unshared) {
   if (!unshared.length) return '';
   const one = unshared.length === 1;
-  const owners = joinAnd([...new Set(unshared.map((t) => t.owner).filter(Boolean))]) || 'the owner of each table';
-  return `Inspire cannot share ${joinAnd(unshared.map((t) => (t.owner ? `${t.table} (owner ${t.owner})` : t.table)))} with the App this build makes, `
+  const owners = joinAnd([...new Set(unshared.map((t) => ownerLabel(t.owner)))]);
+  return `Inspire cannot share ${joinAnd(unshared.map((t) => (t.owner ? `${t.table} (owned by ${ownerLabel(t.owner)})` : t.table)))} with the App this build makes, `
     + `because Inspire neither owns nor manages ${one ? 'it' : 'them'}, so the App cannot read ${one ? 'it' : 'them'} on its own. The build still runs. `
     + `When it ends, the Build page offers Grant access with my permissions to grant ${one ? 'it' : 'them'} as you in one click, or the grant SQL to send to ${owners}`;
 }
@@ -3415,27 +3577,26 @@ function gapList(gaps) {
 
 function accessGapMessage(who, gaps) {
   const it = gaps.length === 1 ? 'it' : 'them';
-  const statements = gaps.map((g) => grantSql(g, who)).join('; ');
   return `${who} may not be able to read the result table: Inspire cannot grant ${gaps.length === 1 ? 'this access' : 'these accesses'}, because it `
-    + `neither owns nor holds MANAGE on ${it}. If ${who} does not have ${it} yet, ask the owner to run: ${statements}`;
+    + `neither owns nor holds MANAGE on ${it}. If ${who} does not have ${it} yet, ask your data owner to grant ${it}: the commands are in Permission Required`;
 }
 
 function appAccessPermission(gaps, me = '') {
   const principal = me ? `\`${me}\`` : 'the identity Inspire runs as';
-  const statements = gaps.map((g) => `GRANT MANAGE ON ${g.level.toUpperCase()} ${g.object} TO ${principal}`);
+  const statements = gaps.map((g) => `GRANT MANAGE ON ${g.level.toUpperCase()} ${g.object} TO ${principal}`); // PERMISSION_DIALOG
   return { statements, principal: me || 'the identity Inspire runs as', why: 'The new App needs MANAGE to share this table, so Inspire can give it read access.' };
 }
 
-function appAccessMessage(table, gaps, me = '') {
-  const inspire = me ? `\`${me}\`` : 'the identity Inspire runs as';
-  const statements = gaps.map((g) => `GRANT MANAGE ON ${g.level.toUpperCase()} ${g.object} TO ${inspire}`).join('; ');
+function appAccessMessage(table, gaps) {
   const one = gaps.length === 1;
+  // the places the grant is missing on, in plain words (the App tile names them the same way)
+  const places = [...new Set(gaps.map((g) => g.level))].map((level) => `on the ${level}`).join(' and ');
   const shared = gaps.length && gaps.every((g) => IMPLEMENT_TRAVERSE_PRIVILEGES.includes(g.privilege))
-    ? `, or ${gaps.map((g) => grantSql(g, IMPLEMENT_ALL_USERS)).join('; ')}, which ${one ? 'opens' : 'open'} no data by ${one ? 'itself' : 'themselves'}`
+    ? `, or give all account users the same access, which ${one ? 'opens' : 'open'} no data by ${one ? 'itself' : 'themselves'}`
     : '';
   return `a new App could not read the result table: its service principal needs ${gaps.length === 1 ? 'this access' : 'these accesses'}, which not all `
     + `account users have, and Inspire can grant ${one ? 'it' : 'them'} only with MANAGE or ownership. `
-    + `Ask the owner to run: ${statements}${shared}; or choose a result table in a catalog and schema Inspire manages`;
+    + `Ask your data owner to grant ${one ? 'it' : 'them'} ${places}: the commands are in Permission Required${shared}; or choose a result table in a catalog and schema Inspire manages`;
 }
 
 function principalNames(principals) {
@@ -3616,6 +3777,12 @@ function useCaseSchemaOwner(held, { inspireDatabase, useCaseId, sessionId }) {
   return sameUseCase && sameLineage ? 'ours' : 'foreign';
 }
 
+// REQ-131, REQ-260: the CREATE SCHEMA grant the own-schema fallback needs. The route carries it as the Permission Required entry; the prose names the dialog.
+function ownSchemaPermission(catalog, me) {
+  return permissionRequired({ statements: [`GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO \`${me}\``], // PERMISSION_DIALOG
+    principal: me, why: `Inspire cannot create the use case schema in ${catalog} with your sign-in.` });
+}
+
 function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessName, rows = null, unchecked = '' }) {
   const candidates = useCaseSchemaCandidates(inspireDatabase, useCaseId, sessionId, businessName);
   const own = candidates[0];
@@ -3646,7 +3813,8 @@ function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessNam
   const why = unchecked
     ? `Inspire could not check whether you can create schemas in ${base.catalog} (${unchecked}), so this use case's tables go to the Inspire database schema; pick Its own schema to try.`
     : ownSchemaFallbackNote(base.catalog, facts.me);
-  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: [note, why].filter(Boolean).join(' ') };
+  const permission = facts.me ? ownSchemaPermission(base.catalog, facts.me) : null;
+  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: [note, why].filter(Boolean).join(' '), permission };
 }
 
 function useCaseSchemaTagsSql(catalog, schema, tags) {
@@ -3823,7 +3991,17 @@ function implementJobName(useCaseId, useCaseName, specVersion) {
   return ['Inspire AI - MVP', [String(useCaseId ?? '').trim(), name].filter(Boolean).join(' '), `v${Number(specVersion) || 1}`].filter(Boolean).join(' - ');
 }
 
+// WH (rc7 Build): a group reads as "People in <group> open the App ...", one person as their own name. A principal with an "@" is a person.
+function opensAppSentence(principal, appName = '') {
+  const p = str(principal).trim();
+  const app = appName ? ` ${appName}` : '';
+  return /@/.test(p)
+    ? `${p} opens the App${app} and reads its data with their own access, so they need these grants.`
+    : `People in ${p} open the App${app} and read its data with their own access, so they need these grants.`;
+}
+
 module.exports = {
+  opensAppSentence,
   tableTypeStatement,
   implementJobName,
   IMPLEMENT_RUN_STARTED_MESSAGE,
@@ -3832,6 +4010,8 @@ module.exports = {
   runSummaryTable,
   latestRunStatement,
   latestRunFrom,
+  latestRunsStatement,
+  latestRunsFrom,
   olderBuildNote,
   appShellUpdate,
   appShellUpdateRefusal,
@@ -3851,6 +4031,7 @@ module.exports = {
   mvpActionProblems,
   withVibePreviousDefault,
   previousBuilt,
+  appExperienceOf,
   IMPLEMENT_OUTPUTS,
   IMPLEMENT_OUTPUT_LABELS,
   IMPLEMENT_OUTPUT_ID_COLUMNS,
@@ -3940,6 +4121,8 @@ module.exports = {
   schemaParts,
   sampleCopyDestination,
   sampleCopyName,
+  sampleCopyTable,
+  sampleCopyRefusal,
   sampleCopyStatement,
   sampleCopyFailureKind,
   samplesNeedChoice,
@@ -4020,6 +4203,7 @@ module.exports = {
   implementBuildRunId,
   parseImplementRow,
   carriedAssets,
+  liveCarriedAssets,
   rollbackSpec,
   planSubmission,
   implementOwners,
@@ -4029,6 +4213,9 @@ module.exports = {
   widgetsFromInstruction,
   implementWidgets,
   tableParts,
+  pickedTableError,
+  unreadableTableError,
+  readPickedTable,
   columnsStatement,
   primaryKeysStatement,
   tableSwapStatement,
@@ -4042,6 +4229,7 @@ module.exports = {
   GROUP_COUNT_LIMIT,
   readinessFromRow,
   analysisMinimumRows,
+  analysisFamilyOf,
   rerunParams,
   rerunWidgets,
   rerunOverrides,
@@ -4065,6 +4253,8 @@ module.exports = {
   appStatusFrom,
   jobRunsFrom,
   IMPLEMENT_SPEC_WIDGETS,
+  liveAppOf,
+  liveBuiltRow,
   liveLogPath,
   useCaseLogLines,
   genieFeed,

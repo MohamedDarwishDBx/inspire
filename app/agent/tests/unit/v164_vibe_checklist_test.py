@@ -1,5 +1,6 @@
 import base64
 import json
+import types
 
 import pytest
 
@@ -68,7 +69,7 @@ def test_the_judge_says_done_but_a_failing_block_gate_leaves_the_ask_not_met(age
     _judge(inst, split, [{"status": "done", "evidence": "image: Mickey Mouse"}])
     found = inst._implement_vibes_checks({}, ASSET, MICKEY, PAGE)
     assert found == [{"ask": MICKEY, "status": "missing",
-                      "evidence": "no block on the built App page n01_u01 is kind image, align center; its blocks are block hero: image "
+                      "evidence": "no block on the built App page Loss desk is kind image, align center; its blocks are block hero: image "
                                   "at the page top, half width, aligned left",
                       "checks": [{"name": "block: kind image, align center", "passed": False}]}]
     _judge(inst, split, [{"status": "done", "evidence": "image: Mickey Mouse"}])
@@ -167,7 +168,7 @@ def _carried(agent_ns, judged, artifact=PAGE, checked=None):
     prompts = _judge(inst, {ask: [_ask(ask)]}, [judged])
     context = {"uc_id": "N01-U01", "key": (5150, "N01-U01", 4), "spec": {"outputs": {"app": True, f"{ASSET}_vibes": ask}, "data": {}},
                "asset_status": {"app": {"state": "ready", "spec_version": 2, "snapshot": True},
-                                ASSET: {"state": "ready", "spec_version": 2, "vibes_split": {"text": ask, "asks": [_ask(ask)]},
+                                ASSET: {"state": "ready", "spec_version": 2, "title": "Loss desk", "vibes_split": {"text": ask, "asks": [_ask(ask)]},
                                         "vibes_checks": [{"ask": ask, "status": "done", "evidence": "Fix plan"}]}},
                "vibes_split": {}, **({"vibes_checked": checked} if checked else {})}
     return inst, context, prompts, ask
@@ -175,7 +176,8 @@ def _carried(agent_ns, judged, artifact=PAGE, checked=None):
 
 def test_a_carried_ask_on_an_output_this_version_did_not_build_is_checked_again_on_its_saved_copy(agent_ns):
     inst, context, prompts, ask = _carried(agent_ns, {"status": "missing", "evidence": "the page shows no table"})
-    assert inst._implement_recheck_vibes(context, []) == [f"App page n01_u01 vibe not done: {ask}: the page shows no table"]
+    # REQ-237 / D-NAMES: the person line names the page by its title, never its id (the judge prompt keeps the id for Genie).
+    assert inst._implement_recheck_vibes(context, []) == [f"App page Loss desk vibe not done: {ask}: the page shows no table"]
     assert context["asset_status"][ASSET]["vibes_checks"] == [{"ask": ask, "status": "missing", "evidence": "the page shows no table"}]
     [(_kind, prompt, _schema)] = [p for p in prompts if p[0] == "judge"]
     assert f"1. {ask} [asked in an earlier version]" in prompt and "version before" not in prompt
@@ -189,7 +191,52 @@ def test_a_carried_ask_on_an_output_this_version_did_not_build_is_checked_again_
     assert inst._implement_recheck_vibes(context, []) == [] and prompts == [], "an output this version built is checked by its own build"
 
 
-def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks_and_lists_every_ask(agent_ns):
+def _carried_app(inst, agent_ns, tmp_path, filters):
+    """The App the use case already sits in, as a version that does not rebuild it sees it: the workspace App names its published
+    source, the source holds the settings and page, and the App's own shell serves those page filters (the Shell double)."""
+    from v140_implement_test import _app_shell
+    inst.local_log_output_dir = str(tmp_path)
+    payload, modules = _app_shell(agent_ns, tmp_path)
+    real = modules["shell_core"]
+
+    class ServedShell:
+        pages = [PAGE]
+
+        def __init__(self, root, **kwargs):
+            pass
+
+        def speed(self, headers):
+            return {}
+
+        def checked(self, headers):
+            return []
+
+        def filters(self, headers, ident, probe=None):
+            return {"filters": filters, "columns": {}}
+
+        def records(self, headers, data, probe=None):
+            return {"rows": []}
+
+        def close(self):
+            return None
+
+    core = types.SimpleNamespace(**{k: getattr(real, k) for k in dir(real) if not k.startswith("_") and k != "Shell"}, Shell=ServedShell)
+    inst._implement_app_shell = lambda: (payload, dict(modules, shell_core=core))
+    prior = inst._implement_api
+
+    def api(method, path, body=None, query=None):
+        if method == "GET" and path.startswith("/api/2.0/apps/"):
+            return {"app_name": "churn-desk", "default_source_code_path": "/Workspace/apps/churn-desk/v2"}
+        return prior(method, path, body, query)
+
+    inst._implement_api = api
+    inst._implement_app_files_at = lambda source, core_: ({"version": core_.SETTINGS_VERSION, "pages": [PAGE["id"]]}, [PAGE])
+
+
+REGION = {"id": "region", "label": "Region", "type": "multi_select", "options": ["North", "South"]}
+
+
+def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks_and_lists_every_ask(agent_ns, tmp_path):
     from v143_vibes_test import _locked, _run
     from v148_asset_vibes_test import PAGE as BUILT_PAGE, PAGE_VIBES, PARTS, SPLITS, WIDGET_VIBES, _built, _carrying, _llm, _vibed
     inst, previous = _locked(agent_ns, {"app:page:n01_u01_vibes": PAGE_VIBES})
@@ -197,6 +244,7 @@ def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks
               {"ask": "Add a count of customers at risk", "status": "done", "evidence": "Customers at risk"}]
     _carrying(inst, dict(PARTS, **{ASSET: dict(PARTS[ASSET], vibes_split={"text": PAGE_VIBES, "asks": SPLITS[PAGE_VIBES]},
                                                vibes_checks=checks)}), app={"snapshot": True})
+    _carried_app(inst, agent_ns, tmp_path, [REGION])
     inst._implement_snapshot = lambda key, name, version: {"artifact": BUILT_PAGE}
     inst._implement_runner = lambda uc: "genie"
     inst._implement_dashboard = _built("dashboard", BUILT_PAGE)
@@ -206,9 +254,24 @@ def test_a_version_that_builds_only_the_dashboard_still_checks_the_app_page_asks
     assert final[ASSET]["spec_version"] == 3 and [c["status"] for c in final[ASSET]["vibes_checks"]] == ["done", "done"]
     assert any(kind == "judge" and "App page n01_u01" in prompt and "[asked in an earlier version]" in prompt for kind, prompt in seen)
     assert [(e["requirement"], e["part"], e["where"]) for e in final["checklist"]] == [
-        ("Make it a horizontal bar chart", "dashboard", "widget by_region"), ("Keep the biggest regions first", "dashboard", "widget by_region"),
-        ("Keep the region filter", "app", "page n01_u01"), ("Add a count of customers at risk", "app", "page n01_u01")]
+        ("Make it a horizontal bar chart", "dashboard", "chart Customers by region"), ("Keep the biggest regions first", "dashboard", "chart Customers by region"),
+        ("Keep the region filter", "app", "page Loss desk"), ("Add a count of customers at risk", "app", "page Loss desk")]  # REQ-237 / D-NAMES: person copy names the page by its title
     assert final["checklist_summary"]["total"] == 4 and [e["status"] for e in final["checklist"][2:]] == ["met", "met"]
+
+
+def test_a_carried_app_without_the_region_filter_is_read_without_it_and_its_ask_stays_missing(agent_ns, tmp_path):
+    """Must-exclude: the carried App is read for real, so an App that does not serve the region filter reads no region filter."""
+    from v143_vibes_test import _locked
+    context = {"uc_id": "N01-U01", "spec": {"outputs": {"app_name": "churn-desk"}, "config": {"warehouse_id": "wh1"}}, "asset_status": {}}
+    inst, _previous = _locked(agent_ns)
+    _carried_app(inst, agent_ns, tmp_path, [])
+    served = inst._implement_app_served_tool(context)
+    assert served[PAGE["id"]]["filters"] == {}
+    assert agent_ns["_implement_vibes_served_filter"]("region", PAGE, "App", served)[0] == "missing"
+    inst, _previous = _locked(agent_ns)
+    _carried_app(inst, agent_ns, tmp_path, [REGION])
+    served = inst._implement_app_served_tool(context)
+    assert agent_ns["_implement_vibes_served_filter"]("region", PAGE, "App", served)[0] == "done"
 
 
 def _checklist_context(agent_ns, records):
@@ -243,7 +306,7 @@ def test_the_checklist_is_written_and_shown_live_when_every_ask_is_met(agent_ns)
     assert context["asset_status"]["checklist"] == entries and [e["n"] for e in entries] == [1, 2, 3, 4]
     assert entries[0] == {"n": 1, "requirement": "Hold out the last 8 weeks", "part": "notebook", "where": "", "status": "met",
                           "evidence": "holdout=8", "fact": "holdout=8", "rounds": 2, "tried": [], "checks": [], "published_anyway": None}
-    assert entries[1]["part"] == "app" and entries[1]["where"] == "page n01_u01, the Fix plan table", \
+    assert entries[1]["part"] == "app" and entries[1]["where"] == "the App page, the Fix plan table", \
         "the entry names the element its check records, as every check of a run now does"
     assert entries[3]["checks"] == [{"name": "schedule: 07:00", "passed": True}] and entries[3]["part"] == "alert"
     assert emitted == [("Vibe checklist", "4 of 4 vibe requirements met", "ended_success", {"checklist": entries, "met": 4, "total": 4})]
@@ -306,7 +369,7 @@ def _facts_spark(agent_ns):
 def test_a_notebook_ask_is_checked_on_the_facts_of_its_latest_run(agent_ns, value, status, evidence):
     spark = _facts_spark(agent_ns)
     inst = _inspire(agent_ns, spark)
-    ask, other = "Every row carries the money at stake", "Explain the money at stake"
+    ask, other = "Every row carries the value at stake", "Explain the value at stake"
     prompts = _judge(inst, {f"{ask}. {other}": [_ask(ask, {"kind": "result", "value": value}), _ask(other)]},
                      [{"status": "missing", "evidence": "no cell explains it"}])
     found = inst._implement_vibes_round({}, [{"asset": "notebook", "text": f"{ask}. {other}", "artifact": "# Score\nx = 1\n",

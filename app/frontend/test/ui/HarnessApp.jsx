@@ -9,6 +9,7 @@ import RunPage from '../../src/pages/RunPage';
 import ChoosePage from '../../src/pages/ChoosePage';
 import LaunchPage from '../../src/pages/LaunchPage';
 import SetupWizard from '../../src/pages/SetupWizard';
+import ConfigPage from '../../src/pages/ConfigPage';
 import MonitorPage from '../../src/pages/MonitorPage';
 import GenerateDataPage from '../../src/pages/GenerateDataPage';
 import App from '../../src/App';
@@ -22,11 +23,13 @@ import { HARNESS_USE_CASE, HARNESS_SETTINGS, HARNESS_SESSION_ID } from './implem
 const AUTH = { token: 'tok', databricksHost: 'https://workspace.example.com' };
 const SETTINGS = { ...HARNESS_SETTINGS, ...AUTH };
 
+// run="bare": Monitor opened with no session and no run, as the App shows it on /#/monitor with nothing open (FW1 D5).
 function MonitorHarness({ run }) {
-  const [runId, setRunId] = useState(run === 'none' ? null : '777');
+  const bare = run === 'bare';
+  const [runId, setRunId] = useState(run === 'none' || bare ? null : '777');
   return (
     <ThemeProvider>
-      <MonitorPage key={runId ?? ''} settings={SETTINGS} update={() => {}} sessionId={HARNESS_SESSION_ID} runId={runId} onComplete={() => {}}
+      <MonitorPage key={runId ?? ''} settings={SETTINGS} update={() => {}} sessionId={bare ? null : HARNESS_SESSION_ID} runId={runId} onComplete={() => {}}
         onResultsSession={() => {}} onOpenImplement={() => {}} onRunAgain={(_sid, rid) => setRunId(String(rid))} />
     </ThemeProvider>
   );
@@ -68,6 +71,7 @@ function HarnessContent({ open, discoveryType, step, run }) {
   if (open === 'choose') return <ChooseHarness />;
   if (open === 'setup') return <SetupHarness blank={step === 'blank'} />;
   if (open === 'monitor') return <MonitorHarness run={run} />;
+  if (open === 'config') return <ConfigHarness />;
   if (open === 'launch') return <LaunchHarness />;
   if (open === 'generate') {
     return (
@@ -194,6 +198,16 @@ function LaunchHarness() {
       <output aria-label="Launched">{launched}</output>
       {notes?.warnings?.length > 0 && <MonitorPage settings={SETTINGS} update={() => {}} sessionId={HARNESS_SESSION_ID} runId={null} launchNotes={notes.warnings}
         launchDetails={notes.details} onComplete={() => {}} onResultsSession={() => {}} onOpenImplement={() => {}} />}
+    </ThemeProvider>
+  );
+}
+
+function ConfigHarness() {
+  const [settings, setSettings] = useState(SETTINGS);
+  const update = (key, value) => setSettings((prev) => ({ ...prev, [key]: typeof value === 'function' ? value(prev[key]) : value }));
+  return (
+    <ThemeProvider>
+      <ConfigPage settings={settings} update={update} onConfigured={() => {}} />
     </ThemeProvider>
   );
 }

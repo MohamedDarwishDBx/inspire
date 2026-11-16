@@ -41,9 +41,16 @@ def _zqv(ns, monkeypatch):
     monkeypatch.delitem(sys.modules, "zqvmod", raising=False)
 
 
+def _build_folder(fresh_ns) -> str:
+    """REQ-339 (0e2bb4e6c): the shared folder is per Inspire version and per build, <version>/<build id>."""
+    build = fresh_ns["inspire_assets_build_id"]()
+    assert len(build) == 12 and all(c in "0123456789abcdef" for c in build), build
+    return f"/Workspace/Shared/inspire-ai/assets/{fresh_ns['__AGENT_VERSION__']}/{build}"
+
+
 def test_the_assets_live_in_one_shared_workspace_folder_per_inspire_version(fresh_ns):
     assets = fresh_ns["InspireAssets"]()
-    assert assets.root == f"/Workspace/Shared/inspire-ai/assets/{fresh_ns['__AGENT_VERSION__']}"
+    assert assets.root == _build_folder(fresh_ns)
     assert assets.local.startswith(os.path.join(fresh_ns["tempfile"].gettempdir(), "inspire_assets")), "native files run from local disk"
     assert fresh_ns["InspireAssets"].shared() is fresh_ns["InspireAssets"].shared(), "one loader per Python process"
 
@@ -322,4 +329,4 @@ def test_the_app_passes_the_installed_assets_folder_and_the_notebook_reads_it_be
     fresh_ns["INSPIRE_SETTINGS_APPLIED"] = {"inspire_assets_path": installed + "/"}
     assert fresh_ns["InspireAssets"]().root == installed
     fresh_ns["INSPIRE_SETTINGS_APPLIED"] = {}
-    assert fresh_ns["InspireAssets"]().root == f"/Workspace/Shared/inspire-ai/assets/{fresh_ns['__AGENT_VERSION__']}"
+    assert fresh_ns["InspireAssets"]().root == _build_folder(fresh_ns)

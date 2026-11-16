@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { draftOf, ruleOf, ruleSentence } from '../../../agent/agent/app_shell/web/src/moneyRule.js';
 import '../../../agent/agent/app_shell/web/src/styles/moneyRule.css';
 import { compileExpression } from '../../../agent/agent/app_shell/web/src/moneyValue.js';
-import { MONEY_PARTS } from '../lib/moneyParts.js';
-import { ALL_PERIODS, MONEY_CURRENCY_CHOICES, WINDOW_CHOICES, valueTextOf } from '../lib/moneyDefaults.js';
+import { moneyPartsOf } from '../lib/moneyParts.js';
+import { ALL_PERIODS, DEFAULT_CURRENCY, MONEY_CURRENCY_CHOICES, WINDOW_CHOICES, valueTextOf } from '../lib/moneyDefaults.js';
 import AVERAGES from '../../../backend/lib/fxAverages.json';
 import { PlainMessage } from './TechnicalDetails.jsx';
 
@@ -20,7 +20,7 @@ const METHODS = [
 ];
 const DIRECTIONS = [
   { id: 'losses', label: 'Losses only', hint: 'A loss counts; a gain counts as 0.' },
-  { id: 'gains', label: 'Gains only', hint: 'Needs a sign on the right: only the gain records count.' },
+  { id: 'gains', label: 'Gains only', hint: 'Needs a sign on the next screen: only the gain records count.' },
   { id: 'net', label: 'Losses and gains, netted', hint: 'Gains and losses cancel out inside each total.' },
 ];
 const OFF_RULE = { currency: 'per_currency', off: true };
@@ -92,7 +92,7 @@ function Section({ left, right, className = '' }) {
 }
 
 export function MoneyRuleEditor({ value, onChange, sample = null, table = '', columns = [], api = {}, part = null }) {
-  const onlyPart = MONEY_PARTS.includes(part) ? part : null;
+  const onlyPart = moneyPartsOf('gains').includes(part) ? part : null;
   const [draft, setDraft] = useState(() => ({ ...draftOf(value || {}), rateSource: 'typed' }));
   const [pick, setPick] = useState(() => ({ ...pickOf(value?.value, value) }));
   const [signPick, setSignPick] = useState(() => ({ kind: value?.sign?.kind || '', column: value?.sign?.column || '', value: value?.sign?.value || '', losses: (value?.sign?.losses || []).join(', ') }));
@@ -102,7 +102,9 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
   const [proposalRows, setProposalRows] = useState(null);
   const hasCurrencyColumn = Boolean(sample?.currency);
   const effective = effectiveOf(pick);
-  const multiCurrency = draft.rates.length > 1;
+  // The currency the rates are read for: the table's currency column, else the code the value is written in (REQ-103). A value the rule
+  // computes names no code here, so its amounts are taken in the wizard's default currency, as the rest of Measure already says.
+  const rateKey = hasCurrencyColumn ? sample.currency : (valueOf(effective).value?.currency || DEFAULT_CURRENCY);
 
   const save = (nextDraft, nextPick) => {
     if (nextDraft.off) {
@@ -116,7 +118,10 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
     const lostNeedsStatuses = nextPick.method === 'lost' && !nextDraft.statuses.trim() ? ['Name the statuses that mean the opportunity was lost, such as lost.'] : [];
     const all = [...found, ...picked.problems, ...lostNeedsStatuses, ...gone.map((name) => `The column ${name} is not in this table, so the rule cannot use it.`)];
     setProblems(all);
-    if (!all.length && rule) onChange(picked.value ? { ...rule, value: picked.value } : rule);
+    // Gains only chosen on the direction screen: its sign is the next screen, so the movement is kept before the sign is named.
+    const signNext = nextDraft.rule === 'gains' && !nextDraft.sign;
+    const blocking = signNext ? all.filter((p) => !p.startsWith('gains needs a sign')) : all;
+    if (!blocking.length && rule) onChange(picked.value ? { ...rule, value: picked.value } : rule);
     else if (value?.off) onChange(null);
   };
   const pickSign = (patch) => {
@@ -131,8 +136,8 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
   const setPickPart = (patch) => { const next = { ...pick, ...patch }; setPick(next); save(draft, next); };
   const setRate = (i, patch) => setDraftPart({ rates: draft.rates.map((row, at) => (at === i ? { ...row, ...patch, source: 'typed' } : row)) });
 
-  const latest = useRef({ draft, pick });
-  latest.current = { draft, pick };
+  const latest = useRef({ draft, pick, rateKey });
+  latest.current = { draft, pick, rateKey };
   const ratesRequest = useRef(0);
   const proposalRequest = useRef(0);
 
@@ -151,13 +156,15 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
   };
 
   // Reads the currencies of the table and their rates. It only fills the rates: the rule keeps its own currency mode.
+  // A table with no currency column reads the rate of the one code the value is written in.
   const loadRates = (asked) => {
-    if (!table || !hasCurrencyColumn || !api.currencies) return;
+    if (!table || !rateKey || !api.currencies) return;
     const request = ++ratesRequest.current;
     const tableAt = table;
-    const currencyAt = sample.currency;
-    api.currencies({ table: tableAt, currency_column: currencyAt, base: asked }).then((data) => {
-      if (request !== ratesRequest.current || tableAt !== table || currencyAt !== sample?.currency) return;
+    const keyAt = rateKey;
+    const byColumn = hasCurrencyColumn ? { currency_column: keyAt } : { codes: [keyAt] };
+    api.currencies({ table: tableAt, ...byColumn, base: asked }).then((data) => {
+      if (request !== ratesRequest.current || tableAt !== table || keyAt !== latest.current.rateKey) return;
       const current = latest.current;
       const merged = mergedRates(current.draft, data);
       const next = { ...current.draft, base: data.base, rates: merged.rows };
@@ -173,7 +180,7 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
     // Asks for the rates in the base the rule already saved, so a remount keeps that base.
     loadRates(draft.base || '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table, sample?.currency]);
+  }, [table, rateKey]);
 
   const { value: picked, problems: pickProblems } = valueOf(effective);
   const gone = picked && columns.length ? columnsOf(picked).filter((name) => !columns.includes(name)) : [];
@@ -333,7 +340,7 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
           <legend className="text-[13px] font-semibold text-text-primary">Which movement counts?</legend>
           {DIRECTIONS.map((d) => (
             <Choice key={d.id} label={d.label} hint={d.hint}
-              control={<input type="radio" name="measure-direction" className="mt-0.5 shrink-0" disabled={d.id === 'gains' && !draft.sign} checked={(draft.rule || 'losses') === d.id} onChange={() => setDraftPart({ rule: d.id })} data-money-rule-kind={d.id} />} />
+              control={<input type="radio" name="measure-direction" className="mt-0.5 shrink-0" checked={(draft.rule || 'losses') === d.id} onChange={() => setDraftPart({ rule: d.id })} data-money-rule-kind={d.id} />} />
           ))}
         </fieldset>
       )}
@@ -345,30 +352,43 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
             gains: 'Total = sum of the value of the records that are gains. Example: a row with channel "gain" and value 120 adds 120.',
             net: 'Total = gains and losses added together. Example: a gain of 120 and a loss of 120 net to 0.',
           }[draft.rule || 'losses']}</p>
-          <fieldset className="space-y-2" data-measure-sign>
-            <legend className="font-semibold text-text-primary">Which records are gains? (needed for Gains only)</legend>
-            <Choice label="A column: its positive values are gains" control={<input type="radio" name="measure-sign" className="mt-0.5 shrink-0" checked={signPick.kind === 'column'} onChange={() => setSignPick({ ...signPick, kind: 'column' })} data-money-sign-kind="column" />} />
-            {signPick.kind === 'column' && (
-              <label className="block ps-6">Column (type or pick)
-                <input dir="auto" className="ms-2 w-40" list="money-columns" value={signPick.column} onChange={(e) => pickSign({ column: e.target.value.trim() })} data-money-sign-column />
+        </>
+      )}
+    />
+  );
+
+  const signPart = (
+    <Section
+      left={(
+        <fieldset className="space-y-2" data-measure-sign>
+          <legend className="font-semibold text-text-primary">Which records are gains?</legend>
+          <Choice label="A column: its positive values are gains" control={<input type="radio" name="measure-sign" className="mt-0.5 shrink-0" checked={signPick.kind === 'column'} onChange={() => setSignPick({ ...signPick, kind: 'column' })} data-money-sign-kind="column" />} />
+          {signPick.kind === 'column' && (
+            <label className="block ps-6">Column (type or pick)
+              <input dir="auto" className="ms-2 w-40" list="money-columns" value={signPick.column} onChange={(e) => pickSign({ column: e.target.value.trim() })} data-money-sign-column />
+            </label>
+          )}
+          <Choice label="A status value marks a gain" control={<input type="radio" name="measure-sign" className="mt-0.5 shrink-0" checked={signPick.kind === 'status'} onChange={() => setSignPick({ ...signPick, kind: 'status' })} data-money-sign-kind="status" />} />
+          {signPick.kind === 'status' && (
+            <div className="space-y-1 ps-6">
+              <label className="block">Status column (type or pick)
+                <input dir="auto" className="ms-2 w-40" list="money-columns" value={signPick.column} onChange={(e) => pickSign({ column: e.target.value.trim() })} data-money-sign-status-column />
               </label>
-            )}
-            <Choice label="A status value marks a gain" control={<input type="radio" name="measure-sign" className="mt-0.5 shrink-0" checked={signPick.kind === 'status'} onChange={() => setSignPick({ ...signPick, kind: 'status' })} data-money-sign-kind="status" />} />
-            {signPick.kind === 'status' && (
-              <div className="space-y-1 ps-6">
-                <label className="block">Status column (type or pick)
-                  <input dir="auto" className="ms-2 w-40" list="money-columns" value={signPick.column} onChange={(e) => pickSign({ column: e.target.value.trim() })} data-money-sign-status-column />
-                </label>
-                <label className="block">Status value that marks a gain, for example gain
-                  <input dir="auto" className="ms-2 w-40" value={signPick.value} onChange={(e) => pickSign({ value: e.target.value })} data-money-sign-value />
-                </label>
-                <label className="block">Statuses that mark a loss, comma-separated, for example refunded (any other status counts neither)
-                  <input dir="auto" className="ms-2 w-56" value={signPick.losses} onChange={(e) => pickSign({ losses: e.target.value })} data-money-sign-losses />
-                </label>
-              </div>
-            )}
-            {!draft.sign && <p className="text-text-secondary" data-money-sign-needed>Gains only needs a sign: name the column whose positive values are gains, or the status value that marks a gain.</p>}
-          </fieldset>
+              <label className="block">Status value that marks a gain, for example gain
+                <input dir="auto" className="ms-2 w-40" value={signPick.value} onChange={(e) => pickSign({ value: e.target.value })} data-money-sign-value />
+              </label>
+              <label className="block">Statuses that mark a loss, comma-separated, for example refunded (any other status counts neither)
+                <input dir="auto" className="ms-2 w-56" value={signPick.losses} onChange={(e) => pickSign({ losses: e.target.value })} data-money-sign-losses />
+              </label>
+            </div>
+          )}
+          {!draft.sign && <p className="text-text-secondary" data-money-sign-needed>Gains only needs a sign: name the column whose positive values are gains, or the status value that marks a gain.</p>}
+        </fieldset>
+      )}
+      right={(
+        <>
+          <p className="font-semibold text-text-primary">Calculation</p>
+          <p className="text-text-secondary">Total = sum of the value of the records that are gains. Example: a row with channel "gain" and value 120 adds 120.</p>
           {columnList}
         </>
       )}
@@ -383,8 +403,8 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
             <legend className="font-semibold text-text-primary">Report the amounts</legend>
             <Choice label="Keep each currency separate (default)" hint="Totals are shown per currency; different currencies are never added together."
               control={<input type="radio" name="money-report" className="mt-0.5 shrink-0" checked={draft.mode !== 'convert'} onChange={() => setDraftPart({ mode: 'per_currency' })} data-money-currency-mode="per_currency" />} />
-            {multiCurrency && (
-              <Choice label="Convert every amount to one reporting currency" hint="Only offered because the table holds more than one currency."
+            {Boolean(rateKey) && (
+              <Choice label="Convert every amount to one reporting currency" hint="Each amount is converted with its rate, today's rate by default."
                 control={<input type="radio" name="money-report" className="mt-0.5 shrink-0" checked={draft.mode === 'convert'} onChange={() => setDraftPart({ mode: 'convert' })} data-money-currency-mode="convert" />} />
             )}
             {draft.mode === 'convert' && (
@@ -397,8 +417,8 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
               <fieldset className="space-y-2 ps-6 text-[12px]" data-money-rate-source-group>
                 <legend className="font-semibold text-text-primary">Where each rate comes from</legend>
                 <Choice label="Rates you type, one per currency" control={<input type="radio" name="money-rate-source" className="mt-0.5 shrink-0" checked={draft.rateSource !== 'column'} onChange={() => setDraftPart({ rateSource: 'typed' })} data-money-rate-source="typed" />} />
-                <Choice label="Each record has its own rate, in a column" hint="Each row is converted with the rate on its own row."
-                  control={<input type="radio" name="money-rate-source" className="mt-0.5 shrink-0" checked={draft.rateSource === 'column'} onChange={() => setDraftPart({ rateSource: 'column', currencyColumn: draft.currencyColumn || sample?.currency || '' })} data-money-rate-source="column" />} />
+                {hasCurrencyColumn && (<Choice label="Each record has its own rate, in a column" hint="Each row is converted with the rate on its own row."
+                  control={<input type="radio" name="money-rate-source" className="mt-0.5 shrink-0" checked={draft.rateSource === 'column'} onChange={() => setDraftPart({ rateSource: 'column', currencyColumn: draft.currencyColumn || sample?.currency || '' })} data-money-rate-source="column" />} />)}
                 {draft.rateSource === 'column' && (
                   <>
                     <label className="block">Rate column
@@ -484,10 +504,10 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
     />
   );
 
-  const parts = { method: methodPart, direction: directionPart, currency: currencyPart, window: windowPart, off: offPart };
+  const parts = { method: methodPart, direction: directionPart, sign: signPart, currency: currencyPart, window: windowPart, off: offPart };
   return (
     <div className="money-rule space-y-4" data-money-rule-editor>
-      {(onlyPart ? [onlyPart] : MONEY_PARTS).map((name) => <div key={name}>{parts[name]}</div>)}
+      {(onlyPart ? [onlyPart] : moneyPartsOf(draft.rule)).map((name) => <div key={name}>{parts[name]}</div>)}
       {!draft.off && !effective.method && <p className="text-[12px] text-text-secondary" data-money-genie-estimate>Until you choose how to measure value, the totals are Genie estimate, not your rule.</p>}
       {!draft.base && draft.mode === 'convert' && <p className="text-[12px] text-text-secondary" data-money-base-needed>Pick the reporting currency: every amount is reported in it.</p>}
       {sentence && <p className="sentence text-[12px] text-text-primary" data-money-sentence>{sentence}</p>}

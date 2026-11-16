@@ -48,6 +48,17 @@ test('backend runtime code finds files only through lib/appPaths.js and reads th
   assert.deepEqual(hits, []);
 });
 
+test('the App zip carries the App shell the notebook pins, and every pinned asset reaches the workspace through the release assets (REQ-298 guard)', () => {
+  // Parsed here without appPaths, so a drifted pin cannot pass by being read through the same code under test.
+  const cells = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'dbx_inspire_ai_agent.ipynb'), 'utf8')).cells;
+  const line = cells[1].source.find((item) => item.startsWith('INSPIRE_NOTEBOOK_ASSETS = '));
+  const pins = JSON.parse(line.slice('INSPIRE_NOTEBOOK_ASSETS = '.length));
+  assert.ok(Object.keys(pins).length >= 5, 'the notebook pins its assets, prompts included');
+  assert.ok(pins.prompts && pins.prompts.file === 'notebook/prompts.json', 'the prompt templates are a pinned asset');
+  assert.ok(APP_FILES.includes(path.posix.join('agent', pins.app_shell.repo)), 'the App shell the App reads from its own folder ships');
+  assert.equal(APP_FILES.some((file) => file.endsWith('prompts.json')), false, 'prompts.json reaches the workspace through the release assets, not the App zip');
+});
+
 test('every file the backend reads from the App folder ships in the App zip, from the one list package-for-workspace.sh stages', () => {
   const shipped = [...APP_FILES, ...APP_FILES_WHEN_PRESENT];
   assert.ok(APP_FILES_WHEN_PRESENT.includes('backend/showcase'), 'demo recordings ship when present');

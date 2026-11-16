@@ -94,7 +94,7 @@ test('a new spec has the Genie Agent and App on and the dashboard and alert off,
   for (const note of [w.APP_ACCESS_NOTE, w.FRESH_HELP]) assert.ok(note.split(' ').length <= 15, `${note} is over 15 words (must-fail on the long copy)`);
   assert.match(w.APP_ACCESS_CHOICES.find((c) => c.id === 'sp').blurb, /^The App reads with its own access/);
   assert.deepEqual(fresh.outputs.app_look, { style: 'a', layout: 'sidebar', palette: 'default', theme: 'light' });
-  assert.deepEqual(fresh.outputs.app_options, { modify: false, replace_edits: false, decisions: true, alerts: false }, 'record decisions start on, alerts start off');
+  assert.deepEqual(fresh.outputs.app_options, { modify: false, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' }, 'record decisions start on, alerts start off');
   assert.deepEqual(fresh.outputs.merge, { app: '', dashboard: '', genie_space: '' });
   assert.deepEqual(served(spec).errors, []);
   const unchosen = { ...spec, outputs: { ...spec.outputs, app_access: '' } };
@@ -138,7 +138,7 @@ test('ticking the App does not tick the Genie Agent, and the Genie Agent unticks
   const off = w.withOutput(withGenie, 'app', false);
   assert.deepEqual([off.outputs.app, off.outputs.genie_space], [false, true], 'unticking the App leaves the Genie Agent as it is');
   assert.deepEqual(w.withOutput(spec, 'alert', true).outputs.alert_recipients, w.defaultAlertRecipients(spec));
-  assert.deepEqual(w.wizardSteps('mvp', ticked).map((s) => s.id), ['delivery', 'data', 'first_run', 'stake', 'where', 'app', 'app_look', 'summary']);
+  assert.deepEqual(w.wizardSteps('mvp', ticked).map((s) => s.id), ['delivery', 'data', 'first_run', 'stake', 'where', 'summary'], 'ticking the App adds one step, Where it lives, which holds the App panels (REQ-002)');
   assert.deepEqual(w.wizardSteps('mvp', off).map((s) => s.id), ['delivery', 'data', 'first_run', 'stake', 'summary'], 'with Apps unticked no App step shows');
   assert.deepEqual(w.stepErrors('delivery', ticked), [], 'an App without a Genie Agent has no delivery error (REQ-152)');
 });
@@ -178,12 +178,9 @@ test('a use case that joins an existing App skips App access and App look, shows
   const joined = w.withMergeTarget(spec, 'app', hub, 'predict-churn');
   const fresh = w.withMergeTarget(joined, 'app', null, 'predict-churn');
   assert.deepEqual([w.joinsApp(joined), w.joinsApp(fresh), w.joinsApp({ ...joined, outputs: { ...joined.outputs, app: false } }), w.joinsApp(null)], [true, false, false, false]);
-  assert.equal(w.wizardSteps('mvp', joined).find((s) => s.id === 'app'), undefined, 'the existing App keeps its sign-in, data source and look');
-  assert.deepEqual(w.wizardSteps('mvp', joined).find((s) => s.id === 'where').panels, ['app_place'], 'where it goes is still picked on Where it lives');
-  assert.deepEqual(w.wizardSteps('mvp', fresh).find((s) => s.id === 'app').panels, ['app_access', 'app_features', 'app_storage']);
-  assert.deepEqual(w.wizardSteps('mvp', fresh).find((s) => s.id === 'where').panels, ['app_place', 'app_pages']);
-  assert.deepEqual(w.wizardSteps('mvp', joined).map((s) => s.id), w.wizardSteps('mvp', fresh).map((s) => s.id).filter((id) => !['app', 'app_look'].includes(id)),
-    'a joined App keeps its own pages, look and sign-in, so it has no App steps (must-exclude)');
+  assert.deepEqual(w.wizardSteps('mvp', joined).find((s) => s.id === 'where').panels, ['app_place'], 'a joined App keeps its own sign-in, data source, pages and look: only where it goes is picked on Where it lives (REQ-002)');
+  assert.deepEqual(w.wizardSteps('mvp', fresh).find((s) => s.id === 'where').panels, w.APP_PANELS, 'a new App picks every App panel on Where it lives (REQ-002)');
+  assert.deepEqual(w.wizardSteps('mvp', joined).map((s) => s.id), w.wizardSteps('mvp', fresh).map((s) => s.id), 'the step list is the same shape, the joined App only holds fewer panels (must-exclude: App steps)');
   assert.deepEqual(w.stepErrors('delivery', joined, { mergeTargets: targets }), [], 'no hidden App owner blocks Next');
   assert.deepEqual(w.advancedWithErrors('delivery', joined, { mergeTargets: targets }), []);
   assert.deepEqual(w.stepErrors('delivery', fresh, { mergeTargets: targets }), ['App owners must be email addresses: nope'], 'a new App still checks its owners');
@@ -235,10 +232,10 @@ test('the App reads Lakebase by default when the workspace has it, Delta tables 
   assert.equal(served(sent).spec.outputs.app_backend, 'lakebase');
   assert.equal(served(w.specWithBackend(perUser, offer('available'))).spec.outputs.app_backend, 'delta');
 
-  assert.deepEqual(w.stepErrors('app', spec, { lakebase: null }), [w.LAKEBASE_CHECKING], 'Next waits for the Lakebase check');
-  assert.deepEqual(w.stepErrors('app', spec, { lakebase: offer('absent') }), []);
-  assert.deepEqual(w.stepErrors('app', perUser, { lakebase: null }), [], 'a per-user App does not wait: it reads Delta tables');
-  assert.deepEqual(w.stepErrors('app', spec, {}), [], 'a caller that does not check Lakebase is not blocked');
+  assert.deepEqual(w.stepErrors('where', spec, { lakebase: null }), [w.LAKEBASE_CHECKING], 'Next waits for the Lakebase check');
+  assert.deepEqual(w.stepErrors('where', spec, { lakebase: offer('absent') }), []);
+  assert.deepEqual(w.stepErrors('where', perUser, { lakebase: null }), [], 'a per-user App does not wait: it reads Delta tables');
+  assert.deepEqual(w.stepErrors('where', spec, {}), [], 'a caller that does not check Lakebase is not blocked');
 });
 
 test('Edit of an App built before Lakebase keeps it on Delta tables, and one never built keeps the choice open', async () => {
@@ -310,7 +307,7 @@ test('Edit of a version the old wizard saved gets every new App setting with its
     app_look: { palette: 'mono' }, app_options: { modify: true }, merge: 'bad' } } }, fallback);
   assert.equal(saved.outputs.app_access, 'user');
   assert.deepEqual(saved.outputs.app_look, { ...w.APP_LOOK_DEFAULT, palette: 'mono' });
-  assert.deepEqual(saved.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false });
+  assert.deepEqual(saved.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false, experience: 'ui' });
   const savedOff = w.specFromLatest({ spec_version: 2, spec_json: { ...fallback, outputs: { ...fallback.outputs, app: true, app_access: 'user',
     app_options: { modify: false, replace_edits: false, decisions: false, alerts: false } } } }, fallback);
   assert.equal(savedOff.outputs.app_options.decisions, false, 'a version saved with decisions turned off keeps them off');

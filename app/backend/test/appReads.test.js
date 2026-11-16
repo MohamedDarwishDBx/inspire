@@ -97,7 +97,7 @@ test('Grant access with my permissions runs exactly the grants still missing on 
     assert.deepEqual(assets.app.unread.tables, [{ table: 'main.s.orders', owner: 'admins', grants: [CATALOG] }], 'what the person could not grant stays recorded');
     assert.equal(assets.notebook.state, 'ready', 'the rest of the record is kept');
     assert.equal(got.data.state, 'unreadable');
-    assert.match(got.data.text, /^The App riverside-assets cannot read this table, so its pages show no data from it\. The table owner can grant it\. Your grant was refused; the statements and the error are under Details$/);
+    assert.match(got.data.text, /^The App riverside-assets cannot read this table, so its pages show no data from it\. Admins can grant it\. Your grant was refused; the statements and the error are under Details$/);
     assert.doesNotMatch(got.data.text, /GRANT|PERMISSION_DENIED/, 'the card sentence carries no GRANT and no raw error');
     assert.ok(got.data.failed.length > 0, 'the statements and errors travel in failed, for Details');
   });
@@ -202,7 +202,7 @@ test('before the build, the plan warns when Inspire cannot share a picked table 
   assert.equal(got.status, 200, JSON.stringify(got.data));
   const [warning] = got.data.warnings.filter((w) => w.startsWith('Inspire cannot share'));
   assert.ok(warning, JSON.stringify(got.data.warnings));
-  assert.match(warning, /^Inspire cannot share main\.s\.orders \(owner admins and data-eng\) with the App this build makes/);
+  assert.match(warning, /^Inspire cannot share main\.s\.orders \(owned by admins and data-eng\) with the App this build makes/);
   assert.match(warning, /The build still runs\. When it ends, the Build page offers Grant access with my permissions to grant it as you in one click, or the grant SQL to send to admins and data-eng$/);
   assert.deepEqual(got.data.summary.app_reads.tables, [{ table: 'main.s.orders', owner: 'admins and data-eng' }]);
   assert.ok(got.data.warnings.includes(got.data.summary.app_reads.text), 'the wizard shows the same words the plan warns with');
@@ -225,7 +225,7 @@ test('a done build with unread tables reads as action needed, and its finish sta
   const W = await lib('implementWizard.js');
   const P = await lib('mvpProgress.js');
   const held = row(RECORD);
-  assert.deepEqual(W.implementState(held), { group: 'held', label: W.APP_READS_LABEL, tone: 'warning', kind: 'mvp' });
+  assert.deepEqual(W.implementState(held), { group: 'held', label: W.APP_READS_LABEL, tone: 'warning', kind: 'mvp', hold: 'other' }); // REQ-295: hold kind added
   assert.notEqual(W.implementState(row(null)).label, W.APP_READS_LABEL, 'an App that reads everything stays Done (must-exclude)');
   assert.equal(W.appReadsOf(row(RECORD, 'failed')), null, 'a failed build shows its failure, not the access card');
   assert.equal(W.appReadsOf(row({ app: SP, tables: [{ table: 'main.s.orders', grants: [] }] })), null, 'nothing to grant shows nothing');
@@ -237,8 +237,10 @@ test('a done build with unread tables reads as action needed, and its finish sta
   assert.ok(!clean.notes.includes(W.APP_READS_LABEL));
   const choices = W.appReadsChoices(W.appReadsOf(held));
   assert.deepEqual(choices.map((c) => c.id), ['grant', 'copy', 'check']);
-  assert.equal(choices[1].label, 'Copy the grant SQL to send to data-eng');
-  assert.equal(choices[1].sql, RECORDED.map((g) => `${g};`).join('\n'));
+  // Round 3 decision 3 (REQ-131, REQ-260): the owner's chooser opens the Permission Required dialog; its SQL is the entry's statements
+  assert.equal(choices[1].label, 'See the grant'); // REQ-082 one card action: the owner's name moved out of the label into the detail
+  assert.equal(choices[1].sql, undefined, 'no separate SQL copy path');
+  assert.deepEqual(choices[1].permissions[0].statements, RECORDED);
   assert.match(W.appReadsText(W.appReadsOf(held), 'riverside-assets'), /App riverside-assets cannot read this table, so its pages show no data from it/);
   assert.doesNotMatch(W.appReadsText(W.appReadsOf(held)), /build (it )?again|rebuild/i);
 });
@@ -253,6 +255,12 @@ test('a recorded App read grant is only ever a table-level SELECT or READ METADA
   assert.equal(appReadGrantFor(`GRANT SELECT ON CATALOG \`main\` TO \`${app}\``, app), false);
   assert.equal(appReadGrantFor(`GRANT READ METADATA ON SCHEMA \`main\`.\`s\` TO \`${app}\``, app), false);
   assert.equal(appReadGrantFor(`GRANT MODIFY ON TABLE \`main\`.\`s\`.\`orders\` TO \`${app}\``, app), false);
+});
+
+test('a service principal id never reaches the build card as an owner: it shows as your data owner, Inspire keeps its name (REQ-185)', () => {
+  const { ownerLabel } = require('../lib/inspireImplement');
+  assert.equal(ownerLabel('b2b3b070-1da5-45c3-b5b6-81a2feaf85bb'), 'your data owner');
+  assert.equal(ownerLabel('Inspire'), 'Inspire');
 });
 
 test('an internal email never reaches the build card: a table owner that is a person shows as your data owner, a group keeps its name (must-exclude)', () => {
@@ -326,5 +334,34 @@ test('the dialog and the Grant use the App service principal id read live from i
     assert.ok(!JSON.stringify(check.data).includes(STALE), 'the build-time id never reaches the dialog');
     await call(url, `/api/inspire/implement/app-reads?${Q}`, { action: 'grant' });
     assert.ok(w.grants.length > 0 && w.grants.every(([sql]) => sql.endsWith(`TO \`${LIVE}\``)), 'the Grant runs only on the live principal');
+  });
+});
+
+// REQ-267: the Build page's Check runs on load. The build record is the App's own tracking table, so the Check reads it as the App, as
+// the Build page's status and history do. A person who cannot read that table must still get an answer, never a 500.
+const TRACKING_DENIED = "[INSUFFICIENT_PERMISSIONS] Insufficient privileges:\nPrincipal 'analyst@example.com' does not have SELECT on Table 'main.inspire.__inspire_implement'. SQLSTATE: 42501";
+
+test('Check again reads the build record as the App, so a person who cannot read the App tracking table gets an answer, not a 500 (REQ-267)', async () => {
+  const w = workspace();
+  const overrides = { ...w.overrides, dbToken: PERSON_TOKEN, tokenKind: 'person', appToken: APP_TOKEN, sqlDeniedFor: { [PERSON_TOKEN]: { __inspire_implement: TRACKING_DENIED } } };
+  await withApp(overrides, async (url, made) => {
+    const got = await call(url, `/api/inspire/implement/app-reads?${Q}`, { action: 'check' });
+    assert.equal(got.status, 200, JSON.stringify(got.data));
+    assert.equal(got.data.state, 'unreadable');
+    assert.equal(got.data.app_name, 'riverside-assets');
+    const record = made.sqlCalls.filter((c) => c.sql.includes('__inspire_implement'));
+    assert.ok(record.length > 0, 'the build record is read');
+    assert.ok(record.every((c) => c.token === APP_TOKEN), 'the build record is read with the App token, never the person token');
+  });
+});
+
+test('when the App itself cannot read its tracking table, Check answers 403 with a plain reason and no raw SQL error (REQ-267)', async () => {
+  const w = workspace();
+  const overrides = { ...w.overrides, dbToken: PERSON_TOKEN, tokenKind: 'person', appToken: APP_TOKEN, sqlDeniedFor: { [APP_TOKEN]: { __inspire_implement: TRACKING_DENIED } } };
+  await withApp(overrides, async (url) => {
+    const got = await call(url, `/api/inspire/implement/app-reads?${Q}`, { action: 'check' });
+    assert.equal(got.status, 403, JSON.stringify(got.data));
+    assert.doesNotMatch(got.data.error, /INSUFFICIENT_PERMISSIONS|SQLSTATE|Principal/, 'no raw SQL error reaches the page');
+    assert.match(got.data.error, /^Inspire cannot read the build record of this use case/);
   });
 });

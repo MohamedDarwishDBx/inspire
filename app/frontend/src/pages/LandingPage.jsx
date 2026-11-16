@@ -566,7 +566,7 @@ function LandingActions({ onStart, large = false, className = '', style }) {
   );
 }
 
-export default function LandingPage({ onStart, onOpenSetup }) {
+export default function LandingPage({ onStart, onOpenSetup, releaseTag = '' }) {
   const typedText = useTypingEffect(HERO_WORDS);
   const scrollContainerRef = useRef(null);
   const { progress, section } = useScrollProgress(scrollContainerRef);
@@ -896,6 +896,7 @@ export default function LandingPage({ onStart, onOpenSetup }) {
             className="absolute bottom-0 inset-x-0 z-10 px-6 pb-5 text-center text-[11px] leading-relaxed" style={{ color: C.textFaint }}>
             Inspire is open source and provided as is. Databricks Support does not cover it: ask questions and request features on the{' '}
             <a href={INSPIRE_ISSUES_URL} target="_blank" rel="noreferrer" className="underline hover:text-db-red-fg">Inspire GitHub Issues page</a>.
+            {releaseTag && <span data-release-tag="" className="block mt-1 font-mono">{releaseTag}</span>}
           </footer>
         </section>
       </div>

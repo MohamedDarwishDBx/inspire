@@ -3,6 +3,7 @@ import { X, Key, FolderOpen, Server, Database, Globe, RefreshCw, ChevronDown, Sh
 import DatabricksLogo from './DatabricksLogo';
 import { PlainMessage } from './TechnicalDetails';
 import { normalizeDatabricksHost } from '../lib/normalizeDatabricksHost';
+import { responseError } from '../lib/apiClient';
 
 const HOST_FIELD = { key: 'databricksHost', label: 'Databricks Host URL', icon: Globe, type: 'text', placeholder: 'https://adb-xxx.xx.azuredatabricks.net' };
 const DB_FIELD = { key: 'inspireDatabase', label: 'Inspire Database', icon: Database, type: 'text', placeholder: 'catalog._inspire' };
@@ -42,6 +43,8 @@ function WarehouseSelector({ settings, update }) {
 
       const resp = await fetch('/api/warehouses', { headers });
       if (!resp.ok) {
+        const refused = await responseError(resp.clone());
+        if (refused.dialog) return; // the dialog says it; no second message here (REQ-220)
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${resp.status}`);
       }
@@ -113,7 +116,7 @@ function WarehouseSelector({ settings, update }) {
       </div>
 
       {error && (
-        <PlainMessage text={error} className="text-xs text-error-fg mt-1" />
+        <PlainMessage text={error} securable="compute" className="text-xs text-error-fg mt-1" />
       )}
     </div>
   );
@@ -291,11 +294,12 @@ export default function SettingsPanel({ settings, update, onClose }) {
                         const headers = { Authorization: `Bearer ${settings.token}`, 'X-DB-PAT-Token': settings.token };
                         if (settings.databricksHost) headers['X-Databricks-Host'] = settings.databricksHost;
                         const resp = await fetch('/api/notebook/republish', { method: 'POST', headers });
+                        const refused = resp.ok ? null : await responseError(resp.clone());
                         const data = await resp.json().catch(() => ({}));
                         if (resp.ok) {
                           if (data.path) update('notebookPath', data.path);
                           alert('Notebook re-published successfully!');
-                        } else {
+                        } else if (!refused.dialog) {
                           alert(data.error || 'Failed to re-publish notebook.');
                         }
                       } catch { alert('Error re-publishing notebook.'); }

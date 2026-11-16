@@ -272,7 +272,7 @@ def test_the_owner_leaving_a_shared_app_hands_it_to_a_use_case_that_stays_and_mo
     _name, deployed, _reads, _space, source = inst.deployed[0]
     settings = json.loads(deployed["inspire_app.json"])
     assert settings["pages"] == ["n01_u07", "n01_u08_s5150"]
-    assert settings["title"] == "N01-U07 Sales desk", "the use case whose page now comes first owns the App"
+    assert settings["title"] == "Sales desk", "the use case whose page now comes first owns the App, under its name (REQ-063)"
     assert source == "/W/inspire/acme/apps/sales-desk", "its source moves out of the leaving use case's folder, which an uninstall deletes"
     patch = next(c[2] for c in inst.calls if c[0] == "PATCH")
     assert patch["description"] == "Inspire use case N01-U07 (session 5150): Sales desk"
@@ -339,7 +339,7 @@ def test_when_sharing_cannot_be_checked_nothing_is_deleted_or_changed_and_the_ve
     inst._implement_select = broken
     with pytest.raises(agent_ns["ImplementBlocked"]) as raised:
         inst._implement_delete_output("app", "sales-desk", KEY)
-    assert str(raised.value) == ("App: Inspire could not check whether other use cases share sales-desk, so it neither deleted it nor took "
+    assert str(raised.value) == ("Agentic App: Inspire could not check whether other use cases share sales-desk, so it neither deleted it nor took "
                                  "this use case's pages out of it: TABLE_OR_VIEW_NOT_FOUND: __inspire_implement; submit again")
     assert inst.calls == [] and inst.updates == []
 
@@ -429,7 +429,7 @@ def test_the_hand_over_picks_the_first_page_a_holder_still_owns_and_names_it(age
     assert agent_ns["implement_app_next_owner"]([], holders, "5150")["use_case_id"] == "N01-U08"
     settings, kept = agent_ns["implement_app_take_out"]({"jobs": {"n02_u01_s9": "1"}, "alerts": {}, "title": "x", "genie": None,
                                                          "genie_note": "n"}, pages, "n09_u09", nxt)
-    assert [p["id"] for p in kept] == ["n02_u01_s9", "n01_u08"] and settings["title"] == "N02-U01 Demand"
+    assert [p["id"] for p in kept] == ["n02_u01_s9", "n01_u08"] and settings["title"] == "Demand"
     assert settings["jobs"] == {"n02_u01_s9": "1"} and settings["pages"] == ["n02_u01_s9", "n01_u08"]
 
 

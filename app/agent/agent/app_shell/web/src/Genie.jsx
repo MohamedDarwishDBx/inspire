@@ -4,14 +4,15 @@ import { agentAsk, agentFeedback, agentPrepare, agentStatus, agentTurn, askGenie
 import { POLL_MS, latestRunText, stepText } from './freshness.js';
 import WaitingForAccess from './WaitingForAccess.jsx';
 import { reducedMotion } from './theme.js';
-import { answerLabel, cellText, integer, isKeyColumn } from './format.js';
+import { integer } from './format.js';
+import { answerColumns, progressLabel } from './genieAnswerView.js';
 import DataTable from './DataTable.jsx';
 import Markdown from './Markdown.jsx';
 import { BUSY_TITLE, explainBody } from './explain.js';
 import { GENIE_DEFAULT, GENIE_MIN, clampGenie, genieMax, keyWidth, rememberGenieWidth, storedGenieWidth } from './genieWidth.js';
 import { GENIE_ASK, agentIntro, genieAnswer, genieKey, genieOf, genieOn, paceText } from './genieAsk.js';
 import { AGENT_CHANGED, suggestions } from './agentView.js';
-import { AgentExtras, AgentSteps, RecordOffers, confirmWrite } from './AgentParts.jsx';
+import { AgentExtras, AgentSteps, RecordOffers, StepsDetails, confirmWrite } from './AgentParts.jsx';
 import { runWrite } from './saving.jsx';
 import { pageDecides } from './records.js';
 import { NewMessages, PlainNote, useFollowBottom } from './ui.jsx';
@@ -21,14 +22,6 @@ const AGENT_POLL_MS = 1000;
 const AGENT_GIVE_UP_MS = 300000;
 const HISTORY_SENT = 6;
 const ELEMENT_CHARS = 8000;
-
-function answerColumns(answer) {
-  const rows = answer.rows || [];
-  return (answer.columns || []).map((c) => {
-    const num = !isKeyColumn(c.name, c.type) && rows.some((r) => typeof r[c.name] === 'number') && rows.every((r) => r[c.name] == null || typeof r[c.name] === 'number');
-    return { key: c.name, label: answerLabel(c.name), num, render: (r) => (r[c.name] == null ? '' : cellText(r[c.name], c)) };
-  });
-}
 
 function Pace({ since }) {
   const [now, setNow] = useState(() => Date.now());
@@ -110,9 +103,11 @@ export function useGenie(app, current, onOpen, view = null) {
       if (started.question) update(k, n - 1, { sent: started.question });
       const msg = await genieAnswer(k, started, { onStep: (step) => update(k, n, { step }), alive: () => alive.current });
       if (msg) update(k, n, { state: 'done', answer: msg, ids: started, shown: reducedMotion() ? Infinity : 0 });
+      return msg || null;
     } catch (error) {
       if (retryable(error)) retries.current[`${k}:${n}`] = () => send(k, you, start);
       update(k, n, { state: 'failed', error: error.message, calm: !!error.calm, waiting: waitingOf(error) });
+      return null;
     }
   }, []);
 
@@ -138,18 +133,20 @@ export function useGenie(app, current, onOpen, view = null) {
       if (turn.state === 'no_model') {
         setModes((m) => ({ ...m, [k]: { mode: 'genie', note: turn.error } }));
         edit(k, (t) => t.filter((m) => m.n !== n && m.n !== n - 1));
-        send(k, you, (id) => askGenie(k, you.text, id, extra.about));
-        return;
+        return send(k, you, (id) => askGenie(k, you.text, id, extra.about));
       }
       if (turn.state === 'failed') throw new Error(turn.error || 'Genie could not answer this question.');
       if (turn.conversation_id) conversations.current[k] = turn.conversation_id;
       const undo = turn.actions?.length ? viewNow.current?.apply(k, turn.actions) || null : null;
+      const answer = agentAnswer(turn);
       update(k, n, { state: 'done', turn_id: turn.turn_id, steps: turn.steps, actions: turn.actions, refused: turn.refused, undo, offers: turn.offers, next: turn.next || [],
-        confirm: turn.confirm ? { ...turn.confirm, state: 'ask' } : null, answer: agentAnswer(turn),
+        confirm: turn.confirm ? { ...turn.confirm, state: 'ask' } : null, answer,
         ids: turn.genie ? { conversation_id: turn.genie.conversation_id, message_id: turn.genie.message_id } : null, shown: reducedMotion() ? Infinity : 0 });
+      return answer;
     } catch (error) {
       if (retryable(error)) retries.current[`${k}:${n}`] = () => sendAgent(k, you, extra);
       update(k, n, { state: 'failed', error: error.message, calm: !!error.calm, waiting: waitingOf(error) });
+      return null;
     }
   }, [send]);
 
@@ -171,8 +168,7 @@ export function useGenie(app, current, onOpen, view = null) {
     const you = body.question ? { text: body.question, about: { label: body.title } } : { text: `Explain “${body.title}”`, explain: true };
     const k = genieKey(shown.current, page);
     setPinned(k);
-    if (agentOn(k)) sendAgent(k, you, { element: elementView(body) });
-    else send(k, you, (id) => explainGenie({ ...body, conversation_id: id }));
+    return agentOn(k) ? sendAgent(k, you, { element: elementView(body) }) : send(k, you, (id) => explainGenie({ ...body, conversation_id: id }));
   }, [send, sendAgent]);
 
   const changed = (pageId) => window.dispatchEvent(new CustomEvent(AGENT_CHANGED, { detail: { pageId } }));
@@ -379,7 +375,7 @@ export function Answer({ message, url, onTick, genie, rating = true }) {
   const done = message.shown >= words;
   return (
     <div className="msg-b">
-      <AgentSteps steps={message.steps} />
+      {!done && <AgentSteps steps={message.steps} />}
       <Typing message={message} onTick={onTick} />
       {done && a.rows?.length > 0 && (
         <div className="msg-t">
@@ -394,6 +390,7 @@ export function Answer({ message, url, onTick, genie, rating = true }) {
       {done && a.sql && (
         <details className="msg-sql"><summary><Icon name="code" size={13} />How Genie got this</summary><pre>{a.sql}</pre></details>
       )}
+      {done && <StepsDetails steps={message.steps} />}
       {done && genie && <AgentExtras message={message} genie={genie} rating={rating} />}
       {done && (!message.agent || message.ids) && (
         <div className="msg-f">
@@ -487,7 +484,7 @@ export default function GeniePanel({ app, genie, page, pages, onPick, onClose, t
             <p>{info.note}</p>
             {answering.length > 0 && (
               <div className="g-pick-list" aria-label="Use cases with a Genie Agent">
-                {answering.map((p) => <button key={p.id} type="button" className="sugg" onClick={() => onPick?.(p.id)} title={p.use_case_id || undefined}>{p.title}</button>)}
+                {answering.map((p) => <button key={p.id} type="button" className="sugg" onClick={() => onPick?.(p.id)}>{p.title}</button>)}
               </div>
             )}
           </div>
@@ -507,7 +504,7 @@ export default function GeniePanel({ app, genie, page, pages, onPick, onClose, t
         ) : (
           <div key={m.n} className="msg msg--genie">
             <span className="msg-av"><GenieMark size={14} /></span>
-            {m.state === 'running' && <div className="msg-b"><AgentSteps steps={m.steps} /><span className="g-step"><span className="dots"><i /><i /><i /></span>{m.step}…</span><Pace since={m.n} /></div>}
+            {m.state === 'running' && <div className="msg-b"><span className="g-step"><span className="dots"><i /><i /><i /></span>{progressLabel(m.step)}…</span><Pace since={m.n} /></div>}
             {m.state === 'failed' && <div className="msg-b">{m.waiting ? <WaitingForAccess waiting={m.waiting} compact /> : m.calm ? <PlainNote text={m.error} className="note" role="status" data-calm /> : <PlainNote text={m.error} className="g-err" onRetry={genie.canRetry?.(genie.key, m.n) ? () => genie.retry(genie.key, m.n) : null} />}</div>}
             {m.state === 'done' && <Answer message={m} url={info.url} onTick={tick} genie={genie} />}
             {m.state === 'done' && !m.agent && recordOf(thread, m) && home && app.options?.decisions && pageDecides(home) && (

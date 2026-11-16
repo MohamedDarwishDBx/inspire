@@ -65,8 +65,11 @@ for (const c of CASES.source_tables) {
     const text = I.appUnreadableMessage(offer);
     assert.match(text, new RegExp(`${CASES.app.name} \\(application id ${CASES.app.id}\\)`));
     assert.doesNotMatch(text, /swap/i);
-    for (const sql of c.grants) assert.ok(text.includes(sql), sql);
-    assert.match(text, c.can_grant ? /Use Let Inspire read these tables/ : c.grants.length ? /Ask the owner to run/ : /no missing grant/);
+    // REQ-131, REQ-260: the SQL is never in the prose; the App raises it as the Permission Required entry (sourceAccess carries it)
+    for (const sql of c.grants) assert.ok(!text.includes(sql), `must-exclude: ${sql}`);
+    assert.doesNotMatch(text, /GRANT /);
+    assert.match(text, c.can_grant ? /Use Let Inspire read these tables/ : c.grants.length ? /Ask your data owner to run/ : /no missing grant/);
+    if (c.grants.length) assert.match(text, /the exact commands are in Permission Required$/);
   });
 }
 
@@ -154,8 +157,11 @@ test('a rerun the App cannot read refuses with the named App reason, never the s
     const got = await call(url, `/api/inspire/implement/rerun?${Q}`, { method: 'POST', body: { overrides: {} } });
     assert.equal(got.status, 409, JSON.stringify(got.data));
     assert.match(got.data.error, /the build cannot read a source table: builds run as the App service principal inspire-manual/);
-    assert.doesNotMatch(got.data.error.split('. Ask the owner')[0], /main\.s\.orders/);
-    assert.match(got.data.error, /Ask the owner to run: GRANT USE SCHEMA ON SCHEMA `main`\.`s` TO `app-sp-id`; GRANT SELECT ON TABLE `main`\.`s`\.`orders` TO `app-sp-id`; GRANT READ METADATA ON TABLE `main`\.`s`\.`orders` TO `app-sp-id`$/);
+    assert.doesNotMatch(got.data.error.split('. Ask your data owner')[0], /main\.s\.orders/);
+    assert.match(got.data.error, /Ask your data owner to run the commands: the exact commands are in Permission Required$/);
+    assert.doesNotMatch(got.data.error, /GRANT /, 'no GRANT in the refusal prose (REQ-260)');
+    assert.deepEqual(got.data.app_unreadable.permissions[0].statements, [
+      'GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `app-sp-id`', 'GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp-id`', 'GRANT READ METADATA ON TABLE `main`.`s`.`orders` TO `app-sp-id`'], 'the dialog payload carries the exact statements (must-keep)');
     assert.doesNotMatch(got.data.error, /swap/i);
     assert.deepEqual(got.data.missing_tables, []);
     assert.equal(got.data.app_unreadable.can_grant, false);
@@ -174,7 +180,9 @@ test('plan and submit refuse a build the App cannot read with the named App reas
         const got = await call(url, `/api/inspire/implement/${route}`, { method: 'POST', body });
         assert.equal(got.status, 409, `${route}: ${JSON.stringify(got.data)}`);
         assert.match(got.data.error, /^the build cannot read a source table: builds run as the App service principal inspire-manual \(application id app-sp-id\)/);
-        assert.match(got.data.error, canGrant ? /Use Let Inspire read these tables to run: GRANT USE SCHEMA/ : /Ask the owner to run: GRANT USE SCHEMA/);
+        assert.match(got.data.error, canGrant ? /Use Let Inspire read these tables to run: the exact commands are in Permission Required$/ : /Ask your data owner to run the commands: the exact commands are in Permission Required$/);
+        assert.doesNotMatch(got.data.error, /GRANT /, 'no GRANT in the App refusal prose (REQ-260)');
+        assert.ok(got.data.app_unreadable.permissions[0].statements.some((g) => g.startsWith('GRANT USE SCHEMA')), 'the dialog payload carries the GRANT (must-keep)');
         assert.doesNotMatch(got.data.error, /swap/i);
         assert.deepEqual(got.data.missing_tables, []);
         assert.equal(got.data.app_unreadable.can_grant, canGrant);
@@ -234,7 +242,7 @@ test('Let Inspire read these tables refuses with 403 and grants nothing when the
   await withApp(overrides, async (url) => {
     const got = await call(url, `/api/inspire/implement/grant-access?${Q}&kind=source_tables`, { method: 'POST', body: { tables: ['main.s.orders'] } });
     assert.equal(got.status, 403, JSON.stringify(got.data));
-    assert.match(got.data.error, /Ask the owner to run/);
+    assert.match(got.data.error, /Ask your data owner to run/);
     assert.equal(got.data.app_unreadable.can_grant, false);
     assert.deepEqual(got.data.app_unreadable.app, { name: 'inspire-manual', id: 'app-sp-id' });
     assert.deepEqual(grants, []);
@@ -459,7 +467,7 @@ test('a build output table is never checked as a source: the preflight names no 
     assert.doesNotMatch(JSON.stringify(preflight.data.checks.sources), /churn_out/, 'the output table is not a source');
     assert.equal(preflight.data.checks.sources.ok, false, 'the real source the App cannot read still refuses');
     assert.match(preflight.data.checks.sources.detail, /^the build cannot read a source table: /);
-    assert.doesNotMatch(preflight.data.checks.sources.detail.split('Ask the owner')[0], /main\.s\.orders/);
+    assert.doesNotMatch(preflight.data.checks.sources.detail.split('Ask your data owner')[0], /main\.s\.orders/);
   });
 });
 
@@ -471,5 +479,23 @@ test('an output table the App cannot read blocks nothing when every real source 
     const preflight = await call(url, `/api/inspire/implement/preflight?${Q}&result_table=${OUT_TABLE}`);
     assert.equal(preflight.data.checks.sources.ok, true);
     assert.doesNotMatch(preflight.data.checks.sources.detail, /churn_out/);
+  });
+});
+
+// REQ-268 sweep (same class as REQ-267): grant-access runs as the person, but the saved involved tables and the build record are the App's
+// own tracking tables. They are read as the App, so a person who cannot read those tables still gets the grant answer.
+const TRACKING_TABLE_DENIED = (table) => `[INSUFFICIENT_PERMISSIONS] Insufficient privileges:\nPrincipal 'analyst@example.com' does not have SELECT on Table 'main.inspire.${table}'. SQLSTATE: 42501`;
+
+test('grant-access for a use case reads its involved tables and build record as the App, never with the person token that cannot read them (REQ-268 sweep)', async () => {
+  const grants = [];
+  const { overrides } = split(PERSON_OWNS, { onGrant: (sql, token) => grants.push([sql, token]) });
+  const denied = { [PERSON_TOKEN]: { __inspire_usecases: TRACKING_TABLE_DENIED('__inspire_usecases'), __inspire_implement: TRACKING_TABLE_DENIED('__inspire_implement') } };
+  const asPerson = { ...overrides, dbToken: PERSON_TOKEN, tokenKind: 'person', appToken: APP_TOKEN, sqlDeniedFor: denied };
+  await withApp(asPerson, async (url, made) => {
+    const got = await call(url, `/api/inspire/implement/grant-access?${Q}&kind=source_tables`, { method: 'POST', body: { tables: ['main.s.orders'] } });
+    assert.equal(got.status, 200, JSON.stringify(got.data));
+    assert.ok(grants.length > 0, 'the grant runs with the person token');
+    const reads = made.sqlCalls.filter((c) => /__inspire_(usecases|implement)/.test(String(c.sql)));
+    assert.ok(reads.length > 0 && reads.every((c) => c.token === APP_TOKEN), 'the tracking tables are read as the App');
   });
 });

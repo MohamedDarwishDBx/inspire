@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { WAITING_FOR_ACCESS_CODE, getApp, getDefaults, getFilters, getOverview, getSummary } from './api.js';
+import { WAITING_FOR_ACCESS_CODE, filtersFailure, getApp, getDefaults, getFilters, getOverview, getSummary } from './api.js';
 import { applyTheme, hueVars, rememberPalette, storedPalette } from './theme.js';
 import { apiValues, initialFilterState } from './filters.js';
 import { AGENT_OPEN, EMPTY_LOOK, applyActions, changesView, visibleOf, topFact } from './agentView.js';
@@ -8,8 +8,9 @@ import { NoAccessScope, PlainNote, RetryProvider, ToastProvider, useToast } from
 import Page from './Page.jsx';
 import WaitingForAccess from './WaitingForAccess.jsx';
 import { isQueue, pageSections } from './Layouts.jsx';
-import { pageMode, performanceOn, sectionTitle } from './modes.js';
+import { hasPlan, pageMode, performanceOn, sectionTitle } from './modes.js';
 import ModeView from './ModeView.jsx';
+import AgentPage from './AgentPage.jsx';
 import { inboxOn } from './inbox.js';
 const Admin = lazy(() => import('./Admin.jsx'));
 import { ADMIN_ROUTE } from './admin.js';
@@ -33,7 +34,7 @@ const THEME_KEY = 'inspire-app-theme';
 const GENIE_CLOSED = 'inspire-genie-closed';
 const genieClosedThisSession = () => { try { return window.sessionStorage.getItem(GENIE_CLOSED) === '1'; } catch { return false; } };
 const rememberGenie = (open) => { try { window.sessionStorage.setItem(GENIE_CLOSED, open ? '0' : '1'); } catch { /* private mode opens it on every load */ } };
-const RAIL_ICONS = { dashboard: 'grid', inbox: 'bell', work: 'check', performance: 'trend', runs: 'history', alerts: 'bell', impact: 'trend', settings: 'sliders' };
+const RAIL_ICONS = { dashboard: 'grid', inbox: 'bell', work: 'check', plan: 'trend', performance: 'trend', runs: 'history', alerts: 'bell', impact: 'trend', settings: 'sliders', agent: 'send' };
 
 function initials(user) {
   const source = user?.name || user?.email || '';
@@ -82,11 +83,17 @@ function useHub(pages, asked) {
   return { hub, error, summaries, load, summarize };
 }
 
+// D-NOAGENT (Amr 2026-11-16 02:27): the Agent link is hidden. The Agent page code stays; flip this to true to show it again.
+// With it off, an agentic App lands on its first normal page and a deep link to #/<page>/agent falls back to the dashboard.
+const AGENT_PAGE_SHOWN = false;
+// The Agent page is on for every experience but ui; it opens first, so the briefing is one click from any page.
+const agentOn = (app) => AGENT_PAGE_SHOWN && !!app && app.experience !== 'ui';
+
 function railOf(app, page) {
   const inbox = inboxOn(app, page);
-  const sections = pageSections(app, page);
+  const sections = agentOn(app) ? ['agent', ...pageSections(app, page)] : pageSections(app, page);
   const all = inbox ? [sections[0], 'inbox', ...sections.slice(1)] : sections;
-  const at = (sections.includes('work') ? 2 : 1) + (inbox ? 1 : 0);
+  const at = 1 + (sections.includes('work') ? 1 : 0) + (sections.includes('plan') ? 1 : 0) + (inbox ? 1 : 0);
   return [...all.slice(0, at), ...(performanceOn(app) ? ['performance'] : []), ...all.slice(at)];
 }
 
@@ -124,7 +131,8 @@ function Shell({ app, onRefreshSiblings }) {
   const resolve = useCallback(() => {
     const before = window.location.hash;
     if (unknownRoute(parseHash(before).route, known.current.pages)) missed.current = UNKNOWN_PAGE;
-    const next = canonicalHash(before, { pages: known.current.pages, last: known.current.last, sectionsOf: (p) => railOf(app, p), queueOf: (p) => pageMode(p).queue });
+    const next = canonicalHash(before, { pages: known.current.pages, last: known.current.last, sectionsOf: (p) => railOf(app, p), queueOf: (p) => pageMode(p).queue,
+      landingOf: (p) => (app.experience === 'agentic' && railOf(app, p).includes('agent') ? 'agent' : '') });
     if (next) window.history.replaceState(window.history.state, '', next);
     if (next && staleSection(before, next)) missed.current = LINK_STALE;
     return parseHash(window.location.hash);
@@ -173,7 +181,8 @@ function Shell({ app, onRefreshSiblings }) {
   const [helping, setHelping] = useState(null);
   const admin = route === ADMIN_ROUTE;
   const page = pages.find((p) => p.id === route) || (admin ? pages.find((p) => p.id === prefs.last) || pages[0] : null);
-  const section = admin ? '' : (link.section === 'performance' && !performanceOn(app) ? 'dashboard' : link.section);
+  const section = admin ? '' : (link.section === 'performance' && !performanceOn(app)) || (link.section === 'plan' && !(page && hasPlan(page)))
+    || (link.section === 'agent' && !agentOn(app)) ? 'dashboard' : link.section;
   const sectionsHere = page ? railOf(app, page) : [];
   const inboxOff = railCounts.page === page?.id && railCounts.inboxOff;
   const rail = sectionsHere.filter((s) => !(s === 'alerts' && sectionsHere.includes('runs')) && !(s === 'inbox' && inboxOff));
@@ -238,7 +247,7 @@ function Shell({ app, onRefreshSiblings }) {
       if (found?.range) setStates((s) => (s[id] ? s : { ...s, [id]: { range: found.range, sel: {}, defaults: true } }));
     };
     getDefaults(id).then(start).catch(() => {});
-    getFilters(id).then(settle).catch((error) => settle({ filters: [], error: error.message }));
+    getFilters(id).then(settle).catch((error) => settle(filtersFailure(error)));
   }, []);
   const retryMeta = useCallback((id) => { requested.current.delete(id); loadMeta(id); }, [loadMeta]);
   useEffect(() => { if (page) loadMeta(page.id); }, [page, loadMeta]);
@@ -271,7 +280,7 @@ function Shell({ app, onRefreshSiblings }) {
     try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode keeps the choice for this visit */ }
   };
   const ask = (q) => { openGenie(); genie.ask(q); };
-  const explain = (request) => { openGenie(); genie.explain(request); };
+  const explain = (request) => { if (!request.inPlace) openGenie(); return genie.explain(request); };
   const setPageState = (id) => (next) => setStates((s) => ({ ...s, [id]: next }));
   const setPageLook = (id) => (change) => setLooks((l) => ({ ...l, [id]: change(l[id] || EMPTY_LOOK) }));
   const themeKey = `${palette}:${theme}:${app.style}`;
@@ -329,7 +338,9 @@ function Shell({ app, onRefreshSiblings }) {
                   fallback={<Performance key={page.id} app={app} page={page} summary={summaries[page.id]} onRecord={openRecord} onExplain={explain} genieBusy={genie.busy} />} />
               </GenieScope.Provider>
             )}
-            {!admin && page && section !== 'performance' && (
+            {!admin && page && section === 'agent' && <AgentPage key={page.id} app={app} page={page} onRecord={openRecord} themeKey={themeKey} />}
+            {!admin && page && section === 'plan' && <ModeView key={page.id} mode={mode.id} part="Plan" app={app} page={page} />}
+            {!admin && page && section !== 'performance' && section !== 'agent' && section !== 'plan' && (
               <Page key={page.id} app={app} page={page} meta={metas[page.id]} state={states[page.id]} onState={setPageState(page.id)} look={looks[page.id] || EMPTY_LOOK}
                 onLook={setPageLook(page.id)} themeKey={themeKey} onAsk={ask} onExplain={explain} genieBusy={genie.busy} hubEntry={hub?.pages?.[page.id]}
                 summary={summaries[page.id]} view={view} onView={setView} genie={genie} section={section} tab={link.tab} focus={link.focus} chrome={chrome}

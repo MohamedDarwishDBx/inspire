@@ -115,8 +115,8 @@ export function tableScopeOf(scopes, table) {
   return null;
 }
 
-// The use case label only means something when a picked table has a row filter, so it is written only then.
-export function serializeTableScopes(scopes, pickedTables = [], label = '') {
+// The scope entries a run reads: the valid entries of the picked tables, sorted by name.
+function sentTableScopes(scopes, pickedTables = []) {
   const picked = new Set(pickedTables.map(scopeKeyOf));
   const out = {};
   for (const table of Object.keys(scopes || {}).sort()) {
@@ -124,9 +124,26 @@ export function serializeTableScopes(scopes, pickedTables = [], label = '') {
     const entry = scopes[table];
     if (scopeIsValid(entry)) out[table] = normalizeTableScope(entry);
   }
+  return out;
+}
+
+// The one rule for the use case label: it names the Row Groups of the picked tables, so it is available only when a picked
+// table has a Row Group. The label box is disabled without one, and the serialiser writes the label only with one.
+export function labelAvailable(scopes, pickedTables = []) {
+  return Object.values(sentTableScopes(scopes, pickedTables)).some((entry) => entry.rows.some(isGroupRow));
+}
+
+export function serializeTableScopes(scopes, pickedTables = [], label = '') {
+  const out = sentTableScopes(scopes, pickedTables);
   const labelText = text(label);
-  if (labelText && Object.values(out).some((entry) => entry.rows.some(isGroupRow))) out[USE_CASE_LABEL_KEY] = labelText;
+  if (labelText && labelAvailable(scopes, pickedTables)) out[USE_CASE_LABEL_KEY] = labelText;
   return Object.keys(out).length ? JSON.stringify(out) : '';
+}
+
+// The 17_table_scope text a launch sends. Every launch path builds it here, from the one scope state and the picks the run reads
+// (REQ-242): a scope on a table the picks read is sent, a scope on a table they do not read is not.
+export function launchTableScopeText(scopes, picks = {}, label = '') {
+  return serializeTableScopes(scopes, pickedTableNames(scopes, picks), label);
 }
 
 // The values the label is prefilled from: the values of the "is" and "is one of" row filters on the picked tables.
@@ -142,8 +159,9 @@ export function filterValuesOf(scopes, pickedTables = []) {
   return [...new Set(values)];
 }
 
-// The tables a run reads through its picks: the tables picked one by one, plus every scoped table that sits under a
-// picked schema or catalog. A scope on a table from a schema pick is keyed catalog.schema.table like any other.
+// The tables a run reads, from the picked scope (pickedScope in catalogList.js: the catalogs and schemas read whole, and the
+// tables read one by one). Every scoped table under a schema or catalog read whole is included; a schema that has a picked table
+// under it is not read whole, so its other scoped tables are left out. Keyed catalog.schema.table like any other.
 export function pickedTableNames(scopes, { catalogs = [], schemas = [], tables = [] } = {}) {
   const names = [...tables];
   const seen = new Set(names.map(scopeKeyOf));

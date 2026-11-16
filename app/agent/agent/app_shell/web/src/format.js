@@ -87,18 +87,28 @@ const MONEY_CODES = new Set((
   + 'XPF YER ZAR ZMW ZWG ZWL').split(' '));
 
 export const isCurrency = (unit) => MONEY_CODES.has(String(unit || '').trim());
-export const unitOf = (x) => String(x?.unit ?? x?.currency ?? '');
+const UNIT_MAX = 24;
+const ESTIMATE_TAG = /\[\s*estimate\b|\(\s*estimate\b/i;
+/** A unit is a short plain word such as USD, hours or units. An estimate tag, a bracket, a dotted table path or a long sentence is never a unit (REQ-306). */
+export const plainUnit = (unit) => {
+  const text = String(unit ?? '').replace(/\s+/g, ' ').trim();
+  return !text || text.length > UNIT_MAX || ESTIMATE_TAG.test(text) || /[[\]():.=_]/.test(text) ? '' : text;
+};
+export const unitOf = (x) => plainUnit(x?.unit ?? x?.currency ?? '');
 export const kindOf = (x) => String(x?.impact_kind ?? '');
 export const isMoney = (unit, kind) => (kind ? kind === 'money' : !String(unit || '').trim() || isCurrency(unit));
 export const shownUnit = (unit, named, kind) => (isMoney(unit, kind) ? named || unit || '' : unit);
-const counted = (v, unit) => `${grouped(v, { maximumFractionDigits: 2 })} ${unit}`;
+const counted = (v, unit) => [grouped(v, { maximumFractionDigits: 2 }), plainUnit(unit)].filter(Boolean).join(' ');
 
 export const stakeNoun = (unit, kind) => {
   const label = String(unit || '').trim().replace(/\s+/g, ' ');
   return isMoney(label, kind) ? 'money' : label || kind;
 };
 
-export const stakeWords = (unit, kind) => `${stakeNoun(unit, kind)} at stake`;
+export const stakeWords = (unit, kind) => {
+  const noun = stakeNoun(unit, kind);
+  return `${noun === 'money' ? 'value' : noun} at stake`;
+};
 
 export function stakeName(unit, kind) {
   return cap(stakeWords(unit, kind));

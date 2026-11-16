@@ -160,7 +160,7 @@ def test_a_saved_value_outside_the_declared_range_is_refused_at_run_start(fresh_
     printed = []
     applied = fresh_ns["inspire_apply_assumptions"](_latest(rows), TABLE, "N01-U01", fresh_ns, printed.append, run={})
     assert applied == {"KEEP_RATE": 0.8} and fresh_ns["WEEKS_LEFT"] == 12
-    assert printed[0] == ("Money at stake: the App holds a value for WEEKS_LEFT outside what the run accepts (WEEKS_LEFT is '60'; "
+    assert printed[0] == ("Value at stake: the App holds a value for WEEKS_LEFT outside what the run accepts (WEEKS_LEFT is '60'; "
                           "allowed: 1 to 52), so this run keeps 12")
 
 

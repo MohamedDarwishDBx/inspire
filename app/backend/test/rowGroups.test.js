@@ -75,13 +75,13 @@ test('the label names only the picked groups: one to three joined, more than thr
   const T = await lib('tableScope.js');
   const W = await lib('implementWizard.js');
   const groupsOf = (values) => ({ [TABLE]: { columns: ['brand_name'], rows: [{ column: 'brand_name', op: 'in', values, group: true }] } });
-  const filterOnly = { [TABLE]: { columns: ['brand_name'], rows: [{ column: 'brand_name', op: '=', values: ['Starbucks'] }] } };
+  const filterOnly = { [TABLE]: { columns: ['brand_name'], rows: [{ column: 'brand_name', op: '=', values: ['Northwind'] }] } };
   assert.equal(W.groupLabelOf(['Tokyo Tidbits']), 'Tokyo Tidbits');
   assert.equal(W.groupLabelOf(['Tokyo Tidbits', 'Golden Gate Ginger']), 'Tokyo Tidbits and Golden Gate Ginger');
   assert.equal(W.groupLabelOf(['A', 'B', 'C']), 'A, B and C');
   assert.equal(W.groupLabelOf(['A', 'B', 'C', 'D', 'E']), 'A and B and 3 more');
   assert.equal(T.filterValuesOf(filterOnly, [TABLE]).length, 0, 'an is filter feeds no label');
   assert.deepEqual(T.filterValuesOf(groupsOf(['Tokyo Tidbits']), [TABLE]), ['Tokyo Tidbits']);
-  assert.equal(T.serializeTableScopes(filterOnly, [TABLE], 'Anything'), JSON.stringify({ [TABLE]: { columns: ['brand_name'], rows: [{ column: 'brand_name', op: '=', values: ['Starbucks'] }] } }),
+  assert.equal(T.serializeTableScopes(filterOnly, [TABLE], 'Anything'), JSON.stringify({ [TABLE]: { columns: ['brand_name'], rows: [{ column: 'brand_name', op: '=', values: ['Northwind'] }] } }),
     'a label is written only when a group names it');
 });

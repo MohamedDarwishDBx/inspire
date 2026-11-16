@@ -1,3 +1,4 @@
+import OUTPUT_LABELS from '../../../backend/lib/implementOutputLabels.json' with { type: 'json' };
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { newIssueUrl } from '../lib/issues';
 import {
@@ -7,11 +8,11 @@ import {
 import {
   statusChip, statusReason, statusDetails, nextSpecFrom, retryableOutputs, lostTables, lostTablesText, genieQuestions, appStatusRows, editedNotebook,
   runProfileText, runStopped, cancelledByUser, versionActive, historyStatus, implementGroups, notebookRunEnded, notebookStatus, START_MVP_LABEL, IMPLEMENT_ACTIVE_STATUSES, IMPLEMENT_UNINSTALLED,
-  vibesPreview, canBuildAgain, buildAgainChanges, buildAgainHint, resultTableMoveNote, IMPLEMENT_DONE_STATUSES, builtVersion, vibePreviousChoices,
-  vibesProblems, OPEN_ALL_SETTINGS, VIBE_FEATURES_LABEL, DATA_STOP_HINT, dataStopped, shownStatusMessage,
+  vibesPreview, canBuildAgain, buildAgainChanges, buildAgainHint, resultTableMoveNote, IMPLEMENT_DONE_STATUSES, builtVersion, vibePreviousChoices, liveVersionForVibes, appVersionLines,
+  vibesProblems, OPEN_ALL_SETTINGS, VIBE_FEATURES_LABEL, CHANGE_CHOICES_LABEL, DATA_STOP_HINT, dataStopped, shownStatusMessage,
   swapParts,
   failureChoices, stoppedChoices, genieNotebookRequest, FAILURE_CHOICES_HEADING, FAILURE_ROUNDS_HEADING, TERMINAL_STOP_HINT, TERMINAL_NEEDS_CHANGE,
-  unreliableHold, olderBuildNote, UNRELIABLE_REBUILD_NOTE, isAppUpdate, APP_UPDATED_TEXT, appReadsOf, appObjectsOf, appReadsChoices, appReadsText, appReadsOwners, viewerRows, tableRows, APP_READS_HEADING, APP_READS_CLEARED, protectionStopOf, protectionChoices, abacGrantText, grantGapPermissions, grantFailurePermissions, liveSourceNow, liveProtection, liveReads,
+  unreliableHold, olderBuildNote, appReadsName, UNRELIABLE_REBUILD_NOTE, isAppUpdate, APP_UPDATED_TEXT, appReadsOf, appObjectsOf, appReadsChoices, appReadsText, appReadsOwners, viewerRows, tableRows, APP_READS_HEADING, APP_READS_CLEARED, protectionStopOf, protectionChoices, abacGrantText, grantGapPermissions, grantFailurePermissions, liveSourceNow, liveProtection, liveReads,
 } from '../lib/implementWizard';
 import { makeApiFetch, makeApiPostJson } from '../lib/apiClient';
 import { buildUseCaseList } from '../lib/useCaseList';
@@ -39,11 +40,12 @@ import { Counter, CounterDivider, IconChip, PANEL_CLASS, SectionTitle } from '..
 import { catalogRow } from '../lib/useCaseFacets';
 import { fieldOf } from '../lib/useCaseFields';
 import {
-  ASSET_TILES, CONTROL_REFRESH_MS, REBUILD_NOTHING, appUpdateChanges, assetFilterCounts, assetGroups, assetUninstall, buildSummary, checksSummary, collectAsk,
+  ASSET_TILES, CONTROL_REFRESH_MS, REBUILD_NOTHING, appUpdateChanges, assetFilterCounts, assetGroups, assetUninstall, buildSummary, buildSummaryLines, checksSummary, collectAsk,
   assetFiltersFrom, collectRemoval, collectedScope, controlRows, controlTiles, deliveredOutputs, dropCollected, filterByAssets, filterByMvp, heldVersion,
   keptVersions, loadAssetFilters, saveAssetFilters,
   loadCollectedVibes, missingAsks, notDoneLines, rebuildSpec, rebuildingText, rephrasedAsk, removeChanges, removeKeptChanges, rollbackChanges, rollingBackText,
   saveCollectedVibes, statusWarnings, tryAgainChanges, uninstallChanges, vibeCards, vibeFeaturesLabel,
+  trackBuildSubmit, withPendingBuilds,
 } from '../lib/implementControl';
 import {
   buildingAssets, mvpScope, mvpStages, mvpProgressSummary, mvpRepairOf, feedArrivals, railProgress, sortedTo, statusProgress, steadyFeed, versionPlan, vibeChecklist,
@@ -68,12 +70,12 @@ import { liveImpact, rowImpact, targetKpiView, trackedKpiOf } from '../lib/targe
 import { SHOWCASE_ALERT_NOTE, SHOWCASE_DASHBOARD_NOTE, SHOWCASE_GENIE_NOTE, SHOWCASE_NO_MVP, SHOWCASE_OPEN_APP, readOnlyReason } from '../lib/showcase';
 import { buildFilterText } from '../lib/reviewFigures';
 import ValueEstimateLine from '../components/ValueEstimateLine';
+import { useValueRead } from '../lib/useValueLedger';
 import { BuildNextStep } from '../components/BuildNext';
-import PermissionRequired from '../components/PermissionRequired';
 import { grantListKey, raisePermissions } from '../lib/permissionBus';
 
 const OUTPUT_ICONS = { notebook: NotebookPen, dashboard: LayoutDashboard, genie_space: GenieLogo, app: AppWindow, alert: BellRing };
-const OUTPUT_NAMES = { dashboard: 'Dashboard', genie_space: 'Genie Agent', app: 'App', alert: 'Alert' };
+const OUTPUT_NAMES = OUTPUT_LABELS;
 const NO_RAIL = { latest: [], notebook_run: null, notebook_run_error: '' };
 const NO_NOTEBOOK = { label: 'No Genie Code notebook', tone: 'idle' };
 const NO_JOB = { label: 'No job yet', tone: 'idle' };
@@ -137,11 +139,7 @@ function SummaryBanner({ summary }) {
   } else if (summary.mvps) {
     mark = summary.failed || summary.held || summary.unmet ? { icon: AlertTriangle, tone: 'warning' } : { icon: CheckCircle2, tone: 'success' };
     title = `${shown(summary.ready)} of ${plural(summary.mvps, 'MVP')} ready`;
-    const open = [
-      summary.failed ? `${summary.failed} failed or stopped. Open one to see why.` : '',
-      summary.held ? `${summary.held} not published, because a vibe was not met. Open one to rephrase, try again or publish anyway.` : '',
-      summary.unmet ? `${summary.unmet} built, but a vibe ask was not met, so it waits for the next build. Open one to see why.` : '',
-    ].filter(Boolean);
+    const open = buildSummaryLines(summary);
     line = open.length ? open.join(' ') : 'Every MVP of this session has finished building.';
   }
   return (
@@ -163,10 +161,16 @@ function SummaryBanner({ summary }) {
           <Counter value={building.length} label="Building" tone="red" />
           <CounterDivider />
           <Counter value={summary.ready} label="Ready" tone="success" />
-          {summary.held > 0 && (
+          {summary.vibeHeld > 0 && (
             <>
               <CounterDivider />
-              <Counter value={summary.held} label="Vibes not met" tone="warning" />
+              <Counter value={summary.vibeHeld} label="Vibes not met" tone="warning" />
+            </>
+          )}
+          {summary.untrusted > 0 && (
+            <>
+              <CounterDivider />
+              <Counter value={summary.untrusted} label="Results not trusted" tone="warning" />
             </>
           )}
           {summary.failed > 0 && (
@@ -260,7 +264,7 @@ function RailProgress({ item, progress }) {
   );
 }
 
-function Rail({ groups, listLoading, query, assets = [], mvp = '', assetLabels = [], shownId, progress = {}, onSelect }) {
+function Rail({ groups, listLoading, query, assets = [], mvp = '', assetLabels = [], shownId, progress = {}, estimates = null, onSelect }) {
   const mvpWords = mvp === 'live' ? 'a live MVP' : 'an MVP';
   const assetWords = assetLabels.map((label) => `${/^[AEIOU]/.test(label) ? 'an' : 'a'} ${label}`).join(' or ');
   return (
@@ -309,7 +313,7 @@ function Rail({ groups, listLoading, query, assets = [], mvp = '', assetLabels =
                       </span>
                       <OutputIcons latest={item.latest} />
                     </div>
-                    {item.uc && <ValueEstimateLine uc={item.uc} className="mt-1 line-clamp-2 text-[11px]" />}
+                    {item.uc && <ValueEstimateLine uc={item.uc} estimate={estimates?.use_cases?.[item.id] ?? null} className="mt-1 line-clamp-2 text-[11px]" />}
                     {building && <RailProgress item={item} progress={progress[item.id]} />}
                   </button>
                 );
@@ -361,7 +365,8 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
   const [listError, setListError] = useState('');
   const [buildNotes, setBuildNotes] = useState([]);
   const [buildDetails, setBuildDetails] = useState([]);
-  const [rail, setRail] = useState(NO_RAIL);
+  // REQ-323: a build submitted before this page mounted (the wizard hands over to it) still shows as queued.
+  const [rail, setRail] = useState(() => ({ ...NO_RAIL, latest: withPendingBuilds([]) }));
   const [railError, setRailError] = useState('');
   const [query, setQuery] = useState('');
   const [assetFilters, setAssetFilters] = useState(() => (filter ? assetFiltersFrom(filter.asset) : loadAssetFilters()));
@@ -372,6 +377,8 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
   const [refreshKey, setRefreshKey] = useState(0);
   const [listVersion, setListVersion] = useState(0);
   const lastNotebookRun = useRef(null);
+  // REQ-323: reads are applied in the order they were sent, so an older read never overwrites a newer one.
+  const railSeq = useRef({ sent: 0, applied: 0 });
   const [progress, setProgress] = useState({});
   const reportProgress = useCallback((id, value) => setProgress((prev) => (
     prev[id]?.percent === value.percent && prev[id]?.step === value.step ? prev : { ...prev, [id]: value })), []);
@@ -384,6 +391,9 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     warehouse_id: settings.warehouseId,
     session_id: String(sessionId),
   }).toString(), [settings.inspireDatabase, settings.warehouseId, sessionId]);
+  // REQ-078: each card reads its rule estimate here, the same route Review and Build next read. A measured figure is never replaced.
+  // A showcase or demo run makes no workspace call: its read is skipped, as ChoosePage and ResultsPage skip theirs.
+  const estimates = useValueRead(apiFetch, readOnly ? '' : `/api/inspire/value/estimates?${qBase}`, refreshKey);
 
   const fetchUseCases = useCallback(async () => {
     const [res, rows] = await Promise.allSettled([
@@ -400,12 +410,16 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
   }, [apiFetch, qBase]);
 
   const loadRail = useCallback(async () => {
+    const seq = ++railSeq.current.sent;
     const data = await apiFetch(`/api/inspire/implement/history?${qBase}`);
+    if (seq < railSeq.current.applied) return;
+    railSeq.current.applied = seq;
     const run = data.notebook_run || null;
     const prev = lastNotebookRun.current;
     lastNotebookRun.current = run;
     if (notebookRunEnded(prev, run)) setListVersion((n) => n + 1);
-    setRail({ latest: data.latest || [], notebook_run: run, notebook_run_error: data.notebook_run_error || '' });
+    const latest = withPendingBuilds(data.latest || []);
+    setRail({ latest, notebook_run: run, notebook_run_error: data.notebook_run_error || '' });
     setRailError('');
   }, [apiFetch, qBase]);
 
@@ -483,6 +497,18 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     onFocus?.(id);
   };
 
+  // Opens the wizard on its Measure step for one use case: the money rule that a value estimate needs (REQ-078).
+  const openMeasure = (id) => {
+    select(id);
+    const item = allItems.find((i) => i.id === id);
+    if (item?.uc) setWizard({ uc: item.uc, focus: { step: 'measure' }, live: false });
+  };
+
+  // REQ-323: a build submitted from a use case's detail (Rebuild, Try again, Change choices) shows as queued at once.
+  const showQueuedBuild = () => {
+    setRail((prev) => ({ ...prev, latest: withPendingBuilds(prev.latest || []) }));
+    loadRail().catch((e) => setRailError(e.message));
+  };
   const onImplemented = (data) => {
     setBuildNotes(Array.isArray(data?.warnings) ? data.warnings : []);
     setBuildDetails(Array.isArray(data?.warning_details) ? data.warning_details : []);
@@ -491,6 +517,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     if (data?.use_case_id) select(data.use_case_id);
     setRefreshKey((n) => n + 1);
     if (data?.mode === 'notebook') setListVersion((n) => n + 1);
+    if (data?.use_case_id && data?.mode !== 'notebook') setRail((prev) => ({ ...prev, latest: withPendingBuilds(prev.latest || []) }));
     loadRail().catch((e) => setRailError(e.message));
   };
   const [progressDock, setProgressDock] = useState(null);
@@ -516,7 +543,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
           {!listLoading && <AssetFilters counts={assetCounts} assets={assetFilters} onToggle={toggleAsset} />}
           <Rail groups={groups} listLoading={listLoading} query={query} assets={assetFilters} mvp={mvpFilter}
             assetLabels={assetCounts.filter((entry) => assetFilters.includes(entry.id)).map((entry) => entry.label)}
-            shownId={shownId} progress={progress} onSelect={select} />
+            shownId={shownId} progress={progress} estimates={estimates} onSelect={select} />
         </div>
         <PaneResizer width={railPx} onWidth={(width) => setRailPx(paneWidth(RAIL_WIDTH, width))} limits={RAIL_WIDTH} label="Resize the use case list" data-rail-resizer="" className="self-stretch" />
         <section ref={paneRef} aria-label="Use case" className="relative flex-1 min-w-0 space-y-4 md:self-stretch md:min-h-0 md:overflow-y-auto">
@@ -524,12 +551,8 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
             <BuildNextStep showcase={readOnly} apiFetch={apiFetch} apiPostJson={apiPostJson} inspireDatabase={settings.inspireDatabase} warehouseId={settings.warehouseId} sessionId={sessionId}
               notebookPath={settings.notebookPath} focusId={selected.id} live={IMPLEMENT_DONE_STATUSES.includes(String(selected.latest?.status || ''))}
               caseOf={(id) => allItems.find((item) => item.id === id)?.uc}
-              onBuilt={readOnly ? undefined : onImplemented} onBuildCustom={readOnly ? undefined : (uc) => setWizard({ uc, focus: null, live: false })}
-              onMeasure={readOnly ? undefined : (id) => {
-                select(id);
-                const item = allItems.find((i) => i.id === id);
-                if (item?.uc) setWizard({ uc: item.uc, focus: { step: 'measure' }, live: false });
-              }} />
+              onBuilt={readOnly ? undefined : onImplemented} onQueued={readOnly ? undefined : showQueuedBuild} onBuildCustom={readOnly ? undefined : (uc) => setWizard({ uc, focus: null, live: false })}
+              onMeasure={readOnly ? undefined : openMeasure} />
           )}
           {selected ? (
             <UseCaseDetail
@@ -543,10 +566,13 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
               databricksHost={databricksHost}
               notebookRunError={rail.notebook_run_error}
               refreshKey={refreshKey}
+              valueEstimate={estimates?.use_cases?.[selected.id] ?? null}
+              onSetRule={readOnly ? undefined : () => openMeasure(selected.id)}
               collectedKey={scopeOf(selected.id)}
               onProgress={reportProgress}
               onEdit={readOnly ? undefined : (focus, live) => setWizard({ uc: selected.uc, focus, live })}
               onOpenRun={onOpenRun}
+              onBuildQueued={showQueuedBuild}
               onOpenDemoMvp={readOnly && demoMvps?.ids.includes(selected.id) ? () => demoMvps.open(selected.id) : null}
               readOnly={readOnly}
             />
@@ -568,6 +594,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
           focus={wizard.focus}
           live={wizard.live}
           onClose={() => setWizard(null)}
+          onQueued={showQueuedBuild}
           onImplemented={onImplemented}
           onOpenBuild={() => setWizard(null)}
         />
@@ -684,7 +711,7 @@ function AssetVersions({ asset, locked, lockedReason, onRollback }) {
   const [confirming, setConfirming] = useState(null);
   const owner = asset.id === asset.output ? asset : asset.parent;
   const versions = owner?.versions || [];
-  if (!asset.live && !versions.length) return null;
+  if (!asset.live && !asset.side && !versions.length) return null;
   const rollback = async (version) => {
     setPending(version.version);
     const ok = await onRollback(owner.id, version);
@@ -706,6 +733,13 @@ function AssetVersions({ asset, locked, lockedReason, onRollback }) {
             {asset.live.at && <span className="text-text-secondary">· {formatWhen(asset.live.at, asset.live.at)}</span>}
             <span className="ms-auto"><AssetPill state={{ tone: 'success' }}>Live</AssetPill></span>
             <p className="w-full truncate text-text-secondary" title={asset.vibes || undefined}>{asset.vibes ? `“${vibesPreview(asset.vibes)}”` : 'no vibes'}</p>
+          </li>
+        )}
+        {asset.side && (
+          <li data-version={asset.side.version} data-side-version="" className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2.5">
+            <span className="font-semibold text-text-primary">Version {asset.side.version}</span>
+            {asset.side.at && <span className="text-text-secondary">· {formatWhen(asset.side.at, asset.side.at)}</span>}
+            <span className="ms-auto"><AssetPill state={{ tone: 'warning' }}>Side App (not live yet)</AssetPill></span>
           </li>
         )}
         {versions.map((version) => (
@@ -804,8 +838,8 @@ function PartTabs({ assets, picked, onPick }) {
   return <TabStrip label="Pick a part" idBase={PART_TABS} tabs={tabs} current={picked} onPick={onPick} />;
 }
 
-function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson, databricksHost, notebookRunError, refreshKey, collectedKey,
-  onEdit, onOpenRun = null, onOpenDemoMvp = null, onProgress = null, readOnly = false }) {
+function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson, databricksHost, notebookRunError, refreshKey, collectedKey, valueEstimate = null, onSetRule = null,
+  onEdit, onOpenRun = null, onBuildQueued = null, onOpenDemoMvp = null, onProgress = null, readOnly = false }) {
   const useCaseId = item.id;
   const hasMvp = Boolean(item.latest);
   const viewId = useId();
@@ -945,7 +979,6 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   const [readsResult, setReadsResult] = useState(null);
   // A user-authorization App: the people who may open it and the scope views they cannot read yet (from the last check or grant).
   const [viewerReads, setViewerReads] = useState(null);
-  const [permissionDialog, setPermissionDialog] = useState(null);
   const [readsBusy, setReadsBusy] = useState('');
   const [protectionCopy, setProtectionCopy] = useState('');
   const [protectionFailed, setProtectionFailed] = useState([]);
@@ -955,6 +988,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   const spec = latest?.spec_json || {};
   const widgets = Array.isArray(status?.rerun_widgets) ? status.rerun_widgets : [];
   const active = versionActive(latest, stalled);
+  // REQ-273: a built MVP whose latest build is not published (failed, stopped, held) gets Change choices and build again; a published MVP keeps its card.
+  const unpublished = built && !active && !IMPLEMENT_DONE_STATUSES.includes(String(latest?.status || ''));
   const missing = lostTables(latest, rerunError);
   const edited = latest?.status === 'failed' ? editedNotebook(latest) : null;
   const reason = missing.length || edited ? '' : statusReason(latest, stalled);
@@ -1042,7 +1077,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     setError('');
     setNotice('');
     try {
-      const data = await apiPostJson(path, body);
+      const data = await trackBuildSubmit(body.spec, () => apiPostJson(path, body), onBuildQueued);
+      onBuildQueued?.();
       setNotice([resultTableMoveNote(data?.summary), ...(Array.isArray(data?.warnings) ? data.warnings : [])].filter(Boolean).join(' '));
       await loadStatus();
       return true;
@@ -1130,7 +1166,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   const builtOn = builtVersion(history);
   const nextSpec = built && latest ? rebuildSpec(latest, vibes) : null;
   const choices = builtOn != null && String(nextSpec?.vibes ?? '').trim()
-    ? vibePreviousChoices(builtOn, (latest?.spec_version ?? 0) + 1, Boolean(nextSpec.outputs?.alert)) : [];
+    ? vibePreviousChoices(liveVersionForVibes(history), (latest?.spec_version ?? 0) + 1, Boolean(nextSpec.outputs?.alert)) : [];
+  const versionLines = appVersionLines(history);
   const buildAgain = canBuildAgain(latest, { edited, missing });
   const sendsAgain = buildAgain && !IMPLEMENT_DONE_STATUSES.includes(String(latest?.status || ''));
   const rebuildBlocked = !vibes.length && !sendsAgain ? REBUILD_NOTHING : '';
@@ -1291,7 +1328,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     if (choice.id === 'copy' && choice.sql) {
       try {
         await navigator.clipboard.writeText(choice.sql);
-        setProtectionCopy('The SQL is copied. Send it to the owner of the result tables.');
+        setProtectionCopy('The SQL is copied. Send it to your data owner.');
       } catch (e) {
         setProtectionCopy(`The SQL could not be copied: ${e.message}. Select it above and copy it.`);
       }
@@ -1390,7 +1427,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     statements: [...new Set(readsLeft.tables.flatMap((t) => t.grants))],
     instructions: [],
     principal: readsLeft.app || 'the App',
-    why: `The App cannot read part of its data. Ask ${appReadsOwners(readsLeft)} to run these commands, then click Try again.`,
+    why: 'The App cannot read part of its data.',
   }] : [];
   const mustActKey = grantListKey(mustActPermissions);
   useEffect(() => {
@@ -1428,13 +1465,9 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     }
   };
   const pickReads = async (choice) => {
+    // REQ-131, REQ-260: the owner's grant commands open in Permission Required; there is no separate copy path for GRANT SQL
     if (choice.id !== 'copy') return runReads(choice.id);
-    try {
-      await navigator.clipboard.writeText(choice.sql);
-      setReadsResult((was) => ({ ...(was && !was.error ? was : { tables: readsLeft.tables }), version: latest?.spec_version, action: 'copy', copied: true }));
-    } catch (e) {
-      setReadsResult((was) => ({ ...(was && !was.error ? was : { tables: readsLeft.tables }), version: latest?.spec_version, action: 'copy', copyError: e.message }));
-    }
+    raisePermissions(choice.permissions || [], {}, { explicit: true });
   };
   const autoReads = useRef({});
   const autoViewerChecks = useRef({});
@@ -1453,6 +1486,11 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     autoReads.current[key] = true;
     runReads('grant');
   }, [reads, readOnly, latest?.session_id, latest?.spec_version]);
+  // REQ-131, REQ-260: the grants a failed build's lost tables need open in Permission Required (the build status carries them)
+  const lostPermissions = latest?.status === 'failed' ? latest?.asset_status?.data?.permissions : null;
+  useEffect(() => {
+    if (lostPermissions?.length) raisePermissions(lostPermissions);
+  }, [lostPermissions]);
   const readsCard = readsLeft && (
     <section aria-label={readsLeft.tables.length ? APP_READS_HEADING : APP_READS_CLEARED} data-app-reads="" className="rounded-lg border border-warning/30 bg-warning-bg px-3.5 py-3 text-[12px] space-y-2.5">
       <div className="flex items-start gap-2.5">
@@ -1460,21 +1498,16 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
         <div className="min-w-0 space-y-1 text-warning-fg">
           <p className="text-[13px] font-semibold">{readsLeft.tables.length ? APP_READS_HEADING : APP_READS_CLEARED}</p>
           {readsLeft.tables.length > 0 && !readsLeft.viewers && <p>{appReadsText(readsLeft, latest?.app_name || '')}</p>}
+          {readsLeft.tables.length > 0 && <p>{`Ask ${appReadsOwners(readsLeft)} to grant access. The exact commands are in Permission Required.`}</p>}
           {readsLeft.tables.length > 0 && readsLeft.viewers && (
             <ul aria-label="Viewers who still need access" data-viewer-rows="" className="list-disc ps-5 space-y-0.5">
-              {viewerRows(readsLeft).map((r) => <li key={`${r.viewer}|${r.table}`} data-viewer-row={r.viewer}>{`${r.viewer}: needs ${r.needs.join(', ')} on ${r.table}`}</li>)}
+              {viewerRows(readsLeft).map((r) => <li key={`${r.viewer}|${r.table}`} data-viewer-row={r.viewer}>{`Ask your admin to grant ${r.viewer} access to ${appReadsName(r.table)}`}</li>)}
             </ul>
           )}
           {readsLeft.tables.length > 0 && !readsLeft.viewers && (
             <ul aria-label="Tables the App cannot read" data-table-rows="" className="list-disc ps-5 space-y-0.5">
-              {tableRows(readsLeft).map((r) => <li key={r.table} data-table-row={r.table}>{`${r.table}: needs ${r.needs.join(', ')}`}</li>)}
+              {tableRows(readsLeft).map((r) => <li key={r.table} data-table-row={r.table}>{appReadsName(r.table)}</li>)}
             </ul>
-          )}
-          {(readsResult?.permissions?.length > 0 || mustActPermissions.length > 0) && (
-            <button type="button" data-see-grant="" onClick={() => setPermissionDialog({ permissions: readsResult?.permissions?.length ? readsResult.permissions : mustActPermissions })}
-              className="inline-flex h-7 items-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-semibold text-text-primary hover:bg-bg-subtle">
-              See the grant
-            </button>
           )}
         </div>
       </div>
@@ -1497,10 +1530,24 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
         <button type="button" data-app-publish="" onClick={rerun} disabled={rerunBusy}
           className="rounded-md border border-warning/40 px-2.5 py-1 text-[12px] font-medium text-warning-fg hover:bg-warning-bg/70 disabled:opacity-60">Publish now</button>
       )}
-      {readsLeft.tables.length > 0 && (
-        <ChoiceList heading={FAILURE_CHOICES_HEADING} choices={appReadsChoices(readsLeft).filter((c) => c.id !== 'grant' || readsLeft.canGrant === true)} mark="data-app-reads-choice" tone="text-warning-fg"
-          disabled={readsBusy !== ''} busy={readsBusy} onPick={pickReads} />
-      )}
+      {readsLeft.tables.length > 0 && (() => {
+        // REQ-082: one primary action that fits the person's rights (Grant access, else See the grant in Permission Required); Check again stays quiet.
+        const choices = appReadsChoices(readsLeft);
+        const primary = choices.find((c) => c.id === (readsLeft.canGrant === true ? 'grant' : 'copy'));
+        const check = choices.find((c) => c.id === 'check');
+        return (
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" data-app-reads-primary={primary.id} disabled={readsBusy !== ''} onClick={() => pickReads(primary)}
+              className="inline-flex h-8 items-center justify-center gap-1.5 px-3 rounded-lg whitespace-nowrap text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle disabled:opacity-50">
+              {readsBusy === primary.id ? <Loader2 size={12} className="animate-spin" /> : null} {primary.label}
+            </button>
+            <button type="button" data-app-reads-choice={check.id} disabled={readsBusy !== ''} onClick={() => pickReads(check)}
+              className="text-xs text-text-secondary underline underline-offset-2 hover:text-text-primary disabled:opacity-50">
+              {check.label}
+            </button>
+          </div>
+        );
+      })()}
     </section>
   );
 
@@ -1623,6 +1670,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
               <span className="min-w-0">
                 <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-db-red-fg">History</span>
                 <span className="block text-[11px] text-text-secondary">{historyHint}</span>
+                {versionLines.live && <span className="block text-[11px] font-semibold text-text-primary" data-app-live>{versionLines.live}</span>}
+                {versionLines.side && <span className="block text-[11px] text-text-secondary" data-app-side>{versionLines.side}</span>}
               </span>
             </span>
             <ChevronDown size={14} className={`shrink-0 text-text-secondary transition-transform ${historyOpen ? 'rotate-180' : ''}`} aria-hidden />
@@ -1640,7 +1689,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
             </div>
           ))}
           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-secondary pt-2">Job runs</div>
-          {status?.runs?.ok === false && <PlainMessage as="p" text={status.runs.error} className="text-[12px] text-error-fg" />}
+          {status?.runs?.ok === false && <PlainMessage as="p" text={status.runs.error} securable="workspace" className="text-[12px] text-error-fg" />}
           {(status?.runs?.runs || []).map((run) => (
             <div key={run.run_id} className="border border-border rounded-lg bg-surface px-3 py-2 text-[12px]">
               <div>{runStateText(run.state) || RUN_STATE_UNKNOWN} · {runProfileText(run.profile)} · {run.trigger === 'PERIODIC' ? 'scheduled' : 'started by hand'}</div>
@@ -1833,7 +1882,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
           </div>
           {row && <InspireScoreBadge score={row.inspire} />}
         </div>
-        {item.uc && <ValueEstimateLine uc={item.uc} />}
+        {item.uc && <ValueEstimateLine uc={item.uc} estimate={valueEstimate} onSetRule={onSetRule} />}
         {built && progress.active && <ProgressLine chip={chip} summary={progress} />}
         <div className={HEADER_ACTIONS}>
           {item.uc && (
@@ -1851,6 +1900,11 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
                 className={`${vibes.length ? PRIMARY_BUTTON : OUTLINE_BUTTON} ${vibes.length > 0 && !active ? 'edit-mvp-invite' : ''}`}>
                 <Pencil size={13} /> {vibeFeaturesLabel(vibes)}
               </button>
+              {unpublished && (
+                <button type="button" data-change-choices="" onClick={() => onEdit(null, live)} className={PRIMARY_BUTTON}>
+                  <Sparkles size={13} /> {CHANGE_CHOICES_LABEL}
+                </button>
+              )}
               <button type="button" disabled={active || submitBusy} title={active ? 'Wait for this run to finish' : undefined} onClick={() => setUninstalling(true)} className={DANGER_BUTTON}>
                 <Trash2 size={13} /> Uninstall all
               </button>
@@ -1874,7 +1928,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
       </header>
       {detailsOpen && row && (
         <UseCaseDrawer row={row} onClose={() => setDetailsOpen(false)}>
-          <UseCaseDetailBody uc={item.uc} v130={item.uc._v130 || null} databricksHost={databricksHost} />
+          <UseCaseDetailBody uc={item.uc} v130={item.uc._v130 || null} valueEstimate={valueEstimate} databricksHost={databricksHost} />
         </UseCaseDrawer>
       )}
       {!built && notebook && <NotebookPanel notebook={notebook} />}
@@ -1932,7 +1986,6 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
           error={rebuildError || error} built={builtOn} choices={choices} previous={previous} blocked={rebuildBlocked}
           onPrevious={setPrevious} onAdd={addFeature} onDrop={dropAsk} onRemoveAsk={removeAsk} onRebuild={rebuild} onOpenSettings={onEdit ? openSettings : null} onClose={closeFeatures} />
       )}
-      {permissionDialog && <PermissionRequired permissions={permissionDialog.permissions} onClose={() => setPermissionDialog(null)} />}
     </div>
     </>
   );

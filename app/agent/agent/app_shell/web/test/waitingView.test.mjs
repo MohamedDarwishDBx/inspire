@@ -24,7 +24,8 @@ after(async () => {
   served?.close();
 });
 
-const view = (page) => page.locator('[data-waiting-for-access]');
+// REQ-310/311/313: the waiting view is the Permission Required dialog (the page-level backdrop), not a plain card.
+const view = (page) => page.locator('[data-permission-dialog]');
 
 async function assertWaitingView(page) {
   await view(page).waitFor({ timeout: 15000 });
@@ -34,13 +35,13 @@ async function assertWaitingView(page) {
   assert.doesNotMatch(text, /@/, 'no internal email');
   assert.equal(await page.locator('[data-card]').count(), 0, 'the page content is replaced, not shown beside the view');
   assert.equal(await page.getByRole('button', { name: 'Check again' }).count(), 1);
-  assert.equal(await page.locator('[data-waiting-details]').count(), 1, 'the tables sit under Details');
+  assert.equal(await page.locator('[data-permission-advanced]').count(), 1, 'the tables and the exact grant sit under Advanced');
 }
 
 test('the Dashboard shows the one waiting view in place of the page when the App cannot read its data, and Check again recovers', async () => {
   const state = { waiting: true, asks: 0 };
   const { page, context } = await openApp(browser, served.base, appInfo({}), {
-    ready: '[data-waiting-for-access], .kpi-v, .hcard',
+    ready: '[data-permission-dialog], .kpi-v, .hcard',
     routes: { page: ({ json }) => { state.asks += 1; return state.waiting ? json(200, WAITING) : json(200, { kpis: {}, charts: {}, tables: {}, errors: {} }); } },
   });
   try {
@@ -58,7 +59,7 @@ test('the Dashboard shows the one waiting view in place of the page when the App
 test('the Work section shows the same waiting view in place of its content', async () => {
   const state = { waiting: true };
   const { page, context } = await openApp(browser, served.base, appInfo({}), {
-    hash: '#/n01_u05/work', ready: '[data-waiting-for-access]', routes: { page: waitingPage(state), my_work: ({ json }) => json(200, WAITING) },
+    hash: '#/n01_u05/work', ready: '[data-permission-dialog]', routes: { page: waitingPage(state), my_work: ({ json }) => json(200, WAITING) },
   });
   try {
     await assertWaitingView(page);

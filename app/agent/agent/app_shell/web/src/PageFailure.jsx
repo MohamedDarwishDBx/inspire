@@ -1,7 +1,8 @@
 import { createContext, useContext } from 'react';
 import { Icon } from './icons.jsx';
 import { PlainNote, TechnicalDetails, useToast } from './ui.jsx';
-import { splitTechnical } from './plainText.js';
+import { noAccessOf, splitTechnical } from './plainText.js';
+import WaitingForAccess from './WaitingForAccess.jsx';
 import { copyText } from './Draft.jsx';
 import { COPIED_SEND_TEXT, COPY_SEND_LABEL, PAGE_FAILED_LEAD, RETRY_LABEL, RUNS_LABEL, SHARED_CARD_TEXT, partsFailedLead, said, sharedBy } from './failures.js';
 
@@ -20,6 +21,8 @@ export function CardFailure({ text, prefix = '', size = 14, className = 'tile-er
 export function PageFailure({ failures, onRetry, onRuns }) {
   const toast = useToast();
   if (!failures?.shared) return null;
+  // REQ-311: a denial of the page's data opens the Permission Required dialog, never the plain error card.
+  if (noAccessOf(failures.shared)) return <WaitingForAccess waiting={{ tables: [], owners: [], detail: failures.shared }} />;
   const { plain, details } = splitTechnical(`${failures.whole ? PAGE_FAILED_LEAD : partsFailedLead(failures.count)}${failures.shared}`);
   const send = [plain, ...details].filter(Boolean).join('\n');
   const copy = async () => toast(await copyText(send) ? COPIED_SEND_TEXT : `Select and copy this: ${send}`, 'info', { ms: 12000 });

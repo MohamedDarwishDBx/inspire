@@ -136,6 +136,18 @@ export function runFailureText(runInfo) {
 }
 
 export const POLL_GIVE_UP_AFTER = 15;
+// A run the App has just launched may not have its launch record yet: the read answers 403 'recorded' until the record shows. Monitor
+// keeps the run in Starting for this long before it says Inspire has no record of it.
+export const RUN_RECORD_WAIT_MS = 120000;
+
+// The policy refusal 'recorded' (the run is not in Inspire's own launch record), as the route answers it.
+export function isUnrecordedRefusal(error) {
+  return error?.status === 403 && error?.body?.policy?.rule === 'recorded';
+}
+
+export function unrecordedWaitOver(firstRefusedAt, now, waitMs = RUN_RECORD_WAIT_MS) {
+  return firstRefusedAt != null && now - firstRefusedAt >= waitMs;
+}
 export const RUN_GONE_TEXT = 'This run no longer exists in Databricks, so start a new run on the Start page.';
 
 export function pollFailure(error, failures) {
@@ -154,10 +166,10 @@ export const CHECK_AGAIN_LABEL = 'Check again';
 
 export const RUN_AGAIN_LABEL = 'Run again';
 
-export function monitorFailureChoices({ cannotRead = false, runUrl = '', canRunAgain = false } = {}) {
+export function monitorFailureChoices({ cannotRead = false, unrecorded = false, runUrl = '', canRunAgain = false } = {}) {
   return [
     canRunAgain && !cannotRead && { id: 'again', label: RUN_AGAIN_LABEL, detail: 'Starts this run again with the same settings, in a new session.' },
-    cannotRead && { id: 'read', label: CHECK_AGAIN_LABEL, detail: 'Once you have access, Inspire reads this run again.' },
+    cannotRead && { id: 'read', label: CHECK_AGAIN_LABEL, detail: unrecorded ? 'Inspire checks its record of this run again.' : 'Once you have access, Inspire reads this run again.' },
     runUrl && { id: 'open', label: 'Open the run in Databricks', url: runUrl, detail: 'The run page shows the full error and every task.' },
     { id: 'copy', label: COPY_SEND_LABEL, detail: cannotRead ? 'Copies the run and what Inspire could not read, to send to the person who started it.' : 'Copies the run and its error, to send to whoever looks after Inspire.' },
   ].filter(Boolean);

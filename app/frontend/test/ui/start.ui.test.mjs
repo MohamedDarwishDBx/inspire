@@ -18,7 +18,8 @@ const TOTALS = { businesses: '3', runs: '6', use_cases: '18', domains: '3', best
 const LABELS = {
   businesses: 'Show the 3 businesses', runs: 'Show the 6 runs', use_cases: 'Show the runs that found the 18 use cases',
   domains: 'Show the runs that found the 3 domains', best_of_best: 'Show the runs with the 3 Best of Best use cases',
-  mvps_started: 'Show the 3 MVPs started in Build', mvps_live: 'Show the 2 live MVPs in Build', apps: 'Show the 1 App in Build',
+  // D-LABEL209: the App card names its output label
+  mvps_started: 'Show the 3 MVPs started in Build', mvps_live: 'Show the 2 live MVPs in Build', apps: 'Show the 1 Agentic App in Build',
   dashboards: 'Show the 2 dashboards in Build', genie_spaces: 'Show the 2 Genie Agents in Build', alerts: 'Show the 1 alert in Build',
 };
 const totals = (page) => page.getByRole('region', { name: 'Across all runs' });
@@ -230,7 +231,7 @@ test('the MVP, App, dashboard, Genie Agent and alert cards open Build filtered t
     await card(page, 'apps').click();
     await strip.waitFor({ timeout: 20000 });
     assert.equal(await strip.getByRole('status').innerText(), 'Showing: use cases with an App in Acme');
-    const runs = strip.getByRole('group', { name: 'Runs with Apps' });
+    const runs = strip.getByRole('group', { name: 'Runs with Agentic Apps' }); // D-LABEL209
     assert.deepEqual(await runButtons(strip), ['Acme 1', 'Beta Foods 1']);
     assert.equal(await runs.locator('[data-build-run="42"]').getAttribute('aria-pressed'), 'true');
     await runs.locator('[data-build-run="50"]').click();
@@ -300,11 +301,11 @@ test('totals that cannot be read say why on Start, and the runs list still works
   try {
     await page.getByRole('button', { name: 'Get Started', exact: true }).first().click();
     await totals(page).getByRole('alert').waitFor({ timeout: 20000 });
-    assert.match(await totals(page).getByRole('alert').innerText(), /^Inspire could not count across the runs: User does not have SELECT on __inspire_session, so ask its owner or a workspace admin to give you access\.$/);
+    assert.match(await totals(page).getByRole('alert').innerText(), /^Inspire could not count across the runs: User does not have SELECT on __inspire_session, so ask your data owner or a workspace admin to give you access\.$/);
     assert.equal(await totals(page).locator('[data-portfolio-card]').count(), 0);
     await page.locator('[data-run="42"]').waitFor();
     assert.deepEqual(await rows(page), ['42', '41', '50', '51', '60']);
-    assert.deepEqual(ui.pageErrors.filter((e) => !/status of 500/.test(e)), []);
+    assert.deepEqual(ui.pageErrors.filter((e) => !/status of (500|403)/.test(e)), []);
   } finally {
     await ui.close();
   }
@@ -338,7 +339,8 @@ test('Start offers three unmistakable ways in: your own data, sample data Inspir
       const [data, noData, demo] = [await box('data'), await box('no-data'), await box('demo')];
       assert.equal(Math.round(data.height), Math.round(noData.height), 'the two ways to run Inspire are the same size, side by side');
       assert.equal(Math.round(data.y), Math.round(noData.y));
-      assert.ok(demo.x > noData.x && Math.abs(demo.y - noData.y) < 2, 'the demo sits beside No data yet as the third, lighter way in');
+      assert.ok(demo.y >= Math.max(data.y + data.height, noData.y + noData.height) - 1 && Math.abs(demo.x - data.x) < 2,
+        'the demo sits on its own row below the two options, as the third, lighter way in');
       assert.deepEqual(ui.pageErrors, []);
       await choice(page, 'demo').click();
       await page.getByRole('region', { name: 'Demo' }).waitFor({ timeout: 20000 });
@@ -422,7 +424,7 @@ test('a Start run row says why it has no counts: still running with none yet, th
     assert.ok(why.includes('Quality is not counted: the use case table has no elite_status column, which holds the quality bar.'), why.join(' | '));
     assert.ok(why.some((line) => /^MVPs are not counted: /.test(line)), why.join(' | '));
     assert.equal((await older.locator('[data-run-count="mvps_built"]').innerText()).trim(), 'MVPs built not counted');
-    assert.deepEqual(ui.pageErrors.filter((e) => !/status of 500/.test(e)), []);
+    assert.deepEqual(ui.pageErrors.filter((e) => !/status of (500|403)/.test(e)), []);
   } finally {
     await ui.close();
   }
@@ -471,15 +473,19 @@ const rc10Mount = (app) => {
 };
 const boxOf = (page, selector) => page.locator(selector).boundingBox();
 
-test('REQ-093 Start content uses the page width at 1280, 1440 and 1920 (no narrow centred column)', async () => {
+// REQ-303 (Amr, 14:00 test): the Start column is the earlier narrow one. It was max-w-3xl (768px) until rc.10 (f0728c667) widened it.
+const NARROW_START_PX = 768;
+const VIEWPORTS = [{ width: 1440, height: 900 }, { width: 1280, height: 800 }];
+
+test('REQ-303 Start content is the earlier narrow column, 768px and centred, at 1440x900 and 1280x800', async () => {
   const ui = await openStart();
   const { page } = ui;
   try {
-    for (const width of [1280, 1440, 1920]) {
-      await page.setViewportSize({ width, height: 900 });
+    for (const size of VIEWPORTS) {
+      await page.setViewportSize(size);
       const box = await boxOf(page, '[data-start-choices]');
-      assert.ok(box.width >= width * 0.8, `${width}px: the Start content is ${Math.round(box.width)}px wide, under 80% of the page`);
-      assert.ok(box.x <= width * 0.1, `${width}px: the left margin is ${Math.round(box.x)}px`);
+      assert.ok(Math.abs(box.width - NARROW_START_PX) < 2, `${size.width}px: the Start column is ${Math.round(box.width)}px wide, expected ${NARROW_START_PX}px`);
+      assert.ok(Math.abs(box.x + box.width / 2 - size.width / 2) < 2, `${size.width}px: the Start column is not centred (left edge ${Math.round(box.x)}px)`);
     }
     assert.deepEqual(ui.pageErrors, []);
   } finally {
@@ -487,20 +493,24 @@ test('REQ-093 Start content uses the page width at 1280, 1440 and 1920 (no narro
   }
 });
 
-test('REQ-094 No data yet has See Demo beside it on the same row, and See Demo opens the demo', async () => {
+// REQ-304 (Amr, 14:00 test): See Demo is its own row below No data yet and Generated data, not a third column beside them.
+test('REQ-304 See Demo has its own row below No data yet, at 1440x900 and 1280x800, and See Demo opens the demo', async () => {
   const ui = await openUi('app', REVIEW_STATE, '', { mount: rc10Mount });
   const { page } = ui;
   try {
-    await page.setViewportSize({ width: 1440, height: 900 });
     await page.getByRole('button', { name: 'Get Started', exact: true }).first().click();
     await choice(page, 'demo').waitFor({ timeout: 20000 });
     await page.waitForFunction(() => !document.querySelector('main')?.getAnimations({ subtree: true }).some((a) => a.animationName === 'pageEnter'), null, { timeout: 5000 });
-    const [noData, demo] = await page.evaluate(() => ['no-data', 'demo'].map((id) => {
-      const { x, y, width } = document.querySelector(`[data-start-choice="${id}"]`).getBoundingClientRect();
-      return { x, y, width };
-    }));
-    assert.ok(Math.abs(demo.y - noData.y) < 2, `See Demo is on the same row as No data yet (y ${Math.round(demo.y)} vs ${Math.round(noData.y)})`);
-    assert.ok(demo.x >= noData.x + noData.width - 1, 'See Demo sits to the right of No data yet');
+    for (const size of VIEWPORTS) {
+      await page.setViewportSize(size);
+      const [data, noData, demo] = await page.evaluate(() => ['data', 'no-data', 'demo'].map((id) => {
+        const { x, y, width, height } = document.querySelector(`[data-start-choice="${id}"]`).getBoundingClientRect();
+        return { x, y, width, height };
+      }));
+      const bottom = Math.max(data.y + data.height, noData.y + noData.height);
+      assert.ok(demo.y >= bottom - 1, `${size.width}px: See Demo (top ${Math.round(demo.y)}px) is not below the options (bottom ${Math.round(bottom)}px)`);
+      assert.ok(Math.abs(demo.x - data.x) < 2, `${size.width}px: See Demo starts at the left edge of the Start column, as its own row`);
+    }
     assert.equal(await page.getByRole('button', { name: 'See Demo', exact: true }).count(), 1, 'one See Demo control, not a copy');
     await choice(page, 'demo').click();
     await page.getByRole('region', { name: 'Demo' }).waitFor({ timeout: 20000 });
@@ -596,7 +606,7 @@ test('REQ-098 a stats count that fails stays visible in the header when the stat
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false', 'the stats are collapsed');
     assert.equal(await totals(page).getByRole('alert').isVisible(), true, 'the error is still shown while the stats are collapsed');
     assert.match(await totals(page).getByRole('alert').innerText(), /^Inspire could not count across the runs: User does not have SELECT on __inspire_session/);
-    assert.deepEqual(ui.pageErrors.filter((e) => !/status of 500/.test(e)), []);
+    assert.deepEqual(ui.pageErrors.filter((e) => !/status of (500|403)/.test(e)), []);
   } finally {
     await ui.close();
   }

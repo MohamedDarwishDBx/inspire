@@ -1,4 +1,5 @@
 const { allowTemplates, allowText, maskPrivate, nameLabels } = require('./redact');
+const IMPLEMENT_OUTPUT_LABELS = require('./implementOutputLabels.json');
 const { parseExactJson } = require('./exactJson');
 const { MVP_PHASE_WORDS, MVP_REPAIR_PHASE, MVP_WORKING_TEXTS, mvpFailureOf, mvpStages } = require('../../frontend/src/lib/mvpProgress.js');
 const { statusWarnings } = require('../../frontend/src/lib/implementControl.js');
@@ -250,7 +251,7 @@ function buildDiagnostics(status, ctx = {}) {
 
   const app = status.app_status;
   if (app) {
-    section('App');
+    section(IMPLEMENT_OUTPUT_LABELS.app);
     if (!app.ok) add(`- ${prose(app.error)}`);
     else {
       add(`- state ${word(app.app_state) || 'unknown'}, compute ${word(app.compute_state) || 'unknown'}, deployment ${word(app.deployment_state) || 'unknown'}${app.deployed_at ? `, deployed ${time(app.deployed_at)}` : ''}`);

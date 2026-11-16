@@ -3,6 +3,12 @@ const { parseStrategicContext, validateStrategy } = require('../../frontend/src/
 const { scopesFromObject, serializeTableScopes, scopeKeyOf } = require('../../frontend/src/lib/tableScope.js');
 
 const INSPIRE_AGENT_VERSION = 'v1.5.3';
+/** The release a person sees: the installer stamps INSPIRE_RELEASE_TAG (e.g. v1.5.3-rc.2) into app.yaml; the package version is the fallback. */
+const INSPIRE_RELEASE_TAG_PATTERN = /^v\d\.\d\.\d(-rc\.\d)?$/;
+function inspireReleaseLabel(env = process.env) {
+  const tag = String(env.INSPIRE_RELEASE_TAG || '').trim();
+  return INSPIRE_RELEASE_TAG_PATTERN.test(tag) ? tag : INSPIRE_AGENT_VERSION;
+}
 const INSPIRE_ENVIRONMENT_KEY = 'Default';
 const INSPIRE_ENVIRONMENT_VERSION = '4';
 
@@ -325,7 +331,27 @@ function inspireTagValue(value) {
   return cleanTag(value, /[^A-Za-z0-9._-]/g, inspireTagValueMax());
 }
 
-function inspireJobTags({ runType, params = {}, businessName = '', notebookFilename = '', useCaseIds = [] }) {
+/**
+ * The use case NAME tag value: lower snake_case of the full name ("Predict Customer Churn" -> predict_customer_churn).
+ * Shared contract with the notebook's inspire_usecase_name_tag (Python mirror); parity is pinned by agent/tests/fixtures/usecase_name_cases.json.
+ * Non-ASCII characters (after NFKD, combining marks dropped) become word separators, so a name with no ASCII letters encodes to ''.
+ * Truncation keeps whole words within max; with no word boundary it cuts at max.
+ */
+function useCaseNameTag(name, max = inspireTagValueMax()) {
+  const ascii = String(name ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x00-\x7f]/g, ' ');
+  const slug = ascii.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (slug.length <= max) return slug;
+  const cut = slug.slice(0, max + 1);
+  const boundary = cut.lastIndexOf('_');
+  const kept = boundary > 0 ? slug.slice(0, boundary) : slug.slice(0, max);
+  return kept.replace(/_+$/, '');
+}
+
+const USE_CASE_NAME_TAG = 'dbx_inspire_ai_usecase_name';
+
+function inspireJobTags({ runType, params = {}, businessName = '', notebookFilename = '', useCaseIds = [], useCaseName = '' }) {
+  // The name tag is set only when the run covers exactly one use case: a Discover or multi-use-case run has no single name to report.
+
   const sessionId = inspireTagValue(params['14_session_id']);
   const ids = [...new Set(useCaseIds.map(inspireTagValue).filter(Boolean))];
   const specVersion = inspireTagValue(params.inspire_implement_spec_version);
@@ -344,6 +370,9 @@ function inspireJobTags({ runType, params = {}, businessName = '', notebookFilen
     tags.dbx_inspire_ai_session_id = sessionId;
   }
   if (ids.length) tags.dbx_inspire_ai_usecase_id = inspireTagList(ids);
+  // One use case only: a Discover or multi-use-case run has no single name, so it carries none.
+  const name = ids.length === 1 ? useCaseNameTag(useCaseName) : '';
+  if (name) tags[USE_CASE_NAME_TAG] = name;
   if (specVersion) tags.dbx_inspire_ai_spec_version = specVersion;
   const test = inspireTestTag();
   if (test) tags[INSPIRE_TEST_TAG] = test;
@@ -504,6 +533,7 @@ function normalizeV130UseCaseFields(row) {
 
 module.exports = {
   INSPIRE_AGENT_VERSION,
+  inspireReleaseLabel,
   runAsPerson,
   launchPlanFor,
   RUN_AS_JOB_ENV,
@@ -538,6 +568,8 @@ module.exports = {
   RESOURCE_TAG_RULES,
   TAG_LIST_SEP,
   inspireJobTags,
+  useCaseNameTag,
+  USE_CASE_NAME_TAG,
   withInspireInstallParams,
   INSPIRE_TEST_TAG,
   inspireJobEnvironmentChange,

@@ -250,7 +250,8 @@ def test_no_job_means_no_tag_calls(ns):
 def test_a_failed_tag_update_never_fails_the_run(ns, fail):
     api = _Api({"team": "growth"}, fail=fail)
     inst = _tagger(ns, api)
-    assert inst._implement_tag_job_assets("N01-U01", 77, {"dashboard": "d1"}, {"dashboard": {"state": "ready"}}) is None
+    # b483506e1 made the function return the Lakebase project id it tagged, so a failed tag returns "" (no id), never None.
+    assert inst._implement_tag_job_assets("N01-U01", 77, {"dashboard": "d1"}, {"dashboard": {"state": "ready"}}) == ""
     warnings = [msg for level, msg in inst.logger.records if level == "WARNING"]
     assert len(warnings) == 1 and "[IMPLEMENT-ASSET-TAGS]" in warnings[0] and "job 77" in warnings[0]
 

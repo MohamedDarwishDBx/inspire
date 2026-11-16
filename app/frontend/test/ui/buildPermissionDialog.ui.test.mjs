@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STUDIO_STATE, built } from './implementFixtures.js';
-import { closeBrowser, expandBuild, openUi } from './uiSupport.mjs';
+import { closeBrowser, expandBuild, openUi, sqlStatementsOf } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -79,12 +79,12 @@ test('Check again on an unreadable build opens See the grant, with the full read
     // Check again shows the same grants the card showed, so Permission Required does not open a second time.
     await page.waitForTimeout(800);
     assert.equal(await page.locator('[data-permission-dialog=""]').count(), 0, 'Check again reopens nothing for the same grants');
-    const see = card.locator('[data-see-grant=""]');
+    const see = card.locator('[data-app-reads-primary="copy"]');
     await see.waitFor({ timeout: 15000 });
     await see.click();
     await dialog.waitFor({ timeout: 15000 });
     assert.match(await dialog.locator('#permission-required-title').innerText(), /^Permission Required$/);
-    const statements = (await dialog.locator('[data-permission-statements=""]').innerText()).split('\n').map((s) => s.replace(/;$/, ''));
+    const statements = sqlStatementsOf(await dialog.locator('[data-permission-statements=""]').textContent());
     assert.deepEqual(statements, [CATALOG, SCHEMA, SELECT, METADATA, SELECT_RETURNS, METADATA_RETURNS],
       'the App needs USE CATALOG, USE SCHEMA, then SELECT and READ METADATA on each of the two tables, once each (the same list the card shows)');
     assert.deepEqual(ui.pageErrors, []);

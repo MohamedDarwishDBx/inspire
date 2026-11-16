@@ -76,7 +76,7 @@ def test_tiers_follow_each_row_evidence_and_rank_follows_the_stake(agent_ns):
     assert "'Monitor' for every other row, including every row whose data_quality_flag is not 'ok'" in tier
     rank = meaning(mandate, "rank")
     assert "the rows that pass the use case's decision test first" in rank, "a Monitor row never outranks an Act now row"
-    assert "each group by value_at_stake, highest first, then by value" in rank, "rank follows the money at stake"
+    assert "each group by value_at_stake, highest first, then by value" in rank, "rank follows the value at stake"
     assert "then the other rows whose data_quality_flag is 'ok', then the flagged rows" in rank, \
         "a network notebook ranked 153 senders flagged 'too few closed recipients' above the 55 senders it could test"
     assert "a row without enough evidence never outranks a row with it" in rank
@@ -1363,12 +1363,14 @@ def test_round_31_a_units_minimum_lets_it_pass_the_correction_on_its_own(agent_n
 
 def test_round_31_a_test_run_never_lets_an_earlier_runs_retry_replace_its_rows(agent_ns):
     controls = agent_ns["GENIE_RUN_CONTROLS_RULE"]
-    assert ("cancels every run whose task runs this notebook's path, with or without `/Workspace` before it, which covers every "
+    assert ("cancels only the runs whose task's notebook_path is exactly this use case's notebook path, with or without "
+            "`/Workspace` before it, never a prefix, a substring, or Inspire's agent notebook `dbx_inspire_ai_agent`, and never a run "
+            "whose job carries the tag `dbx_inspire_ai_launcher_source` = `Inspire App`") in controls and ("covers every "
             "earlier test run") in controls and ("submit each test run with retries off (the task's `max_retries` 0 and "
                                                  "`disable_auto_optimization` true, since serverless otherwise retries a failed "
                                                  "task on its own)") in controls, \
         "round 31: serverless retried a failed lapse test run after the final run, and the retry's 27,314 rows replaced the final run's"
-    assert controls.index("cancels every run whose task runs this notebook's path") < controls.index("with retries off")
+    assert controls.index("cancels only the runs whose task's notebook_path is exactly") < controls.index("with retries off")
     assert "cancel every earlier test run of this notebook that has not finished" not in controls
     assert ("After the last run, check that the current rows of this use case that runs wrote (`change_source = 'run' AND "
             "is_current AND change_source <> 'delete'`) carry the run_id its outcome returned") in controls

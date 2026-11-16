@@ -48,7 +48,7 @@ test('the Measure impact step offers the use case\u2019s own KPIs with Let Inspi
       await goToStep(page, 'What to build');
       await goToStep(page, 'Data');
       await dataToResults(page);
-      await goToMeasureImpact(page);
+      await goToMeasureImpact(page, 'kpi');
       const box = page.getByRole('group', { name: 'Target KPI', exact: true });
       await box.waitFor();
       assert.deepEqual(await picker(page).locator('option').allTextContents(), ['Let Inspire pick', 'Churn rate (%)', 'Hours saved (hours)']);
@@ -74,7 +74,7 @@ test('the picker shows the KPI the built version tracks, its unit and how record
   try {
     await goToStep(page, 'Data');
     await dataToResults(page);
-    await goToMeasureImpact(page);
+    await goToMeasureImpact(page, 'kpi');
     const box = page.getByRole('group', { name: 'Target KPI', exact: true });
     assert.equal(await box.locator('[data-kpi-tracked]').textContent(),
       'v1 tracks Hours saved, in hours, and counts each record in hours at stake. Inspire picked it: it is the first KPI of this use case Inspire can compute from its tables.');
@@ -91,7 +91,7 @@ test('the picker shows the KPI the built version tracks, its unit and how record
   try {
     await goToStep(none.page, 'Data');
     await dataToResults(none.page);
-    await goToMeasureImpact(none.page);
+    await goToMeasureImpact(none.page, 'kpi');
     assert.deepEqual(await picker(none.page).locator('option').allTextContents(), ['Let Inspire pick']);
     await none.page.getByText(KPI_NONE_YET).waitFor();
     assert.equal(await none.page.getByText('the first it can compute').count(), 1, 'the pick rule is said once');
@@ -204,7 +204,7 @@ test('a baseline taken on another table than the one the KPI is measured on now 
   }
 });
 
-test('an hours KPI never shows a currency or Money at stake anywhere on the MVP page, even when the run row still carries a currency', async () => {
+test('an hours KPI never shows a currency or Value at stake anywhere on the MVP page, even when the run row still carries a currency', async () => {
   const ui = await openBuild({ history: [builtWith(TRACKED)], moneySummary: [SUMMARY] });
   const { page } = ui;
   try {

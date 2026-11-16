@@ -34,7 +34,7 @@ test('a CAN_USE person who browses catalogs, schemas and tables, or reads column
     assert.ok(callsTo(prefix).length > 0, `${route} reached ${prefix}`);
     assert.deepEqual(tokensTo(prefix), [S.PERSON_TOKEN], route);
   }
-  S.reset();
+  S.reset({ tableColumns: { 'hr.payroll.salaries': ['employee_id', 'salary'] } });
   const columns = await S.request('GET', '/api/inspire/implement/columns?warehouse_id=wh1&table=hr.payroll.salaries', { person: NONOWNER });
   assert.equal(columns.status, 200, columns.text);
   assert.deepEqual(tokensTo('/api/2.0/sql/statements'), [S.PERSON_TOKEN]);

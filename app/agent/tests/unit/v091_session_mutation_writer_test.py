@@ -1,7 +1,7 @@
 """Fix #1: SessionMutationWriter single-authority queue for __inspire_session writes.
 
 Evidence: rescue commit 9305bd1 body "Delta OCC raised ConcurrentAppendException on
-first collision and killed the flush thread"; customer Alshaya crash.
+first collision and killed the flush thread"; a customer crash.
 
 v0.9.0 base bug: main thread `update_session_prompt_context` and background
 `AtomicWriterFlush` thread both UPDATE the same `__inspire_session` row.

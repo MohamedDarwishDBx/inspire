@@ -357,7 +357,7 @@ def test_a_build_whose_outputs_show_the_baseline_ends_ready_with_that_warning(ag
     inst = _build_flow(agent_ns, calls, 3)
     warning = "Notebook: no model passed acceptance on the latest run, so no model is registered and its rows are the baseline's (z)"
     seen = []
-    inst._implement_fallback_warning = lambda uc_id, table, use_case, spec_nb: seen.append((uc_id, table)) or warning
+    inst._implement_fallback_warning = lambda uc_id, table, use_case, spec_nb, data=None: seen.append((uc_id, table)) or warning
     got = inst._implement_one_locked({"session_id": 5150, "use_case_id": "N01-U01", "spec_version": 4, "spec_json": dict(VALID)},
                                      (5150, "N01-U01", 4))
     assert got == "ready_with_warnings" and seen == [("N01-U01", "main.inspire.churn_out")]

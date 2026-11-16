@@ -91,7 +91,7 @@ test('a Genie answer that is still running says how long it has taken and how lo
   assert.equal(paceText(95), '95 s: longer than usual, Genie keeps working for up to 3 minutes');
   assert.equal(paceText(181), '181 s: Genie stops at 3 minutes');
   assert.match(src('Genie.jsx'), /<Pace since=\{m\.n\} \/>/);
-  assert.match(src('Genie.jsx'), /label: answerLabel\(c\.name\)/);
+  assert.match(src('genieAnswerView.js'), /label: answerLabel\(c\.name\)/, 'the answer column label moved with the table helpers (REQ-330, f65ef7861)');
 });
 
 test('a list where every row is low confidence says so once, with why and what would raise it', async () => {
@@ -106,6 +106,14 @@ test('a list where every row is low confidence says so once, with why and what w
   assert.equal(quietList([...all.slice(0, 5), row('High')], meta), null, 'one confident row keeps the list as it is');
   assert.equal(quietList(all.slice(0, 2), meta), null, 'two rows are too few to call a wall');
   assert.equal(quietList([row('Low'), row('Low', 'Bake 20'), row('Low')], meta).title, 'All 3 rows on this list are low confidence.');
+  // REQ-258: the forecast-only sentence comes from the forecast contract in kinds.json; a duplicate-merge list never prints it
+  const { contractOf } = await import('../src/kinds.js');
+  const forecastRaise = contractOf('forecast').raise_confidence;
+  assert.match(quietList(all, meta, {}, forecastRaise).raise, /so the forecast can beat a simple guess/, 'must-keep: forecast copy on a forecast contract');
+  const merge = quietList(all, meta, {}, RAISE_CONFIDENCE).raise;
+  assert.doesNotMatch(merge, /forecast|simple guess/i, 'must-exclude: forecast copy on a non-forecast list (D6)');
+  assert.equal(quietList(all, meta).raise, RAISE_CONFIDENCE, 'the default is the neutral sentence');
+  assert.ok(contractOf('network'), 'the network contract exists'); assert.equal(contractOf('network').raise_confidence, undefined, 'a contract with no raise sentence keeps the neutral one');
   assert.equal(quietList([], meta), null);
   assert.match(src('Records.jsx'), /data-quiet-list/);
 });

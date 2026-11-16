@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const I = require('../lib/inspireImplement');
 const RP = require('../lib/routePolicy');
 const { makeApp, listen } = require('./support/implementApp');
+const { DEFAULT_APP_SP } = require('./support/appRecord');
 
 // Who may grant read access on a built App's data, enforced by the real route policy (the gate every POST implement route
 // runs through in server.js). Owner: the person who created the build. Other: a person with the history table's SELECT only.
@@ -146,6 +147,15 @@ test('a service-principal App is granted for the App\'s own service principal, n
     assert.ok(w.grants.length > 0, 'the grant runs');
     assert.ok(w.grants.every(([sql]) => sql.endsWith(`TO \`${BUILT_SP}\``)), JSON.stringify(w.grants));
     assert.ok(!w.grants.some(([sql]) => sql.includes(HOST_SP)), 'no grant names the Inspire host service principal');
+  });
+});
+
+test('a built App whose fixture names no service principal is read as the platform reads it: with its own service principal, never refused', async () => {
+  const w = harness({ history: [build({ access: 'sp' })], appExists: true, app: { name: 'riverside-assets' } });
+  await withPolicy(w, async (url) => {
+    const got = await call(url, GRANT_ROUTE, { action: 'check' });
+    assert.equal(got.status, 200, JSON.stringify(got.data));
+    assert.equal(got.data.app, DEFAULT_APP_SP.client_id, 'the App record names its own service principal');
   });
 });
 

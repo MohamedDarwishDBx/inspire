@@ -645,12 +645,13 @@ def test_a_match_acts_on_the_table_version_the_list_was_read_at_or_is_refused(tm
              CONTRACT["errors"]["stale_list"]["body"]["error"]),
             ([], 409, "the App found no history of main.pricing.loss_desk_out"),
             ([{"version": 3, "timestamp": "not a time"}], 409, "or the App cannot tell when"),
-            (shell_core.QueryError("PERMISSION_DENIED: no history"), 502, "could not read the history of main.pricing.loss_desk_out")):
+            (shell_core.QueryError("PERMISSION_DENIED: no history"), 403, "could not read the history of main.pricing.loss_desk_out")):
         (tmp_path / str(len(fragment))).mkdir(exist_ok=True)
         ws = UsableWorkspace(history=history)
         s = usable_shell(tmp_path / str(len(fragment)), ws)
         got, out = post(s, "records/act", body)
-        assert got == status and fragment in out["error"], out
+        # REQ-313: a refused read of the history the write acts on is the waiting state (403); its detail carries the same reason.
+        assert got == status and fragment in (out.get("error", "") + out.get("detail", "")), out
         assert ws.queries("MERGE INTO") == [] and ws.queries("AS total") == [], "no count and no write without the version"
     (tmp_path / "zero").mkdir()
     ws = UsableWorkspace()

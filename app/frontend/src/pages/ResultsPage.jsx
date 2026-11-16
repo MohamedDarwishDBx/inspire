@@ -92,6 +92,7 @@ import {
   nameOfUseCase,
 } from '../lib/useCaseFields';
 import { nextStepOf, runOutcomeOf } from '../lib/runOutcome';
+import { stepBarStagesOf } from '../lib/runStepBar';
 import { qualityBarCountText } from '../lib/qualityBarWording';
 import { liveCountText } from '../lib/liveUseCases';
 import { saveBlob } from '../lib/download';
@@ -104,11 +105,11 @@ import ImplementWizard from './ImplementWizard';
 import { kindFilterLabel, kindFilterOptions, matchesKindFilter } from '../lib/useCaseKind';
 import { MVP_FILTERS, START_MVP_LABEL, implementState, mvpCounts, mvpFilterMatches, notebookRunEnded, notebookStatus, versionActive } from '../lib/implementWizard';
 import { buildUseCaseList } from '../lib/useCaseList';
-import { cardAssetLinks, liveAppRenameStale, renameRestyleSpec } from '../lib/implementControl';
+import { cardAssetLinks, liveAppRenameStale, renameRestyleSpec, trackBuildSubmit } from '../lib/implementControl';
 import { ARCHIVE_VIEWS, archiveKeyOf, inArchiveView, loadArchiveMap, toggledArchive } from '../lib/useCaseArchive';
 import QualityGateDrops from '../components/QualityGateDrops';
-import { makeApiFetch, makeApiPostJson, requestHeaders } from '../lib/apiClient';
-import { RESULTS_PENDING_TEXT, noResultsText, reviewLinkText } from '../lib/runPages';
+import { makeApiFetch, makeApiPostJson, requestHeaders, responseError } from '../lib/apiClient';
+import { RESULTS_PENDING_TEXT, noResultsText, resultsReadFailure, reviewLinkText } from '../lib/runPages';
 import { sessionFailed, sessionFinished, sessionSucceeded } from '../lib/monitorState';
 import { placeholderWords } from '../lib/placeholderWords';
 import { reducedMotion } from '../lib/motion';
@@ -169,6 +170,8 @@ export default function ResultsPage({
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [results, setResults] = useState(null);
+  // REQ-126: the steps the run recorded, the same rows the Monitor reads; the Review step bar is built from them.
+  const [runSteps, setRunSteps] = useState({ session: '', steps: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isProgressive, setIsProgressive] = useState(false);
@@ -351,7 +354,7 @@ export default function ResultsPage({
       const data = await apiFetch(`/api/inspire/implement/history?${q}`);
       const spec = renameRestyleSpec(data.history, id, nameOfUseCase(uc));
       if (!spec) throw new Error('This use case has no built App to update.');
-      await apiPostJson('/api/inspire/implement/submit', { spec });
+      await trackBuildSubmit(spec, () => apiPostJson('/api/inspire/implement/submit', { spec }));
       setImplementRefresh((n) => n + 1);
     },
     [apiFetch, apiPostJson, inspireDb, warehouseId, selectedSessionId]
@@ -508,6 +511,12 @@ export default function ResultsPage({
         warehouse_id: warehouseId,
       });
       if (sid) q.set('session_id', sid);
+      if (sid) {
+        const stepSession = String(sid);
+        apiFetch(`/api/inspire/steps?${q}`)
+          .then((d) => setRunSteps({ session: stepSession, steps: Array.isArray(d?.steps) ? d.steps : [] }))
+          .catch(() => setRunSteps({ session: stepSession, steps: [] }));
+      }
 
       // Try final results_json first
       const data = await apiFetch(`/api/inspire/results?${q}`);
@@ -544,12 +553,9 @@ export default function ResultsPage({
       setError(noResultsText(run, { inMonitor: embedded }));
       return 'pending';
     } catch (err) {
-      if (sid && err.status === 403) {
-        setError(reviewLinkText({ sessionId: String(sid), valid: true }, inspireDb, 'denied'));
-        return 'denied';
-      }
-      setError(err.message);
-      return 'error';
+      const failure = resultsReadFailure(err, { sid, inspireDb });
+      setError(failure.message);
+      return failure.outcome;
     } finally {
       setLoading(false);
     }
@@ -559,6 +565,8 @@ export default function ResultsPage({
   const allUseCases = useMemo(() => buildUseCaseList(results, usecases), [results, usecases]);
   const qualityBarCounts = useMemo(() => qualityBarCountsOf(allUseCases), [allUseCases]);
   const runOutcome = runOutcomeOf(results, qualityBarCounts);
+  const reviewBarStages = useMemo(() => stepBarStagesOf(PIPELINE_STAGES,
+    runSteps.session === String(selectedSessionId ?? '') ? runSteps.steps : []), [runSteps, selectedSessionId]);
   const noneMeetsBar = qualityBarCounts.found > 0 && qualityBarCounts.meets === 0;
   const bizPriorities = useMemo(() => knownPriorities(results), [results]);
   const strategy = useMemo(() => strategyContext(results), [results]);
@@ -821,7 +829,7 @@ export default function ResultsPage({
     const scan = async (dir) => {
       try {
         const resp = await fetch(`/api/workspace/list?path=${encodeURIComponent(dir)}`, { headers });
-        if (!resp.ok) return;
+        if (!resp.ok) { await responseError(resp); return; }
         const data = await resp.json();
         const files = visibleArtifactFiles(data.files);
         setArtifactTree(prev => ({ ...prev, [dir]: { files, loading: false, error: null } }));
@@ -848,6 +856,7 @@ export default function ResultsPage({
     for (const path of expandWorkspaceListCandidates(genPath)) {
       try {
         const resp = await fetch(`/api/workspace/list?path=${encodeURIComponent(path)}`, { headers });
+        if (!resp.ok) await responseError(resp.clone());
         if (resp.ok) {
           const data = await resp.json();
           if (data.files && data.files.length > 0) {
@@ -873,11 +882,12 @@ export default function ResultsPage({
     const headers = artifactHeaders();
     try {
       const resp = await fetch(`/api/workspace/list?path=${encodeURIComponent(folderPath)}`, { headers });
+      const refused = resp.ok ? null : await responseError(resp.clone());
       if (resp.ok) {
         const data = await resp.json();
         setArtifactTree(prev => ({ ...prev, [folderPath]: { files: visibleArtifactFiles(data.files), loading: false, error: null } }));
       } else {
-        setArtifactTree(prev => ({ ...prev, [folderPath]: { files: [], loading: false, error: 'Could not list folder' } }));
+        setArtifactTree(prev => ({ ...prev, [folderPath]: { files: [], loading: false, error: refused.dialog ? null : 'Could not list folder' } }));
       }
     } catch {
       setArtifactTree(prev => ({ ...prev, [folderPath]: { files: [], loading: false, error: 'Network error' } }));
@@ -898,9 +908,10 @@ export default function ResultsPage({
   const exportedFile = useCallback(async (filePath, fileName, action) => {
     setFileProblem('');
     const resp = await fetch(`/api/workspace/export?path=${encodeURIComponent(filePath)}`, { headers: artifactHeaders() }).catch(() => null);
+    const refused = resp && !resp.ok ? await responseError(resp.clone()) : null;
     const blob = resp?.ok ? await resp.blob().catch(() => null) : null;
     if (blob) return blob;
-    setFileProblem(await fileProblemText(action, fileName, resp?.ok ? null : resp));
+    if (!refused?.dialog) setFileProblem(await fileProblemText(action, fileName, resp?.ok ? null : resp));
     return null;
   }, [artifactHeaders]);
 
@@ -941,9 +952,10 @@ export default function ResultsPage({
     setPreviewLoading(true);
     const headers = artifactHeaders();
     let resp = null;
+    let refusal = null;
     try {
       resp = await fetch(`/api/workspace/export?path=${encodeURIComponent(filePath)}`, { headers });
-      if (!resp.ok) throw new Error('fetch failed');
+      if (!resp.ok) { refusal = await responseError(resp.clone()); throw new Error('fetch failed'); }
       const ext = fileExtension({ name: fileName });
       if (ext === 'pdf') {
         const blob = new Blob([await resp.blob()], { type: 'application/pdf' });
@@ -964,7 +976,7 @@ export default function ResultsPage({
         setPreviewData(textPreview(ext, await resp.text()));
       }
     } catch {
-      setPreviewData({ type: 'error', message: resp?.ok ? `Inspire could not preview ${fileName}: the file could not be read.` : await fileProblemText('preview', fileName, resp) });
+      if (refusal?.dialog) setPreviewData(null); else setPreviewData({ type: 'error', message: resp?.ok ? `Inspire could not preview ${fileName}: the file could not be read.` : await fileProblemText('preview', fileName, resp) });
     }
     setPreviewLoading(false);
   }, [previewFile, previewFrom, previewData, artifactHeaders]);
@@ -1397,12 +1409,21 @@ export default function ResultsPage({
                       </h3>
                       {runOutcome.failed
                         ? <p className="text-[11px] text-error-fg" data-testid="execution-failure">{displayCleanText(runOutcome.message)}</p>
-                        : runOutcome.missingDocuments.length > 0
+                        : (runOutcome.missingDocuments.length > 0 || runOutcome.unfinishedSteps.length > 0)
                           ? (
-                            <ul className="text-[11px] text-warning-fg" data-testid="missing-documents" aria-label="Documents the run did not write">
-                              {runOutcome.missingDocuments.map((line) => <li key={line} dir="auto">{line}</li>)}
-                              <li className="text-text-secondary">Open the run log to see why.</li>
-                            </ul>
+                            <>
+                              {runOutcome.missingDocuments.length > 0 && (
+                                <ul className="text-[11px] text-warning-fg" data-testid="missing-documents" aria-label="Documents the run did not write">
+                                  {runOutcome.missingDocuments.map((line) => <li key={line} dir="auto">{line}</li>)}
+                                  <li className="text-text-secondary">Open the run log to see why.</li>
+                                </ul>
+                              )}
+                              {runOutcome.unfinishedSteps.length > 0 && (
+                                <ul className="text-[11px] text-warning-fg" data-testid="unfinished-steps" aria-label="Steps the run did not finish">
+                                  {runOutcome.unfinishedSteps.map((line) => <li key={line} dir="auto">{line}</li>)}
+                                </ul>
+                              )}
+                            </>
                           )
                           : <p className="text-[11px] text-text-secondary">Every step of the run finished.</p>}
                       {qualityBarCounts.found > 0 && (
@@ -1425,13 +1446,13 @@ export default function ResultsPage({
                 </div>
                 {/* Pipeline stages row */}
                 <div className="flex items-center gap-1 pt-2 border-t border-border overflow-x-auto">
-                  {PIPELINE_STAGES.map((stage, i) => (
+                  {reviewBarStages.map((stage, i) => (
                     <div key={stage} className="flex items-center shrink-0">
                       <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-success-bg">
                         <CheckCircle2 size={11} className="text-success-fg shrink-0" />
                         <span className="text-[10px] font-medium text-success-fg whitespace-nowrap">{stage}</span>
                       </div>
-                      {i < PIPELINE_STAGES.length - 1 && (
+                      {i < reviewBarStages.length - 1 && (
                         <span className="text-text-tertiary text-[10px] mx-1 shrink-0">&rarr;</span>
                       )}
                     </div>

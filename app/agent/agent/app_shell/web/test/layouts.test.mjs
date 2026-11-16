@@ -417,7 +417,7 @@ test('the monitor opens with What to do now, draws the signal with its range, th
     const n = await itemsIn(page, section);
     assert.ok(n >= low, `${section} holds ${n}, needs ${low}`);
   }
-  assert.equal(await page.locator('[data-section="todo"] [data-todo-count]').innerText(), '24 of 24 waiting for you');
+  assert.equal(await page.locator('[data-section="todo"] [data-todo-count]').innerText(), '24 waiting for you');
   assert.match(await page.locator('[data-step="first"]').innerText(), /Start with Account 1/);
   assert.match(await page.locator('[data-section="signal_band"] [data-so-what]').innerText(), /outside the range are the exceptions/);
   assert.deepEqual(seen.errors, []);
@@ -513,7 +513,7 @@ test('the decision queue page opens with What to do now', async () => {
 });
 
 test('What to do now counts the records still open, not the ones somebody already touched, so a first run reads all waiting with an empty bar', async () => {
-  for (const [acted, done, open, said, bar] of [[0, 0, 908, '908 of 908 waiting for you', '0'], [7, 5, 900, '900 of 905 waiting for you', '5']]) {
+  for (const [acted, done, open, said, bar] of [[0, 0, 908, '908 waiting for you', '0'], [7, 5, 900, '900 waiting for you · 5 done', '5']]) {
     const info = appInfo(DECIDE, 1, TABLE);
     const { routes } = tracked();
     const asked = [];

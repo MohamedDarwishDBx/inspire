@@ -6,6 +6,9 @@ import { NOT_RECORDED, formatValue, integer } from './format.js';
 import './styles/plan.css';
 import { SectionHelp } from './SectionHelp.jsx';
 
+// One label source for the plan part: a forecast page's lines are its forecast, a plan's lines are the plan.
+export const plannedHead = (d) => (d?.forecast ? 'Forecast' : 'Planned');
+
 const STATE_WORDS = { on: 'On plan', off: 'Off plan', unknown: 'Not known yet' };
 
 export function Stat({ label, value, note, tone = '', id }) {
@@ -33,21 +36,21 @@ export default function PlanPerformance({ page }) {
       {state.error && <PlainNote text={state.error} prefix="The plan results could not load: " icon={<Icon name="info" size={14} />} className="tile-err" role="alert" onRetry={state.reload} />}
       {!d && !state.error && <section className="card"><Skeleton height={80} /></section>}
       {d?.missing && <p className="tile-err" data-plans-missing><Icon name="info" size={14} />{d.missing}</p>}
-      {d && !d.version && !d.missing && <p className="empty" data-no-plan>No version of this plan is approved or published yet, so there is nothing to compare with the actuals.</p>}
+      {d && !d.version && !d.missing && <p className="empty" data-no-plan>{d.empty || 'No version of this plan is approved or published yet, so there is nothing to compare with the actuals.'}</p>}
       {d?.version && (
         <>
           <div className="mstats">
             <Stat id="version" label="Compared version" value={`${d.version.label}`} note={d.version.status} />
             <Stat id="on_plan" label="Lines on plan" value={`${integer(d.on_plan)} of ${integer(d.counted)}`} note="within 1% of the planned value" tone="good" />
             <Stat id="off_plan" label="Lines off plan" value={integer(d.off_plan)} tone={d.off_plan ? 'bad' : ''} note={d.unknown ? `${integer(d.unknown)} not known yet` : ''} />
-            <Stat id="realized" label="Value realized" value={d.has_value ? money(d.value_realized) : NOT_RECORDED}
-              note={d.has_value ? `of ${money(d.value_planned)} planned` : 'the plan lines carry no objective_contribution column'} />
+            {!d.forecast && <Stat id="realized" label="Value realized" value={d.has_value ? money(d.value_realized) : NOT_RECORDED}
+              note={d.has_value ? `of ${money(d.value_planned)} planned` : 'the plan lines carry no objective_contribution column'} />}
           </div>
           <section className="card card--table" aria-label="Plan against actuals by line">
             <header className="card-h"><div><h2>Plan against actuals</h2><p>Each line of {d.version.label} next to its value in the latest run. Lines off plan come first.</p></div><SectionHelp title={'Plan against actuals'} steps={[{ title: 'Plan against actuals', text: "Each line of the plan next to its value in the latest run. Lines that are off plan come first." }]} /></header>
             {d.lines.length ? (
               <div className="tw"><table className="plan-t">
-                <thead><tr><th scope="col">Line</th><th scope="col">Planned</th><th scope="col">Now</th><th scope="col">Gap</th><th scope="col">State</th><th scope="col">Override reason</th></tr></thead>
+                <thead><tr><th scope="col">Line</th><th scope="col">{plannedHead(d)}</th><th scope="col">Now</th><th scope="col">Gap</th><th scope="col">State</th><th scope="col">Override reason</th></tr></thead>
                 <tbody>{d.lines.map((l) => (
                   <tr key={l.line_key} data-perf-line={l.line_key} data-state={l.state}>
                     <th scope="row"><bdi>{l.label}</bdi></th>

@@ -15,6 +15,8 @@ for path in (os.path.dirname(HERE), SERVER):
         sys.path.insert(0, path)
 
 from _agentload import agent_source  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 DQ_REASON = "Every record has a data quality issue, most often: franchiseID differs across chunks."
 
@@ -37,9 +39,9 @@ def method_source(name):
 def test_a_held_app_leads_the_status_with_a_short_plain_reason(agent_ns):
     delivery = agent_ns["implement_delivery"](["dashboard", "app"], {"dashboard": {"state": "ready"}}, {"app": DQ_REASON}, 3)
     assert delivery["delivered"] == ["dashboard"] and delivery["spec_version"] == 3
-    assert delivery["not_delivered"] == [{"output": "app", "label": "App",
+    assert delivery["not_delivered"] == [{"output": "app", "label": "Agentic App",
                                           "reason": "Every record has a data quality issue, most often: franchiseID differs across chunks"}]
-    assert agent_ns["implement_delivery_lead"](delivery) == ("App not published: Every record has a data quality issue, most often: "
+    assert agent_ns["implement_delivery_lead"](delivery) == (f"{APP_LABEL} not published: Every record has a data quality issue, most often: "
                                                               "franchiseID differs across chunks")
 
 
@@ -68,7 +70,7 @@ def test_the_build_writes_the_delivery_record_and_puts_its_lead_first():
     assert "asset_status[IMPLEMENT_DELIVERY] = implement_delivery(asked, asset_status, held_outputs, key[2])" in source
     assert "told = implement_undelivered_lines(asset_status)" in source
     assert 'said_status = "; ".join(p for p in (undelivered, implement_compose([w for w in warnings if w not in told])) if p)' in source
-    assert "status_message=(said_status or (" in source and '"Done", said_status if warnings else' in source
+    assert "status_message=(said_status or (" in source and '"Done", said_status if status != "ready" else' in source
 
 
 def test_a_failure_already_named_in_the_lead_is_not_repeated(agent_ns):

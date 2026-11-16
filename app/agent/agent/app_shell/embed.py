@@ -18,18 +18,24 @@ EXAMPLES = os.path.join(HERE, "examples")
 PALETTES = os.path.join(WEB, "src", "palettes.json")
 KINDS = os.path.join(HERE, "kinds.json")
 TRANSLATIONS = os.path.join(HERE, "translations.json")
+PROMPTS = os.path.join(HERE, "prompts.json")
 SHELL = os.path.join(HERE, "app_shell.b64")
 CELL = 1
 VERSION = 1
-SERVER_FILES = ("app.py", "app.yaml", "shell_agent.py", "shell_alerts.py", "shell_core.py", "shell_db.py", "shell_facts.py", "shell_pg.py",
-                "shell_redact.py", "shell_sql.py")
+SERVER_FILES = ("app.py", "app.yaml", "shell_actions.py", "shell_agent.py", "shell_alerts.py", "shell_blocks.py", "shell_core.py", "shell_db.py", "shell_facts.py",
+                "shell_pg.py", "shell_redact.py", "shell_sql.py")
 WEB_INPUTS = ("index.html", "package.json", "package-lock.json", "vite.config.js", "src")
+# Files outside web/ that the build inlines (the boot guard and its Vite plugin, shared with the frontend). Listed here and in
+# web/test/freshDist.mjs; web/test/sharedInputs.test.mjs fails when a file in app/shared is missing from either list.
+SHARED = os.path.normpath(os.path.join(ROOT, "..", "shared"))
+SHARED_INPUTS = ("bootGuard.js", "bootGuardPlugin.mjs")
 BINARY_SUFFIXES = (".woff2",)
 CONSTANT = "INSPIRE_NOTEBOOK_ASSETS = "
 LEGACY_CONSTANTS = ("_INSPIRE_APP_SHELL = ", "_INSPIRE_KINDS = ")
 FX_AVERAGES = os.path.normpath(os.path.join(ROOT, "..", "backend", "lib", "fxAverages.json"))
 ASSETS = {"app_shell": ("notebook/app_shell.b64", SHELL), "kinds": ("notebook/kinds.json", KINDS),
-          "translations": ("notebook/translations.json", TRANSLATIONS), "fx_averages": ("notebook/fx_averages.json", FX_AVERAGES)}
+          "translations": ("notebook/translations.json", TRANSLATIONS), "prompts": ("notebook/prompts.json", PROMPTS),
+          "fx_averages": ("notebook/fx_averages.json", FX_AVERAGES)}
 
 
 def _walk(base: str, relative: str) -> list:
@@ -50,6 +56,11 @@ def web_source_sha(web: str = WEB) -> str:
         with open(os.path.join(web, relative), "rb") as handle:
             data = handle.read()
         digest.update(f"{relative}\0{len(data)}\0".encode())
+        digest.update(data)
+    for name in SHARED_INPUTS:
+        with open(os.path.join(SHARED, name), "rb") as handle:
+            data = handle.read()
+        digest.update(f"shared/{name}\0{len(data)}\0".encode())
         digest.update(data)
     return digest.hexdigest()
 
@@ -165,7 +176,7 @@ def write_pins(path: str = NOTEBOOK, assets: dict = None) -> bool:
 
 
 REGISTRY_CONSTANTS = (("TECHNIQUE_EXECUTION_FAMILY", "execution_family"), ("GENIE_READINESS_THRESHOLDS", "readiness_thresholds"),
-                      ("TECHNIQUE_MIN_ROWS", "technique_min_rows"))
+                      ("TECHNIQUE_MIN_ROWS", "technique_min_rows"), ("ONE_MODEL_REGISTRY", "one_model"))
 
 
 def _constant_lines(name: str, value: dict) -> list:

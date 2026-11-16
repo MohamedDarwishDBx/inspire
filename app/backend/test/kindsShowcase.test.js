@@ -49,7 +49,7 @@ test('every use case of the kinds demo has its own kind, a name without the tech
     assert.equal(u.use_case, source.headline, `${u.id} keeps the old headline in use_case`);
     assert.equal(u['Analytics Technique'], source.technique, u.id);
     assert.ok(!u.Name.toLowerCase().includes(source.technique.toLowerCase()), `${u.id} keeps the technique out of the name`);
-    assert.equal(u.name_with_technique, `${u.Name} using ${source.technique.toLowerCase()}`, u.id);
+    assert.equal(u.name_with_technique, u.Name, `${u.id} keeps the name alone; the technique is in the subtitle (REQ-175)`);
     for (const field of ['serving_summary', 'method_summary', 'value_source', 'kind_family', 'app_layout']) assert.ok(String(u[field] || '').trim(), `${u.id} ${field}`);
     assert.doesNotMatch(JSON.stringify([u.Name, u.use_case, u.serving_summary, u.method_summary, u.value_source]), /[\u2013\u2014]/, `${u.id} has no dash`);
   }

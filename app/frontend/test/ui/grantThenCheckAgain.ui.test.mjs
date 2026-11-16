@@ -122,7 +122,8 @@ test('a grant the person can make that fails opens Permission Required with the 
     await access.click({ timeout: 15000 });
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
-    const statements = await dialog.locator('[data-permission-statements=""]').innerText();
+    // The SQL sits under Advanced: that disclosure opens only once the request offer is known, a race with this read. innerText is '' while it is closed, so the listed text is read.
+    const statements = await dialog.locator('[data-permission-statements=""]').textContent();
     assert.match(statements, /GRANT SELECT ON TABLE `main`\.`s`\.`orders` TO `app-sp-2`;/, 'the failed grant is listed in Permission Required');
     assert.ok(w.grants.length >= 1, 'the grant ran with the person sign-in');
     assert.deepEqual(ui.pageErrors, []);

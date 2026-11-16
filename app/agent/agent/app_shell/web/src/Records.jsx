@@ -8,9 +8,10 @@ import { askGenieAbout, fixQuestion, genieOn } from './genieAsk.js';
 import { BUSY_TITLE, fieldsOf, tableContext } from './explain.js';
 import { AskGenie } from './AskGenie.jsx';
 import { DraftDialog } from './Draft.jsx';
-import { OPEN_TAB, tabChoice, withRecord, withoutRecord } from './links.js';
+import { OPEN_TAB, UNCHECKED_TAB, tabChoice, withRecord, withoutRecord } from './links.js';
 import { useDock } from './Dock.jsx';
 import { addCounts, addedParts, cap, compareValues, dayLabel, entityName, integer, kindOf, plainText, savedWords, shownUnit, unitOf } from './format.js';
+import { foundNothingText } from './zeroState.js';
 
 import { hueVars, reducedMotion } from './theme.js';
 import { Failure, Popover, Skeleton, useDebounced, useDialog, useToast, PlainNote, toastFailure } from './ui.jsx';
@@ -29,10 +30,12 @@ import { BatchesDialog, BulkBar, CaughtUp, ChoiceSelect, ConflictNote, HelpDialo
 import { recordName, recordSentenceName,
   DRAFT_LABEL, ACT_LIMIT, CHOICE_COLUMN, CLOSED_STATUSES, DONE, HELD, NOTE_CHARS, PAGE_SIZES, REASON_CHARS, UNEXPLAINED, actionForm, actionProblem, actionValues, pageChoices, pickChoice, statusKind, OPEN_STATUSES, isOpenStatus, choiceLabel, closingChoices, isDefaultChoice, QUICK_CLOSE,
   aiValue, askQuestions, changeBadge, doneText, dueText, explainContext, heldBack, heldText, impactText, initials, isOverdue, keptText, leftText, matchOf,
-  missingSince, NOT_IN_RUN, notInRunText, overdueFirst, pageText, recordCurrency, recordKeyOf, recordRef, recordView, recordsText, savingText, statusClass,
-  statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf,
-  isStaleRecord, closedText, closedBatchOf, undoBatchOf, UNDO_CLOSE, isClosed, skippedText, READ_ONLY, READ_ONLY_KEPT, READ_ONLY_THEIRS,
-  CLOSED_PICK, ACCEPTED, acceptable, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
+  missingSince, NOT_IN_RUN, notInRunText, overdueFirst, pageText, recordCurrency, recordKeyOf, recordRef, recordView, recordsText, savingText, savingView, statusClass,
+  actionPhrase, recordHeading, goalLine,
+  statusLabel, actError, withoutWindow, NO_AS_OF, listAsOf, WAKE_WORD, WAKE_ASK, WOKE, snoozeOf,
+  isStaleRecord, closedText, closedBatchOf, undoBatchOf, undoWordOf, UNDO_CLOSE, isClosed, skippedText, READ_ONLY, READ_ONLY_KEPT, READ_ONLY_THEIRS,
+  CLOSED_PICK, ACCEPTED, UNDO_ACCEPT, UNDO_ACCEPT_ASK, UNACCEPTED, IN_PROGRESS, suggestionOf, acceptable, uncheckedWhy, watchBreakdown, acceptedText, quietList, claimTarget, claimText, pageDecides, recordLine, recordDetails, choiceValues, rowChoice,
+  REOPEN, REOPEN_ASK, REOPENED, REOPENED_SAID, needsReopen, UNASSIGN, UNASSIGN_VALUES, UNASSIGNED_SAID,
 } from './records.js';
 import { SectionHelp } from './SectionHelp.jsx';
 import { ClusterBar, useChoices } from './KindParts.jsx';
@@ -46,6 +49,7 @@ const NO_PICKS = {};
 const FOOTER_CELLS = 6;
 const NARROW_FOOTER = 470;
 const SOMEONE_ELSE = ' someone else';
+const CLEAR_OWNER = ' clear owner';
 const SAVED = 'Action saved. The earlier version stays in the history.';
 const SAVE_WRITE = 'drawer:save';
 const NOTE_WRITE = 'drawer:note';
@@ -59,7 +63,7 @@ function savingOf(view, row, model) {
   if (!view.saving || !model) return view.saving;
   if (row?._inspire_money == null) return model.changed ? { ...view.saving, note: LATER } : view.saving;
   const shown = moneyOf(model, row, unitOf(model), kindOf(model));
-  return { text: savingText(shown.amount, unitOf(model), kindOf(model)), formula: shown.formula || view.saving.formula };
+  return savingView(savingText(shown.amount, unitOf(model), kindOf(model)), shown.formula || view.saving.formula);
 }
 
 export function reasonsOf(value) {
@@ -106,12 +110,12 @@ function useAction(data, person, acts, label, choices) {
   const gate = useWrite();
   const saving = gate.busy;
   useEffect(() => { setForm(actionForm(current, person, choices)); setFailure(null); }, [current, person, choices]);
-  const send = async (values, said, key) => {
+  const send = async (values, said, key, action = 'update') => {
     if (!current || gate.busy) return null;
     setFailure(null);
     try {
       return await acts.act({ record_keys: [data.record_key], seen: { [data.record_key]: current.valid_from_us } }, values,
-        { said, about: { record_key: data.record_key, label }, key });
+        { said, about: { record_key: data.record_key, label }, key, action });
     } catch (err) {
       setFailure({ ...failureOf(err), stale: isStaleRecord(err) });
       return null;
@@ -151,17 +155,17 @@ const ACT_OFF = 'This record cannot be acted on here: it is deleted, held, or th
 
 function WorkBar({ work, action, tomorrow, canAct }) {
   const [until, setUntil] = useState(tomorrow);
-  const run = async (kind, values) => {
-    if (values && !(await action.send(values, undefined, `work:${kind}`))) return;
+  const run = async (kind, values, actionId) => {
+    if (values && !(await action.send(values, undefined, `work:${kind}`, actionId))) return;
     work.next(kind);
   };
   return (
     <div className="work-f" role="group" aria-label="Work through the list">
       <span className="work-k" data-work-k>{work.text}</span>
-      <SaveButton write="work:done" className="btn btn--pri" onClick={() => run('done', { action_status: DONE })} disabled={!canAct} data-key="d"
+      <SaveButton write="work:done" className="btn btn--pri" onClick={() => run('done', { action_status: DONE }, 'done')} disabled={!canAct} data-key="d"
         why={canAct ? '' : ACT_OFF}><Icon name="check" size={15} />Done and next</SaveButton>
       <label className="work-snz"><span className="sr">Snooze until</span><input type="date" name="work_snooze" min={tomorrow} value={until} onChange={(e) => setUntil(e.target.value)} /></label>
-      <SaveButton write="work:snoozed" onClick={() => run('snoozed', { snooze_until: until })} disabled={!canAct || !until || until < tomorrow} data-key="s"
+      <SaveButton write="work:snoozed" onClick={() => run('snoozed', { snooze_until: until }, 'snooze')} disabled={!canAct || !until || until < tomorrow} data-key="s"
         why={!canAct ? ACT_OFF : !until ? missingWhy(['a date']) : 'Pick a date after today to snooze.'}>Snooze and next</SaveButton>
       <button className="btn" onClick={() => run('skipped', null)} disabled={action.saving} data-key="skip">Skip</button>
     </div>
@@ -176,7 +180,7 @@ function SnoozeButton({ action, tomorrow }) {
   const submit = async (e) => {
     e.preventDefault();
     close();
-    await action.send({ snooze_until: until }, undefined, SNOOZE_WRITE);
+    await action.send({ snooze_until: until }, undefined, SNOOZE_WRITE, 'snooze');
   };
   return (
     <>
@@ -190,6 +194,22 @@ function SnoozeButton({ action, tomorrow }) {
         </Popover>
       )}
     </>
+  );
+}
+
+/** REQ-223 P52: a row or drawer action that asks first. The trigger and its confirm read the same word (D-UNDO). */
+function AskFirst({ word, ask, name, write, run, ...rest }) {
+  const [asking, setAsking] = useState(false);
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+  if (!asking) {
+    return <button type="button" className="btn btn--sm" onClick={stop(() => setAsking(true))} aria-label={`${word} ${name}`} {...rest}>{word}</button>;
+  }
+  return (
+    <span className="row-ask" role="group" aria-label={`${word} ${name}`} onClick={(e) => e.stopPropagation()}>
+      <span>{ask}</span>
+      <SaveButton write={write} className="btn btn--sm btn--pri" onClick={async () => { if (await run()) setAsking(false); }}>{word}</SaveButton>
+      <button type="button" className="btn btn--sm" onClick={stop(() => setAsking(false))}>Keep it</button>
+    </span>
   );
 }
 
@@ -239,16 +259,25 @@ function ActionPanel({ action, owners, pageId, reason, owner, closing, unit, kin
   );
 }
 
-function Why({ view, row, meta, explain, title, genieBusy }) {
+/** REQ-302: Explain answers inside the drawer, under the flag reason. It never opens another panel. */
+export function ExplainedAnswer({ explained }) {
+  if (!explained) return null;
+  if (explained.state === 'busy') return <p className="explained" role="status" data-explained="busy">Genie is explaining this record.</p>;
+  if (explained.state === 'failed') return <p className="explained" role="status" data-explained="failed">Genie could not explain this record. Try Explain again.</p>;
+  return <div className="explained" data-explained="done">{String(explained.text).split(/\n+/).filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}</div>;
+}
+
+function Why({ view, row, meta, explain, title, genieBusy, explained }) {
   const reasons = meta.reasons ? reasonsOf(row[meta.reasons]).slice(0, 8) : [];
-  const button = explain && <ExplainButton title={title} busy={genieBusy} onClick={explain} />;
+  const button = explain && <ExplainButton title={title} busy={genieBusy || explained?.state === 'busy'} onClick={explain} />;
   return (
     <section className="sec" aria-label="Why it is flagged">
       <h3><GenieMark size={13} />Why it is flagged</h3>
       {view.explanation ? <p>{view.explanation}</p> : <div className="unexplained"><p>{view.held ? `${HELD}: ${view.held}.` : UNEXPLAINED}</p>{button}</div>}
       {view.evidence.length > 0 && <ul className="ev">{view.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>}
-      {reasons.length > 0 && <div className="reasons">{reasons.map((t) => <span key={t} className="chip chip--static">{t}</span>)}</div>}
+      {reasons.length > 0 && <div className="reasons">{reasons.map((t, i) => <span key={`${i}-${t}`} className="chip chip--static">{t}</span>)}</div>}
       {view.explanation && button && <div className="why-x">{button}</div>}
+      <ExplainedAnswer explained={explained} />
     </section>
   );
 }
@@ -324,7 +353,16 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
   const owner = (current ? current.action_owner : row?._inspire_owner) || '';
   const due = tracker && current ? dueText(current.action_due, current.action_status) : null;
   const segment = row && meta.sublabel ? addedParts(row[meta.label], [row[meta.sublabel]])[0] : '';
-  const explain = genieOn(app, pageId) && onExplain ? () => onExplain('record', title, explainContext(meta, log.data, row, unit, kind)) : null;
+  const [explained, setExplained] = useState(null);
+  const explainKey = useRef(linkKey);
+  explainKey.current = linkKey;
+  useEffect(() => { setExplained(null); }, [linkKey]);
+  const explain = genieOn(app, pageId) && onExplain ? () => {
+    setExplained({ state: 'busy' });
+    Promise.resolve(onExplain('record', title, explainContext(meta, log.data, row, unit, kind), { inPlace: true })).then((answer) => {
+      if (explainKey.current === linkKey) setExplained(answer?.text ? { state: 'done', text: answer.text } : { state: 'failed' });
+    });
+  } : null;
   const ask = (question) => {
     const recordKey = String(log.data?.record_key ?? recordKeyOf(row) ?? row?.[meta.key] ?? '');
     onClose();
@@ -339,6 +377,8 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
     if (who === SOMEONE_ELSE) {
       ownerInput.current?.focus();
       ownerInput.current?.select();
+    } else if (who === CLEAR_OWNER) {
+      action.save({ ...action.form, owner: '' }, UNASSIGNED_SAID, GIVE_WRITE);
     } else if (who) {
       action.save({ ...action.form, owner: who }, `Given to ${who}. The earlier version stays in the history.`, GIVE_WRITE);
     }
@@ -347,15 +387,18 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
     if (focusOwner && acting) ownerInput.current?.focus();
   }, [focusOwner, acting]);
   const details = recordDetails(meta, row, unit, kind);
+  const heading = recordHeading(actionPhrase(useCase?.title), title);
+  const goal = goalLine(useCase?.question);
   const shown = (
-    <dialog ref={ref} className={`drawer panel ${dock ? 'drawer--docked' : ''}`} aria-label={row ? title : 'Record'} data-closed={closed ? '' : undefined}
+    <dialog ref={ref} className={`drawer panel ${dock ? 'drawer--docked' : ''}`} aria-label={row ? heading : 'Record'} data-closed={closed ? '' : undefined}
       open={dock ? !!row : undefined} onClick={(e) => { if (!dock && e.target === ref.current) onClose(); }}
       onKeyDown={dock ? (e) => { if (e.key === 'Escape' && !e.defaultPrevented && e.target.closest('dialog') === e.currentTarget) { e.preventDefault(); onClose(); } } : undefined}>
       {row && (
         <div className="dr">
           <header className="panel-h">
             <div>
-              <h2>{title}</h2>
+              <h2>{heading}</h2>
+              {goal && <p className="goal" data-goal>{goal}</p>}
               <div className="panel-meta">
                 {useCase?.title && <span className="ucn" style={hueVars(useCase.hue || 'blue')}><i />{useCase.title}</span>}
                 {segment && <span>{segment}</span>}
@@ -363,6 +406,7 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                 <Badge row={row} />
                 {deleted && <span className="tag tag--del">Deleted</span>}
                 {tracker && (owner ? <span className="owner"><i>{initials(owner)}</i>{owner}</span> : <span className="owner is-none">Nobody yet</span>)}
+                {acting && !closed && !readOnly && owner && <button type="button" className="link" data-unassign onClick={() => action.save({ ...action.form, owner: '' }, UNASSIGNED_SAID, GIVE_WRITE)}>{UNASSIGN}</button>}
                 {due && <span className={due.late ? 'late' : ''}>{due.text}</span>}
                 {snoozed && snoozed >= today && <span className="snz">Snoozed until {dayLabel(snoozed)}</span>}
               </div>
@@ -387,7 +431,7 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                 {saving.note && <div className="fx">{saving.note}</div>}
               </section>
             )}
-            <Why view={view} row={row} meta={meta} explain={explain} title={title} genieBusy={genieBusy} />
+            <Why view={view} row={row} meta={meta} explain={explain} title={title} genieBusy={genieBusy} explained={explained} />
             {view.confidence && (
               <section className="sec" aria-label="How sure the AI is">
                 <h3><GenieMark size={13} />How sure the AI is</h3>
@@ -463,6 +507,7 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                   {kept.slice(0, 2)}
                   <select className="btn" aria-label="Give to someone" value="" onChange={giveTo} disabled={action.saving} aria-busy={action.mine(GIVE_WRITE) || undefined}>
                     <option value="">{action.mine(GIVE_WRITE) ? savingLabel(action.slow) : owner ? `With ${owner}` : 'Give to someone'}</option>
+                    {owner && <option value={CLEAR_OWNER}>Clear the owner</option>}
                     {person && person !== owner && <option value={person}>Give to me</option>}
                     {owners.filter((o) => o !== owner && o !== person).map((o) => <option key={o} value={o}>Give to {o}</option>)}
                     <option value={SOMEONE_ELSE}>Someone else…</option>
@@ -474,15 +519,22 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                 </>
               );
             })()}
-            {undoBatch && !work && !undoAsk && (
-              <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{meta?.undo || 'Reopen'}</button>
+            {acting && !closed && snoozeOf(current) >= today && (
+              <AskFirst word={WAKE_WORD} ask={WAKE_ASK} name={title} write="drawer:wake" data-wake
+                run={() => action.send({ snooze_until: null }, WOKE, 'drawer:wake')} />
+            )}
+            {undoBatch && !undoAsk && (
+              <button type="button" className="btn" onClick={() => setUndoAsk(true)} data-undo-close><Icon name="undo" size={14} />{undoWordOf(meta, isClosed(current))}</button>
             )}
             {undoBatch && undoAsk && (
               <div className="note note--flat undo-ask" role="group" aria-label="Undo this change">
                 <span>{UNDO_CLOSE}</span>
-                <SaveButton write="drawer:undo" className="btn btn--pri" onClick={async () => { if (await acts.undo(undoBatch, 'drawer:undo')) setUndoAsk(false); }}>Undo it</SaveButton>
+                <SaveButton write="drawer:undo" className="btn btn--pri" onClick={async () => { if (await acts.undo(undoBatch, 'drawer:undo')) setUndoAsk(false); }}>{undoWordOf(meta, isClosed(current))}</SaveButton>
                 <button type="button" className="btn" onClick={() => setUndoAsk(false)}>Keep it</button>
               </div>
+            )}
+            {closed && !readOnly && !work && needsReopen(meta, undoBatch) && (
+              <AskFirst word={REOPEN} ask={REOPEN_ASK} name={title} write="drawer:reopen" data-reopen run={() => action.send(REOPENED, REOPENED_SAID, 'drawer:reopen')} />
             )}
             <span className="sp" />
             {modify && !(acting && !work && !closed) && modifyButtons}
@@ -518,14 +570,16 @@ export function RecordPanel({ meta, app, pageId, row, list, onClose, onChanged, 
   );
 }
 
-function emptyState({ search, mine, changed, fresh, windowed, narrowedAny, ranged, onClear, onWide, status = '', counts = null, onTab }) {
+function emptyState({ search, mine, changed, fresh, windowed, narrowedAny, ranged, onClear, onWide, status = '', counts = null, onTab, checked = null }) {
   const watch = counts && status === 'Open' && !narrowedAny && !ranged && !search && !mine && !changed && counts.open === 0 && counts.watch > 0;
   if (watch) {
     return <><span className="empty-t" data-empty-breakdown>{watchBreakdown(counts)}</span>{' '}
       <button type="button" className="lnk" onClick={() => onTab?.('all')} data-empty-watch>Show the watch list</button>{' '}
       <button type="button" className="lnk" onClick={() => onTab?.('all')} data-empty-all>Show all</button></>;
   }
+  // REQ-297: a run that checked records and found nothing to act on says so, on every empty list it leaves behind
   const text = search ? 'No record matches this search.' : mine ? 'You own no record on this list.' : changed ? 'No record changed since the last run.'
+    : checked ? foundNothingText(checked)
     : status && !narrowedAny && !ranged ? `No record is ${status.toLowerCase()} right now.`
     : fresh ? 'Nothing on this page changed since your last visit.' : windowed && !narrowedAny ? `All caught up: nothing is due or new for ${windowed.toLowerCase()}.`
       : narrowedAny || ranged ? 'No record matches these filters.' : 'No records yet. The next run of this use case fills this list.';
@@ -536,7 +590,7 @@ function emptyState({ search, mine, changed, fresh, windowed, narrowedAny, range
 
 export default function Records({ meta, app, pageId, filters, ai, onFilter, history = false, onChanged, nonce = 0, ready = true, onExplain, genieBusy, openKey,
   columnMeta, columnValues, onColumn, onClearColumns, onClearFilters, seeChanged = 0, onShowRuns, similarBy, keepsActions, onList, onOpen, section, sort: lookSort, onSort: onLookSort,
-  tab, focus: only, docked = false, onTab }) {
+  tab, focus: only, docked = false, onTab, raise, runChecked = null }) {
   const { prefs, update } = useMyView();
   const [query, setQuery] = useState('');
   const search = useDebounced(query.trim(), 300);
@@ -551,6 +605,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
   const choices = pageChoices(app, pageId);
   const tabPick = tab ? tabChoice(choices, tab) : null;
   const tabOpen = tab === OPEN_TAB;
+  const unchecked = tab === UNCHECKED_TAB;
   const mine = tab ? tab === 'mine' : ownMine;
   const dockNow = useDock();
   const dock = docked ? dockNow : null;
@@ -579,6 +634,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
   const matching = picks.scope === scope ? picks.all : null;
   const inWindow = windowed.window ? { window: windowed.window, ...(windowed.time_zone ? { time_zone: windowed.time_zone } : {}) } : {};
   const listed = { page: pageId, filters, ai: aiPicks, search, mine, changed, ...(Object.keys(narrowed).length ? { column_filters: narrowed } : {}), ...(tabPick ? { choice: tabPick.id } : {}), ...inWindow,
+    ...(unchecked ? { unchecked: true } : {}),
     ...(tab || !noActions ? { status_counts: true } : {}), ...(only ? { focus: only } : {}) };
   const room = cap ? Math.max(1, Math.min(size, cap - offset)) : size;
   const asked = { ...listed, ...(cap ? { window_limit: cap } : {}), ...(sort ? { sort } : {}), ...(!sort && !noActions ? { due_first: true } : {}), offset, limit: room, ...(cursor ? { cursor } : {}) };
@@ -625,7 +681,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
   const person = app.user?.email || '';
   const canModify = !!(history && app.options.modify);
   const keyOf = useCallback((r) => String(recordKeyOf(r) ?? r?.[meta.key] ?? ''), [meta.key]);
-  const quiet = quietList(rows, meta, aliases);
+  const quiet = quietList(rows, meta, aliases, raise);
   const labelOf = (c) => {
     const row = rows.find((r) => keyOf(r) === String(c.record_key));
     return row ? recordSentenceName(row, meta) : plainText(c.label ?? '') || String(c.record_key ?? '');
@@ -694,7 +750,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
       toast(NO_AS_OF, 'error', { actions: [{ label: 'Reload the list', run: () => setRefresh((n) => n + 1) }] });
       return;
     }
-    const out = await acts.act({ match: matchOf(openOnly({ ...asked, mine: true }), asOf) }, { action_status: DONE }, { said: 'Your open records are done', key: 'clear-queue' }).catch(() => null);
+    const out = await acts.act({ match: matchOf(openOnly({ ...asked, mine: true }), asOf) }, { action_status: DONE }, { said: 'Your open records are done', key: 'clear-queue', action: 'done' }).catch(() => null);
     if (out) setClearing(false);
   };
   const selectAll = () => {
@@ -706,14 +762,14 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     const open = openCount ?? shownTotal;
     setPicks({ scope, keys: picked, all: { total: open, closed: Math.max(0, shownTotal - open), capped, as_of_us: asOf } });
   };
-  const actOn = async (values, { said, body = null, key } = {}) => {
+  const actOn = async (values, { said, body = null, key, action = 'update' } = {}) => {
     try {
       const out = await acts.act(body || (matching ? { match: matchOf(openOnly(asked), matching.as_of_us) } : { record_keys: [...picked.keys()], seen: Object.fromEntries(picked) }), values,
-        { said, key });
+        { said, key, action });
       if (out) clearPicks();
       return out;
     } catch (err) {
-      toastFailure(toast, err, () => actOn(values, { said, body, key }), actError(err));
+      toastFailure(toast, err, () => actOn(values, { said, body, key, action }), actError(err));
       acted();
       return null;
     }
@@ -727,18 +783,19 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     }
     actOn(ACCEPTED, { said: acceptedText(keys.length, picked.size - keys.length), body: { record_keys: keys, seen: Object.fromEntries(keys.map((k) => [k, picked.get(k)])) }, key: 'bulk:accept' });
   };
-  const quick = async (row, values, said, write = `quick:${recordKeyOf(row)}`) => {
+  const quick = async (row, values, said, write = `quick:${recordKeyOf(row)}`, { reopen = false, action = 'update' } = {}) => {
     const key = recordKeyOf(row);
-    if (isClosed(row)) {
+    if (isClosed(row) && !reopen) {
       toast(skippedText(1));
       return;
     }
     if (key == null || !row._inspire_version) return;
     try {
-      await acts.act({ record_keys: [String(key)], seen: { [String(key)]: String(row._inspire_version) } }, values,
-        { said, about: { record_key: String(key), label: recordSentenceName(row, meta) }, key: write });
+      return await acts.act({ record_keys: [String(key)], seen: { [String(key)]: String(row._inspire_version) } }, values,
+        { said, about: { record_key: String(key), label: recordSentenceName(row, meta) }, key: write, action });
     } catch (err) {
-      toastFailure(toast, err, () => quick(row, values, said, write));
+      toastFailure(toast, err, () => quick(row, values, said, write, { reopen, action }));
+      return null;
     }
   };
   const clearAll = () => {
@@ -848,10 +905,10 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
       }
       if (e.key === 'd') {
         e.preventDefault();
-        if (!drawer || !press('d')) k.quick(row, { action_status: DONE });
+        if (!drawer || !press('d')) k.quick(row, { action_status: DONE }, undefined, undefined, { action: 'done' });
       } else if (e.key === 's') {
         e.preventDefault();
-        if (!drawer || !press('s')) k.quick(row, { snooze_until: k.tomorrow });
+        if (!drawer || !press('s')) k.quick(row, { snooze_until: k.tomorrow }, undefined, undefined, { action: 'snooze' });
       } else if (e.key === 'a') {
         e.preventDefault();
         setOwnerFocus(true);
@@ -904,6 +961,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
         );
       },
     },
+    ...(unchecked ? [{ key: '_inspire_flag', label: 'Why it was not checked', className: 'wrap', render: (r) => <span data-unchecked-why>{uncheckedWhy(r._inspire_flag)}</span> }] : []),
     ...(meta.tier ? [{ key: meta.tier, label: 'Tier', render: (r) => (r[meta.tier] ? <span className={tierClass(r[meta.tier])}>{r[meta.tier]}</span> : '') }] : []),
     ...recordColumns(meta, data?.money, onFilter),
     ...(tracker ? [
@@ -926,10 +984,35 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     ...(tracker ? [{
       key: '_next', label: 'Next step', hideLabel: true, fixed: true, className: 'nowrap row-next',
       render: (r) => {
-        if (isClosed(r)) return '';
+        const name = recordSentenceName(r, meta);
+        if (isClosed(r)) {
+          const batch = undoBatchOf(r, person);
+          const reopens = !everything && needsReopen(meta, batch);
+          return batch || reopens ? (
+            <span className="row-acts row-next-acts">
+              {batch && <AskFirst word={undoWordOf(meta, true)} ask={UNDO_CLOSE} name={name} write={`undo:${keyOf(r)}`} data-row-undo
+                run={() => acts.undo(batch, `undo:${keyOf(r)}`)} />}
+              {reopens && <AskFirst word={REOPEN} ask={REOPEN_ASK} name={name} write={`reopen:${keyOf(r)}`} data-row-reopen
+                run={() => quick(r, REOPENED, REOPENED_SAID, `reopen:${keyOf(r)}`, { reopen: true })} />}
+            </span>
+          ) : '';
+        }
         const now = rowChoice(choices, r)?.id;
+        const accepted = r._inspire_status === IN_PROGRESS && !!suggestionOf(meta, r);
         return (
           <span className="row-acts row-next-acts">
+            {accepted && (
+              <AskFirst word={UNDO_ACCEPT} ask={UNDO_ACCEPT_ASK} name={name} write={`undo-accept:${keyOf(r)}`} data-row-undo-accept
+                run={() => quick(r, UNACCEPTED, 'Accept undone', `undo-accept:${keyOf(r)}`)} />
+            )}
+            {snoozeOf(r) >= today && (
+              <AskFirst word={WAKE_WORD} ask={WAKE_ASK} name={name} write={`wake:${keyOf(r)}`} data-row-wake
+                run={() => quick(r, { snooze_until: null }, WOKE, `wake:${keyOf(r)}`)} />
+            )}
+            {String(r._inspire_owner || '').trim() && (
+              <SaveButton write={`unassign:${keyOf(r)}`} className="btn btn--sm" data-row-unassign onClick={stop(() => quick(r, UNASSIGN_VALUES, UNASSIGNED_SAID, `unassign:${keyOf(r)}`))}
+                aria-label={`${UNASSIGN} ${name}`}>{UNASSIGN}</SaveButton>
+            )}
             {closingChoices(choices).filter((c) => c.id !== now).map((c) => {
               const label = isDefaultChoice(c) ? QUICK_CLOSE[statusKind(c.status)]?.[0] || c.label : c.label;
               const name = recordSentenceName(r, meta);
@@ -996,12 +1079,12 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
           {tracker && !tab && <WindowChips />}
           {tracker && !matching && person && (data?.status_counts?.mine ?? 0) > 0 && (
             <button className="pick-i" ref={clearAnchor} onClick={() => setClearing(!clearing)} aria-expanded={clearing} data-clear-queue>
-              Clear my queue · {integer(data.status_counts.mine)}
+              Clear my queue
             </button>
           )}
           {tracker && (openCount ?? shownTotal) > 0 && !matching && (
             <button className="pick-i" onClick={selectAll} data-act-all data-tour="bulk">
-              {mine ? `Clear my queue: ${capped ? 'more than ' : ''}${integer(openCount ?? shownTotal)} open` : `Act on all ${capped ? 'more than ' : ''}${integer(openCount ?? shownTotal)} matching`}
+              {mine ? `Select my ${capped ? 'more than ' : ''}${integer(openCount ?? shownTotal)} open` : `Act on all ${capped ? 'more than ' : ''}${integer(openCount ?? shownTotal)} matching`}
             </button>
           )}
           {(freshCount > 0 || fresh) && (
@@ -1023,8 +1106,8 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
       {clearing && (
         <Popover anchor={clearAnchor.current} onClose={() => setClearing(false)} label="Clear my queue" width={300}>
           <div className="bulk-pop">
-            <p>Mark your open assigned records as done? Closed records stay as they are.</p>
-            <button type="button" className="btn btn--pri" data-clear-confirm onClick={() => clearMyQueue()}>Mark my open records done</button>
+            <p>Mark your {integer(data?.status_counts?.mine ?? 0)} open assigned records as done? Closed records stay as they are.</p>
+            <button type="button" className="btn btn--pri" data-clear-confirm onClick={() => clearMyQueue()}>Clear my queue</button>
           </div>
         </Popover>
       )}
@@ -1053,7 +1136,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
           {late.late > 0 && <p className="late-n" data-overdue><Icon name="calendar" size={13} />Overdue: {recordsText(late.late)} on this page, shown first.</p>}
           <DataTable label={meta.title} columns={columns} rows={tableRows} rowKey={keyOf} onRow={setOpen} paged={false} filtering="server" grid={`page:${pageId}:records`}
             empty={emptyState({ search, mine, changed, fresh, windowed: listsOpen && narrowWindow(prefs) ? windowLabel(prefs.window) : '', narrowedAny, status: tabPick ? tabPick.label : tabOpen ? 'Open' : '',
-              counts: data?.status_counts || null, onTab,
+              counts: data?.status_counts || null, onTab, checked: Number.isInteger(runChecked) && runChecked >= 1 ? runChecked : null,
               ranged: Object.values(filters || {}).some((v) => v && typeof v === 'object' && !Array.isArray(v)), onClear: clearAll,
               onWide: () => update((p) => ({ ...p, window: 'all' })) })}
             sort={shownSort ? { key: shownSort.key, dir: shownSort.dir === 'desc' ? -1 : 1 } : null} onSort={(s) => setSort({ key: s.key, dir: s.dir > 0 ? 'asc' : 'desc' })}

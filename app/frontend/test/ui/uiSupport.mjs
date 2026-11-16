@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { createServer } from 'vite';
+import { createLogger as createViteLogger, createServer } from 'vite';
 import { chromium } from 'playwright';
 import { HARNESS_USE_CASE } from './implementFixtures.js';
 import { expandBuild } from '../../../scripts/showcaseRecorder.mjs';
@@ -34,19 +34,64 @@ let servers = null;
 let lastUi = 0;
 const backends = new Map();
 export const UI_HEADER = 'x-inspire-ui-test';
+// Chromium's code for a request aborted by a network change. macOS sends it for in-flight loads, even on 127.0.0.1.
+export const NETWORK_CHANGED = 'net::ERR_NETWORK_CHANGED';
+function networkChangedAborts(record, url) {
+  record.networkChanged = (record.networkChanged || 0) + 1;
+  console.warn(`[uiSupport] ${NETWORK_CHANGED} on ${String(url).slice(0, 160)}: the boot guard reloads the page once; not counted as a page error`);
+}
 
 function backendFor(id) {
   if (id !== undefined) return backends.get(String(id)) || null;
   return backends.size === 1 ? [...backends.values()][0] : null;
 }
 
+// First-screen diagnostics. Every dump goes to INSPIRE_UI_DIAG_DIR (one JSON file per dump). Ring buffers keep the last N events of this process.
+const DIAG_DIR = process.env.INSPIRE_UI_DIAG_DIR || path.join(os.tmpdir(), 'inspire-ui-diag');
+const rejects = [];
+const viteEvents = [];
+const viteRequests = [];
+const backendEvents = [];
+let requestSeq = 0;
+const recordByPage = new WeakMap();
+const remember = (list, item) => { list.push(item); if (list.length > 200) list.shift(); };
+
 function dispatch(req, res) {
   const id = req.headers[UI_HEADER];
   delete req.headers[UI_HEADER];
+  const entry = { t: new Date().toISOString(), uiId: id ?? null, method: req.method, url: req.url.slice(0, 200), status: null, ms: null };
+  remember(backendEvents, entry);
+  const started = Date.now();
+  res.on('finish', () => { entry.status = res.statusCode; entry.ms = Date.now() - started; });
   const app = backendFor(id);
   if (app) return app(req, res);
+  const reason = id === undefined ? `a request without ${UI_HEADER} reached ${backends.size} open UI tests` : `no open UI test ${id}`;
+  remember(rejects, { t: new Date().toISOString(), method: req.method, url: req.url, uiId: id ?? null, reason });
   res.statusCode = 503;
-  res.end(id === undefined ? `a request without ${UI_HEADER} reached ${backends.size} open UI tests` : `no open UI test ${id}`);
+  res.end(reason);
+}
+
+// Every request vite receives, before its proxy and transforms run. A request with a vite entry but no finish is stuck in vite.
+// Added to the middleware stack after createServer, not as a plugin: a plugin changes the vite config hash and forces a re-optimization.
+function traceRequests(req, res, next) {
+  const entry = { t: new Date().toISOString(), method: req.method, url: String(req.url).slice(0, 200), status: null, ms: null, seq: ++requestSeq };
+  remember(viteRequests, entry);
+  const started = Date.now();
+  res.on('finish', () => { entry.status = res.statusCode; entry.ms = Date.now() - started; });
+  next();
+}
+
+// Dependency-optimizer notes of this process's dev server. A re-optimization after start reloads the page's modules under it, so a test asserts there are none.
+export const optimizerNotes = [];
+function optimizerLogger() {
+  const real = createViteLogger('error', { allowClearScreen: false });
+  const plain = (msg) => String(msg).replace(/\x1b\[[0-9;]*m/g, '');
+  return {
+    ...real,
+    info(msg) { if (/optimi[sz]/i.test(String(msg))) optimizerNotes.push(plain(msg)); },
+    warn(msg, opts) { remember(viteEvents, { t: new Date().toISOString(), level: 'warn', msg: plain(msg).slice(0, 1000) }); real.warn(msg, opts); },
+    error(msg, opts) { remember(viteEvents, { t: new Date().toISOString(), level: 'error', msg: plain(msg).slice(0, 1000) }); real.error(msg, opts); },
+  };
 }
 
 async function startServers() {
@@ -56,8 +101,10 @@ async function startServers() {
   try {
     const vite = await createServer({
       ...viteOptions(VITE_CACHE_DIR),
+      customLogger: optimizerLogger(),
       server: { host: '127.0.0.1', port: 0, proxy: { '/api': url, '/showcase': url, '/run': url }, hmr: false },
     });
+    vite.middlewares.stack.unshift({ route: '', handle: traceRequests });
     try {
       await vite.listen();
     } catch (e) {
@@ -77,6 +124,9 @@ function sharedServers() {
   return servers;
 }
 
+// REQ-150 / R27: innerText of a closed disclosure is '', and the SQL sits under Advanced, so a dialog's statements are read with textContent and split on the ';' that ends each one.
+export const sqlStatementsOf = (text) => String(text ?? '').split(';').map((s) => s.trim()).filter(Boolean);
+
 export async function closeBrowser() {
   const started = servers;
   servers = null;
@@ -94,15 +144,56 @@ const ASKING = new WeakMap();
 export async function idle(page, { held = () => false, timeout = 15000 } = {}) {
   await page.evaluate(() => fetch(location.pathname, { method: 'HEAD', cache: 'no-store' }).then(() => undefined));
   const asking = ASKING.get(page);
-  if (asking) await until(() => [...asking].every(held), 'every ask the page sent is answered', timeout);
+  if (asking) await until(() => [...asking].every(held), 'every ask the page sent is answered', timeout).catch(async (e) => { await dumpFor(page, 'idle: asks not answered'); throw e; });
   await painted(page);
 }
+
+// Writes one diagnostic JSON for the UI behind this page: DOM state, page errors, in-flight asks, the last responses, dispatch 503s, vite errors.
+export async function dumpFor(page, reason) {
+  const record = recordByPage.get(page);
+  if (!record) return null;
+  const closed = page.isClosed();
+  const probe = closed ? null : await Promise.race([
+    page.evaluate(() => ({
+      readyState: document.readyState,
+      bodyTextLength: document.body.innerText.length,
+      bodyHead: document.body.innerText.slice(0, 300),
+      ariaStep: document.querySelector('[aria-current="step"]')?.innerText ?? null,
+      alerts: [...document.querySelectorAll('[role="alert"]')].map((e) => e.innerText.slice(0, 200)),
+      url: location.href,
+    })),
+    new Promise((resolve) => setTimeout(() => resolve({ error: 'page.evaluate did not answer in 5 s' }), 5000)),
+  ]).catch((e) => ({ error: e.message }));
+  const payload = {
+    reason, at: new Date().toISOString(), pid: process.pid, uiId: record.id, origin: record.origin, pageClosed: closed,
+    msFromOpen: Date.now() - record.opened, firstPaintMs: record.firstPaintMs ?? null, dom: probe,
+    pageErrors: record.pageErrors.slice(-50),
+    inFlight: [...(ASKING.get(page) || [])].map((r) => ({ method: r.method(), url: r.url().slice(0, 300) })),
+    responses: record.responses.slice(-40),
+    backendRequests: backendEvents.filter((e) => e.uiId === record.id).slice(-40),
+    dispatchRejects: rejects.filter((r) => r.uiId === record.id || r.uiId === null).slice(-30),
+    viteRequests: viteRequests.slice(-60),
+    viteErrors: viteEvents.slice(-30),
+  };
+  fs.mkdirSync(DIAG_DIR, { recursive: true });
+  const file = path.join(DIAG_DIR, `${process.pid}-ui${record.id}-${Date.now()}.json`);
+  fs.writeFileSync(file, JSON.stringify(payload, null, 2));
+  return file;
+}
+
 
 export async function openUi(open, overrides = {}, query = '', { mount, init } = {}) {
   if (!browser) browser = await chromium.launch();
   const made = makeApp({ useCase: HARNESS_USE_CASE, buildStamp: UNKNOWN_BUILD, ...overrides }, { mount });
   const opened = [];
+  let record = null;
   const close = async () => {
+    // Dump an anomalous UI (page errors, a slow or missing first paint, a dispatch 503) while its page is still open, so the DOM is captured.
+    if (record && !record.dumped && (record.firstPaintMs === undefined || record.firstPaintMs > 5000 || record.pageErrors.length > 0
+      || rejects.some((r) => r.uiId === record.id || r.uiId === null))) {
+      record.dumped = true;
+      await dumpFor(record.page, `test end: firstPaintMs=${record.firstPaintMs ?? 'never'} pageErrors=${record.pageErrors.length}`).catch(() => null);
+    }
     const failed = [];
     for (const stop of opened.splice(0).reverse()) await stop().catch((e) => failed.push(e));
     if (failed.length) throw failed[0];
@@ -113,6 +204,26 @@ export async function openUi(open, overrides = {}, query = '', { mount, init } =
     opened.push(async () => { backends.delete(id); });
     const { origin } = await sharedServers();
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: { [UI_HEADER]: id } });
+    record = { id, page, origin, opened: Date.now(), pageErrors: [], responses: [], firstPaintMs: undefined, networkChanged: 0 };
+    // Optional CPU throttle for reproducing load-dependent timing (INSPIRE_UI_CPU_RATE=6). Unset in CI, so the default run is unchanged.
+    if (process.env.INSPIRE_UI_CPU_RATE) {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.INSPIRE_UI_CPU_RATE) });
+      opened.push(async () => { await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 }).catch(() => null); await cdp.detach().catch(() => null); });
+    }
+    recordByPage.set(page, record);
+    // Watchdog: while the page is alive, a request pending for 8 s dumps the page state once (the post-close dump loses in-flight requests).
+    const pendingSince = new Map();
+    const watchdog = setInterval(() => {
+      for (const [req, since] of pendingSince) {
+        if (Date.now() - since > 8000 && !record.stallDumped) {
+          record.stallDumped = true;
+          dumpFor(page, `request pending 8 s: ${req.method()} ${req.url().slice(0, 160)}`).catch(() => null);
+        }
+      }
+    }, 1000);
+    watchdog.unref();
+    opened.push(async () => { clearInterval(watchdog); });
     await page.addInitScript((key) => {
       if (sessionStorage.getItem('inspire.ui_fresh_page')) return;
       sessionStorage.setItem('inspire.ui_fresh_page', '1');
@@ -121,19 +232,31 @@ export async function openUi(open, overrides = {}, query = '', { mount, init } =
     opened.push(async () => { await page.unrouteAll({ behavior: 'ignoreErrors' }); await page.close(); });
     const asking = new Set();
     ASKING.set(page, asking);
-    page.on('request', (r) => asking.add(r));
-    for (const done of ['requestfinished', 'requestfailed']) page.on(done, (r) => asking.delete(r));
+    page.on('request', (r) => { asking.add(r); pendingSince.set(r, Date.now()); });
+    for (const done of ['requestfinished', 'requestfailed']) page.on(done, (r) => { asking.delete(r); pendingSince.delete(r); });
     page.on('framenavigated', (frame) => {
       if (frame !== page.mainFrame()) return;
       for (const r of asking) if (!r.isNavigationRequest()) asking.delete(r);
     });
-    const pageErrors = [];
+    const pageErrors = record.pageErrors;
     page.on('pageerror', (e) => pageErrors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') pageErrors.push(m.text()); });
+    // A request the OS network change aborted (macOS Chromium, even for 127.0.0.1). The app's boot guard reloads the page once, so the
+    // reload recovers it and the abort is not a page error. Each one is logged here, never dropped without a trace.
+    page.on('console', (m) => {
+      if (m.type() !== 'error') return;
+      if (m.text().includes(NETWORK_CHANGED)) { networkChangedAborts(record, m.location().url); return; }
+      pageErrors.push(m.text());
+    });
+    page.on('response', (r) => remember(record.responses, { t: new Date().toISOString(), status: r.status(), method: r.request().method(), url: r.url().slice(0, 300) }));
+    page.on('requestfailed', (r) => remember(record.responses, { t: new Date().toISOString(), status: 'failed', method: r.method(), url: r.url().slice(0, 300), failure: r.failure()?.errorText }));
     // The default money rule previews three example rows on open; answer every page with a preview so no test sees a failed request. A test's own init stub overrides it.
     await stubMoney('value-preview', () => ({ rows: [{ stake: 1, currency: 'USD' }] }), [])(page);
     if (init) await init(page, origin);
     const firstData = open === 'implement' ? page.waitForResponse((r) => r.url().includes('/api/inspire/implement/status'), { timeout: 20000 }).catch(() => null) : null;
+    // Diagnostic only: the first time the body has text, or the first wizard step, is recorded in firstPaintMs. Never fails the test.
+    const paint = Date.now();
+    page.waitForFunction(() => document.body.innerText.trim().length > 0, null, { timeout: 60000, polling: 100 })
+      .then(() => { record.firstPaintMs = Date.now() - paint; }, () => null);
     await page.goto(`${origin}/test/ui/implement.html?open=${open}${query}`);
     await firstData;
     return { made, page, pageErrors, origin, close };
@@ -257,9 +380,9 @@ export async function pollNow(page, route = '/api/inspire/implement/status', eve
 }
 
 const STEP_HOLDING = {
-  'Who uses the App': 'Who uses the App and storage', 'Page storage': 'Who uses the App and storage', 'Run it': 'First run', 'Schedule': 'First run',
-  'Use case': 'Data & results', Data: 'Data & results', Results: 'Data & results', Summary: 'Review & build', 'What to build': 'What to deliver', Delivery: 'What to deliver', App: 'Who uses the App and storage', 'App placement': 'Where it lives', 'App access': 'Who uses the App and storage',
-  'App features': 'Who uses the App and storage', 'App pages': 'Where it lives', 'App look': 'App look', Measure: 'Measure', 'Keep it fresh': 'First run', Vibes: 'Review & build',
+  'Who uses the App': 'Where it lives', 'Page storage': 'Where it lives', 'Who uses the App and storage': 'Where it lives', 'Run it': 'First run', 'Schedule': 'First run',
+  'Use case': 'Data & results', Data: 'Data & results', Results: 'Data & results', Summary: 'Review & build', 'What to build': 'What to deliver', Delivery: 'What to deliver', App: 'Where it lives', 'App placement': 'Where it lives', 'App access': 'Where it lives',
+  'App features': 'Where it lives', 'App pages': 'Where it lives', 'App look': 'Where it lives', Measure: 'Measure', 'Keep it fresh': 'First run', Vibes: 'Review & build',
 };
 const exactly = (label) => {
   const body = label === 'Data & results' ? 'Data(?: & results)?' : label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -276,6 +399,7 @@ export async function onStep(page, part) {
   try {
     await page.locator('[aria-current="step"]', { hasText: exactly(label) }).waitFor({ timeout: 15000 });
   } catch (e) {
+    await dumpFor(page, `onStep "${label}" timed out`);
     const shown = await page.locator('[role="alert"] p').allTextContents();
     throw new Error(`the wizard did not reach "${label}": ${shown.join(' | ') || e.message}`);
   }
@@ -305,7 +429,7 @@ export async function openFolded(page, what) {
   if (await change.count()) await change.click();
 }
 
-// Money at stake opens one part at a time (the others are one line each). Opens the part with this title: Change <title> when it is a
+// Value at stake opens one part at a time (the others are one line each). Opens the part with this title: Change <title> when it is a
 // folded line, otherwise Next through the parts before it, as a person would.
 export async function moneyPart(page, title) {
   const header = page.locator('[data-money-current] [data-money-part] p').first();
@@ -316,7 +440,7 @@ export async function moneyPart(page, title) {
     if (await change.count()) { await change.click(); return; }
     await page.locator('[data-money-next]').click();
   }
-  throw new Error(`Money at stake has no open "${title}" part`);
+  throw new Error(`Value at stake has no open "${title}" part`);
 }
 
 export async function openAllRows(page) {
@@ -349,7 +473,15 @@ export async function toSummary(page) {
   await nextUntil(page, 'Review & build');
 }
 
+// The App panels are folds of Where it lives (REQ-002): reaching one by its old step name also opens its fold.
+const APP_FOLD = { 'App access': 'Who sees which rows', 'Who uses the App': 'Who sees which rows', 'Who uses the App and storage': 'Who sees which rows',
+  'App features': 'What people can do', 'App pages': 'Pages', 'App look': 'App look' };
 export async function goToStep(page, part) {
+  await goToStepOnScreen(page, part);
+  if (APP_FOLD[part]) await openFolded(page, APP_FOLD[part]);
+}
+
+async function goToStepOnScreen(page, part) {
   const label = stepHolding(part);
   const current = page.locator('[aria-current="step"]');
   await current.waitFor({ timeout: 15000 });
@@ -382,6 +514,7 @@ export async function nextUntil(page, part) {
       await page.waitForFunction(([name, folded]) => `${document.querySelector('[aria-current="step"]')?.innerText}|${[...document.querySelectorAll('[data-fold-line]')].map((e) => e.dataset.foldLine).join(',')}` !== `${name}|${folded}`,
         [from, was.slice(from.length + 1)], { timeout: 15000 });
     } catch (e) {
+      await dumpFor(page, `nextUntil did not leave "${from}"`);
       const shown = await page.locator('[role="alert"] p').allTextContents();
       throw new Error(`Next did not leave "${from}": ${shown.join(' | ') || e.message}`);
     }
@@ -470,6 +603,14 @@ export async function until(check, what, timeout = 10000) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`timed out waiting for ${what}`);
+}
+
+/** Launch holds Get Started while a debounced check answers (the output folder: a 500 ms debounce on each change, then one answer).
+ *  Its label does not change while it is held, so idle() and a visible-button wait do not cover it. Waits until it is on; the caller's
+ *  assertion still fails with its own message if it stays off. */
+export async function waitForLaunchReady(page, timeout = 10000) {
+  const launch = page.getByRole('button', { name: 'Get Started' });
+  await until(async () => !(await launch.isDisabled()), 'the output-folder check settled and Get Started is on', timeout);
 }
 
 export function watchAsks(page, pick = () => true) {
@@ -636,7 +777,7 @@ export function stubMoney(path, answerOf, calls) {
 }
 
 export async function goToStorage(page) {
-  await goToStep(page, 'Who uses the App and storage');
+  await goToStep(page, 'Where it lives');
   await openFolded(page, 'Page storage');
   return page.getByRole('group', { name: 'How fast do the App\'s pages open?' });
 }
@@ -647,11 +788,14 @@ export async function onMoneyPart(page, part) {
   await page.locator(current).waitFor({ timeout: 15000 });
 }
 
-export async function goToMeasureImpact(page) {
+// Walks Measure to an impact decision: "holdout" (hold back, the default, the last Measure decision) or "kpi" (target KPI).
+export async function goToMeasureImpact(page, part = 'holdout') {
   await goToStep(page, 'Measure');
-  const onImpact = () => page.locator('[data-money-part="impact"]').evaluate((el) => el.closest('li').hasAttribute('data-money-current'));
-  for (let i = 0; i < 6 && !(await onImpact()); i += 1) await page.locator('[data-money-next]').click();
-  await page.getByRole('group', { name: 'Measure impact' }).waitFor();
+  const onPart = async () => (await page.locator(`[data-money-part="${part}"]`).count()) > 0
+    && page.locator(`[data-money-part="${part}"]`).evaluate((el) => el.closest('li').hasAttribute('data-money-current'));
+  // Later decisions are not rendered until Next reaches them, so the impact row may not exist yet.
+  for (let i = 0; i < 8 && !(await onPart()); i += 1) await page.locator('[data-money-next]').click();
+  await page.getByRole('group', { name: part === 'kpi' ? 'Target KPI' : 'Measure impact' }).waitFor();
 }
 
 // The Build page opens Permission Required when the person cannot grant the App's reads. That full-page dialog covers

@@ -136,13 +136,14 @@ test('the card title is the name with its technique in lower case, and a use cas
   const { page } = ui;
   try {
     await ready(page);
-    const forecast = card(page, 'Forecast stock using forecasting');
+    const forecast = card(page, 'Forecast stock');
     assert.equal(await forecast.count(), 1);
     await forecast.locator('[aria-expanded]').click();
     await forecast.locator('[data-what-you-get]').waitFor();
-    assert.match(await forecast.innerText(), /^Forecast stock using forecasting$/m, 'the open card keeps the same title');
+    assert.match(await forecast.innerText(), /^Forecast stock$/m, 'the open card keeps the same title, the plain name (REQ-175)');
+    assert.doesNotMatch(await forecast.innerText(), /using forecasting/, 'the technique is not in the title');
     assert.doesNotMatch(await card(page, 'Spot late suppliers').innerText(), /Spot late suppliers using/, 'an old row has no stored name, so the Name stays');
-    await page.getByPlaceholder('Search use cases...').fill('using forecasting');
+    await page.getByPlaceholder('Search use cases...').fill('Forecast stock');
     assert.equal(await cards(page).count(), 1, 'search finds the title as shown');
     assert.deepEqual(ui.pageErrors, []);
   } finally {

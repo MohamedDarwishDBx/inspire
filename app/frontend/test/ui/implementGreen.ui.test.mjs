@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STUDIO_STATE, built } from './implementFixtures.js';
-import { closeBrowser, expandBuild, onStep, openAsset, openUi, goToStep } from './uiSupport.mjs';
+import { closeBrowser, expandBuild, goToStep, onStep, openAsset, openFolded, openUi } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -23,7 +23,7 @@ test('a build whose App ended with an info note only reads Ready and green, with
     await page.locator('[data-mvp-progress] p', { hasText: /^Ready$/ }).first().waitFor();
     const note = page.locator('[data-mvp-progress] [data-stage-notes] [data-stage-note="App"]');
     await note.waitFor();
-    assert.equal(await note.textContent(), `App: ${NOTE}`);
+    assert.equal(await note.textContent(), `Agentic App: ${NOTE}`); // D-LABEL209: the output label prefixes the note; the step id stays App
     assert.match(await note.evaluate((el) => el.closest('ul').className), /text-text-secondary/, 'the note reads in neutral text');
     assert.equal(await page.locator('[data-mvp-progress] [data-stage="App"]').getAttribute('data-stage-state'), 'done');
     assert.equal(await page.locator('[data-mvp-progress] [data-stage-state="warning"]').count(), 0, 'no step is yellow');
@@ -45,7 +45,8 @@ test('App look turns the trend chart off with one line when the input tables car
     const { page } = ui;
     await goToStep(page, 'What to build');
     await goToStep(page, 'App access');
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     const look = page.getByRole('region', { name: 'App look' });
     await look.getByRole('tablist', { name: 'App look sections' }).getByRole('tab', { name: 'Charts', exact: true }).click();
     return { ui, look };
@@ -88,7 +89,7 @@ test('a business with an App for all its use cases joins it, cannot create a sec
   const next = () => page.getByRole('button', { name: 'Next' }).click();
   try {
     await goToStep(page, 'What to build');
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await goToStep(page, 'App placement');
     const place = page.getByRole('region', { name: 'App placement' });
     const hub = place.locator('[data-app-target="inspire-hub-acme"] input[type="radio"]');

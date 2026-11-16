@@ -44,11 +44,12 @@ def test_the_instruction_lists_each_companion_table_with_its_columns_and_meaning
     spec, mandate, readiness = mandate_of(agent_ns, **{"Analytics Technique": "Process Mining"})
     assert spec["companions"] == PROCESS
     table = spec["result_table"]
+    bare = table.replace("`", "")  # shell_facts.companion, the one naming rule (REQ-264, aad24dd13), names companions without backticks
     assert agent_ns["GENIE_COMPANION_RULE"] in mandate
-    assert f"* {table}__transitions: from_step, to_step, cases, median_hours, p90_hours, rework; one row per move" in mandate
-    assert f"* {table}__cases: case_id, step, age_hours, breach_risk; one row per open case" in mandate
+    assert f"* {bare}__transitions: from_step, to_step, cases, median_hours, p90_hours, rework; one row per move" in mandate
+    assert f"* {bare}__cases: case_id, step, age_hours, breach_risk; one row per open case" in mandate
     assert "wins over this rule" in agent_ns["GENIE_COMPANION_RULE"]
-    assert f"- companion `__transitions`: the data fills {table}__transitions" in readiness
+    assert f"- companion `__transitions`: the data fills {bare}__transitions" in readiness
     assert "still write the decision list" in readiness
     fired = capsys.readouterr().out
     assert f"[KIND-CONTRACT FIRED] {spec['use_case_id']}: companion tables" in fired

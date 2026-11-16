@@ -18,6 +18,11 @@ button,input,select,textarea{font:inherit;color:inherit}
 .fresh-pt.is-late{color:var(--amber-ink)}
 .top .fresh-t{display:flex;min-width:0;max-width:260px}
 .fresh-tx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* REQ-289: the page header's banner carries the App publish time too. The banner wraps inside a 260px column so the tools keep the title's row
+   (uncapped, the 383px "Data refreshed · App published" line pushed the tools under the title at 1020px). On a phone it takes its own line. */
+.ph .fresh-t{display:flex;align-items:flex-start;min-width:0;max-width:260px}
+.ph .fresh-tx{white-space:normal}
+@container app (max-width: 560px){.ph .fresh{flex:1 1 100%;min-width:0}.ph .fresh-tx{white-space:normal}.head-more-menu{left:0;right:auto}}
 .top .fresh-busy{flex-wrap:nowrap;min-width:0;max-width:280px;overflow:hidden}
 .card.nothing-fix{display:block;margin-top:14px;padding:16px 18px}
 .nothing-fix h2{margin:0 0 4px;font-size:15.5px}
@@ -144,6 +149,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .kpi-l{font-size:12.5px;color:var(--muted);font-weight:550}
 .kpi-v{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums}
 .kpi-s{font-size:12px;color:var(--muted);margin-top:2px}
+.kpi-note{font-size:12px;color:var(--muted);margin-top:2px}
 .kpi-scope{font-size:11px;color:var(--muted);margin-top:2px}
 .scope-banner{font-size:12px;margin:0 0 8px}
 .quiet-n{display:flex;gap:8px;margin:8px 16px;padding:10px 12px;border-radius:8px;background:var(--well);font-size:13px}
@@ -262,7 +268,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .ask{display:flex;align-items:center;gap:10px;margin-top:16px;padding:6px 6px 6px 14px;border-radius:14px;border:1px solid var(--faint);background:var(--card);box-shadow:0 10px 30px -18px rgba(0,0,0,.35);max-width:760px}
 .ask-ic{color:var(--brand-ink);display:grid}
 .ask input{flex:1;border:0;outline:0;background:none;height:40px;font-size:15px}
-.pop{position:absolute;z-index:60;min-width:200px;max-width:320px;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;box-shadow:0 18px 40px -18px rgba(0,0,0,.45);padding:6px}
+.pop{position:fixed;z-index:60;min-width:200px;max-width:320px;background:var(--card);border:1px solid var(--line-strong);border-radius:10px;box-shadow:0 18px 40px -18px rgba(0,0,0,.45);padding:6px}
 .menu-list button{display:flex;width:100%;align-items:center;gap:8px;padding:8px 10px;border:0;background:none;border-radius:7px;text-align:start;cursor:pointer}
 .menu-list button:hover,.menu-list button:focus-visible{background:var(--well)}
 .menu-list button:focus-visible{outline-offset:-2px}
@@ -317,11 +323,11 @@ dialog::backdrop{background:rgba(10,12,16,.45)}
 .nav-t small.bad{color:var(--danger)}
 .pg-h{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px;margin-bottom:4px}
 .pg-h>div,.pg-h>h1{flex:1 1 0;min-width:min(360px,100%)}
-.pg-h>.ph-tools{flex:0 1 auto;min-width:0;max-width:100%}
-/* The header's own width decides whether its tools keep their labels: below 816px (a 360px title, 12px gap and the 445px labelled tools) the tools
-   turn icon-only with their accessible names, so they still sit beside the title instead of dropping a row under it. */
+.pg-h>.ph-tools{flex:0 1 auto;min-width:0;max-width:100%;align-items:flex-start}
+/* The header's own width decides whether its tools keep their labels: below 961px (a 360px title, 12px gap and the 590px labelled tools) the tools
+   turn icon-only with their accessible names and the banner narrows to 176px, so they still sit beside the title instead of dropping a row under it. */
 .pg-h{container:hdr/inline-size}
-@container hdr (max-width: 816px){.pg-h>.ph-tools :is(.top-ic,.top-ic2)>span{display:none}.pg-h>.ph-tools .btn:is(.top-ic,.top-ic2){min-width:40px;padding:0 9px;justify-content:center}}
+@container hdr (max-width: 960px){.pg-h>.ph-tools :is(.top-ic,.top-ic2)>span{display:none}.pg-h>.ph-tools .btn:is(.top-ic,.top-ic2){min-width:40px;padding:0 9px;justify-content:center}.pg-h>.ph-tools .fresh-t{max-width:176px}}
 .pg-h.is-refreshing>h1{min-width:min(300px,100%)}
 .pg-h>div>p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
 .notify{flex:none;text-decoration:none}

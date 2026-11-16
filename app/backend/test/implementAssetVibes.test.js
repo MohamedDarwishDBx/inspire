@@ -104,10 +104,10 @@ test('a part is rebuilt on its own through retry_outputs, needs its output ticke
   const ok = spec({}, { retry_outputs: [PAGE, ` ${PAGE} `, 'ai_reasoning', CHART] });
   assert.deepEqual(ok.errors, []);
   assert.deepEqual(ok.spec.retry_outputs, [PAGE, 'ai_reasoning', CHART]);
-  assert.deepEqual(spec({ app: false, genie_space: false }, { retry_outputs: [PAGE] }).errors, ['the App page decisions cannot be rebuilt: the App is not selected']);
+  assert.deepEqual(spec({ app: false, genie_space: false }, { retry_outputs: [PAGE] }).errors, ['the App page decisions cannot be rebuilt: the Agentic App is not selected']);
   assert.deepEqual(spec({ dashboard: false }, { retry_outputs: [CHART] }).errors, ['the dashboard chart w1a2b3c4 cannot be rebuilt: the Dashboard is not selected']);
   assert.deepEqual(spec({}, { retry_outputs: ['app:page:two words'] }).errors, ["retry output 'app:page:two words' is not one of notebook, genie_space, dashboard, app, alert"]);
-  assert.deepEqual(spec({}, { retry_outputs: [PAGE], rollback_outputs: { app: 1 } }).errors, ['the App cannot be retried and rolled back in the same version']);
+  assert.deepEqual(spec({}, { retry_outputs: [PAGE], rollback_outputs: { app: 1 } }).errors, ['the Agentic App cannot be retried and rolled back in the same version']);
   assert.deepEqual(spec({}, { retry_outputs: [CHART], rollback_outputs: { app: 1 } }).errors, [], 'a chart rebuilt while the App rolls back is fine');
 });
 
@@ -272,12 +272,12 @@ test('the control tower lists every built asset grouped by output with its parts
   const page = cards.find((x) => x.id === PAGE);
   assert.deepEqual([page.label, page.name, page.vibes, page.rebuild, page.live.version, page.state.label, page.versions],
     ['Decisions page', 'Decisions', ASKED, true, 2, 'Ready', []]);
-  assert.equal(cards.find((x) => x.id === 'app:page:detail').live.version, 1, 'a carried page names the version that built it');
+  assert.equal(cards.find((x) => x.id === 'app:page:detail').live.version, 2, 'a carried page is served by the live App, so it names the live App version (REQ-241 D-LIVE)');
   const chart = cards.find((x) => x.id === CHART);
   assert.deepEqual([chart.label, chart.state, chart.url, chart.what, chart.noun], ['Weekly trend chart', { label: 'Ready with warnings', tone: 'warning' }, rows[0].dashboard_url,
     'A chart on the dashboard', 'chart']);
   const formula = cards.find((x) => x.id === 'value_formula');
-  assert.deepEqual([formula.label, formula.live, formula.state.label, formula.url], ['money at stake formula', null, 'Failed', 'https://host/#workspace/nb']);
+  assert.deepEqual([formula.label, formula.live, formula.state.label, formula.url], ['value at stake formula', null, 'Failed', 'https://host/#workspace/nb']);
   assert.equal(c.vibeCards([{ ...rows[0], asset_status: { ...rows[0].asset_status, [PAGE]: { ...PARTS[PAGE], what: 'The rows to act on today' } } }, rows[1]],
     { ...rows[0], asset_status: { ...rows[0].asset_status, [PAGE]: { ...PARTS[PAGE], what: 'The rows to act on today' } } }).find((x) => x.id === PAGE).what,
   'The rows to act on today', 'the build status may say what a part is');
@@ -289,15 +289,15 @@ test('the control tower lists every built asset grouped by output with its parts
   const groups = c.assetGroups(cards, live);
   assert.deepEqual(groups.map((g) => [g.key, g.label, g.assets.map((a) => [a.title, a.group])]), [
     ['notebook', 'Genie Code notebook', [['Notebook', 'Genie Code notebook']]],
-    ['results', 'Results', [['AI reasoning', 'Results'], ['Money at stake', 'Results']]],
-    ['app', 'App', [['The whole App', 'App'], ['Page: Decisions', 'App'], ['Page: Row detail page', 'App']]],
+    ['results', 'Results', [['AI reasoning', 'Results'], ['Value at stake', 'Results']]],
+    ['app', 'Agentic App', [['The whole Agentic App', 'Agentic App'], ['Page: Decisions', 'Agentic App'], ['Page: Row detail page', 'Agentic App']]],
     ['dashboard', 'Dashboard', [['The whole dashboard', 'Dashboard'], ['Chart: Weekly trend', 'Dashboard']]],
     ['genie_space', 'Genie Agent', [['Instructions', 'Genie Agent']]],
     ['alert', 'Alert', [['Alert: Churn over 25', 'Alert']]],
   ], 'the whole App and the whole dashboard come first so each can take a vibe, then one row per page and per chart, and the results of the notebook in their own group');
   assert.deepEqual(groups[2].assets.map((a) => a.parent && a.parent.id), [null, 'app', 'app'], 'a page rolls back with its App');
   const bare = c.assetGroups(cards.filter((x) => !x.id.includes(':')), []);
-  assert.deepEqual(bare.find((g) => g.key === 'app').assets.map((a) => [a.title, a.parent]), [['The whole App', null]], 'with no pages in the build status the App itself is listed');
+  assert.deepEqual(bare.find((g) => g.key === 'app').assets.map((a) => [a.title, a.parent]), [['The whole Agentic App', null]], 'with no pages in the build status the App itself is listed');
   assert.deepEqual(bare.find((g) => g.key === 'alert').assets.map((a) => a.title), ['Alert']);
   assert.deepEqual(c.assetGroups([], live), []);
 });

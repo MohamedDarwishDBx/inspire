@@ -394,7 +394,8 @@ function eliteAssessmentOf(raw) {
 
 function deepSuggestionOf(useCase) {
   const columns = R.groupByColumns(useCase && useCase.suggested_group_by);
-  if (!R.groupingApplies(useCase && useCase.analytics_technique) || !columns.length) return null;
+  if (!R.groupingApplies(useCase && useCase.analytics_technique) || R.fitsOneModel(useCase && useCase.analytics_technique, useCase && useCase.use_case_kind)
+    || !columns.length) return null;
   return { columns, record_level: str(useCase.record_level).trim() || null };
 }
 
@@ -448,8 +449,11 @@ function overLimitText(over) {
   return ` These columns make more groups than ${limit}: ${over.map((c) => `${c.name}, ${size(c)}`).join('; ')}.`;
 }
 
-function reasonOf({ technique, qualifies, standalone, recommended, table, groups, records, over, bySubject = false }) {
+function reasonOf({ technique, qualifies, standalone, recommended, table, groups, records, over, bySubject = false, oneModel = false }) {
   const named = str(technique).trim() || 'this use case';
+  if (oneModel) {
+    return `Inspire fits one model across all of ${table} for ${named}, so the whole data is one group.`;
+  }
   if (qualifies && bySubject) {
     return `Inspire recommends ${recommended.join(', then ')} because the use case names ${recommended[recommended.length - 1]}, and that column splits `
       + `${table} into ${groups} groups.${overLimitText(over)}`;
@@ -489,7 +493,7 @@ function bySize(list) {
   return list.sort((a, b) => b.records - a.records || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
 }
 
-function profileView({ table, technique, columns, candidates, stats, sample, values, paths, time, days, joined = [], deep = [], groupBy = [], readAt, subject = '' }) {
+function profileView({ table, technique, kind = '', columns, candidates, stats, sample, values, paths, time, days, joined = [], deep = [], groupBy = [], readAt, subject = '' }) {
   const records = num(stats.records);
   const standalone = R.standaloneRecords(technique);
   const picked = profiledColumns(stats, candidates);
@@ -500,12 +504,16 @@ function profileView({ table, technique, columns, candidates, stats, sample, val
   const keptNames = kept.map((p) => p.name);
   const { profiles, nests } = sampleProfile(sample, candidates);
   const heavy = new Set(kept.filter((p) => R.nullHeavy({ records, nulls: p.nulls })).map((p) => p.name));
-  const named = keptNames.filter((n) => !heavy.has(n) && namedIn(subject, n));
-  const discovered = keptColumns(deep, keptNames, heavy);
+  // A peer comparison's entity is the subject itself, so the column named after the subject is no Grouping it can recommend (REQ-293).
+  const entityKeys = new Set(R.peerComparison(technique, kind) ? keptNames.filter((n) => /(id|key)$/i.test(n) && namedIn(subject, n)) : []);
+  const groupable = keptNames.filter((n) => !entityKeys.has(n));
+  const named = groupable.filter((n) => !heavy.has(n) && namedIn(subject, n));
+  const discovered = keptColumns(deep, groupable, heavy);
   const bySubject = !discovered && named.length > 0;
-  const recommended = discovered || (bySubject ? [named[0]] : R.recommendation(profiles.filter((p) => keptNames.includes(p.column) && !heavy.has(p.column)), nests));
+  const oneModel = R.fitsOneModel(technique, kind);
+  const recommended = oneModel ? [] : discovered || (bySubject ? [named[0]] : R.recommendation(profiles.filter((p) => groupable.includes(p.column) && !heavy.has(p.column)), nests));
   const grouped = keptColumns(groupBy, keptNames) || recommended;
-  const shown = kept.map((p) => {
+  const shown = kept.filter((p) => !entityKeys.has(p.name)).map((p) => {
     const sizes = [...groups.get(p.name).values()].map((g) => g.records);
     return { name: p.name, type: types.get(p.name) || '', distinct: sizes.length, smallest: Math.min(...sizes), largest: Math.max(...sizes), nulls: p.nulls,
       parent: parentOf(p.name, groups, nests, keptNames), ...(dimension.has(p.name) ? { join: joinOf(dimension.get(p.name)) } : {}) };
@@ -527,7 +535,7 @@ function profileView({ table, technique, columns, candidates, stats, sample, val
     ? R.suggestedGroups([...byValue.keys()].map((value) => ({ value, records: combos.find((c) => c.path.join(R.GROUP_SEPARATOR) === value).records })))
       .map((g) => ({ ...g, parts: grouped.map((column, i) => partOf(column, byValue.get(g.value)[i])) }))
     : R.suggestedGroups(sizes).map((g) => ({ ...g, parts: [partOf(finest, g.value)] }));
-  const applies = R.groupingApplies(technique);
+  const applies = R.groupingApplies(technique) || oneModel;
   const qualifies = applies && recommended.length > 0;
   const via = time && time.column && time.via ? { table: str(time.via.table), key: str(time.via.key), date: str(time.via.date) } : null;
   const timeColumn = time && time.column && !(via && num(stats.recent_keys) > R.SCOPE_VIA_KEYS_MAX) ? str(time.column) : null;
@@ -542,10 +550,13 @@ function profileView({ table, technique, columns, candidates, stats, sample, val
     records,
     applies,
     qualifies,
-    reason: reasonOf({ technique, qualifies, standalone, recommended, table, groups: recommendedGroups, records, over: overLimitOf(candidates, stats, groups), bySubject: bySubject && qualifies }),
+    reason: reasonOf({ technique, qualifies, standalone, recommended, table, groups: recommendedGroups, records, over: overLimitOf(candidates, stats, groups), bySubject: bySubject && qualifies, oneModel }),
     recommended_by: qualifies ? (discovered ? 'discovery' : bySubject ? 'use_case' : 'statistics') : '',
     standalone,
-    columns: shown,
+    columns: oneModel ? [] : shown,
+    // A peer comparison's entity key is not offered as a Grouping: each entity alone has no peers (REQ-293). The reason is shown in its place.
+    peer_entity: [...entityKeys],
+    one_model: oneModel,
     recommended: applies ? recommended : [],
     example: applies ? exampleOf(recommended, groups, grouped.join(',') === recommended.join(',') ? paths : null) : null,
     time_column: timeColumn || null,

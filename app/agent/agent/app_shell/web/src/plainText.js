@@ -7,12 +7,12 @@ const SQLSTATE = /\s*\(?\bSQLSTATE:\s*\w+\)?/g;
 const MACHINE_PATH = /\s*\([^()]*(?:https?:\/\/|(?<![\w.])\/(?:home|tmp|local_disk0|databricks|root)\/)[^()]*\)|(?:\s+(?:at|from)(?=\s))?\s*\b(?:https?:\/\/[^\s)]+|(?<![\w.])\/(?:home|tmp|local_disk0|databricks|root)\/[^\s)]*)/g;
 export const MACHINE_ID = /\s*\((?:[^()]*\s)?(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)|\s*\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\s*(?<![\w.-])\d{10,}(?![\w-])|\s*(?<![\w.-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{16}(?![\w-])/gi;
 const GRANTEE = /\b(?:TO|FROM)\s+`?([^`\s]+)`?$/;
-const ASK_TO_RUN = /\b(?:please\s+)?ask\s+(?:the\s+)?owner(?:\s+of\s+[`\w.-]+)?\s+to\s+run:?\s*/i;
+const ASK_TO_RUN = /\b(?:please\s+)?ask\s+(?:the\s+|your\s+)?(?:data\s+)?owner(?:\s+of\s+[`\w.-]+)?\s+to\s+run:?\s*/i;
 
 export const DETAILS_LABEL = 'Details';
 export const CODE_ONLY_TEXT = 'Only an error code came back, listed under Details';
-export const ASK_OWNER_TEXT = 'Ask the owner to give you the access listed under Details';
-export const ASK_OWNER_APP_TEXT = 'Ask the owner to give the App the access listed under Details';
+export const ASK_OWNER_TEXT = 'Ask your data owner to give you the access listed under Details';
+export const ASK_OWNER_APP_TEXT = 'Ask your data owner to give the App the access listed under Details';
 export const NO_ACCESS_LEAD = 'No access to ';
 export const SOME_DATA = "part of this App's data";
 
@@ -99,7 +99,7 @@ export function failureCauseOf(text) {
   return causeIn(unwrapJson(String(text ?? '')));
 }
 
-function plainCause(raw) {
+function plainCause(raw, securable) {
   const cause = causeIn(raw);
   if (!cause) return null;
   const at = raw.search(cause.test);
@@ -107,13 +107,13 @@ function plainCause(raw) {
   const head = colon > 0 && colon < at ? raw.slice(0, colon).trim() : '';
   const prefix = head && head.length <= 160 && !causes.some((c) => c.test.test(head)) && !/[A-Z][A-Z0-9]*_[A-Z0-9_]+|[{}[\]]|\(\d{3}\)|^(?:SQL|HTTP|API|REST)\b/.test(head) ? head : '';
   const rest = (prefix ? raw.slice(colon + 2) : raw).trim();
-  const clause = cause.text(rest);
+  const clause = cause.text(rest, securable);
   return { plain: prefix ? `${prefix}: ${clause}.` : `${capital(clause)}.`, details: [rest], kind: cause.kind };
 }
 
-export function splitTechnical(text) {
+export function splitTechnical(text, { securable = '' } = {}) {
   const raw = unwrapJson(String(text ?? ''));
-  const caused = plainCause(raw);
+  const caused = plainCause(raw, securable);
   if (caused) return { plain: caused.plain, details: caused.details };
   const details = [];
   const keep = (m) => { details.push(m.trim().replace(/^\(|\)$/g, '').replace(/^(?:not mocked|at|from)\s+(?=\/|https?:)/, '').replace(/^\[|\]?:?$/g, '')); return ''; };
@@ -134,4 +134,17 @@ export function splitTechnical(text) {
     .replace(/[\s;,:]+$/, '')
     .trim();
   return { plain, details };
+}
+
+// The owner of an App-owned view is Inspire itself, so its page names no person to ask: the App owner presses Check again after a
+// rebuild, or Inspire grants it on the next build. A service principal id is never named.
+export const INSPIRE_OWNER = 'Inspire';
+export const WAITING_INSPIRE_ACTION = 'Its owner can press Check again after a rebuild, or Inspire grants it on the next build.';
+const PRINCIPAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function waitingAskOf(owners) {
+  const listed = (owners || []).map((o) => String(o || '').trim()).filter(Boolean);
+  const named = listed.filter((o) => o !== INSPIRE_OWNER && !PRINCIPAL_ID.test(o));
+  if (!named.length && listed.includes(INSPIRE_OWNER)) return WAITING_INSPIRE_ACTION;
+  return `Ask ${named.length ? named.join(' or ') : 'your data owner'} to grant it.`;
 }

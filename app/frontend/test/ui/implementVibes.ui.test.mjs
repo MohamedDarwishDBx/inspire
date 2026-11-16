@@ -46,7 +46,7 @@ async function readable(page, selectors, name) {
   await page.evaluate(() => document.documentElement.classList.remove('dark'));
 }
 
-const STEPS_WITH_APP = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Who uses the App and storage', '7. App look', '8. Review & build'];
+const STEPS_WITH_APP = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Review & build'];
 const boxLabels = (panel) => panel.locator('textarea').evaluateAll((boxes) => boxes.map((b) => b.getAttribute('aria-label')));
 
 async function grayExamples(page, panel) {
@@ -74,7 +74,7 @@ test('Vibes sit on Summary, the last step: Deliver asks for no vibes, the step h
     assert.equal(await page.getByRole('button', { name: /vibes/i }).count(), 0, 'Delivery has no vibes button');
     assert.equal(await page.getByRole('textbox', { name: /vibes/i }).count(), 0, 'Delivery has no vibes box');
     assert.equal(await page.getByRole('region', { name: 'Vibes' }).count(), 0);
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).uncheck();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).uncheck();
     assert.deepEqual(await page.locator('ol li').allTextContents(), ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Review & build'], 'Summary stays last without an App');
     await toVibes(page);
     const panel = page.getByRole('region', { name: 'Vibes' });
@@ -87,7 +87,7 @@ test('Vibes sit on Summary, the last step: Deliver asks for no vibes, the step h
     assert.equal(await panel.getByRole('group', { name: /^What happens to v/ }).count(), 0, 'a first build has no version before to keep or remove');
     await wizardBox(page).fill('');
     assert.equal(await panel.locator('[data-vibes-skipped]').textContent(),
-      'Not picked in What to deliver, so not built: the Dashboard, the App and the Alert.');
+      'Not picked in What to deliver, so not built: the Dashboard, the Agentic App and the Alert.'); // D-LABEL209
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), ONE_BOX, 'the box has the focus');
     for (const dark of [false, true]) {
       await page.evaluate((on) => document.documentElement.classList.toggle('dark', on), dark);
@@ -101,7 +101,7 @@ test('Vibes sit on Summary, the last step: Deliver asks for no vibes, the step h
     await page.getByRole('button', { name: 'Back', exact: true }).click();
     await onStep(page, 'Measure');
     await goToStep(page, 'What to build');
-    for (const name of [/^Dashboard/, /^App A Databricks/, /^Alert/]) await page.getByRole('checkbox', { name }).check();
+    for (const name of [/^Dashboard/, /^Agentic App A Databricks/, /^Alert/]) await page.getByRole('checkbox', { name }).check();
     await page.getByText(`Emails ${OWNER} when`, { exact: false }).waitFor();
     await toAppAccess(page);
     await page.getByRole('radio', { name: /^Internal data/ }).check();
@@ -338,7 +338,7 @@ test('each asset drawer holds only its own card, the asks each part was built wi
 
     await openFeatures(page);
     assert.deepEqual(await featuresHeld(page, 'Dashboard'), [['held', 'Dashboard: \u201cMake the trend weekly\u201d']]);
-    assert.deepEqual(await featuresHeld(page, 'App'), [['held', 'App: \u201cDark header\u201d']]);
+    assert.deepEqual(await featuresHeld(page, 'Agentic App'), [['held', 'Agentic App: \u201cDark header\u201d']]); // D-LABEL209
     assert.equal(await page.locator('[data-vibe-features-dialog]').getByRole('list', { name: 'Asks the Genie Agent holds', exact: true }).count(), 0,
       'an output that holds no ask lists none');
     assert.equal(await features(page).getAttribute('data-collected'), '0', 'opening the box collects nothing');

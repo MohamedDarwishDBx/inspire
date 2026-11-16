@@ -7,7 +7,7 @@ test.after(closeBrowser);
 
 const OWNER = ['owner', 'example.com'].join('@');
 const ME = { me: { userName: OWNER, displayName: 'Owner' } };
-const ORDER = ['method', 'direction', 'currency', 'window', 'off', 'impact'];
+const ORDER = ['method', 'direction', 'currency', 'window', 'off', 'kpi', 'holdout'];
 const openPart = (page) => page.locator(`li[data-money-current] [data-money-part]`).getAttribute(`data-money-part`);
 // The same stubs the measure rule test uses: a table with an amount and a currency column, and canned rates and previews.
 const PREVIEW = { rows: [{ stake: 100, currency: 'AED' }, { stake: 50, currency: 'USD' }, { stake: 20, currency: 'EUR' }] };
@@ -21,7 +21,7 @@ const withStubs = async (page) => {
 const summaryOf = (page, part) => page.locator(`[data-money-part="${part}"] [data-fold-line]`).textContent();
 const isVisible = (page, sel) => page.locator(sel).evaluateAll((els) => els.some((e) => e.getClientRects().length > 0));
 
-test('Money at stake opens the first section, folds each section into a summary on Next, and the default rule needs no edit', async () => {
+test('Value at stake opens the first section, folds each section into a summary on Next, and the default rule needs no edit', async () => {
   const ui = await openUi('wizard', ME, '', { init: withStubs });
   const { page } = ui;
   try {
@@ -31,7 +31,7 @@ test('Money at stake opens the first section, folds each section into a summary 
     assert.equal(await page.locator('[data-money-error]').count(), 0, 'the default rule has no error');
     for (const [i, part] of ORDER.entries()) {
       assert.equal(await openPart(page), part, `${part} is open`);
-      if (part === 'impact') break;
+      if (part === 'holdout') break;
       assert.equal(await page.locator('[data-money-error]').count(), 0, `${part} shows no error with the defaults`);
       await page.locator('[data-money-next]').click();
       assert.match(await summaryOf(page, part), /\S/, `${part} folds into a one-line summary`);

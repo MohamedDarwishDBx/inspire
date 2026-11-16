@@ -18,7 +18,10 @@ for folder in (SERVER, TESTS):
         sys.path.insert(0, folder)
 
 import shell_agent  # noqa: E402
+import shell_facts  # noqa: E402
 import shell_sql  # noqa: E402
+
+FUTURE_READ = shell_facts.read_date("`as_of_date`")
 from v218_kpi_genie_parity_test import genie_block, genie_kpis  # noqa: E402
 from v211_genie_agent_test import AgentWorkspace, FakeLLM, agent_shell, ask, said, tool_call, topic_of  # noqa: E402
 
@@ -82,7 +85,7 @@ def test_the_block_says_its_queries_outrank_the_space_and_take_other_words(agent
 def test_the_kpi_block_keeps_its_exact_queries_and_record_count_line(agent_ns):
     block = _block(agent_ns)
     assert (f"- When asked for Bills failing controls, use exactly: SELECT SUM(CASE WHEN value > 0 THEN 1 ELSE 0 END) AS value FROM "
-            f"(\nSELECT * FROM ({RECORDS_SQL}) AS f WHERE `as_of_date` IS NULL OR `as_of_date` <= current_date\n) AS d") in block
+            f"(\nSELECT * FROM ({RECORDS_SQL}) AS f WHERE `as_of_date` IS NULL OR {FUTURE_READ} <= current_date\n) AS d") in block
     assert "The page narrows it with its filters on Run date (as_of_date), Score (value), District (district), Region (region)." in block
     assert f"COUNT(DISTINCT record_key) of the current rows of `{RESULT}`, never COUNT(*) over a join" in block
 
@@ -282,12 +285,12 @@ def test_a_measure_named_like_the_kpi_that_counts_every_row_is_rewritten_to_the_
 
 
 def test_a_money_measure_named_for_the_kpi_records_keeps_its_sum_over_the_kpi_records(agent_ns, capsys):
-    money = {"alias": "exceptions_at_stake", "sql": ["SUM(`bills_out`.`value_at_stake`)"], "synonyms": ["money at stake"]}
+    money = {"alias": "exceptions_at_stake", "sql": ["SUM(`bills_out`.`value_at_stake`)"], "synonyms": ["value at stake"]}
     space, changed, out = _sync_room(agent_ns, _room([money]), capsys)
     measure = space["instructions"]["sql_snippets"]["measures"][0]
     assert changed and measure["sql"] == ["SUM(IF(`bills_out`.`is_current` AND `bills_out`.`change_source` <> 'delete' AND "
                                           "`bills_out`.`value` > 0, `bills_out`.`value_at_stake`, 0D))"]
-    assert measure["synonyms"] == ["money at stake"] and "measure='exceptions_at_stake' kpi='Bills failing controls'" in out
+    assert measure["synonyms"] == ["value at stake"] and "measure='exceptions_at_stake' kpi='Bills failing controls'" in out
 
 
 def test_a_measure_named_like_a_kpi_of_another_table_is_dropped(agent_ns, capsys):
@@ -306,13 +309,13 @@ def test_the_live_breaks_example_counting_another_population_is_dropped_and_the_
 
 
 def test_a_filter_named_for_the_kpi_records_but_missing_their_condition_gets_it(agent_ns, capsys):
-    loose = {"alias": "flagged_bills", "sql": ["`bills_out`.`value_at_stake` > 0"], "synonyms": ["failing bills", "money at stake"]}
+    loose = {"alias": "flagged_bills", "sql": ["`bills_out`.`value_at_stake` > 0"], "synonyms": ["failing bills", "value at stake"]}
     right = {"alias": "failing_bills_filter", "sql": ["`bills_out`.`value` > 0"], "synonyms": ["failing bills"]}
     space, changed, out = _sync_room(agent_ns, _room(filters=[loose, right]), capsys)
     filters = space["instructions"]["sql_snippets"]["filters"]
     assert changed and filters[1] == right and filters[0]["sql"] == [
         "`bills_out`.`is_current` AND `bills_out`.`change_source` <> 'delete' AND `bills_out`.`value` > 0 AND `bills_out`.`value_at_stake` > 0"]
-    assert filters[0]["synonyms"] == ["failing bills", "money at stake"]
+    assert filters[0]["synonyms"] == ["failing bills", "value at stake"]
     assert "filter='flagged_bills' kpi='Bills failing controls'" in out and "failing_bills_filter" not in out
 
 

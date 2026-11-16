@@ -71,7 +71,7 @@ REWRITTEN = frozenset((
     "Round", "Second", "StrToUnix", "TimestampAdd", "TimestampDiff", "TimestampTrunc", "TsOrDsAdd", "UnixMicros", "UnixToStr",
     *EXTRACT_FIELDS))
 REWRITTEN_CALLS = ("from_json", "isnull", "isnotnull", "pmod", "timestamp_micros")
-SERVED_CALLS = REWRITTEN_CALLS + ("make_date",)
+SERVED_CALLS = REWRITTEN_CALLS + ("make_date", "try_to_date")
 EPOCH_MICROS = "SELECT CAST('1970-01-01 00:00:00+00' AS TIMESTAMPTZ) + CAST(__us__ AS BIGINT) * INTERVAL '1 microsecond'"
 OVERLAY_KEYS = 500
 OVERLAY_ROWS = 5000
@@ -383,7 +383,7 @@ def delta_by_design(pages: list, backend: dict) -> set:
     for page in pages:
         if page.get("result_table") and current_copy(backend, page["result_table"]):
             result = uc_key(page["result_table"])
-            out |= {result} | {result + suffix for suffix in shell_facts.COMPANION_SUFFIXES}
+            out |= {result} | {shell_facts.companion(result, suffix) for suffix in shell_facts.COMPANION_SUFFIXES}
     return out
 
 
@@ -463,11 +463,58 @@ def _regexp_extract(self, e) -> str:
     return f"CASE WHEN {text} IS NULL THEN NULL ELSE COALESCE((REGEXP_MATCH({text}, {self.sql(e, 'expression')}))[{index}], '') END"
 
 
+DATE_TEXT_PATTERNS = {
+    # Spark TRY_CAST: ISO text, with an optional time after it
+    "iso": (r"^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})([ T].*)?$", ("y", "m", "d")),
+    # try_to_date formats (shell_facts.DATE_TEXT_FORMATS): the capture groups, in the order the regex gives them
+    "MMM d yyyy": (r"^([A-Za-z]{3}) ([0-9]{1,2}) ([0-9]{4})$", ("mon", "d", "y")),
+    "M/d/yyyy": (r"^([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})$", ("m", "d", "y")),
+    "d/M/yyyy": (r"^([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})$", ("d", "m", "y")),
+    "yyyy/M/d": (r"^([0-9]{4})/([0-9]{1,2})/([0-9]{1,2})$", ("y", "m", "d")),
+}
+MONTH_NAMES = "ARRAY['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']"
+
+
+def _text_date(text: str, pattern: str, parts: tuple) -> str:
+    """One date branch of Spark's text parse on Postgres, with no error path: the regex decides the shape, then the parts become a date only
+    when the year is 1..9999, the month 1..12 and the day within that month (make_date runs only inside those guards). Text in the shape
+    with an impossible date (30 February) reads NULL, as Spark does."""
+    group = {name: f"(REGEXP_MATCH({text}, '{pattern}'))[{i + 1}]" for i, name in enumerate(parts)}
+    year = f"CAST({group['y']} AS INTEGER)"
+    month = (f"ARRAY_POSITION({MONTH_NAMES}, LOWER({group['mon']}))" if "mon" in group else f"CAST({group['m']} AS INTEGER)")
+    day = f"CAST({group['d']} AS INTEGER)"
+    last_day = f"EXTRACT(DAY FROM (MAKE_DATE({year}, {month}, 1) + INTERVAL '1 month' - INTERVAL '1 day'))"
+    built = (f"CASE WHEN {year} BETWEEN 1 AND 9999 THEN CASE WHEN {month} BETWEEN 1 AND 12 THEN "
+             f"CASE WHEN {day} BETWEEN 1 AND {last_day} THEN MAKE_DATE({year}, {month}, {day}) END END END")
+    return f"CASE WHEN {text} ~ '{pattern}' THEN {built} END"
+
+
+def _text_date_read(text_sql: str, formats: tuple) -> str:
+    """Spark's COALESCE of reads: each format of `formats` gives one branch, the first one that reads a date wins."""
+    branches = [_text_date(text_sql, *DATE_TEXT_PATTERNS[fmt]) for fmt in formats]
+    return f"COALESCE({', '.join(branches)})"
+
+
+def _try_cast_date(self, e) -> str:
+    """Spark TRY_CAST(x AS DATE): ISO text (and any date or timestamp value) reads its day, anything else NULL."""
+    text = f"CAST({self.sql(e, 'this')} AS TEXT)"
+    return _text_date_read(text, ("iso",))
+
+
+def _try_to_date(self, e) -> str:
+    fmt = e.expressions[1].name if len(e.expressions) == 2 else ""
+    if fmt not in DATE_TEXT_PATTERNS or fmt == "iso":
+        raise NotServed(f"the query parses dates with {fmt or 'no format'}, which Lakebase cannot read")
+    return _text_date_read(f"CAST({self.sql(e.expressions[0])} AS TEXT)", (fmt,))
+
+
 def _transforms(exp) -> dict:
     extract = {getattr(exp, name): (lambda field: lambda self, e: f"CAST(EXTRACT({field} FROM {self.sql(e, 'this')}) AS INTEGER)")(field)
                for name, field in EXTRACT_FIELDS.items()}
     return {
         **extract,
+        exp.TryCast: lambda self, e: (_try_cast_date(self, e) if e.to.this == exp.DataType.Type.DATE
+                                      else f"CAST({self.sql(e, 'this')} AS {self.sql(e, 'to')})"),
         exp.UnixMicros: lambda self, e: f"CAST(FLOOR(EXTRACT(EPOCH FROM {self.sql(e, 'this')}) * 1000000) AS BIGINT)",
         exp.Mod: lambda self, e: self.binary(e, "%%"),
         exp.Log: lambda self, e: (f"LOG(CAST({self.sql(e, 'this')} AS NUMERIC), CAST({self.sql(e, 'expression')} AS NUMERIC))"
@@ -517,6 +564,11 @@ def _dialect():
         class Served(Postgres):
             class Generator(Postgres.Generator):
                 TRANSFORMS = {**Postgres.Generator.TRANSFORMS, **_transforms(exp)}
+
+                def anonymous_sql(self, e):
+                    if e.name.lower() == "try_to_date":
+                        return _try_to_date(self, e)
+                    return super().anonymous_sql(e)
 
         _DIALECT.append(Served)
     return _DIALECT[0]
@@ -873,12 +925,22 @@ def _index_distinct(tree, tables: dict, held, overlays):
 
 
 def _date_extremes(tree, kinds: dict) -> None:
+    """MIN and MAX of a date column read the ends of its index: CAST(MIN(col) AS DATE). A bounds read is COALESCE(TRY_CAST(col AS DATE), ...)
+    (shell_facts.read_date); on a column that already holds dates its first branch is the column itself, so the same rewrite applies."""
     from sqlglot import exp
+
+    def dated(node) -> bool:
+        return isinstance(node, exp.Column) and kinds.get(node.name.lower()) in DATED_TYPES
+
     for total in list(tree.find_all(exp.Min, exp.Max)):
+        if isinstance(total.parent, (exp.Window, exp.Filter)):
+            continue
         cast = total.this
-        if (isinstance(cast, exp.Cast) and cast.to.is_type(exp.DataType.Type.DATE) and isinstance(cast.this, exp.Column)
-                and kinds.get(cast.this.name.lower()) in DATED_TYPES and not isinstance(total.parent, (exp.Window, exp.Filter))):
+        if isinstance(cast, exp.Cast) and cast.to.is_type(exp.DataType.Type.DATE) and dated(cast.this):
             total.replace(exp.Cast(this=type(total)(this=cast.this.copy()), to=cast.to.copy()))
+        elif (isinstance(cast, exp.Coalesce) and isinstance(cast.this, exp.TryCast) and cast.this.to.is_type(exp.DataType.Type.DATE)
+              and dated(cast.this.this)):
+            total.replace(exp.Cast(this=type(total)(this=cast.this.this.copy()), to=cast.this.to.copy()))
 
 
 def _prefix_keys(tables: dict, read) -> tuple:

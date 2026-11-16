@@ -6,7 +6,7 @@ test.after(closeBrowser);
 
 const OWNER = ['owner', 'example.com'].join('@');
 const ME = { me: { userName: OWNER, displayName: 'Owner' } };
-const STEPS = ['What to deliver', 'Data & results', 'First run', 'Measure', 'Where it lives', 'Who uses the App and storage', 'App look', 'Review & build'];
+const STEPS = ['What to deliver', 'Data & results', 'First run', 'Measure', 'Where it lives', 'Review & build'];
 const stepLabels = async (page) => (await page.locator('[data-wizard-header] ol li').allTextContents()).map((l) => l.replace(/^\d+\. /, '').trim());
 const viewports = [{ width: 1280, height: 800 }, { width: 1440, height: 900 }];
 const snap = async (page, name) => {
@@ -25,13 +25,13 @@ test('the step count reads the same total on every step for a fixed scope', asyn
     const count = async () => (await page.locator('.sr-only', { hasText: /^Step \d+ of \d+$/ }).first().textContent()).trim();
     const totals = [];
     totals.push(await count());
-    for (const step of ['Data & results', 'Measure', 'Where it lives', 'Who uses the App and storage', 'Review & build', 'What to deliver']) {
+    for (const step of ['Data & results', 'Measure', 'Where it lives', 'Review & build', 'What to deliver']) {
       await goToStep(page, step);
       totals.push(await count());
     }
     const all = new Set(totals.map((t) => t.split(' of ')[1]));
     assert.equal(all.size, 1, `the total never changes: ${totals.join(' | ')}`);
-    assert.match(totals[0], /^Step 1 of 8$/, 'What to deliver is step 1 of 8 with the App on');
+    assert.match(totals[0], /^Step 1 of 6$/, 'What to deliver is step 1 of 6 with the App on: the App panels are one step (REQ-002)');
   } finally {
     await ui.close();
   }
@@ -56,13 +56,14 @@ test('What to deliver is the first step, Data and results is one page, and Where
     await goToStep(page, 'Measure');
     const measure = page.getByRole('region', { name: 'Measure' });
     await measure.waitFor();
-    assert.equal(await measure.locator('[data-money-rule-editor]').count(), 1, 'Measure holds the money rule editor, so the person defines how money at stake is counted');
-    // Money at stake opens one part at a time. With one currency in the data the Currency part shows the picker with its default
-    // and offers no conversion, so no reporting-currency prompt (must-exclude). Rates are covered by measureRule.
+    assert.equal(await measure.locator('[data-money-rule-editor]').count(), 1, 'Measure holds the money rule editor, so the person defines how value at stake is counted');
+    // Value at stake opens one part at a time. The Currency part starts on keeping each currency separate, and it offers the
+    // reporting-currency choice even with one currency in the data (REQ-103: unify every measure in one currency the person picks).
+    // No reporting-currency prompt until that choice is picked (must-exclude). Rates are covered by measureRule.
     await moneyPart(page, 'Currency');
     assert.equal(await measure.locator('[data-money-currency-mode="per_currency"]').isChecked(), true, 'the Currency part starts on keeping each currency separate');
-    assert.equal(await measure.locator('[data-money-currency-mode="convert"]').count(), 0, 'no conversion choice with one currency in the data (must-exclude)');
-    assert.equal(await measure.locator('[data-money-base-needed]').count(), 0, 'no reporting-currency prompt with one currency in the data (must-exclude)');
+    assert.equal(await measure.locator('[data-money-currency-mode="convert"]').count(), 1, 'the reporting-currency choice is offered with one currency in the data (REQ-103)');
+    assert.equal(await measure.locator('[data-money-base-needed]').count(), 0, 'no reporting-currency prompt while Keep each currency separate is chosen (must-exclude)');
     await snap(page, 'restructure-measure');
 
     await goToStep(page, 'Where it lives');
@@ -74,13 +75,16 @@ test('What to deliver is the first step, Data and results is one page, and Where
     await snap(page, 'restructure-where');
 
     await goToStep(page, 'Who uses the App');
+    await openFolded(page, 'Who sees which rows');
     await page.getByRole('region', { name: 'App access' }).waitFor();
     await openFolded(page, 'What people can do');
     await page.getByRole('region', { name: 'App features' }).waitFor();
     assert.equal(await page.getByRole('region', { name: 'App pages' }).count(), 0, 'Who uses the App no longer holds the pages');
     await snap(page, 'restructure-who');
 
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+
+    await openFolded(page, 'App look');
     await page.getByRole('region', { name: 'App look' }).waitFor();
     await snap(page, 'restructure-look');
 

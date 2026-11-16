@@ -8,9 +8,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, '..', 'src', 'WaitingForAccess.jsx'), 'utf8');
 
 test('the waiting view names the owner the server returns, and falls back to your data owner when none is known (REQ-040)', () => {
-  assert.match(source, /const owner = waiting\?\.owners\?\.length \? waiting\.owners\.join\(' or '\) : WAITING_OWNER;/);
-  assert.match(source, /Ask \{owner\} to grant it\./);
-  assert.doesNotMatch(source, /Ask \{WAITING_OWNER\}/, 'the view no longer hardcodes the generic owner');
+  // REQ-310/311: the owner sentence lives in the dialog's reason line (WaitingForAccess), built from waitingAskOf.
+  assert.match(source, /waitingAskOf\(waiting\?\.owners\)/);
+  assert.match(source, /\$\{WAITING_REASON\} \$\{waitingAskOf\(waiting\?\.owners\)\}/);
+  assert.doesNotMatch(source, /Ask \{owner\}/, 'the view no longer builds the ask sentence itself');
+  assert.doesNotMatch(source, /WAITING_OWNER/, 'the generic owner lives in plainText.js with the rest of the owner wording');
 });
 
 test('the App root and the Home hub show the one waiting view for a refused read, and never the generic start-up error (REQ-040)', () => {
@@ -21,10 +23,11 @@ test('the App root and the Home hub show the one waiting view for a refused read
 });
 
 test('the waiting view carries the one access action (grant with my permissions, copy the SQL, check again), not its own button (REQ-082)', () => {
+  // REQ-310/311/313: the one access action is PermissionDialog's AccessActions (inside Advanced); WaitingForAccess only wraps the dialog.
+  const dialog = readFileSync(join(here, '..', 'src', 'PermissionDialog.jsx'), 'utf8');
   const view = readFileSync(join(here, '..', 'src', 'WaitingForAccess.jsx'), 'utf8');
-  assert.match(view, /import \{ ACCESS_CHECKED, AccessActions \} from '\.\/ui\.jsx';/);
-  assert.match(view, /const actions = <AccessActions \/>;/);
-  assert.doesNotMatch(view, /data-check-again/, 'the view has no Check again button of its own');
+  assert.match(dialog, /<AccessActions access=\{given\} onFound=\{setOwn\} \/>/);
+  assert.doesNotMatch(view, /AccessActions|data-check-again/, 'the view has no access action or Check again button of its own');
 });
 
 test('Runs, Records, Alerts and Genie show the same waiting component when their read is refused (REQ-040, one implementation)', () => {

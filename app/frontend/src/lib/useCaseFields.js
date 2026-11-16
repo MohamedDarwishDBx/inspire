@@ -352,14 +352,10 @@ export function storedNameOfUseCase(uc) {
     .map((v) => displayCleanText(v)).find(Boolean) || '';
 }
 
-// name_with_technique is a generated label from discovery. After a rename it still holds the old name, and a stale copy can
-// hold the name twice (REQ-155). It is shown only when it is the stored name plus the technique: it starts with the stored
-// name and the name appears once. Otherwise the card shows the stored name.
+// The title is the stored name, always (REQ-175, decision 10B: the technique goes in the subtitle). name_with_technique is
+// never the title: older records hold "<Name> using <technique>" there, and a stale copy can hold the name twice (REQ-155).
 export function nameOfUseCase(uc) {
-  const u = uc && typeof uc === 'object' ? uc : {};
-  const stored = storedNameOfUseCase(u);
-  const label = displayCleanText(u.name_with_technique);
-  return stored && label.startsWith(stored) && label.indexOf(stored, stored.length) === -1 ? label : stored;
+  return storedNameOfUseCase(uc);
 }
 
 export function cardTitlesOfUseCase(uc, index = 0) {

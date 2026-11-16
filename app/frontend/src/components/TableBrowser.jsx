@@ -10,6 +10,8 @@ import {
   Layers,
 } from 'lucide-react';
 import { PlainMessage } from './TechnicalDetails';
+import { unusableReasonOf } from '../lib/tableUsability';
+import { responseError } from '../lib/apiClient';
 
 export default function TableBrowser({
   token,
@@ -30,7 +32,11 @@ export default function TableBrowser({
     const headers = {};
     if (token) { headers['Authorization'] = `Bearer ${token}`; headers['X-DB-PAT-Token'] = token; }
     const resp = await fetch(url, { headers });
-    if (!resp.ok) throw new Error(`API error ${resp.status}`);
+    if (!resp.ok) {
+      const refused = await responseError(resp.clone());
+      // The dialog carries the refusal, so the caller shows no message of its own (REQ-220).
+      throw refused.dialog ? Object.assign(new Error(''), { dialog: true }) : new Error(`API error ${resp.status}`);
+    }
     return resp.json();
   }, [token]);
 
@@ -39,7 +45,7 @@ export default function TableBrowser({
     setError(null);
     apiFetch('/api/catalogs')
       .then((d) => setCatalogs(d.catalogs || []))
-      .catch((e) => setError(e.message));
+      .catch((e) => { if (!e.dialog) setError(e.message); });
   }, [token, apiFetch]);
 
   const toggleCatalog = async (catalogName) => {
@@ -51,7 +57,7 @@ export default function TableBrowser({
         const d = await apiFetch(`/api/catalogs/${encodeURIComponent(catalogName)}/schemas`);
         setSchemas((p) => ({ ...p, [catalogName]: d.schemas || [] }));
       } catch (e) {
-        setError(e.message);
+        if (!e.dialog) setError(e.message);
       } finally {
         setLoading((p) => ({ ...p, [catalogName]: false }));
       }
@@ -70,7 +76,7 @@ export default function TableBrowser({
         );
         setTables((p) => ({ ...p, [key]: d.tables || [] }));
       } catch (e) {
-        setError(e.message);
+        if (!e.dialog) setError(e.message);
       } finally {
         setLoading((p) => ({ ...p, [key]: false }));
       }
@@ -207,10 +213,16 @@ export default function TableBrowser({
                           ) : (
                             filterTables(tables[schKey]).map((tbl) => {
                               const selected = isSelected(tbl.full_name);
+                              // Fail closed: a table whose type cannot be read is shown with its plain reason and cannot be picked.
+                              const reason = unusableReasonOf(tbl);
                               return (
                                 <button
                                   key={tbl.name}
-                                  onClick={() => onSelectTable?.(tbl)}
+                                  type="button"
+                                  disabled={Boolean(reason)}
+                                  aria-disabled={reason ? 'true' : undefined}
+                                  title={reason || undefined}
+                                  onClick={() => { if (!reason) onSelectTable?.(tbl); }}
                                   className={`
                                     w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-smooth mb-px
                                     ${selected
@@ -224,6 +236,7 @@ export default function TableBrowser({
                                     className={selected ? 'text-db-red-fg' : 'text-text-tertiary'}
                                   />
                                   <span className="truncate flex-1 text-start">{tbl.name}</span>
+                                  {reason && <span data-unusable-reason="" className="text-[10px] text-error-fg text-start">{reason}</span>}
                                   <span className="text-[10px] text-text-tertiary font-mono">
                                     {tbl.table_type === 'VIEW' ? 'VIEW' : tbl.data_source_format || ''}
                                   </span>

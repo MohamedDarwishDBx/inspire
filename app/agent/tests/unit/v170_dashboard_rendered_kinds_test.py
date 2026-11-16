@@ -50,7 +50,7 @@ def test_no_dashboard_the_builder_draws_carries_a_custom_visualization(agent_ns,
 @pytest.mark.parametrize("ask", [PIE, DONUT], ids=["pie", "donut"])
 def test_a_pie_or_a_donut_ask_is_met_by_the_dashboards_pie_and_not_by_another_chart(agent_ns, tmp_path, ask):
     met = _both_views(agent_ns, tmp_path, ask, _kind("donut"))
-    assert [(c["status"], c["evidence"]) for c in met] == [("done", "chart t: type pie")] * 2, met
+    assert [(c["status"], c["evidence"]) for c in met] == [("done", "chart Loss: type pie")] * 2, met
     missed = _both_views(agent_ns, tmp_path, ask, _kind("bar"))
     assert [c["status"] for c in missed] == ["missing", "missing"], missed
     assert all("has no" in c["evidence"] and "cannot draw" not in c["evidence"] for c in missed), missed
@@ -61,7 +61,7 @@ def test_the_app_draws_its_own_donut_so_a_donut_ask_is_met_there_and_a_pie_ask_i
     donut, _judged = _round(agent_ns, "app:page:n01_u01", "k", [DONUT], page, chart_types=app_types)
     pie, _judged = _round(agent_ns, "app:page:n01_u01", "k", [PIE], page, chart_types=app_types)
     assert donut[0]["status"] == "done", donut
-    assert (pie[0]["status"], pie[0]["evidence"]) == ("missing", "the App page n01_u01 cannot draw a pie chart: it draws "
+    assert (pie[0]["status"], pie[0]["evidence"]) == ("missing", "the App page Price-loss decision desk cannot draw a pie chart: it draws "
                                                                  + ", ".join(app_types) + " charts"), pie
 
 
@@ -91,8 +91,8 @@ def test_no_dashboard_definition_shows_a_made_up_date_in_a_default_a_parameter_o
 def test_a_part_dataset_keeps_every_row_for_all_and_for_an_open_ended_range(agent_ns, tmp_path):
     _page_, _doc_, parts = _dated(agent_ns, tmp_path)
     sql = "".join(parts["queryLines"])
-    assert ("(:filter_0 IS NULL OR ((:filter_0.min IS NULL OR CAST(`as_of_date` AS DATE) >= :filter_0.min) AND "
-            "(:filter_0.max IS NULL OR CAST(`as_of_date` AS DATE) <= :filter_0.max)))") in sql
+    assert ("(:filter_0 IS NULL OR ((:filter_0.min IS NULL OR TRY_CAST(`as_of_date` AS DATE) >= :filter_0.min) AND "
+            "(:filter_0.max IS NULL OR TRY_CAST(`as_of_date` AS DATE) <= :filter_0.max)))") in sql
     assert "BETWEEN :filter_" not in sql, "BETWEEN a date and no date drops every row, which a range with one end left open sends"
 
 
@@ -101,8 +101,8 @@ def test_the_dataset_check_binds_a_range_with_no_default_as_all_and_a_chosen_ran
     _page_, _doc_, parts = _dated(agent_ns, tmp_path)
     bound = check(parts)
     assert ":filter_" not in bound
-    assert ("(CAST(NULL AS STRUCT<min: DATE, max: DATE>) IS NULL OR ((CAST(NULL AS DATE) IS NULL OR CAST(`as_of_date` AS DATE) >= "
-            "CAST(NULL AS DATE)) AND (CAST(NULL AS DATE) IS NULL OR CAST(`as_of_date` AS DATE) <= CAST(NULL AS DATE))))") in bound
+    assert ("(CAST(NULL AS STRUCT<min: DATE, max: DATE>) IS NULL OR ((CAST(NULL AS DATE) IS NULL OR TRY_CAST(`as_of_date` AS DATE) >= "
+            "CAST(NULL AS DATE)) AND (CAST(NULL AS DATE) IS NULL OR TRY_CAST(`as_of_date` AS DATE) <= CAST(NULL AS DATE))))") in bound
     stored = dict(parts, parameters=[dict(p, defaultSelection={}) if p["complexType"] == "RANGE" else p for p in parts["parameters"]])
     assert check(stored) == bound, "Lakeview stores a range with no default as an empty selection"
     chosen = dict(parts, parameters=[dict(p, defaultSelection={"range": {"dataType": "DATE", "min": {"value": "2026-08-01"},
@@ -110,7 +110,7 @@ def test_the_dataset_check_binds_a_range_with_no_default_as_all_and_a_chosen_ran
                                      if p["keyword"] == "filter_0" else p for p in parts["parameters"]])
     picked = check(chosen)
     assert ("(named_struct('min', DATE'2026-08-01', 'max', DATE'2026-09-30') IS NULL OR ((DATE'2026-08-01' IS NULL OR "
-            "CAST(`as_of_date` AS DATE) >= DATE'2026-08-01') AND (DATE'2026-09-30' IS NULL OR CAST(`as_of_date` AS DATE) <= "
+            "TRY_CAST(`as_of_date` AS DATE) >= DATE'2026-08-01') AND (DATE'2026-09-30' IS NULL OR TRY_CAST(`as_of_date` AS DATE) <= "
             "DATE'2026-09-30')))") in picked
     assert picked.count("CAST(NULL AS STRUCT<min: DATE, max: DATE>)") == bound.count("CAST(NULL AS STRUCT<min: DATE, max: DATE>)") - 1
 
@@ -197,10 +197,10 @@ def test_a_pareto_ask_is_met_only_when_the_published_combo_draws_ranked_bars_and
     view = agent_ns["implement_dashboard_drawn"](page, published)
     checked = _checked(agent_ns, page, view, PARETO)
     if change == "as_built":
-        assert (view["charts"][0]["type"], checked["status"], checked["evidence"]) == ("pareto", "done", "chart t: type pareto"), checked
+        assert (view["charts"][0]["type"], checked["status"], checked["evidence"]) == ("pareto", "done", "chart Loss: type pareto"), checked
     else:
         assert (view["charts"][0]["type"], checked["status"]) == ("combo", "missing"), (change, checked)
-        assert checked["evidence"].endswith("has no pareto chart; its charts are combo (t)"), checked
+        assert checked["evidence"].endswith("has no pareto chart; its charts are combo chart Loss"), checked
 
 
 def test_the_dashboard_counts_only_the_chart_kinds_a_published_snapshot_showed_drawn(agent_ns, tmp_path):

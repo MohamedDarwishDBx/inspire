@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assertOneBadgeOnDefault, choicesShown, closeBrowser, goToMeasureImpact, goToStep, onStep, openFolded, openRow, openUi, settleChoices } from './uiSupport.mjs';
-import { APP_LOOK_STEP, APP_LOOK_TABS, APP_STEP, MEASURE_LABEL, WHERE_LABEL } from '../../src/lib/implementWizard.js';
+import { APP_LOOK_TABS, MEASURE_LABEL, WHERE_LABEL } from '../../src/lib/implementWizard.js';
 
 const OWNER = ['owner', 'example.com'].join('@');
 const DATED = [{ column_name: 'order_id', data_type: 'STRING', ordinal_position: 1 }, { column_name: 'order_date', data_type: 'DATE', ordinal_position: 2 }];
@@ -11,17 +11,21 @@ test.after(closeBrowser);
 async function auditEveryStep(page, { look = true } = {}) {
   const seen = new Set();
   const labels = (await page.locator('[data-wizard-header] ol li').allTextContents()).map((l) => l.replace(/^\d+\.\s*/, '').trim());
-  for (const label of labels) {
+  // Measure impact is two decisions on two screens, so the audit visits both (kpi, then holdout).
+  const visits = labels.flatMap((label) => (label === MEASURE_LABEL ? [[label, 'kpi'], [label, 'holdout']] : [[label, null]]));
+  for (const [label, impact] of visits) {
     await goToStep(page, label);
-    if (label === MEASURE_LABEL) await goToMeasureImpact(page);
-    if (label === APP_STEP.label) await page.getByText('Finding the Apps Inspire built').waitFor({ state: 'detached' });
+    if (impact) await goToMeasureImpact(page, impact);
+    if (label === WHERE_LABEL) await page.getByText('Finding the Apps Inspire built').waitFor({ state: 'detached' });
     // Folds open one at a time now (opening one folds the other), so each closed section is opened in turn and audited.
     const folds = await page.locator('[data-wizard-body] button[aria-expanded="false"][aria-label^="Change "]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label').replace(/^Change /, '')));
     // The section already open on arrival is audited first, then each closed one.
     for (const fold of [null, ...new Set(folds)]) {
       if (fold) await openFolded(page, fold);
       await settleChoices(page);
-      const tabs = label === APP_LOOK_STEP.label && look ? APP_LOOK_TABS.map((t) => t.label) : [null];
+      // App look is a fold of Where it lives (REQ-002): its tabs exist only while that fold is open, so the tabs are audited there.
+      const lookOpen = label === WHERE_LABEL && look && (await page.getByRole('tab', { name: APP_LOOK_TABS[0].label, exact: true }).count()) > 0;
+      const tabs = lookOpen ? APP_LOOK_TABS.map((t) => t.label) : [null];
       for (const tab of tabs) {
         if (tab) await page.getByRole('tab', { name: tab, exact: true }).click();
         const shown = await choicesShown(page);

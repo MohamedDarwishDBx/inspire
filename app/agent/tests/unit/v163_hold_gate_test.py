@@ -288,14 +288,15 @@ def test_an_escalated_rebuild_refreshes_and_checks_the_outputs_that_read_its_res
         raise agent_ns["ImplementBlocked"](gone)
 
     inst._implement_dashboard = dashboard
-    assert _run(inst, dict(VALID, vibes=SPANISH, vibe_previous="remove")) == "ready_with_warnings", inst.updates[-1]
+    # REQ-252 / D-INCOMPLETE: a dashboard that could not be published makes the version failed (its own part record stays failed below).
+    assert _run(inst, dict(VALID, vibes=SPANISH, vibe_previous="remove")) == "failed", inst.updates[-1]
     assert len(runner.prompts) == 1
     assert [call[0] for call in calls if call[0] in ("genie_space", "dashboard", "app")] == ["genie_space", "dashboard", "app"], \
         "every output that reads the rebuilt results is refreshed in the same version"
     final = inst.updates[-1]
     assert final["asset_status"]["dashboard"]["state"] == "failed" and gone in final["status_message"]
     plans = [event["message"] for event in inst.emitted if event["step_name"] == "Plan"]
-    assert plans[-1].endswith("and Inspire refreshes and checks the Genie Agent, Dashboard, App that read its results")
+    assert plans[-1].endswith("and Inspire refreshes and checks the Genie Agent, Dashboard, Agentic App that read its results")
 
 
 
@@ -347,7 +348,8 @@ def test_only_the_checklist_writes_a_not_met_ask_and_only_the_hold_writes_a_held
                               "not_decided": {"implement_not_decided_entries"}, "refused": {"implement_settings_refused_entries"}}
     refusers = {owner for owner, call in _calls(tree) if call in ("implement_settings_refusal", "implement_settings_refused_entries")}
     assert refusers == {"_implement_settings_owner_check"}, "only the settings owner check refuses a setting"
-    assert {owner for owner, call in _calls(tree) if call == "_implement_settings_owner_check"} == {"_implement_one_locked"}
+    assert {owner for owner, call in _calls(tree) if call == "_implement_settings_owner_check"} == {"_implement_one_locked", "_implement_vibe_grouping_owner"}, \
+        "a settings change from a vibe is owner-checked before the vibe is routed, and so is the settings change of a plan"
     assert {owner for owner, call in _calls(tree) if call == "implement_not_decided_entries"} == {"_implement_route_vibe"}, \
         "an ask is not_decided only where the router could not place it, before any plan or Genie round"
     guards = {owner for owner, call in _calls(tree) if call == "_implement_keep_untargeted"}
@@ -830,7 +832,7 @@ def test_a_re_point_that_drops_the_asked_ask_genie_panel_publishes_and_lists_the
     assert "held" not in final, "nothing is held"
     [entry] = [e for e in final["checklist"] if e["requirement"] == ask]
     assert entry["status"] == "not_met" and entry["part"] == "app"
-    assert f"App: {ask}: the built App never shows the words 'N01-U07 Sales questions'" in inst.updates[-1]["status_message"]
+    assert f"Agentic App: {ask}: the built Agentic App never shows the words 'N01-U07 Sales questions'" in inst.updates[-1]["status_message"]
     assert "is published with 1 unmet ask" in inst.updates[-1]["status_message"]
 
 
@@ -840,8 +842,9 @@ def test_a_re_point_that_keeps_the_asked_ask_genie_panel_publishes_and_re_points
     inst, status = _repoint_run(agent_ns, tmp_path, monkeypatch, ask, {"kind": "text", "value": "Ask Genie"})
     assert status in ("ready", "ready_with_warnings"), inst.updates[-1].get("status_message")
     [(name, deployed, _reads, space_id)] = inst.deployed
+    # REQ-258 / D7: the App's Ask Genie panel shows the use case name, never the use case id (D-NAMES: person copy).
     assert (name, space_id, json.loads(deployed["pages/n01_u01.json"])["genie"]) == ("churn-desk", "g1", {
-        "space_id": "g1", "title": "N01-U01 Predict churn"}), "the App is re-pointed after the Genie Agent is published, never at a pending one"
+        "space_id": "g1", "title": "Predict churn"}), "the App is re-pointed after the Genie Agent is published, never at a pending one"
     final = inst.updates[-1]["asset_status"]
     [entry] = [e for e in final["checklist"] if e["requirement"] == ask]
     assert entry["status"] == "met" and "held" not in final

@@ -27,6 +27,8 @@ from v120_artifacts_support import FakeSpark  # noqa: E402
 from v140_implement_test import SHELL_FILES, _app_flow, _churn_page, _deploy_inspire, _inspire, sdk_stub  # noqa: E402,F401
 from v141_app_shell_test import PAGE, SETTINGS, call, shell  # noqa: E402
 from v142_dash_test import RESULT, _canvas, _page, _shell, _widgets  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 WEB_SRC = os.path.join(ROOT, "agent", "app_shell", "web", "src")
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
@@ -370,7 +372,7 @@ def test_an_image_inspire_cannot_use_is_left_out_and_the_page_still_deploys_with
     built = json.loads(seen["deployed"][0][1]["pages/n01_u01.json"])
     assert "file" not in built["blocks"][0]["content"] and built["blocks"][0]["content"]["alt"] == "The mascot waving"
     notes = [w for w in fields.get("_warnings") or [] if "block mascot" in w]
-    assert len(notes) == 1 and notes[0].startswith("App: block mascot shows its alt text and a note in place of its image, because ")
+    assert len(notes) == 1 and notes[0].startswith(f"{APP_LABEL}: block mascot shows its alt text and a note in place of its image, because ")
     assert needle in notes[0] and notes[0].endswith("put the image in the workspace or a Unity Catalog volume and name that path in the block")
     assert not (tmp_path / "implement" / "_app_blocks").exists()
 
@@ -504,7 +506,7 @@ def test_the_judge_gets_each_image_blocks_bytes_from_the_built_app(blocks_ns, tm
     assert found == [{"block": "mascot", "file": FILE, "alt": "The mascot waving", "caption": "Our mascot", "url": VOLUME,
                       "media_type": "image/png", "bytes": PNG, "error": ""}]
     held[f"/W/src/static/{FILE}"] = GIF
-    assert inst._implement_app_block_images(context)[0]["error"] == "the App's copy is not the image Inspire checked"
+    assert inst._implement_app_block_images(context)[0]["error"] == "the Agentic App's copy is not the image Inspire checked"
     stored = tmp_path / "implement" / "_app_blocks" / FILE
     stored.parent.mkdir(parents=True)
     stored.write_bytes(PNG)

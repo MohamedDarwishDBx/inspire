@@ -21,8 +21,8 @@ test('with no rule anywhere, no number is shown: the App asks for a money rule',
 test('a column or equation rule gives no number: the App says it cannot estimate yet', () => {
   const column = { app: 'Sales App', money: { currency: 'convert', base: 'AED', value: { method: 'column', column: 'amount', currency: 'AED' } } };
   const equation = { app: 'Sales App', money: { currency: 'convert', base: 'AED', value: { method: 'equation', expression: 'a * b', currency: 'AED' } } };
-  assert.deepEqual(estimateOf({ baseline: 120, rules: [column] }), { status: 'cannot', app: 'Sales App', method: 'column' });
-  assert.deepEqual(estimateOf({ baseline: 120, rules: [equation] }), { status: 'cannot', app: 'Sales App', method: 'equation' });
+  assert.deepEqual(estimateOf({ baseline: 120, rules: [column] }), { status: 'cannot', app: 'Sales App', method: 'column', borrowed: false });
+  assert.deepEqual(estimateOf({ baseline: 120, rules: [equation] }), { status: 'cannot', app: 'Sales App', method: 'equation', borrowed: false });
 });
 
 test('no KPI baseline gives no number, even with a rule', () => {
@@ -56,7 +56,7 @@ test('the SQL reads the latest spec per use case, with its money rule and result
   assert.match(sql, /ROW_NUMBER\(\) OVER \(PARTITION BY use_case_id ORDER BY spec_version DESC\)/);
   assert.match(sql, /WHERE session_id = 42/);
   assert.match(V.baselineSql('`main`.`inspire`.`orders_summary`'), /WHERE use_case_id = :uc ORDER BY updated_at DESC NULLS LAST LIMIT 1$/);
-  assert.match(V.useCasesSql('`main`.`inspire`.`__inspire_usecases`', '42'), /SELECT id, business_domain FROM .* WHERE session_id = 42$/);
+  assert.match(V.useCasesSql('`main`.`inspire`.`__inspire_usecases`', '42'), /SELECT id, business_domain, CAST\(value_estimate AS STRING\) AS value_estimate FROM .* WHERE session_id = 42$/);
 });
 
 test('a malformed spec is no spec, never a guessed one', () => {
@@ -100,4 +100,90 @@ test('a sibling in another domain is not a rule source', async () => {
   const specs = new Map([['N02-U01', ruleSpec('Finance App', 50)]]);
   const out = await V.estimatesFor({ useCases, specs, measured: {}, baselineOf: async () => 1 });
   assert.deepEqual(out.use_cases['N01-U01'], { status: 'set_rule' });
+});
+
+// REQ-078 (walk defect 4): the borrowed rule is the first usable fixed sibling, in a stable order, never the first sibling with any value.
+const colRule = (app) => ({ app, money: { currency: 'convert', base: 'AED', value: { method: 'column', column: 'amount', currency: 'AED' } } });
+const fixedRule = (app, amount) => ({ app, money: { currency: 'convert', base: 'AED', value: { method: 'fixed', amount, currency: 'AED' } } });
+
+test('a borrowed column rule listed before a borrowed fixed rule does not block the fixed one (REQ-078 walk defect 4)', () => {
+  const borrowedColumnFirst = [{ ...colRule('Alpha App'), borrowed: true }, { ...fixedRule('Beta App', 50), borrowed: true }];
+  const e = estimateOf({ baseline: 120, rules: borrowedColumnFirst });
+  assert.deepEqual(e, { status: 'estimated', app: 'Beta App', currency: 'AED', per_record: 50, baseline: 120, amount: 6000 });
+});
+
+test('the own rule wins even when it is a column rule: the borrowed fixed rule is not used on top of it', () => {
+  const rules = [{ ...colRule('Own App'), borrowed: false }, { ...fixedRule('Sibling App', 50), borrowed: true }];
+  assert.deepEqual(estimateOf({ baseline: 120, rules }), { status: 'cannot', app: 'Own App', method: 'column', borrowed: false });
+});
+
+test('a borrowed column rule with no usable fixed sibling says it cannot estimate, names the borrowed App, and says so', () => {
+  const rules = [{ ...colRule('Alpha App'), borrowed: true }, { ...colRule('Beta App'), borrowed: true }];
+  assert.deepEqual(estimateOf({ baseline: 120, rules }), { status: 'cannot', app: 'Alpha App', method: 'column', borrowed: true });
+});
+
+test('estimatesFor borrows the same fixed rule whatever order the sibling rows arrive in (REQ-078 walk defect 4)', async () => {
+  const useCases = [{ id: 'N01-U01', business_domain: 'Sales' }, { id: 'N01-U02', business_domain: 'Sales' }, { id: 'N01-U03', business_domain: 'Sales' }];
+  const col = { use_case_name: 'Alpha App', money: colRule('Alpha App').money };
+  const fixed = ruleSpec('Beta App', 50);
+  const built = { config: { result_table: 'main.inspire.sales' } };
+  const forward = new Map([['N01-U01', built], ['N01-U02', col], ['N01-U03', fixed]]);
+  const backward = new Map([['N01-U03', fixed], ['N01-U02', col], ['N01-U01', built]]);
+  const run = (specs) => V.estimatesFor({ useCases, specs, measured: {}, baselineOf: async () => 120 });
+  const a = await run(forward);
+  const b = await run(backward);
+  assert.deepEqual(a.use_cases['N01-U01'], b.use_cases['N01-U01']);
+  assert.deepEqual(a.use_cases['N01-U01'], { status: 'estimated', app: 'Beta App', currency: 'AED', per_record: 50, baseline: 120, amount: 6000 });
+});
+
+test('estimatesFor with two usable fixed siblings picks the lower App name, not the one the rows arrived with', async () => {
+  const useCases = [{ id: 'N01-U01', business_domain: 'Sales' }, { id: 'N01-U02', business_domain: 'Sales' }, { id: 'N01-U03', business_domain: 'Sales' }];
+  const specs = new Map([['N01-U01', { config: { result_table: 'main.inspire.sales' } }], ['N01-U03', ruleSpec('Zeta App', 90)], ['N01-U02', ruleSpec('Alpha App', 10)]]);
+  const out = await V.estimatesFor({ useCases, specs, measured: {}, baselineOf: async () => 1 });
+  assert.equal(out.use_cases['N01-U01'].app, 'Alpha App');
+  assert.equal(out.use_cases['N01-U01'].per_record, 10);
+});
+
+test('estimatesFor with an own rule that has no value borrows the usable sibling; the own empty rule is never named', async () => {
+  const useCases = [{ id: 'N01-U01', business_domain: 'Sales' }, { id: 'N01-U02', business_domain: 'Sales' }];
+  const specs = new Map([['N01-U01', { use_case_name: 'Own App', money: { currency: 'per_currency' } }], ['N01-U02', ruleSpec('Sales App', 50)]]);
+  const out = await V.estimatesFor({ useCases, specs, measured: {}, baselineOf: async () => 120 });
+  assert.equal(out.use_cases['N01-U01'].app, 'Sales App');
+});
+
+// REQ-078 rc7 walk: Discover measured 6 of 24 use cases from their KPI query, and the value ledger
+// holds none of them, so the route answered "set rule" for every card and a rule estimate would have replaced the measured figure.
+const measuredJson = JSON.stringify({ status: 'measured', currency: 'USD', text: 'USD 77.1K-231.4K a year' });
+const notMeasuredJson = JSON.stringify({ status: 'not measured yet', text: 'Value not measured yet: measure losses caught early.' });
+
+test('a use case Discover measured keeps its measured figure: no rule estimate replaces it, even with no ledger row and no money rule', async () => {
+  const useCases = [{ id: 'N02-U01', business_domain: 'Sales', value_estimate: measuredJson }];
+  const out = await V.estimatesFor({ useCases, specs: new Map(), measured: {}, baselineOf: async () => 120 });
+  assert.equal(out.use_cases['N02-U01'], null);
+  assert.deepEqual(out.totals, { estimated: {} });
+});
+
+test('live-shaped rc7 session: 6 measured use cases get no estimate, the 18 unmeasured with no money rule say set a rule', async () => {
+  const MEASURED_IDS = ['N02-U01', 'N03-U01', 'N03-U02', 'N03-U03', 'N03-U04', 'N06-U04'];
+  const ALL_IDS = ['N01-U01', 'N01-U02', 'N01-U03', 'N02-U01', 'N02-U02', 'N02-U03', 'N02-U04', 'N03-U01', 'N03-U02', 'N03-U03', 'N03-U04',
+    'N04-U01', 'N04-U02', 'N04-U03', 'N04-U04', 'N04-U05', 'N04-U06', 'N05-U01', 'N05-U02', 'N05-U03', 'N06-U01', 'N06-U02', 'N06-U03', 'N06-U04'];
+  const useCases = ALL_IDS.map((id) => ({
+    id,
+    business_domain: id.slice(0, 3),
+    value_estimate: MEASURED_IDS.includes(id) ? measuredJson : notMeasuredJson,
+  }));
+  const out = await V.estimatesFor({ useCases, specs: new Map(), measured: {}, baselineOf: async () => null });
+  for (const id of MEASURED_IDS) assert.equal(out.use_cases[id], null, `${id} is measured`);
+  const unmeasured = ALL_IDS.filter((id) => !MEASURED_IDS.includes(id));
+  assert.equal(unmeasured.length, 18);
+  for (const id of unmeasured) assert.deepEqual(out.use_cases[id], { status: 'set_rule' }, `${id} has no money rule`);
+});
+
+test('discoveredMeasured reads Discover status from a JSON string, an object, or nothing, never a guess', () => {
+  assert.equal(V.discoveredMeasured({ value_estimate: measuredJson }), true);
+  assert.equal(V.discoveredMeasured({ value_estimate: { status: 'measured' } }), true);
+  assert.equal(V.discoveredMeasured({ value_estimate: notMeasuredJson }), false);
+  assert.equal(V.discoveredMeasured({ value_estimate: '{not json' }), false);
+  assert.equal(V.discoveredMeasured({ value_estimate: null }), false);
+  assert.equal(V.discoveredMeasured({}), false);
 });

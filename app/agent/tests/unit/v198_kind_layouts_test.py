@@ -21,6 +21,8 @@ import shell_sql  # noqa: E402
 from v141_app_shell_test import PAGE, SETTINGS, app_dir, call  # noqa: E402
 from v144_app_data_test import DECIDE, EDITOR, DataWorkspace, shell  # noqa: E402
 import v142_edits_test as edits  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 with open(os.path.join(SHELL, "examples", "forecast_cockpit.json"), encoding="utf-8") as _handle:
     FORECAST = json.load(_handle)
@@ -607,7 +609,7 @@ def test_the_app_uses_a_layout_only_when_the_run_wrote_its_companion_tables_and_
     inst = _layout_inspire(agent_ns, tmp_path / "b", {k: v for k, v in contract.items() if "sensitivity" not in k})
     got = inst._implement_app_layout("N04-U01", {"use_case_kind": "driver_scenarios"}, {}, "main.s.margin_out", warnings, inst._implement_schema_reader())
     assert got == ("decision_queue", {})
-    assert warnings == ["App: the Scenario lab layout reads tables the run has not written yet (main.s.margin_out__sensitivity does not "
+    assert warnings == [f"{APP_LABEL}: the Scenario lab layout reads tables the run has not written yet (main.s.margin_out__sensitivity does not "
                         "exist), so the App page shows only the decision list, without the Scenario lab view, until a run writes "
                         "them"]
     assert "[APP-LAYOUT FIRED] N04-U01: scenario_lab -> decision_queue, missing=1" in capsys.readouterr().out

@@ -33,6 +33,8 @@ CATEGORIES = {
 REVIEWED = {
     'count': {
         ('_call_ai_query_impl', '_attempt_timeout'),
+        # REQ-181: the Genie round number of the App page check, an integer the loop counts.
+        ('_implement_page_file', "turn.get('round')"),
         ('_call_ai_query_impl', '_target_split_limit'),
         ('_call_ai_query_impl', 'best_limit'),
         ('_call_ai_query_impl', 'effective_limit'),
@@ -46,6 +48,8 @@ REVIEWED = {
         ('_implement_app_settled', 'minutes'),
         ('_implement_deploy_app', 'timeout_s'),
         ('_implement_genie_loop', 'rounds'),
+        # REQ-326: the busy-round counter of the Genie loop, an integer the loop counts.
+        ('_implement_genie_loop', 'busy_rounds'),
         ('_implement_genie_smoke', 'timeout_s'),
         ('_implement_one_locked', "previous['spec_version']"),
         ('_implement_refresh_run_controls', 'len(found)'),
@@ -141,7 +145,11 @@ REVIEWED = {
         ('run_worker_judge', 'step_name'),
     },
     'person': {
+        # REQ-331: the grouping the person chose, shown back with the refused change so they can change it on the Run page.
+        ('_implement_fill_and_preview', "implement_choice_refusal(spec_nb.get('grouping'), moved)"),
         ('__init__', '_raw_operation'),
+        # REQ-199: the Grouping names a vibe typed, shown back so the person can keep one of them.
+        ('_implement_route_vibe', "' and '.join(named)"),
         ('__init__', 'self.generation_path'),
         ('__init__', 'self.table_election_mode'),
         ('_entries', 'name'),
@@ -184,6 +192,11 @@ REVIEWED = {
         ('_run_implement_mode', 'missing'),
     },
     'name': {
+        # REQ-204/REQ-197: the Table Scope view name Inspire computed, named in the refusal to rewrite a view that is not one.
+        ('scope_view_definition', 'view'),
+        # REQ-225: the owned view name of the Table Scope, Inspire's own scope['view'] key (the live dict is keyed by it), named in
+        # the refusal to restore a view whose saved definition is not a view. The caller's except passes it through redact_error.
+        ('scope_view_restore_sql', 'view'),
         ('_implement_alert', 'named'),
         ('_verify_file', 'file'),
         ('notebook_file', "pin['file']"),
@@ -294,7 +307,9 @@ REVIEWED = {
         ('_writable_root', 'candidates'),
         ('assert_no_blocking', "', '.join((a['rule_id'] for a in blocking[:10]))"),
         ('deep_signal_measures', 'check'),
-        ('deploy', "chart['id']"),
+        ('deploy', "implement_app_raw_block(raw, [t for t in raw if not self._implement_scope_columns(t)])"),
+        # REQ-237: the chart's person name (its title, its position among shared titles, or 'one chart'), built from the App's own spec.
+        ('deploy', "inspire_shell_facts.chart_names(page)[str(chart['id'])]"),
         ('deploy', "host['name']"),
         ('deploy', 'name'),
         ('deploy', "page['id']"),
@@ -357,6 +372,8 @@ REVIEWED = {
         ('_implement_lakebase_ready', 'implement_lakebase_unavailable(error)'),
         ('_implement_lakebase_call', 'implement_lakebase_refused(call, self._implement_builder())'),
         ('_implement_lakebase_synced', "implement_lakebase_schema_denied(copy['synced'], self._implement_builder())"),
+        # REQ-131, REQ-260: the GRANT statement the Permission Required dialog copies (carried as the exception's statement, never in the sentence)
+        ('_implement_lakebase_synced', "implement_lakebase_schema_statement(copy['synced'], self._implement_builder())"),
         ('_implement_lakebase_views', "'; '.join(problems)"),
         ('_implement_merge_genie', "'; '.join(problems)"),
         ('_implement_one_locked', "'; '.join(errors)"),
@@ -375,13 +392,15 @@ REVIEWED = {
         ('_implement_settings_owner_check', 'refusal'),
         ('implement_vibe_routes', "'; '.join(problems)"),
         ('_implement_one_locked', 'implement_stop_message(outcome, spec, trains_model=self._implement_trains_model(use_case))'),
-        ('_implement_output_vibes_gate', "implement_vibes_missed_text(found['resend'])"),
+        ('_implement_output_vibes_gate', "implement_vibes_missed_text(found['resend'], None, implement_asset_titles(context.get('asset_status')))"),
         ('_implement_output_vibes_gate', "implement_vibes_repair(found['resend'], IMPLEMENT_OUTPUT_VIBES_LEAD)"),
         ('_implement_page_check', '[page]'),
         ('_implement_page_check', 'pages'),
         ('_implement_page_check', 'problems'),
         ('_implement_page_file', "'; '.join(errors + drawn_errors)"),
         ('_implement_page_file', "'; '.join(problems)"),
+        # REQ-181: the refusal is built only from the label and the reviewed problem list above.
+        ('_implement_page_file', 'refusal'),
         ('_implement_page_file', "'; '.join(owned)"),
         ('_implement_page_file', "'; '.join(shape)"),
         ('_implement_page_file', "', '.join(reappeared)"),
@@ -445,6 +464,8 @@ REVIEWED = {
 }
 HALF_REVIEWED = {
     ("_probe_llm_endpoint", "kind"): "the category word Inspire gave the error, never its text",
+    # REQ-326: the wait is a number Inspire computes (Retry-After or the busy backoff); the Genie text it may read is never shown.
+    ("_implement_genie_loop", "wait"): "a wait in seconds Inspire computed, never the text it was read from",
     ("_with_metadata_retries", "kind"): "the category word Inspire gave the error, never its text",
     ("smoke_render_all_prompts", "type(_re).__name__"): "the class name of the error, never its text",
     ("_score_with_split_retry", "type(exc).__name__"): "the class name of the error, never its text",

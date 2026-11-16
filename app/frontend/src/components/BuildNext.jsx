@@ -3,8 +3,9 @@ import { ArrowRight, Loader2 } from 'lucide-react';
 import ValueEstimateLine from './ValueEstimateLine';
 import { AppReadAccess } from './AppReadAccess';
 import { PlainMessage } from './TechnicalDetails';
-import PermissionRequired from './PermissionRequired';
+import { raisePermissions } from '../lib/permissionBus';
 import { buildItems, buildNextOf, moneyText, nextSharingTables } from '../lib/buildNext';
+import { trackBuildSubmit } from '../lib/implementControl';
 import { appGrantText, moneyRuleColumns, preflightParams, primaryTableOf, specForSibling } from '../lib/implementWizard';
 
 const BUILD_NOW_BUTTON = 'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white bg-db-red-solid shadow-sm shadow-db-red/20 hover:bg-db-red-solid-hover disabled:opacity-70';
@@ -98,11 +99,10 @@ export function BuildNextPanel({ apiFetch, inspireDatabase, warehouseId, session
   );
 }
 
-export function BuildNextStep({ apiFetch, apiPostJson, inspireDatabase, warehouseId, sessionId, notebookPath = '', focusId, live, caseOf, onBuilt, onBuildCustom, onMeasure = null, showcase = false }) {
+export function BuildNextStep({ apiFetch, apiPostJson, inspireDatabase, warehouseId, sessionId, notebookPath = '', focusId, live, caseOf, onBuilt, onBuildCustom, onQueued = null, onMeasure = null, showcase = false }) {
   const { rows, liveSpecs, error } = useBuildRows(apiFetch, inspireDatabase, warehouseId, sessionId, showcase);
   const next = useMemo(() => (rows && live ? nextSharingTables(rows, focusId) : []), [rows, live, focusId]);
   const [builds, setBuilds] = useState({});
-  const [permissionDialog, setPermissionDialog] = useState(null);
   if (!live || error || !next.length) return null;
   const canBuild = Boolean(onBuilt && onBuildCustom);
   const canBuildNow = Boolean(liveSpecs[focusId]);
@@ -133,16 +133,16 @@ export function BuildNextStep({ apiFetch, apiPostJson, inspireDatabase, warehous
       if (blocked.length) {
         const permissions = Object.values(pre.checks || {}).map((check) => check?.permission).filter(Boolean);
         patch(row.id, { busy: false, error: blocked.join(' '), permissions });
-        if (permissions.length) setPermissionDialog({ permissions });
+        if (permissions.length) raisePermissions(permissions);
         return;
       }
-      const data = await apiPostJson('/api/inspire/implement/submit', {
+      const data = await trackBuildSubmit(spec, () => apiPostJson('/api/inspire/implement/submit', {
         inspire_database: inspireDatabase,
         warehouse_id: warehouseId,
         session_id: String(sessionId),
         notebook_path: notebookPath,
         spec,
-      });
+      }), onQueued);
       patch(row.id, { busy: false });
       onBuilt(data);
     } catch (e) {
@@ -196,12 +196,11 @@ export function BuildNextStep({ apiFetch, apiPostJson, inspireDatabase, warehous
               </div>
               {build.error && <PlainMessage text={`Inspire could not start the build: ${build.error}`} role="alert" className="text-[12px] text-error-fg" />}
               {build.permissions?.length > 0 && (
-                <button type="button" data-see-grant="" onClick={() => setPermissionDialog({ permissions: build.permissions })}
+                <button type="button" data-see-grant="" onClick={() => raisePermissions(build.permissions, {}, { explicit: true })}
                   className="self-start rounded-lg border border-border bg-surface px-2.5 py-1 text-[11px] font-semibold text-text-primary hover:bg-bg-subtle">
                   See the grant
                 </button>
               )}
-              {permissionDialog && <PermissionRequired permissions={permissionDialog.permissions} onClose={() => setPermissionDialog(null)} />}
               {build.refusal && <AppReadAccess offer={build.refusal} result={build.grant} busy={build.granting} onGrant={() => grantReads(row)} />}
             </li>
           );

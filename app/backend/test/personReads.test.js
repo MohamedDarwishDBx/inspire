@@ -9,8 +9,8 @@ const PERSON = 'person-token';
 const PERSON_EMAIL = ['pat.lee', 'example.com'].join('@');
 const APP_ENV = { NODE_ENV: 'production', DATABRICKS_CLIENT_ID: 'inspire-client', DATABRICKS_CLIENT_SECRET: 'inspire-secret' };
 const { RUN_NO_SIGN_IN } = require('../lib/ucReads');
-const cannotRead = (names) => `You can't read ${names}. Pick tables and files you can read, or ask their owner for access`; // file paths
-const tableCannotRead = () => "You can't read this source table. Pick tables you can read, or ask their owner for access";
+const cannotRead = (names) => `You can't read ${names}. Pick tables and files you can read, or ask your data owner for access`; // file paths
+const tableCannotRead = () => "You can't read this source table. Pick tables you can read, or ask your data owner for access";
 const scopeOf = (workspace) => launched(workspace)[0].body.tasks[0].notebook_task.base_parameters['01_uc_metadata'];
 
 const SEES = {
@@ -293,7 +293,7 @@ test('table reads say this source table or N source tables and never name the id
   const U = require('../lib/ucReads');
   assert.equal(U.runUnreadableTablesText(['hr.p.salaries']), tableCannotRead());
   assert.equal(U.runUnreadableTablesText(['main.s.a', 'main.s.b']),
-    "You can't read 2 source tables. Pick tables you can read, or ask their owner for access");
+    "You can't read 2 source tables. Pick tables you can read, or ask your data owner for access");
   assert.doesNotMatch(U.runUnreadableTablesText(['main.s.a', 'main.s.b']), /main\.s\./);
   assert.equal(U.runUnreadableText(['/Workspace/Users/someone/strategy.json']), cannotRead('/Workspace/Users/someone/strategy.json'));
 });

@@ -6,7 +6,7 @@ import types
 import pytest
 
 from v120_artifacts_support import CapturingLogger
-from v140_implement_test import READS, SHELL_FILES, _deploy_inspire, _not_access_reads, sdk_stub  # noqa: F401
+from v140_implement_test import NO_AUDIENCE, READS, SHELL_FILES, _deploy_inspire, _not_access_reads, sdk_stub  # noqa: F401
 from v142_look_test import DEPLOYED, NEW_APP, _user_context
 from v232_protected_sources_test import MASK, OWN, RESULT, SOURCE, SUMMARY, _gate, _plan, _protection, _source, _table
 
@@ -16,6 +16,8 @@ if SERVER not in sys.path:
     sys.path.insert(0, SERVER)
 
 import shell_core  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 VIEW = "main.s.orders_view"
 BOUND_FILTER = "ALTER TABLE `main`.`inspire`.`churn_out` SET ROW FILTER main.sec.own_rows ON (`owner`)"
@@ -178,7 +180,7 @@ def test_an_alert_over_protected_tables_is_refused_and_one_over_plain_tables_is_
 def _decided_deploy(agent_ns, protected):
     created = {"compute_status": {"state": "ACTIVE"}, "service_principal_client_id": "sp-1"}
     read = dict(created, user_api_scopes=["sql:restricted-query", "genie"])
-    inst, context, calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, read] + DEPLOYED, access=[])
+    inst, context, calls, _imported = _deploy_inspire(agent_ns, NEW_APP + [created, read, NO_AUDIENCE] + DEPLOYED, access=[])
     inst.logger = CapturingLogger()
     context = _user_context(agent_ns, context, decisions=True)
     context["protected"] = protected
@@ -192,7 +194,7 @@ def test_a_per_user_app_over_a_protected_result_gives_its_service_principal_no_g
     inst, fields = _decided_deploy(agent_ns, {RESULT: "a row filter"})
     assert not any("TO `sp-1`" in s for s in _not_access_reads(inst.spark.statements) if "__inspire_value_ledger" not in s), (
         "the protected result gets no grant; the value ledger grant is its own table (lane E)")
-    assert any(w.startswith(f"App: each person records decisions on {RESULT} as themselves") for w in fields.get("_warnings") or [])
+    assert any(w.startswith(f"{APP_LABEL}: each person records decisions on {RESULT} as themselves") for w in fields.get("_warnings") or [])
     assert any("[IMPLEMENT-PROTECTED-WRITER FIRED]" in m for _, m in inst.logger.records)
 
 

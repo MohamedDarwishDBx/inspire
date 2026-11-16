@@ -47,7 +47,16 @@ SHELL_ENTRY_POINTS = {
     ("_implement_app_block_files", "_implement_app_shell"),
     ("_implement_app_block_files", "shell_sql.image_blocks"),
     ("_implement_app_block_images", "_implement_app_shell"),
+    # Carried App check inputs (REQ-225): a version that does not rebuild the App reads its published settings and pages through the
+    # App shell (the same files the App build reads for a carried App) so the served App is checked by the one App check.
+    ("_implement_carried_app_args", "_implement_app_shell"),
     ("_implement_app_check", "shell_core.Shell"),
+    # Served App read (REQ-214): the check reads the page filters and the first decision-list rows of the App it checks, through the same
+    # Shell class the App runs, so each all-column and filter ask is judged against what the served App shows, not the spec alone.
+    ("_implement_app_check", "shell_core.Shell.filters"),
+    ("_implement_app_check", "shell_core.Shell.pages"),
+    ("_implement_app_check", "shell_core.served_filter_problem"),
+    ("implement_served_rows", "shell_core.Shell.records"),
     ("_implement_app_check", "shell_core.HttpError"),
     ("_implement_app_check", "shell_core.Shell.checked"),
     ("_implement_app_check", "shell_core.Shell.close"),
@@ -164,7 +173,14 @@ SHELL_ENTRY_POINTS = {
     ("implement_digest_body", "shell_sql.impact_of"),
     ("implement_digest_body", "shell_sql.stake_noun"),
     ("implement_digest_body", "shell_sql.stake_words"),
-    ("implement_driver_problems", "shell_sql.driver_charts"),
+    # Drivers on the App's non-default layouts (REQ-181). Reviewed: each name is a public module-level function of shell_sql, the
+    # App shell's own page-shape API, and has reviewed callers already (layouts: implement_layout_brief; driver_charts:
+    # implement_dashboard_from_page; page_layout: implement_drop_misfits). Shell and agent ship in one notebook, so the names
+    # cannot drift apart between a build and the App it deploys. implement_driver_problems now reaches driver_charts through
+    # implement_off_table_drivers, so its own entry moved to that function.
+    ("implement_drivers_brief", "shell_sql.layouts"),
+    ("implement_off_table_drivers", "shell_sql.driver_charts"),
+    ("implement_settle_drivers", "shell_sql.page_layout"),
     ("implement_layout_brief", "shell_sql.layout_decides"),
     *LAKEBASE_ENFORCEMENT_REVIEWED,
 
@@ -535,6 +551,7 @@ def test_an_error_the_shell_raises_after_reading_a_row_comes_back_without_the_ro
     class Shell:
         def __init__(self, root, **kwargs):
             self.factory = kwargs["sp_factory"]
+            self.pages = []  # the real Shell always carries its pages; the App check reads them for REQ-237 page names
             if stage == "start":
                 stop(self.factory)
 
@@ -601,6 +618,8 @@ def test_the_check_reads_lakebase_rows_through_the_same_watch(agent_ns, tmp_path
     caught = {}
 
     class Shell:
+        pages = []  # the served App's pages; the real Shell always sets this, and an App with none has nothing to read
+
         def __init__(self, root, **kwargs):
             caught.update(kwargs)
 

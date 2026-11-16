@@ -14,7 +14,9 @@ const SAMPLE_CASE = { ...HARNESS_USE_CASE, primary_table: SAMPLE, tables_involve
 const ORDERS_COLUMNS = [['order_id', 'STRING'], ['customer_id', 'STRING'], ['order_date', 'DATE'], ['amount', 'DECIMAL(10,2)']];
 const TRIP_COLUMNS = [['vendor_id', 'STRING'], ['pickup_datetime', 'TIMESTAMP'], ['trip_distance', 'DOUBLE'], ['fare_amount', 'DOUBLE']];
 const rows = (pairs) => pairs.map(([column_name, data_type], i) => ({ column_name, data_type, ordinal_position: i + 1 }));
-const COLUMNS = { 'main.s.orders': rows(ORDERS_COLUMNS), 'samples.nyctaxi.trips': rows(TRIP_COLUMNS), [COPY]: rows(TRIP_COLUMNS) };
+const RETURNS_COLUMNS = [['return_id', 'STRING'], ['order_id', 'STRING'], ['returned_at', 'DATE']];
+// Every table the harness use case names has its columns, as the platform lists them: a table left out reads as missing (REQ-180).
+const COLUMNS = { 'main.s.orders': rows(ORDERS_COLUMNS), 'main.s.returns': rows(RETURNS_COLUMNS), 'samples.nyctaxi.trips': rows(TRIP_COLUMNS), [COPY]: rows(TRIP_COLUMNS) };
 const COPY_ROW = { table_catalog: 'inspire_kinds_rc7', table_schema: 'walk_rc7e', table_name: 'nyctaxi_trips', matched: '4', total: '4', owned: '1' };
 const SAMPLE_DENIED = '[PERMISSION_DENIED] User does not have SELECT on Table samples.nyctaxi.trips';
 const FOREIGN_DENIED = '[PERMISSION_DENIED] User does not have SELECT on Table other.x.trips_copy';

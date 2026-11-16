@@ -59,7 +59,8 @@ test('without the right to create a schema the default switches to the Inspire d
   for (const rows of [[ME], [{ kind: 'right', schema_name: '', value: 'USE_CATALOG' }, ME]]) {
     const got = place(rows);
     assert.deepEqual([got.table, got.place, got.create, got.own_table], [INSPIRE, 'inspire', false, OWN]);
-    assert.match(got.note, /GRANT CREATE SCHEMA ON CATALOG `main` TO `amr@x`/);
+    assert.doesNotMatch(got.note, /GRANT/, 'the prose names no GRANT (REQ-260, must-exclude)');
+    assert.deepEqual(got.permission.statements, ['GRANT CREATE SCHEMA ON CATALOG `main` TO `amr@x`'], 'the dialog payload carries the exact statement (must-keep)');
   }
   const unchecked = place(null, { unchecked: 'warehouse stopped' });
   assert.equal(unchecked.table, INSPIRE);
@@ -161,8 +162,10 @@ test('the grant on a use case schema Inspire creates covers every right the buil
   assert.equal(I.outputAccess(rowsFrom(granted), 'main.s.n01_u01_results', { builder: true }).write.ok, true);
   assert.equal(I.modelAccess(rowsFrom(granted), 'main.s.n01_u01_results_model', { builder: true }).ok, true);
   assert.equal(I.outputAccess(rowsFrom(granted), 'main.s.n01_u01_results', { builder: true }).app.ok, true, 'a new App can be given read access');
-  assert.match(I.outputAccess(rowsFrom(granted.filter((p) => p !== 'MANAGE')), 'main.s.n01_u01_results', { builder: true }).app.detail,
-    /needs this access.*GRANT MANAGE ON SCHEMA `main`\.`s` TO `app-sp`/);
+  const noManage = I.outputAccess(rowsFrom(granted.filter((p) => p !== 'MANAGE')), 'main.s.n01_u01_results', { builder: true }).app;
+  assert.match(noManage.detail, /needs this access.*Permission Required/);
+  assert.doesNotMatch(noManage.detail, /GRANT/, 'the prose names no GRANT (REQ-260, must-exclude)');
+  assert.deepEqual(noManage.permission.statements, ['GRANT MANAGE ON SCHEMA `main`.`s` TO `app-sp`'], 'the dialog payload carries the exact statement (must-keep)');
   const withoutModel = granted.filter((p) => p !== 'CREATE MODEL');
   assert.match(I.modelAccess(rowsFrom(withoutModel), 'main.s.n01_u01_results_model', { builder: true }).detail, /needs CREATE MODEL on main\.s/);
 });
@@ -193,7 +196,8 @@ test('context offers the own schema as the default only to a new use case, and f
   await withApp({ forwardedToken: PERSON_TOKEN, statements: schemaRows([ME]) }, async (url) => {
     const got = await call(url, `/api/inspire/implement/context?${Q}`);
     assert.deepEqual([got.data.own_schema.table, got.data.own_schema.place], [INSPIRE, 'inspire']);
-    assert.match(got.data.own_schema.note, /GRANT CREATE SCHEMA ON CATALOG `main`/);
+    assert.doesNotMatch(got.data.own_schema.note, /GRANT/, 'the prose names no GRANT (REQ-260, must-exclude)');
+    assert.ok(got.data.own_schema.permission.statements[0].startsWith('GRANT CREATE SCHEMA ON CATALOG `main` TO '), 'the route carries the dialog payload (must-keep)');
   });
   await withApp({ forwardedToken: PERSON_TOKEN, statements: schemaRows([RIGHT, ME, ...tagged(SCHEMA, {})]) }, async (url) => {
     const got = await call(url, `/api/inspire/implement/context?${Q}`);
@@ -330,7 +334,9 @@ test('an existing schema is never excused as one Inspire creates: a real access 
   const got = I.outputAccess(existing, OWN, { builder: true, createsSchema: true });
   assert.equal(got.write.ok, true);
   assert.equal(got.app.ok, false);
-  assert.match(got.app.detail, /needs this access.*GRANT MANAGE ON SCHEMA/);
+  assert.match(got.app.detail, /needs this access.*Permission Required/);
+  assert.doesNotMatch(got.app.detail, /GRANT/);
+  assert.ok(got.app.permission.statements.some((s) => s.startsWith('GRANT MANAGE ON SCHEMA')), 'the dialog payload carries the MANAGE statement (must-keep)');
   assert.match(w.blockWhy(got.app.detail), /^Needs access Inspire does not have on the schema/);
   assert.equal(I.schemaNotCreated(existing), false);
 });

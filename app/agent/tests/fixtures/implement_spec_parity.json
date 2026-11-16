@@ -253,7 +253,8 @@
         "modify": false,
         "replace_edits": false,
         "decisions": true,
-        "alerts": false
+        "alerts": false,
+        "experience": "ui"
       },
       "app_backend": "lakebase",
       "app_charts": [],
@@ -5135,6 +5136,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -5382,6 +5388,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -5773,6 +5784,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -5898,6 +5914,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -6023,6 +6044,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -8207,7 +8233,7 @@
         ]
       ],
       "errors": [
-        "outputs.merge.app must be text: the App to add to, or \"\" for a new one"
+        "outputs.merge.app must be text: the Agentic App to add to, or \"\" for a new one"
       ],
       "changes": [],
       "removed": []
@@ -8241,7 +8267,7 @@
         ]
       ],
       "errors": [
-        "outputs.merge.app 'it's' must name an existing Inspire App"
+        "outputs.merge.app 'it's' must name an existing Inspire Agentic App"
       ],
       "changes": [],
       "removed": []
@@ -8259,7 +8285,7 @@
         ]
       ],
       "errors": [
-        "outputs.merge.app 'x\"y' must name an existing Inspire App"
+        "outputs.merge.app 'x\"y' must name an existing Inspire Agentic App"
       ],
       "changes": [],
       "removed": []
@@ -10618,7 +10644,16 @@
         ]
       ],
       "errors": [],
-      "changes": [],
+      "changes": [
+        [
+          [
+            "outputs",
+            "app_options",
+            "experience"
+          ],
+          "agentic"
+        ]
+      ],
       "removed": [
         [
           "based_on_version"
@@ -16294,6 +16329,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -18442,6 +18482,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -20604,6 +20649,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -23256,6 +23306,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -23512,6 +23567,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     },
@@ -23712,6 +23772,11 @@
           "outputs",
           "app_pages",
           "impact"
+        ],
+        [
+          "outputs",
+          "app_options",
+          "experience"
         ]
       ]
     }

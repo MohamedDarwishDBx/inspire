@@ -36,7 +36,7 @@ PAGE = {
          "y": [{"expression": "SUM(value_at_stake)", "format": "currency", "currency": "USD"}]},
     ],
     "kpis": [
-        {"id": "exposure", "label": "Revenue at stake", "dataset": "rows", "expression": "SUM(value_at_stake)",
+        {"id": "exposure", "label": "Value at stake", "dataset": "rows", "expression": "SUM(value_at_stake)",
          "format": "currency", "currency": "USD", "good": "down"},
         {"id": "results", "label": "Results", "dataset": "rows", "expression": "COUNT(*)", "format": "integer", "good": "down"},
     ],
@@ -69,8 +69,15 @@ def _sqlite_star_except(sql, columns):
     return re.sub(r"SELECT \* EXCEPT \(([^)]*)\), ", expand, sql)
 
 
+def sqlite_text_formats(db) -> None:
+    """SQLite has no TRY_TO_DATE. The fixtures hold ISO dates, which TRY_CAST reads, so the text formats read NULL here (their own
+    shapes are checked on Postgres in rc2_lakebase_date_read_test)."""
+    db.create_function("TRY_TO_DATE", 2, lambda text, text_format: None)
+
+
 def _run(sql, table="stake_rows", columns=STAKE_COLUMNS, rows=None):
     db = sqlite3.connect(":memory:")
+    sqlite_text_formats(db)
 
     def add_months(value, months):
         year, month = (int(part) for part in str(value)[:7].split("-"))
@@ -480,6 +487,7 @@ def test_a_dataset_that_ignores_a_status_or_the_losses_rule_fails_the_page_check
 
 def _run_with(page, setup, sql=None):
     db = sqlite3.connect(":memory:")
+    sqlite_text_formats(db)
     _load(db, "stake_rows", STAKE_COLUMNS, [(r["value_at_stake"], r["currency_code"], r["channel"], r["event_month"], r.get("fx_rate")) for r in ROWS])
     for statement in [part for part in setup.split(";") if part.strip()]:
         db.execute(statement)

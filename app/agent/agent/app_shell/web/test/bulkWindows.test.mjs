@@ -56,13 +56,13 @@ test('Mark all as done confirms the open count, says the closed records stay, an
   await context.close();
 });
 
-test('with My actions on, the same control reads Clear my queue and covers only the open records of the person', async () => {
+test('with My actions on, the same control reads Select my N open and covers only the open records of the person', async () => {
   const writes = [];
   const { page, context } = await openEverything(writes);
   await page.getByRole('button', { name: 'My actions' }).click();
   const clear = page.locator('[data-act-all]');
   await clear.waitFor();
-  assert.match((await clear.innerText()).trim(), /^Clear my queue: \d+ open$/);
+  assert.match((await clear.innerText()).trim(), /^Select my \d+ open$/);
   await clear.click();
   await page.getByRole('button', { name: /Mark all as done…/ }).click();
   await page.getByRole('button', { name: /Mark \d+ open records as done\?/ }).click();
@@ -77,7 +77,7 @@ test('Clear my queue is a visible button in the list header that confirms, write
   const { page, context } = await openEverything(writes);
   const clear = page.locator('[data-clear-queue]');
   await clear.waitFor();
-  assert.equal((await clear.innerText()).trim(), 'Clear my queue · 1');
+  assert.equal((await clear.innerText()).trim(), 'Clear my queue', 'the decided wording (REQ-008, REQ-289)');
   await clear.click();
   assert.equal(writes.length, 0, 'opening the button writes nothing');
   await page.locator('[data-clear-confirm]').click();

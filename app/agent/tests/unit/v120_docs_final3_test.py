@@ -36,7 +36,7 @@ def card_slides(prs):
     return [text for text in slide_texts(prs) if re.search(r"\| \d+ \| N\d\d-U\d\d · ", text)]
 
 
-def test_translation_payload_carries_the_headline_and_the_merge_makes_it_the_title(docs):
+def test_translation_payload_carries_the_headline_and_the_merge_titles_the_use_case_with_the_name(docs):
     ts = docs["TranslationService"]
     uc = make_uc("N01-U01", usecase="forecast daily bakery demand with prophet", Name="Forecast daily demand per store")
     payload = ts._translation_payload(uc)
@@ -46,40 +46,44 @@ def test_translation_payload_carries_the_headline_and_the_merge_makes_it_the_tit
     assert merged["usecase"] == AR_HEADLINE and merged["Name"] == AR_NAME
     assert "Headline" not in merged["_untranslated_fields"]
     obj = make_inspire(docs)
-    assert obj._doc_use_case_title(merged, "Arabic") == AR_HEADLINE
-    assert obj._doc_use_case_title(uc, "English") == "Forecast Daily Bakery Demand"
+    assert obj._doc_use_case_title(merged, "Arabic") == AR_NAME, "REQ-175: the title is the translated simple name, never the headline"
+    assert obj._doc_use_case_title(uc, "English") == "Forecast Daily Demand Per Store"
     missing = translated_arabic(docs, uc, Headline="")
     assert "Headline" in missing["_untranslated_fields"]
-    assert obj._doc_use_case_title(missing, "Arabic") == "Forecast Daily Bakery Demand"
+    assert obj._doc_use_case_title(missing, "Arabic") == AR_NAME
 
 
 def test_the_same_title_field_names_the_use_case_on_every_surface_in_every_language(docs, captured_html):
-    english = make_uc("N01-U01", "Sales", usecase="Forecast Bakery Demand", Name="Forecast daily demand per store to cut waste")
+    english = make_uc("N01-U01", "Sales", usecase="Forecast Bakery Demand", Name="Forecast Daily Demand Per Store")
     arabic = translated_arabic(docs, english)
     _, page_en = pdf_html(docs, captured_html, {"Sales": [english]}, summary())
     _, page_ar = pdf_html(docs, captured_html, {"المبيعات": [arabic]}, summary(), language="Arabic")
     card_en = section(page_en, 'id="uc-N01-U01"', "</article>")
     card_ar = section(page_ar, 'id="uc-N01-U01"', "</article>")
-    assert ">Forecast Bakery Demand</h3>" in card_en and "Forecast daily demand per store to cut waste" in card_en
-    assert f">{html_lib.escape(AR_HEADLINE)}</h3>" in card_ar
-    assert f">{html_lib.escape(AR_NAME)} باستخدام " in card_ar, "the Arabic card joins the name and technique with the Arabic word"
-    assert page_ar.count(html_lib.escape(AR_HEADLINE)) >= 3
+    assert ">Forecast Daily Demand Per Store</h3>" in card_en
+    assert f">{html_lib.escape(AR_NAME)}</h3>" in card_ar
+    assert f"{html_lib.escape(AR_NAME)} باستخدام" not in card_ar, "REQ-175: the name carries no technique, so no language joins one"
+    assert page_ar.count(html_lib.escape(AR_NAME)) >= 3
     _, prs = deck(docs, {"المبيعات": [arabic]}, summary(), language="Arabic")
-    texts = [text.replace("\u2066", "").replace("\u2069", "") for text in slide_texts(prs)]
+    texts = [text.replace("⁦", "").replace("⁩", "") for text in slide_texts(prs)]
     card = next(text for text in texts if "N01-U01 · " in text and AR_NAME in text)
-    assert AR_HEADLINE in card
-    assert sum(AR_HEADLINE in text for text in texts) >= 3
+    assert AR_NAME in card
+    assert sum(AR_NAME in text for text in texts) >= 3
     obj = make_inspire(docs)
     obj._generate_csv_catalog("English", "en", {"Sales": [english]})
     rows = list(csv.reader(io.StringIO(next(iter(obj.w_client.workspace.files.values())).decode("utf-8"))))
-    assert dict(zip(rows[0], rows[1]))["Use Case"] == "Forecast Bakery Demand"
+    assert dict(zip(rows[0], rows[1]))["Use Case"] == "Forecast Daily Demand Per Store"
 
 
-def test_identical_title_and_name_show_no_subtitle(docs):
+def test_a_use_case_with_no_outcome_or_technique_has_no_subtitle(docs):
     obj = make_inspire(docs)
-    uc = make_uc("N01-U01", usecase="Forecast Bakery Demand", Name="Forecast Bakery Demand")
-    model = obj._document_model("English", labels(docs), summary(), {"Sales": [uc]}, "Acme")
-    assert obj._use_case_view(model["ranked"][0], model, labels(docs))["name"] == ""
+    bare = make_uc("N01-U01", usecase="Forecast Bakery Demand", Name="Forecast Bakery Demand", Statement="",
+                   **{"Analytics Technique": ""})
+    model = obj._document_model("English", labels(docs), summary(), {"Sales": [bare]}, "Acme")
+    assert obj._use_case_view(model["ranked"][0], model, labels(docs))["subtitle"] == ""
+    full = make_uc("N01-U01", usecase="Forecast Bakery Demand", Name="Forecast Bakery Demand", Statement="Cuts waste.")
+    model = obj._document_model("English", labels(docs), summary(), {"Sales": [full]}, "Acme")
+    assert obj._use_case_view(model["ranked"][0], model, labels(docs))["subtitle"] == "Cuts waste. Analytics Technique: Forecasting."
 
 
 def test_summary_highlights_use_the_catalog_name_and_no_counts(docs):

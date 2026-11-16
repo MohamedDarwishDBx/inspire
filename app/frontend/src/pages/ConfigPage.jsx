@@ -344,7 +344,7 @@ export default function ConfigPage({ settings, update, onConfigured }) {
             {publishStatus === 'error' && (
               <div className="flex items-start gap-2 mt-3 p-2.5 bg-error-bg rounded-md">
                 <AlertCircle size={14} className="text-error-fg mt-0.5 shrink-0" />
-                <PlainMessage as="span" text={`Inspire could not publish the notebook: ${publishMessage}`} copy role="alert" data-publish-error=""
+                <PlainMessage as="span" text={`Inspire could not publish the notebook: ${publishMessage}`} securable="workspace" copy role="alert" data-publish-error=""
                   className="min-w-0 flex-1 text-sm text-error-fg" />
               </div>
             )}

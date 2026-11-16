@@ -4,6 +4,7 @@ import {
   RefreshCw, RotateCcw, Square, Trash2, Zap,
 } from 'lucide-react';
 import BodyPortal from './BodyPortal';
+import ModalDialog from './ModalDialog';
 import GenieLogo from './GenieLogo';
 import ImplementStatusBadge from './ImplementStatusBadge';
 import { IconChip, PANEL_CLASS, SectionTitle } from './BuildUi';
@@ -25,36 +26,34 @@ const fitted = (fit, text) => (fit ? <span className="min-w-0 break-words line-c
 export function ConfirmDialog({ title, confirmLabel, useCaseId, busy, onCancel, onConfirm, children }) {
   const [typed, setTyped] = useState('');
   const ok = removeConfirmed(typed, useCaseId);
+  const actions = (
+    <>
+      <button type="button" onClick={onCancel} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border">Cancel</button>
+      <button
+        type="button"
+        disabled={!ok || busy}
+        onClick={onConfirm}
+        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-error-solid disabled:opacity-50"
+      >
+        {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} {confirmLabel}
+      </button>
+    </>
+  );
   return (
-    <BodyPortal>
-      <div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4">
-        <div role="dialog" aria-modal="true" aria-label={title} className="bg-surface border border-border rounded-xl shadow-elevated w-full max-w-md p-5 space-y-3">
-          <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
-          <div className="text-[12px] text-text-secondary space-y-2">{children}</div>
-          <label className="block text-[12px] text-text-secondary">
-            Type <span className="font-mono font-semibold text-text-primary">{useCaseId}</span> to confirm
-            <input dir="auto"
-              autoFocus
-              aria-label="Type the use case id to confirm"
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              className="mt-1 w-full border border-border rounded-md px-2 py-1.5 font-mono text-[12px] bg-surface"
-            />
-          </label>
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={onCancel} className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border">Cancel</button>
-            <button
-              type="button"
-              disabled={!ok || busy}
-              onClick={onConfirm}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-error-solid disabled:opacity-50"
-            >
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} {confirmLabel}
-            </button>
-          </div>
-        </div>
-      </div>
-    </BodyPortal>
+    <ModalDialog titleId={`confirm-${useCaseId}-title`} title={title} onClose={onCancel} overlayClass="z-[80] bg-black/40" widthClass="max-w-md"
+      footer={actions} dialogAttrs={{ 'data-confirm-dialog': '' }}>
+      <div className="text-[12px] text-text-secondary space-y-2">{children}</div>
+      <label className="block text-[12px] text-text-secondary">
+        Type <span className="font-mono font-semibold text-text-primary">{useCaseId}</span> to confirm
+        <input dir="auto"
+          autoFocus
+          aria-label="Type the use case id to confirm"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          className="mt-1 w-full border border-border rounded-md px-2 py-1.5 font-mono text-[12px] bg-surface"
+        />
+      </label>
+    </ModalDialog>
   );
 }
 

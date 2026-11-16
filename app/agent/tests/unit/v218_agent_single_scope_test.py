@@ -37,7 +37,7 @@ def test_an_off_topic_answer_after_the_guard_said_related_is_reported_as_refused
     llm = FakeLLM([said(reply)], related=lambda body: True)
     s, _ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, SOURCE_QUESTION)
-    assert turn["state"] == "done" and turn["answer"].strip() == shell_agent.OFF_TOPIC
+    assert turn["state"] == "done" and turn["answer"].strip().startswith(shell_agent.OFF_TOPIC)
     assert turn["refused"] is True, "the turn state never contradicts its own refusal text"
     assert len(llm.main_calls()) == 1
 
@@ -53,7 +53,7 @@ def test_the_guard_is_the_one_scope_decision_and_unrelated_never_reaches_the_mai
     llm = FakeLLM([said("A has 4.")], related=lambda body: False)
     s, _ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, "What is the tallest mountain on Earth?")
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True, steps=[], actions=[])
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True, steps=[], actions=[])
     assert llm.main_calls() == [] and len(llm.bodies) == 1 and llm.bodies[0]["max_tokens"] == shell_agent.TOPIC_TOKENS
 
 
@@ -100,7 +100,7 @@ def test_source_data_never_turns_an_off_topic_question_on_topic(tmp_path, questi
     llm = FakeLLM([said("A has 4.")], related=sees_the_subject)
     s, _ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, question)
-    assert turn == dict(turn, state="done", answer=shell_agent.OFF_TOPIC, refused=True) and llm.main_calls() == []
+    assert turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn == dict(turn, state="done", answer=turn["answer"], refused=True) and llm.main_calls() == []
 
 
 def test_an_injection_question_is_still_refused_on_the_guard_path(tmp_path):
@@ -108,7 +108,7 @@ def test_an_injection_question_is_still_refused_on_the_guard_path(tmp_path):
     llm = FakeLLM(related=lambda body: "ignore the rules" not in body["messages"][1]["content"].lower(), obey=True)
     s, ws, _made = agent_shell(tmp_path, ws=AgentWorkspace(llm=llm))
     turn = ask(s, question)
-    assert turn["refused"] is True and turn["answer"] == shell_agent.OFF_TOPIC and turn["confirm"] is None
+    assert turn["refused"] is True and turn["answer"].startswith(shell_agent.OFF_TOPIC) and turn["confirm"] is None
     assert llm.bodies == [] and ws.queries("MERGE INTO") == []
 
 

@@ -29,9 +29,12 @@ export const pageChoices = (app, pageId) => statusChoices((app?.pages || []).fin
 export const statusChoices = (page) => (Array.isArray(page?.statuses) && page.statuses.length ? page.statuses : DEFAULT_CHOICES);
 export function choiceOf(choices, status, id) {
   const same = (choices || []).filter((c) => c.status === (status || NEW));
-  return same.find((c) => c.id === id) || (same.length === 1 ? same[0] : null);
+  // REQ-285: a status change never reads as a custom choice (Merge), so only a default choice stands in for its status.
+  return same.find((c) => c.id === id) || (same.length === 1 && isDefaultChoice(same[0]) ? same[0] : null);
 }
 export const rowChoice = (choices, row) => choiceOf(choices, row?._inspire_status || row?.action_status, row?._inspire_choice ?? row?.[CHOICE_COLUMN]);
+/** REQ-285: the custom choice a row stores (null for a status-only change), the id that names an undo word. */
+export const rowChoiceId = (row) => row?._inspire_choice ?? row?.[CHOICE_COLUMN] ?? null;
 export const choiceLabel = (choices, row) => rowChoice(choices, row)?.label || statusLabel(row?._inspire_status || row?.action_status || NEW);
 export const closingChoices = (choices) => (choices || []).filter((c) => !isOpenStatus(c.status));
 export const QUICK_CLOSE = { done: ['Mark done', 'done'], dismissed: ['Not an issue', 'dismiss'], could_not: ['Could not fix', 'could-not-fix'] };
@@ -318,6 +321,42 @@ export function evidenceOf(raw) {
   }
 }
 
+const ESTIMATE_PHRASE = /\s*\[\s*estimate\b[^\]]*\]/gi;
+const ESTIMATE_BASIS = /\[\s*estimate\s*:\s*depends on\s+([^\]]+)\]/i;
+const DOTTED_PATH = /\w+\.[\w.`]+/;
+
+/** REQ-306: an estimate tag leaves the figure and becomes a short note. The basis names no table: a column reads in plain words. */
+export function splitEstimate(text) {
+  const raw = String(text ?? '');
+  if (!/\[\s*estimate\b/i.test(raw)) return { text: raw, note: '' };
+  const basis = ESTIMATE_BASIS.exec(raw)?.[1]?.replace(/[`"']/g, '').trim() || '';
+  const from = !basis || DOTTED_PATH.test(basis) ? 'the data behind this record' : basis.replace(/_+/g, ' ').replace(/[,;]/g, '').trim();
+  return { text: raw.replace(ESTIMATE_PHRASE, '').replace(/\s+/g, ' ').trim(), note: `Estimate, based on ${from}.` };
+}
+
+const PREPOSITION = /\s+(for|of|by|to|in|on|with|at|from|and)\s+/i;
+const singular = (word) => (/ies$/.test(word) ? word.replace(/ies$/, 'y') : /(ss|us|is|ics)$/.test(word) || word.length <= 3 || !/s$/.test(word) ? word : word.slice(0, -1));
+
+/** REQ-302: the use case name as an action in the singular, e.g. "Review Risky Card Payments" reads "Review risky card payment". */
+export function actionPhrase(name) {
+  const text = String(name ?? '').replace(/\s+/g, ' ').trim();
+  const cut = text.search(PREPOSITION);
+  const head = (cut < 0 ? text : text.slice(0, cut)).toLowerCase().split(' ').filter(Boolean);
+  if (!head.length) return '';
+  head[head.length - 1] = singular(head[head.length - 1]);
+  const words = head.join(' ');
+  return words.charAt(0).toUpperCase() + words.slice(1) + (cut < 0 ? '' : text.slice(cut).toLowerCase());
+}
+
+/** REQ-302: the drawer title, "<action> for <record identifier>". Without a use case name the record name stands alone. */
+export const recordHeading = (phrase, name) => (phrase ? `${phrase} for ${name}` : name);
+
+/** REQ-302: the goal under the title, taken from the use case question. */
+export function goalLine(question) {
+  const text = String(question ?? '').replace(/\s+/g, ' ').trim();
+  return text ? `Your job is to answer: ${text}` : '';
+}
+
 export function savingText(amount, currency, kind = '') {
   const unit = String(currency || '').trim();
   return unit ? wholeMoney(amount, unit, kind) : integer(amount);
@@ -337,9 +376,9 @@ export function claimTarget(rows, person, limit = 200) {
 export const claimText = (n) => `Nobody owns these records yet, so My work stays empty for everyone. Take the ${n === 1 ? 'one' : n} on this page, or assign each one to the person who will work it.`;
 
 export const QUIET_MIN = 3;
-export const RAISE_CONFIDENCE = 'What would raise it: more history for each item, so the forecast can beat a simple guess; fixing the data quality issues flagged on the rows; and a run on every group instead of the First run only.';
+export const RAISE_CONFIDENCE = 'What would raise it: more of the data behind each item; fixing the data quality issues flagged on the rows; and a run on every group instead of the First run only.';
 
-export function quietList(rows, meta, aliases = {}) {
+export function quietList(rows, meta, aliases = {}, raise = RAISE_CONFIDENCE) {
   const list = rows || [];
   if (list.length < QUIET_MIN) return null;
   const levels = list.map((r) => aiValue('confidence_level', null, r, { confidence_level: '_inspire_confidence_level', ...aliases }));
@@ -348,8 +387,14 @@ export function quietList(rows, meta, aliases = {}) {
   const action = actions.size === 1 ? [...actions][0] : '';
   const why = list.map((r) => aiValue('ai_confidence_reason', null, r, aliases)).find(Boolean) || '';
   const said = action ? `, so the suggested action on each one is “${action}”` : '';
-  return { title: `All ${list.length} rows on this list are low confidence${said}.`, why: why ? `Why: ${why}` : '', raise: RAISE_CONFIDENCE };
+  return { title: `All ${list.length} rows on this list are low confidence${said}.`, why: why ? `Why: ${why}` : '', raise };
 }
+
+/** The saving block: its figure, its formula and, for an estimate, the short note in place of the tag. */
+export const savingView = (text, formula) => {
+  const f = splitEstimate(formula);
+  return { text, formula: f.text, ...(f.note ? { note: f.note } : {}) };
+};
 
 export function recordView(meta, current, row, aliases = {}, unit = '', kind = '') {
   const get = (name) => aiValue(name, current, row, aliases);
@@ -366,7 +411,7 @@ export function recordView(meta, current, row, aliases = {}, unit = '', kind = '
     action: get('ai_next_action') || planned,
     expected: get('ai_expected_result'),
     other: get('ai_other_option'),
-    saving: amount == null ? null : { text: savingText(amount, currency, kind), formula: get('value_at_stake_formula') },
+    saving: amount == null ? null : savingView(savingText(amount, currency, kind), get('value_at_stake_formula')),
   };
 }
 
@@ -560,11 +605,39 @@ export const undoBatchOf = (row, person) => (String(person || '').trim() && row?
 
 export const UNDO_THEIRS = 'Only the person who made this change or an owner of this use case can undo it.';
 
+/** REQ-223: one word for undoing a change. The trigger and its confirm button both read this, so they never disagree. */
+// D-UNDO: a kind names its undo word (records.undo, e.g. Unmerge). Without one a reversible change says Undo; a closed record says Reopen.
+export const undoWordOf = (meta, closed = false) => meta?.undo || (closed ? 'Reopen' : 'Undo');
 export const UNDO_CLOSE = 'Undo puts back every record this change touched, as they were before it, and keeps both versions in their history.';
+/** REQ-223 (b) P52: the one label for clearing a snooze. The trigger and its confirm both read WAKE_WORD. */
+export const WAKE_WORD = 'Wake now';
+export const WAKE_ASK = 'The record goes back to Open now and its snooze date is cleared.';
+export const WOKE = 'Woken. The record is back in Open.';
+/** The snooze date (YYYY-MM-DD) on a list row (`_inspire_snooze`) or a current version (`snooze_until`), or '' when there is none. */
+export const snoozeOf = (row) => String(row?._inspire_snooze ?? row?.snooze_until ?? '').slice(0, 10);
 
+// A row the notebook could not check carries its own data_quality_flag as the reason; any other row has no reason to show.
+export const uncheckedWhy = (flag) => {
+  const text = String(flag ?? '').trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'No reason was recorded';
+};
 export const isClosed = (row) => CLOSED_STATUSES.includes(row?._inspire_status || row?.action_status);
 
 export const ACCEPTED = { action_status: IN_PROGRESS, note: 'Accepted the suggested action' };
+/** REQ-257 D-UNDO: an accepted suggestion is reversed on its own row. The confirm repeats the word. */
+export const UNDO_ACCEPT = 'Undo';
+export const UNDO_ACCEPT_ASK = 'Undo puts the record back to Open with no status, as it was before Accept.';
+export const UNACCEPTED = { action_status: NEW, note: 'Undid the accepted suggested action' };
+/** REQ-289 (REQ-057, REQ-223): Reopen writes the open status through the same act route Done uses. D-UNDO: a closed row whose undo already reads Reopen is its own Reopen. */
+export const REOPEN = 'Reopen';
+export const REOPEN_ASK = 'Reopen puts the record back to Open, with no status. Its earlier version stays in the history.';
+export const REOPENED = { action_status: NEW, note: 'Reopened' };
+export const REOPENED_SAID = 'Reopened. The record is back in Open.';
+export const needsReopen = (meta, batch) => !batch || undoWordOf(meta, true) !== REOPEN;
+/** REQ-223: Unassign clears the owner through the write Give to uses. */
+export const UNASSIGN = 'Unassign';
+export const UNASSIGN_VALUES = { action_owner: '' };
+export const UNASSIGNED_SAID = 'Owner cleared. The earlier version stays in the history.';
 export const suggestionOf = (meta, row) => (meta?.action ? plainText(row?.[meta.action]).trim() : '');
 export const acceptable = (meta, row) => !!suggestionOf(meta, row) && !!row?._inspire_version && (row._inspire_status || NEW) === NEW;
 export function acceptedText(n, left = 0) {

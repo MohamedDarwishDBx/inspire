@@ -1,4 +1,6 @@
 import pytest
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 DENIED = "permission denied for database databricks_postgres"
 BUILDER = "builder@example.com"
@@ -88,8 +90,10 @@ def test_the_grant_quotes_a_role_name_that_holds_a_double_quote(agent_ns):
 def test_the_fallback_asks_the_owner_to_run_the_statement_then_build_again(agent_ns):
     refusal = agent_ns["implement_lakebase_refusal"](RuntimeError(DENIED), BUILDER)
     text = agent_ns["implement_lakebase_fallback"](str(refusal), refusal.statement)
-    assert text.startswith("App: it reads Delta tables, so its pages take a few seconds to load, because Inspire could not set up Lakebase: ")
-    assert text.endswith(f". Ask the Lakebase project owner to run {refusal.statement}, then build the App again with Vibe/Add/Remove Features on the Build page to switch it to Lakebase")
+    assert text.startswith(f"{APP_LABEL}: it reads Delta tables, so its pages take a few seconds to load, because Inspire could not set up Lakebase: ")
+    # REQ-260: the GRANT is listed under Permission Required, not in the person-facing sentence.
+    assert text.endswith(". Ask the Lakebase project owner to grant the access listed under Permission Required, then build the App again with Vibe/Add/Remove Features on the Build page to switch it to Lakebase")
+    assert refusal.statement not in text
     assert "build the App again" in text and "Build the App again" not in text
 
 
@@ -163,7 +167,8 @@ def test_the_scope_view_denial_and_the_app_return_raise_one_structured_entry_eac
     from pathlib import Path
     notebook = Path(__file__).resolve().parents[2] / "agent" / "dbx_inspire_ai_agent.ipynb"
     body = "".join("".join(c["source"]) for c in json.loads(notebook.read_text(encoding="utf-8"))["cells"] if c["cell_type"] == "code")
-    assert body.count("permissions.append(implement_permission_entry(client_id, denied_scope,") == 1
+    # REQ-268: one Permission Required entry per principal and reason, written through implement_list_permission.
+    assert body.count("implement_list_permission(permissions, client_id, denied_scope,") == 1
     assert '**({"_permissions": permissions} if permissions else {})' not in body, "entries reach the build through the context, not the return"
     assert 'permissions.extend(lakebase.get("permissions") or [])' in body
 def test_an_app_query_check_problem_string_maps_to_its_grant(agent_ns):

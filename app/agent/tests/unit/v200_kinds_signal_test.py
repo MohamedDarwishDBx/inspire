@@ -384,5 +384,5 @@ def test_the_standard_disclaimer_says_no_aggregate_reached_the_ai(agent_ns):
     t = dict(ts.ENGLISH_TRANSLATIONS)
     model = inst._document_model("English", t, {}, {"Sales": ucs}, "Acme")
     _title, items = inst._doc_disclaimer(model, t)
-    assert items[0].startswith("Standard Discovery: Inspire read aggregates from the tables in scope, 1 in total")
+    assert items[0].startswith("Discovery: Inspire read aggregates from the tables in scope, 1 in total")
     assert items[0].endswith(t["doc_data_access_kept"])

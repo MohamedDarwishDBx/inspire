@@ -110,7 +110,7 @@ def test_the_notebook_page_check_passes_the_stored_choices_to_the_validator():
     text = "".join(nb["cells"][1]["source"])
     assert "shell_sql.spec_problems(page, stored)" in text
     assert "stored = self._implement_stored_choices(context[\"result_table\"], shell_sql, real)" in text
-    assert "many=many, real=real, stored=stored)" in text
+    assert "many=many, real=real, stored=stored, drivers_optional=name == \"app\")" in text
     assert "+ implement_choices_rule(shell_sql)" in text
 
 
@@ -133,9 +133,10 @@ def _counts(page, body=None):
                                       shell_sql.status_choices(page))
 
 
-def test_the_counts_read_the_stored_choice_then_the_note_then_the_only_choice_of_a_status():
+def test_the_counts_read_the_stored_choice_then_the_note_and_never_a_custom_choice_from_a_status_alone():
+    # REQ-285: a status with one custom choice (Wrong flag) no longer implies it; only a stored choice or its note names a custom choice.
     got = _counts(_own())
-    assert got["choices"] == {"reprice": 1, "keep": 1, "drop": 2, "wrong": 1}, got
+    assert got["choices"] == {"reprice": 0, "keep": 1, "drop": 2, "wrong": 0}, got
     assert got["statuses"]["Done"] == 4 and got["open"] == 2 and got["all"] == 7
 
 
@@ -169,7 +170,9 @@ def test_the_status_text_names_the_picked_choice_or_the_only_choice_of_a_status(
     page = _own()
     assert shell_sql.status_text(page, {"action_status": "Done", "action_choice": "drop"}) == "Drop the item"
     assert shell_sql.status_text(page, {"action_status": "Done"}) == "Done"
-    assert shell_sql.status_text(page, {"action_status": "Dismissed"}) == "Wrong flag"
+    # REQ-285: a status-only change names its status, never the custom Wrong flag choice it did not pick
+    assert shell_sql.status_text(page, {"action_status": "Dismissed"}) == "Not an issue"
+    assert shell_sql.status_text(page, {"action_status": "Dismissed", "action_choice": "wrong"}) == "Wrong flag"
     assert shell_sql.status_text(_page(), {"action_status": "Dismissed"}) == "Not an issue"
     assert shell_sql.status_text(_page(), {}) == "New"
 
@@ -285,7 +288,7 @@ def test_the_closed_facts_keep_the_choice_and_older_facts_are_rebuilt_not_read()
     assert ("_inspire_choice", "STRING") in shell_facts.CLOSED_COLUMNS
     assert [n for n, _k in shell_facts.CLOSED_COLUMNS][:4] == ["_inspire_k", "_inspire_label", "_inspire_status", "_inspire_choice"]
     assert shell_facts.CHOICE_COLUMN in shell_facts.ACTED_COLUMNS
-    assert shell_facts.FACTS_VERSION == 5
+    assert shell_facts.FACTS_VERSION == 6  # d7a950f1a (REQ-224 r2, D-SCOPE2) bumped it: stored run counts no longer carry open_n
     old = {"v": 4, "log": "l", "acted": "a", "closed": "c", "changes": None, "actions": {}, "stamp_us": 0, "people": [], "numbers": {},
            "runs": [], "names": [], "columns": []}
     assert shell_facts.facts_problem(old) == "the latest run kept its counts in an older shape", \

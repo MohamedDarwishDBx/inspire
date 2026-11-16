@@ -29,6 +29,8 @@ _REDACT_DENIAL_RE = _redact_re.compile(
 
 
 INSPIRE_REDACTED_VALUE = "a data value"
+INSPIRE_REDACTED_PATTERN = _redact_re.compile(_redact_re.escape(INSPIRE_REDACTED_VALUE))
+inspire_is_redacted = INSPIRE_REDACTED_PATTERN.search
 _REDACT_SINGLE_QUOTED_RE = _redact_re.compile(r"(?<!\w)'((?:[^'\\\n]|\\.|(?<=\w)'(?=\w)){0,400})'(?!\w)")
 _REDACT_DOUBLE_QUOTED_RE = _redact_re.compile(r"(?<!\w)\"([^\"\n]{0,400})\"(?!\w)")
 _REDACT_SPARK_MESSAGE_RE = _redact_re.compile(r"\[[A-Z][A-Z0-9_]*(?:\.[A-Z0-9_]+)*\] [A-Z](?:(?!SQLSTATE: )[^\n])*(?:SQLSTATE: \w{5})?")
@@ -171,6 +173,8 @@ def _redact_in_text(value: str, text: str, index=None) -> bool:
 def _redact_known(value: str, known: str, segments) -> bool:
     if "\n" in value:
         return _redact_in_text(value, known)
+    if ", " in value and all(_redact_known(part, known, segments) for part in value.split(", ")):
+        return True
     return any(_redact_in_text(value, part, index) for part, index in segments)
 
 

@@ -42,7 +42,7 @@ async function openClosedRecord(info) {
 const undoButton = (page) => page.locator('dialog[open] footer [data-undo-close]');
 
 test('a closed record in a decision list offers Reopen, not a generic Undo this change', async () => {
-  const { page, context } = await openClosedRecord(appInfo({ ...DECIDE }, 1, { ...TABLE }, 'examples/monitor_triage.json'));
+  const { page, context } = await openClosedRecord(appInfo({ ...DECIDE }, 1, {}, 'examples/monitor_triage.json'));
   try {
     await undoButton(page).waitFor({ timeout: 10000 });
     assert.equal((await undoButton(page).innerText()).trim(), 'Reopen');

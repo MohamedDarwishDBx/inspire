@@ -1,25 +1,70 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import ModalDialog from './ModalDialog';
+import { copyStepsText, copyText, grantAsk, grantListKey } from '../lib/permissionBus';
+import { accessRequestResultText, checkAccessRequest, offerShown, sendAccessRequest, statementsOf } from '../lib/accessRequest';
 
 const BUTTON = 'inline-flex h-8 items-center justify-center px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle';
-
-function permissionText(permissions) {
-  return (permissions || []).flatMap((p) => [...(p.statements || []).map((s) => (s.endsWith(';') ? s : `${s};`)), ...(p.instructions || [])]).join('\n');
-}
+const PRIMARY = 'inline-flex h-8 items-center justify-center px-3 rounded-lg text-xs font-semibold text-white bg-db-red-solid hover:opacity-90 disabled:opacity-60';
+// REQ-313: Request access is the primary action. The SQL sits under Advanced, with the one instruction line (REQ-300). Advanced opens
+// by default only when no destination exists, because then the SQL is the way forward.
+export const ADVANCED_LINE = 'Copy the SQL below and send it to your Databricks admin.';
 
 export default function PermissionRequired({ permissions, onStart, onRetry, onClose }) {
   const [status, setStatus] = useState('');
-  const block = useRef(null);
-  const text = permissionText(permissions);
+  const [stepsStatus, setStepsStatus] = useState('');
+  // REQ-311: Request for Access. The destinations are read once per grant list; the button shows only when one is set.
+  const [offer, setOffer] = useState(null);
+  const [requesting, setRequesting] = useState(false);
+  const [requestText, setRequestText] = useState('');
+  const [advancedState, setAdvancedState] = useState(null);
+  const box = useRef(null);
+  const text = copyText(permissions);
+  const granted = (permissions || []).filter((p) => (p?.statements || []).length > 0);
+  // Copy steps: the folder Share and CLI steps. A note (a reason to rebuild) is plain text, shown once, never copied.
+  const steps = copyStepsText(permissions);
+  const notes = (permissions || []).flatMap((p) => p?.instructions || []);
+  const reasons = (permissions || []).filter((p) => p?.why).map((p) => p.why);
+  const asked = statementsOf(permissions);
+  const listKey = grantListKey(permissions);
+  const advancedOpen = advancedState ?? (offer !== null && !offerShown(offer));
+  useEffect(() => {
+    setOffer(null);
+    setRequestText('');
+    setAdvancedState(null);
+    if (!asked.length) return undefined;
+    let live = true;
+    checkAccessRequest(asked).then((got) => { if (live) setOffer(got); }).catch(() => { if (live) setOffer({ offered: false }); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per grant list: the key stands for the statements
+  }, [listKey]);
+  const requestAccess = async () => {
+    setRequesting(true);
+    try {
+      setRequestText(accessRequestResultText(await sendAccessRequest(asked)));
+    } catch (err) {
+      setRequestText(accessRequestResultText({ sent: false, reason: err?.message || '' }));
+    } finally {
+      setRequesting(false);
+    }
+  };
+  const copySteps = async () => {
+    try {
+      await navigator.clipboard.writeText(steps);
+      setStepsStatus('Copied');
+    } catch {
+      setStepsStatus('');
+    }
+  };
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
       setStatus('Copied');
       return;
     } catch {
-      // the Clipboard API is refused here, so select the text and let the browser copy it
+      // the Clipboard API is refused here, so select the statements and let the browser copy them
     }
     const range = document.createRange();
-    range.selectNodeContents(block.current);
+    range.selectNodeContents(box.current);
     const selection = window.getSelection();
     selection.removeAllRanges();
     selection.addRange(range);
@@ -31,28 +76,51 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
     }
     setStatus(copied ? 'Copied' : 'Select and copy');
   };
+  const buttons = (
+    <>
+      {offerShown(offer) && <button type="button" onClick={requestAccess} disabled={requesting} className={PRIMARY} data-request-access="">{requesting ? 'Requesting' : 'Request access'}</button>}
+      {onRetry && <button type="button" onClick={onRetry} className={BUTTON}>Try again</button>}
+      {onStart && <button type="button" onClick={onStart} className={BUTTON}>Start anyway</button>}
+    </>
+  );
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="permission-required-title" data-permission-dialog=""
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-lg space-y-3 rounded-xl border border-border bg-surface p-5 shadow-xl">
-        <h2 id="permission-required-title" className="text-base font-bold text-text-primary">Permission Required</h2>
-        {(permissions || []).map((p) => (
-          <div key={[...p.statements, ...(p.instructions || [])].join('|')} className="space-y-2">
-            {p.why && <p className="text-sm text-text-secondary">{p.why}</p>}
-            <p className="text-sm text-text-primary">
-              Ask your admin to grant this permission{p.principal ? ` to ${p.principal}` : ''}:
-            </p>
-          </div>
-        ))}
-        <pre ref={block} data-permission-statements="" className="whitespace-pre-wrap break-all rounded-md bg-bg-subtle p-3 font-mono text-xs text-text-primary">{text}</pre>
-        {status === 'Select and copy' && <p role="status" className="text-xs text-text-secondary">Select and copy: the statements are selected above.</p>}
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <button type="button" onClick={copy} className={BUTTON}>{status === 'Copied' ? 'Copied' : 'Copy'}</button>
-          {onRetry && <button type="button" onClick={onRetry} className={BUTTON}>Try again</button>}
-          {onStart && <button type="button" onClick={onStart} className={BUTTON}>Start anyway</button>}
-          <button type="button" onClick={onClose} className={BUTTON}>Close</button>
+    <ModalDialog titleId="permission-required-title" title="Permission Required" onClose={onClose} overlayAttrs={{ 'data-permission-dialog': '' }}
+      footer={buttons}>
+      {reasons.map((why) => (
+        <p key={`why-${why}`} className="text-sm text-text-secondary">{why}</p>
+      ))}
+      {notes.length > 0 && (
+        <div data-permission-notes="" className="space-y-1">
+          {notes.map((note) => <p key={note} className="text-sm text-text-primary break-words">{note}</p>)}
         </div>
-      </div>
-    </div>
+      )}
+      {requestText && <p role="status" data-access-request-result="" className="text-sm text-text-primary break-words">{requestText}</p>}
+      {(text || steps) && (
+        <details data-permission-advanced="" open={advancedOpen} onToggle={(e) => setAdvancedState(e.currentTarget.open)} className="space-y-3">
+          <summary className="cursor-pointer text-xs font-semibold text-text-primary">Advanced</summary>
+          {text && <p className="text-sm text-text-primary">{ADVANCED_LINE}</p>}
+          {granted.length > 0 && (
+            <div ref={box} data-permission-box="" className="max-h-56 overflow-y-auto rounded-md bg-bg-subtle p-3 space-y-3">
+              {granted.map((p) => (
+                <div key={[...p.statements, ...(p.instructions || [])].join('|')} className="space-y-1">
+                  <p className="text-xs font-semibold text-text-primary">{grantAsk(p)}</p>
+                  <pre data-permission-statements="" className="whitespace-pre-wrap break-all font-mono text-xs text-text-primary">{copyText([p])}</pre>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {text && <button type="button" onClick={copy} className={BUTTON}>{status === 'Copied' ? 'Copied' : 'Copy'}</button>}
+            {steps && <button type="button" onClick={copySteps} className={BUTTON}>{stepsStatus === 'Copied' ? 'Copied' : 'Copy steps'}</button>}
+          </div>
+          {steps && (
+            <div data-permission-steps="" className="max-h-56 overflow-y-auto rounded-md bg-bg-subtle p-3">
+              <pre className="whitespace-pre-wrap break-all font-mono text-xs text-text-primary">{steps}</pre>
+            </div>
+          )}
+          {status === 'Select and copy' && <p role="status" className="text-xs text-text-secondary">Select and copy: the statements are selected above.</p>}
+        </details>
+      )}
+    </ModalDialog>
   );
 }

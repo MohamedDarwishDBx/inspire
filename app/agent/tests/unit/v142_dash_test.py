@@ -11,7 +11,7 @@ import types
 import pytest
 
 from v120_artifacts_support import FakeSpark
-from v140_implement_test import TRUTH, _FileRunner, _app_shell, _churn_page, _contract, _inspire, _output_context
+from v140_implement_test import TRUTH, _FileRunner, _app_shell, _churn_page, _contract, _inspire, _workspace_columns, _output_context
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PALETTES = os.path.join(ROOT, "agent", "app_shell", "web", "src", "palettes.json")
@@ -40,7 +40,7 @@ def _dataset(doc, name):
 
 
 def _flow(ns, tmp_path, outputs=None, assets=None, asset_status=None, fail=None, rows=None, **stubs):
-    inst = _inspire(ns, FakeSpark())
+    inst = _workspace_columns(_inspire(ns, FakeSpark()))
     inst._genie_decision_contract = _contract
     inst.local_log_output_dir = str(tmp_path)
     inst._implement_input_has_dates = lambda context: False
@@ -119,9 +119,9 @@ def test_the_dashboard_is_built_from_the_page_spec_and_the_app_reuses_it_without
     assert deployed["genie_note"] == "The Genie Agent is not ready: it was not built", \
         "the App page says why Ask Genie is off when this use case has no Genie Agent"
     assert len(seen["checked"]) == 2, "the App still runs its own files at the default filters before it deploys"
-    steps = [(e["step_name"], e["status"]) for e in inst.emitted if e["step_name"] == "App"]
-    assert steps == [("App", "started"), ("App", "ended_success")]
-    assert "no second Genie round" in next(e["message"] for e in inst.emitted if e["step_name"] == "App")
+    steps = [(e["step_name"], e["status"]) for e in inst.emitted if e["step_name"] == "Agentic App"]
+    assert steps == [("Agentic App", "started"), ("Agentic App", "ended_success")]
+    assert "no second Genie round" in next(e["message"] for e in inst.emitted if e["step_name"] == "Agentic App")
 
 
 def test_a_patch_on_an_existing_dashboard_keeps_its_id_and_never_moves_it(agent_ns, tmp_path):
@@ -156,9 +156,9 @@ def test_a_reused_page_spec_that_fails_the_app_check_fails_the_app_step_and_says
     inst, context, seen = _flow(agent_ns, tmp_path)
     inst._implement_dashboard(context, _runner(_churn_page(agent_ns)))
     inst._implement_app_check = lambda work, files, modules, warehouse: ["page n01_u01: chart:by_category failed: warehouse stopped"]
-    with pytest.raises(RuntimeError, match="the App was run at its default filters and page n01_u01: chart:by_category failed"):
+    with pytest.raises(RuntimeError, match="the Agentic App was run at its default filters and page n01_u01: chart:by_category failed"):
         inst._implement_app(context, _FileRunner([], []))
-    last = [e for e in inst.emitted if e["step_name"] == "App"][-1]
+    last = [e for e in inst.emitted if e["step_name"] == "Agentic App"][-1]
     assert last["status"] == "ended_error" and "warehouse stopped" in last["message"]
     assert seen["deployed"] == []
 
@@ -200,8 +200,10 @@ def _no_records(ns):
 ])
 def test_a_page_spec_that_breaks_a_dashboard_rule_goes_back_to_genie_and_nothing_publishes(agent_ns, tmp_path, make, needle):
     inst, context, seen = _flow(agent_ns, tmp_path)
-    with pytest.raises(RuntimeError, match="still failed after 3 Genie rounds"):
-        inst._implement_dashboard(context, _runner(make(agent_ns), make(agent_ns), make(agent_ns)))
+    runner = _runner(make(agent_ns), make(agent_ns), make(agent_ns))
+    with pytest.raises(RuntimeError, match="Genie sent the same problems back in round 2"):
+        inst._implement_dashboard(context, runner)
+    assert len(runner.prompts) == 2, "the second round repeats the first refusal, so no third Genie round runs (REQ-181)"
     assert _published(seen) == [] and "page_spec" not in context
     errors = [e["message"] for e in inst.emitted if e["step_name"] == "Dashboard" and "failed" in e["message"]]
     assert errors and all("page.json does not fit the Dashboard: " in m and needle in m for m in errors), errors

@@ -223,7 +223,7 @@ def test_a_count_sorted_by_an_action_reads_only_the_list_yet_counts_every_row_th
     listed = {"record_key", "entity_id", "entity_label", "priority_tier", "rank"}
     context = shell_sql.list_context(page, listed, fields, True)
     owned = lambda key, who, status, **kw: dict(_version(key, None, **kw), action_owner=who, action_status=status, valid_to=None,
-                                                changed_by="run", run_id="r1")
+                                                changed_by="run", run_id="r1", snooze_until=None)
     tables = {"loss_desk_out": [owned("k1", "pat", "Open"), owned("k2", "sam", "Done"), owned("k3", None, None),
                                 owned("k4", "pat", "Open", current=False), owned("k4", "sam", "Open"), owned("k5", "pat", "Open", source="delete")]}
     plan = lambda ctx, body, who="": shell_sql.list_queries(page, {}, shell_sql.list_request(page, body, ctx), ctx, who)

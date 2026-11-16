@@ -6,7 +6,7 @@ export default function SamplesCopyOffer({ names, target, onTarget, canCopy, cop
     <section data-samples-offer="" aria-label="Samples tables" className="mb-4 rounded-xl border border-warning/30 bg-warning-bg p-4 text-xs text-warning-fg">
       <p className="text-sm font-semibold">Samples cannot measure value</p>
       <p className="mt-1 break-words">
-        {names} is in samples, a catalog Databricks owns, so nobody can grant the App access to it. Value cannot be measured on samples:
+        {names} is in a built-in sample catalog that Databricks owns, so nobody can grant the App access to it. Value cannot be measured on samples:
         copy it (CREATE TABLE AS SELECT) into a schema you own, and this run measures value on your copy.
       </p>
       <label className="mt-3 flex flex-col gap-1 text-text-secondary">

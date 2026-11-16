@@ -4,6 +4,8 @@ import pytest
 
 from v120_artifacts_support import FakeSpark
 from v143_vibes_test import _locked, _run
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 MIX = "Decision list: no row of the latest run reached Act now or Review (4 Monitor), so it has nobody to act on yet; no row is flagged"
 NOT_RELIABLE = ("Not reliable yet: the latest run marked its results not reliable and wrote why in not_reliable of main.inspire.out, "
@@ -71,7 +73,7 @@ def test_a_page_inside_inspire_whose_record_names_no_folder_is_found_in_its_mvp_
 def test_a_page_inside_inspire_with_no_folder_inspire_can_find_names_the_action(agent_ns):
     inst, seen = _hosted(agent_ns)
     assert inst._implement_app_hosted_remove(BAD) == [
-        "App: Inspire could not tell the folder of the page inside Inspire from /somewhere/else, so it deleted nothing; delete the "
+        f"{APP_LABEL}: Inspire could not tell the folder of the page inside Inspire from /somewhere/else, so it deleted nothing; delete the "
         "folder apps/n01-u01-5150 in this use case's MVP folder in the workspace"]
     assert seen == {"listed": [], "deleted": []}
 

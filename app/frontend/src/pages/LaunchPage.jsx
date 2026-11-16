@@ -42,7 +42,9 @@ import { parseStrategicContext, splitPriorities, validateStrategicContextText, w
 import UcPermissionErrorHelp from '../components/UcPermissionErrorHelp';
 import DataFilters from '../components/DataFilters';
 import { groupLabelOf } from '../lib/implementWizard';
-import { scopesFromObject, serializeTableScopes, filterValuesOf, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
+import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
+import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
+import { scopesFromObject, launchTableScopeText, filterValuesOf, labelAvailable, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
 import { runBusiness } from '../lib/reviewFigures';
@@ -60,10 +62,10 @@ import { responseError } from '../lib/apiClient';
 import { placeholderWords } from '../lib/placeholderWords';
 import { inspireScoreFromUc, nameOfUseCase } from '../lib/useCaseFields';
 import { counted } from '../lib/plural';
-import { catalogListNote, pickedScope, scopeSummary, typedCatalog } from '../lib/catalogList';
-import { SAMPLE_CATALOG, applySampleCopies, isSampleEntry, samplesTarget, validCopyTarget } from '../lib/samplesCopy';
+import { catalogListNote, pickedScope, scopeSummary, typedCatalog, wholeCatalogsAfterChildRemoval } from '../lib/catalogList';
+import { SAMPLE_CATALOG, applySampleCopies, isSampleEntry, samplesTarget, scopesAfterSampleCopies, validCopyTarget } from '../lib/samplesCopy';
 import { DISCOVERY_AI_ENHANCED, DISCOVERY_MODE_TEXT, DISCOVERY_BADGE, DISCOVERY_PRIVACY, DISCOVERY_RECOMMENDED, DISCOVERY_STANDARD, discoveryTypeOf } from '../lib/discoveryType';
-import PermissionRequired from '../components/PermissionRequired';
+import { raisePermissions } from '../lib/permissionBus';
 import { withStartDeadline } from '../lib/startDeadline';
 
 /* ─── Constants — notebook v1.2.0 widget `05_use_cases_quality` ─── */
@@ -183,7 +185,7 @@ const DRAFT_PARAMS = ['00_business_name', '03_discovery_type', '04_table_electio
   '11_generation_path', '12_documents_languages', '13_generate_genie_code_for', '15_operation', '16_best_of_best_count'];
 const FORM_DEFAULTS = {
   genChecks: { 'PDF Catalog': true, Presentation: false, Excel: true }, priorityChecks: {}, customPriorities: [], strategyBase: '',
-  selectedCatalogs: [], selectedSchemas: [], selectedTables: [], tableScopes: {}, dataFilterLabel: { on: false, text: null },
+  selectedCatalogs: [], wholeCatalogs: [], selectedSchemas: [], selectedTables: [], tableScopes: {}, dataFilterLabel: { on: false, text: null },
   electionTouched: false, discoveryTouched: false, strategyTouched: false, prioritiesTouched: false,
 };
 const FLAGS = ['electionTouched', 'discoveryTouched', 'strategyTouched', 'prioritiesTouched'];
@@ -208,6 +210,9 @@ function restoredForm(draft) {
     priorityChecks: checks(spec.priorityChecks, {}),
     strategyBase: typeof spec.strategyBase === 'string' ? spec.strategyBase : '',
     ...Object.fromEntries(LISTS.map((key) => [key, Array.isArray(spec[key]) ? spec[key].filter((x) => typeof x === 'string') : []])),
+    // A draft saved before wholeCatalogs existed took every listed catalog as whole, so it restores that way.
+    wholeCatalogs: (Array.isArray(spec.wholeCatalogs) ? spec.wholeCatalogs : Array.isArray(spec.selectedCatalogs) ? spec.selectedCatalogs : [])
+      .filter((x) => typeof x === 'string'),
     tableScopes: scopesFromObject(spec.tableScopes).scopes,
     dataFilterLabel: restoredLabel(spec.dataFilterLabel),
     ...Object.fromEntries(FLAGS.map((key) => [key, spec[key] === true])),
@@ -237,6 +242,8 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [catalogsCut, setCatalogsCut] = useState(false);
   const [schemas, setSchemas] = useState([]);
   const [selectedCatalogs, setSelectedCatalogs] = useState(start.selectedCatalogs);
+  // The catalogs picked whole. A selected catalog that is not here only lists its schemas (browse); nothing under it is read.
+  const [wholeCatalogs, setWholeCatalogs] = useState(start.wholeCatalogs);
   const [selectedSchemas, setSelectedSchemas] = useState(start.selectedSchemas);
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
@@ -245,6 +252,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
 
   // ── Table state ──
   const [tables, setTables] = useState([]);
+  // The load of the picked schemas' tables in flight. Its cancel flag is the page's request pattern for schema loads: a selection change
+  // ends it, and Try again checks the flag before it lists a schema, so a late answer for a schema no longer picked is dropped.
+  const tablesLoad = useRef(null);
   const [selectedTables, setSelectedTables] = useState(start.selectedTables);
   const [tableScopes, setTableScopes] = useState(start.tableScopes);
   const [dataFilterLabel, setDataFilterLabel] = useState(start.dataFilterLabel);
@@ -264,6 +274,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [catalogBrowseError, setCatalogBrowseError] = useState('');
   const [schemasReadError, setSchemasReadError] = useState('');
   const [tablesReadError, setTablesReadError] = useState('');
+  const [tablesLeftOut, setTablesLeftOut] = useState([]);
   const [catalogsWhy, setCatalogsWhy] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showStrategy, setShowStrategy] = useState(false);
@@ -467,9 +478,13 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     setParams((p) => ({ ...p, '07_business_priorities': sel.join(',') }));
   }, [priorityChecks]);
 
-  const scope = useMemo(() => pickedScope(selectedCatalogs, selectedSchemas, selectedTables), [selectedCatalogs, selectedSchemas, selectedTables]);
-  const scopeTables = useMemo(() => pickedTableNames(tableScopes, { catalogs: selectedCatalogs, schemas: selectedSchemas, tables: selectedTables }),
-    [tableScopes, selectedCatalogs, selectedSchemas, selectedTables]);
+  const scope = useMemo(() => pickedScope(selectedCatalogs, selectedSchemas, selectedTables, wholeCatalogs),
+    [selectedCatalogs, selectedSchemas, selectedTables, wholeCatalogs]);
+  const scopeTables = useMemo(() => pickedTableNames(tableScopes, scope), [tableScopes, scope]);
+  // The label is off whenever no picked table has a Row Group. The state follows that rule, and the typed text is kept for when a group comes back.
+  useEffect(() => {
+    if (dataFilterLabel.on && !labelAvailable(tableScopes, scopeTables)) setDataFilterLabel((l) => ({ ...l, on: false }));
+  }, [dataFilterLabel.on, tableScopes, scopeTables]);
   const scopeText = scopeSummary(scope);
 
   useEffect(() => {
@@ -561,31 +576,46 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   // Load tables when schemas selected
   useEffect(() => {
     setTablesReadError('');
+    setTablesLeftOut([]);
     if (selectedSchemas.length === 0) { setTables([]); return; }
     if (!canUseUcApi) { setTables([]); return; }
-    let cancelled = false;
+    const load = { cancelled: false };
+    tablesLoad.current = load;
     setLoadingTables(true);
     const failed = [];
+    const leftOutNotes = [];
     Promise.all(
-      selectedSchemas.map((schemaFullName) => {
-        const [catalog, schema] = schemaFullName.split('.');
-        return apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
-          .then(d => (d.tables || []).map(t => ({
-            ...t,
-            full_name: t.full_name || `${catalog}.${schema}.${t.name}`,
-          })))
-          .catch((err) => { failed.push(pickerReadFailure('tables', schemaFullName, err)); return []; });
-      })
+      selectedSchemas.map((schemaFullName) => listSchemaTables(schemaFullName, apiFetch, warehouseId)
+        .then(({ rows, leftOut }) => { if (leftOut) leftOutNotes.push(leftOut); return rows; })
+        .catch((err) => { failed.push(pickerReadFailure('tables', schemaFullName, err)); return []; }))
     ).then((r) => {
-      if (!cancelled) {
+      if (!load.cancelled) {
         const allTables = r.flat();
         console.log(`[tables] loaded ${allTables.length} for ${selectedSchemas.join(',')}`);
         setTables(allTables);
         setTablesReadError(failed.join('\n'));
+        setTablesLeftOut(leftOutNotes.filter(Boolean));
       }
-    }).finally(() => { if (!cancelled) setLoadingTables(false); });
-    return () => { cancelled = true; };
+    }).finally(() => { if (!load.cancelled) setLoadingTables(false); });
+    return () => { load.cancelled = true; };
   }, [selectedSchemas, canUseUcApi, apiFetch, warehouseId]);
+
+  // Try again on a table whose type check was busy: list its schema again and replace that schema's rows.
+  const tryAgainTables = (item) => {
+    const schemaFullName = item.full_name.split('.').slice(0, 2).join('.');
+    const load = tablesLoad.current;
+    // A selection change after this click ends the load it belongs to, so its answer is dropped (the schemas are listed again).
+    const live = () => Boolean(load) && !load.cancelled;
+    listSchemaTables(schemaFullName, apiFetch, warehouseId)
+      .then(({ rows }) => {
+        if (!live()) return;
+        const prefix = `${schemaFullName}.`;
+        setTables((prev) => [...prev.filter((t) => !String(t.full_name).startsWith(prefix)), ...rows]);
+      })
+      .catch((err) => {
+        if (live()) setTablesReadError((prev) => [prev, pickerReadFailure('tables', schemaFullName, err)].filter(Boolean).join('\n'));
+      });
+  };
 
   // Auto-populate inspire database when first catalog is selected
   useEffect(() => {
@@ -613,9 +643,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [prioritiesTouched, setPrioritiesTouched] = useState(start.prioritiesTouched);
 
   const draftForm = useMemo(() => draftFormOf(params, {
-    genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
+    genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
     electionTouched, discoveryTouched, strategyTouched, prioritiesTouched,
-  }), [params, genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
+  }), [params, genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
     electionTouched, discoveryTouched, strategyTouched, prioritiesTouched]);
   useEffect(() => {
     if (JSON.stringify(draftForm) === PRISTINE_FORM) clearWizardDraft(draftKey);
@@ -631,6 +661,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     setCustomPriorities(FORM_DEFAULTS.customPriorities);
     setStrategyBase(FORM_DEFAULTS.strategyBase);
     setSelectedCatalogs(FORM_DEFAULTS.selectedCatalogs);
+    setWholeCatalogs(FORM_DEFAULTS.wholeCatalogs);
     setSelectedSchemas(FORM_DEFAULTS.selectedSchemas);
     setSelectedTables(FORM_DEFAULTS.selectedTables);
     setTableScopes(FORM_DEFAULTS.tableScopes);
@@ -731,7 +762,6 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   ], [strategicContextText, customPriorities, strategyBase]);
 
   // Launch
-  const [permissionDialog, setPermissionDialog] = useState(null);
   const handleLaunch = async () => {
     if (launchBlock) return setLaunchError(launchBlock);
     if (!outputCheck.ready)
@@ -743,7 +773,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     finalParams['12_documents_languages'] = formatDocumentLanguages(launchDocLanguages(params));
     // Always auto-generate session ID
     finalParams['14_session_id'] = newSessionId();
-    const tableScopeText = serializeTableScopes(tableScopes, scopeTables,
+    const tableScopeText = launchTableScopeText(tableScopes, scope,
       dataFilterLabel.on ? (dataFilterLabel.text ?? groupLabelOf(filterValuesOf(tableScopes, scopeTables))) : '');
     if (tableScopeText) finalParams['17_table_scope'] = tableScopeText;
 
@@ -778,7 +808,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       }), { label: 'The launch check' });
       if (Array.isArray(check.permissions) && check.permissions.length) {
         setLaunching(false);
-        setPermissionDialog({ permissions: check.permissions, onStart: () => { setPermissionDialog(null); setLaunching(true); startRun(); } });
+        raisePermissions(check.permissions, { onStart: () => { setLaunching(true); startRun(); } }, { explicit: true });
         return;
       }
     } catch (err) {
@@ -799,11 +829,13 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       });
       const copies = data.copies || [];
       const failed = data.failed || [];
-      if (Array.isArray(data.permissions) && data.permissions.length) setPermissionDialog({ permissions: data.permissions });
+      if (Array.isArray(data.permissions) && data.permissions.length) raisePermissions(data.permissions);
       const picks = applySampleCopies({ catalogs: selectedCatalogs, schemas: selectedSchemas, tables: selectedTables }, { destination: data.destination, copies, failed });
       setSelectedCatalogs(picks.catalogs);
+      setWholeCatalogs((p) => p.filter((c) => picks.catalogs.includes(c)));
       setSelectedSchemas(picks.schemas);
       setSelectedTables(picks.tables);
+      setTableScopes(scopesAfterSampleCopies(tableScopes, copies));
       setSamplesChoice({ key: '', choice: '' });
       setSamplesCopied(copies.length ? `Copied ${copies.length} ${copies.length === 1 ? 'table' : 'tables'} into ${data.destination}. The run reads your copies.` : '');
       if (failed.length) setSamplesError(failed.map((f) => `Could not copy ${f.source}: ${f.reason}`).join('. '));
@@ -832,12 +864,20 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     [params['12_documents_languages']],
   );
 
+  // Removing the last schema or table under a whole catalog stops that catalog being read whole (wholeCatalogsAfterChildRemoval).
+  const setPickedChildren = (nextSchemas, nextTables) => {
+    const before = [...selectedSchemas, ...selectedTables];
+    setWholeCatalogs((p) => wholeCatalogsAfterChildRemoval(p, before, [...nextSchemas, ...nextTables]));
+    setSelectedSchemas(nextSchemas);
+    setSelectedTables(nextTables);
+  };
+
   // Table select all / deselect all
   const allTablesSelected = filteredTables.length > 0 && filteredTables.every((t) => selectedTables.includes(t.full_name));
   const toggleAllTables = () => {
     if (allTablesSelected) {
       const filteredNames = new Set(filteredTables.map((t) => t.full_name));
-      setSelectedTables((prev) => prev.filter((t) => !filteredNames.has(t)));
+      setPickedChildren(selectedSchemas, selectedTables.filter((t) => !filteredNames.has(t)));
     } else {
       const newNames = filteredTables.map((t) => t.full_name);
       setSelectedTables((prev) => [...new Set([...prev, ...newNames])]);
@@ -970,9 +1010,6 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
 
   return (
     <>
-      {permissionDialog && (
-        <PermissionRequired permissions={permissionDialog.permissions} onStart={permissionDialog.onStart} onClose={() => setPermissionDialog(null)} />
-      )}
     <div className="max-w-5xl mx-auto px-6 py-8">
       {/* Page Header */}
       <div className="mb-8">
@@ -1245,7 +1282,10 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                   </button>
                 )}
                 {/* Selected Metadata Basket — always visible */}
-                {(selectedCatalogs.length > 0 || selectedSchemas.length > 0 || selectedTables.length > 0) && (
+                {scope.entries.length === 0 && (
+                  <p data-scope-empty="" className="mb-3 text-[11px] text-text-tertiary">Nothing picked yet</p>
+                )}
+                {scope.entries.length > 0 && (
                   <div className="mb-3 rounded-lg border border-db-red/20 bg-db-red-50/50 p-3">
                     <div className="flex items-center gap-2 mb-2">
                       <ShoppingCart size={12} className="text-db-red-fg" />
@@ -1255,27 +1295,27 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                       </span>
                     </div>
                     <div className="max-h-32 overflow-y-auto flex flex-wrap gap-1">
-                      {selectedTables.map((t) => (
-                        <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-db-red-50 text-db-red-fg text-[10px] font-medium border border-db-red/20">
+                      {selectedTables.map((t, i) => (
+                        <span key={`${i}-${t}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-db-red-50 text-db-red-fg text-[10px] font-medium border border-db-red/20">
                           <Table2 size={9} />
                           {t.split('.').pop()}
-                          <button aria-label={`Remove ${t}`} onClick={() => setSelectedTables((p) => p.filter((x) => x !== t))} className="hover:text-db-red-fg ms-0.5"><X size={8} /></button>
+                          <button aria-label={`Remove ${t}`} onClick={() => setPickedChildren(selectedSchemas, selectedTables.filter((x) => x !== t))} className="hover:text-db-red-fg ms-0.5"><X size={8} /></button>
                           {tableScopeOf(tableScopes, t) && (
                             <span data-table-scope-summary={t} className="text-text-secondary ms-0.5">{tableScopeSummary(tableScopeOf(tableScopes, t))}</span>
                           )}
                         </span>
                       ))}
-                      {selectedSchemas.map((s) => (
-                        <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-subtle text-text-secondary text-[10px] font-medium border border-border">
+                      {selectedSchemas.map((s, i) => (
+                        <span key={`${i}-${s}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-subtle text-text-secondary text-[10px] font-medium border border-border">
                           {s}
-                          <button aria-label={`Remove ${s}`} onClick={() => setSelectedSchemas((p) => p.filter((x) => x !== s))} className="hover:text-db-red-fg ms-0.5"><X size={8} /></button>
+                          <button aria-label={`Remove ${s}`} onClick={() => setPickedChildren(selectedSchemas.filter((x) => x !== s), selectedTables)} className="hover:text-db-red-fg ms-0.5"><X size={8} /></button>
                         </span>
                       ))}
-                      {selectedCatalogs.map((c) => (
-                        <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-subtle text-text-secondary text-[10px] font-medium border border-border">
+                      {selectedCatalogs.map((c, i) => (
+                        <span key={`${i}-${c}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-subtle text-text-secondary text-[10px] font-medium border border-border">
                           <Database size={9} />
                           {c}
-                          <button aria-label={`Remove ${c}`} onClick={() => { setSelectedCatalogs((p) => p.filter((x) => x !== c)); setSelectedSchemas((p) => p.filter((x) => !x.startsWith(c + '.'))); }} className="hover:text-db-red-fg ms-0.5"><X size={8} /></button>
+                          <button aria-label={`Remove ${c}`} onClick={() => { setSelectedCatalogs((p) => p.filter((x) => x !== c)); setWholeCatalogs((p) => p.filter((x) => x !== c)); setSelectedSchemas((p) => p.filter((x) => !x.startsWith(c + '.'))); }} className="hover:text-db-red-fg ms-0.5"><X size={8} /></button>
                         </span>
                       ))}
                     </div>
@@ -1301,7 +1341,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                     <ChevronDown size={14} />
                   </div>
                   {pickerExpanded ? 'Hide catalog browser' : 'Browse catalogs'}
-                  {!pickerExpanded && (selectedCatalogs.length + selectedSchemas.length + selectedTables.length > 0) && (
+                  {!pickerExpanded && scope.entries.length > 0 && (
                     <span className="text-[10px] text-db-red-fg font-medium ms-1">
                       ({scopeText} selected)
                     </span>
@@ -1322,9 +1362,11 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                         onToggle={(name) => {
                           if (selectedCatalogs.includes(name)) {
                             setSelectedCatalogs((p) => p.filter((x) => x !== name));
+                            setWholeCatalogs((p) => p.filter((x) => x !== name));
                             setSelectedSchemas((p) => p.filter((x) => !x.startsWith(name + '.')));
                           } else {
                             setSelectedCatalogs((p) => [...p, name]);
+                            setWholeCatalogs((p) => [...p, name]);
                           }
                         }}
                         getKey={(c) => c.name}
@@ -1360,7 +1402,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                         selected={selectedSchemas}
                         onToggle={(name) => {
                           if (selectedSchemas.includes(name)) {
-                            setSelectedSchemas((p) => p.filter((x) => x !== name));
+                            setPickedChildren(selectedSchemas.filter((x) => x !== name), selectedTables);
                           } else {
                             setSelectedSchemas((p) => [...p, name]);
                           }
@@ -1394,16 +1436,21 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                         items={filteredTables}
                         selected={selectedTables}
                         onToggle={(name) => {
-                          if (selectedTables.includes(name)) setSelectedTables((p) => p.filter((x) => x !== name));
+                          if (selectedTables.includes(name)) setPickedChildren(selectedSchemas, selectedTables.filter((x) => x !== name));
                           else setSelectedTables((p) => [...p, name]);
                         }}
                         getKey={(t) => t.full_name}
+                        disabledReasonOf={unusableReasonOf}
+                        onTryAgain={tryAgainTables}
                         getLabel={(t) => selectedSchemas.length > 1 ? `${t.schema_name}.${t.name}` : t.name}
                         searchValue={tableSearch}
                         onSearch={setTableSearch}
                         searchPlaceholder="Search tables..."
                         emptyText={selectedSchemas.length === 0 ? 'Select schemas first' : loadingTables ? 'Loading...' : tablesReadError ? 'Inspire could not list the tables. The message above says why.' : `No tables you can see in ${selectedSchemas.join(', ')}`}
                       />
+                      {tablesLeftOut.map((line) => (
+                        <p key={line} data-tables-left-out="" className="text-[11px] text-text-secondary px-1 pt-1">{line}</p>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -1686,7 +1733,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 {showDataFilters && (
                   <div className="px-4 pb-4 pt-1 border-t border-border">
                     <DataFilters
-                      picks={{ catalogs: selectedCatalogs, schemas: selectedSchemas, tables: selectedTables }}
+                      scope={scope}
                       scopes={tableScopes}
                       onScopes={setTableScopes}
                       label={dataFilterLabel}
@@ -2026,7 +2073,18 @@ function GlowSelect({ value, onChange, options }) {
   );
 }
 
-function PickerList({ items, selected, onToggle, getKey, getLabel, searchValue, onSearch, searchPlaceholder, emptyText }) {
+// One schema's tables for the picker, named catalog.schema.table, with the note for any the listing left out. The effect and Try again
+// both list through this, so a schema is read the same way on the first load and on a retry.
+function listSchemaTables(schemaFullName, apiFetch, warehouseId) {
+  const [catalog, schema] = schemaFullName.split('.');
+  return apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
+    .then((d) => ({
+      rows: (d.tables || []).map((t) => ({ ...t, full_name: t.full_name || `${catalog}.${schema}.${t.name}` })),
+      leftOut: d.left_out ? leftOutLine(d.left_out) : '',
+    }));
+}
+
+function PickerList({ items, selected, onToggle, getKey, getLabel, disabledReasonOf = () => '', onTryAgain, searchValue, onSearch, searchPlaceholder, emptyText }) {
   return (
     <div className="rounded-lg border border-border bg-bg overflow-hidden flex flex-col min-h-0">
       <div className="relative shrink-0">
@@ -2052,12 +2110,24 @@ function PickerList({ items, selected, onToggle, getKey, getLabel, searchValue, 
             const key = getKey(item);
             const label = getLabel(item);
             const active = selected.includes(key);
+            // A busy type check is not a verdict on the item: it is listed with Try again, which checks it again.
+            if (onTryAgain && typeCheckBusyOf(item)) {
+              return (
+                <div key={key} role="none" data-type-check-busy={key} className="w-full flex flex-wrap items-start gap-2 px-2.5 py-2 text-[11px] text-warning-fg">
+                  <TypeCheckBusyTryAgain name={label} onTryAgain={() => onTryAgain(item)} />
+                </div>
+              );
+            }
+            // Fail closed: an item that cannot be used is shown with its plain reason and cannot be picked.
+            const reason = disabledReasonOf(item);
             return (
               <button
                 key={key}
                 type="button"
                 title={label}
-                onClick={() => onToggle(key)}
+                disabled={Boolean(reason)}
+                aria-disabled={reason ? 'true' : undefined}
+                onClick={() => { if (!reason) onToggle(key); }}
                 className={`w-full flex items-start gap-2 px-2.5 py-2 rounded-md text-xs text-start transition-smooth ${
                   active
                     ? 'bg-db-red-50 text-db-red-fg border border-db-red/20'
@@ -2070,6 +2140,7 @@ function PickerList({ items, selected, onToggle, getKey, getLabel, searchValue, 
                   {active && <CheckCircle2 size={10} className="text-white" />}
                 </div>
                 <span className="font-mono break-all leading-snug">{label}</span>
+                {reason && <span data-unusable-reason="" className="text-[10px] text-error-fg leading-snug">{reason}</span>}
               </button>
             );
           })

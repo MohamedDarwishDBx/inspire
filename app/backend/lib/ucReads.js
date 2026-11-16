@@ -7,6 +7,7 @@ const { fsApiPath } = require('./workspacePaths');
 const { redactSecrets } = require('./redact');
 const { splitMetricViews, metricViewSkipLine } = require('./metricViews');
 const PM = require('./permissions');
+const IMPLEMENT_OUTPUT_LABELS = require('./implementOutputLabels.json');
 
 const RUN_NO_SIGN_IN = "Inspire needs your sign-in to check what you can read. Reload the App and try again.";
 const UNREADABLE_SHOWN = 10;
@@ -255,13 +256,13 @@ function shownNames(names) {
 }
 
 function runUnreadableText(names) {
-  return `You can't read ${shownNames(names)}. Pick tables and files you can read, or ask their owner for access`;
+  return `You can't read ${shownNames(names)}. Pick tables and files you can read, or ask your data owner for access`;
 }
 
 // Table reads name no id in the sentence; the tables themselves are returned as `unreadable` for Details.
 function runUnreadableTablesText(names) {
   return `You can't read ${names.length === 1 ? 'this source table' : `${names.length} source tables`}. `
-    + 'Pick tables you can read, or ask their owner for access';
+    + 'Pick tables you can read, or ask your data owner for access';
 }
 
 function skippedTablesText(names) {
@@ -390,7 +391,7 @@ async function volumeVerdict(dbFetch, host, token, path) {
   const [, , catalog, schema, volume] = path.split('/');
   const full = `${catalog}.${schema}.${volume}`;
   const root = `/Volumes/${catalog}/${schema}/${volume}`;
-  const fix = `ask an owner of the volume ${full} for WRITE VOLUME on it`;
+  const fix = `ask your data owner for WRITE VOLUME on the volume ${full}`;
   const call = (p, options) => answer(dbFetch, host, token, p, options);
   const { at, got } = await nearestExisting((p) => call(fsDirectory(p), { method: 'HEAD' }), path, root);
   if (!got.ok) {
@@ -469,7 +470,7 @@ async function folderPlan(dbFetch, req, folder, { manager, appToken }) {
 
 function appCantWriteText(folder, verdict) {
   if (folder.startsWith('/Volumes/')) {
-    return `The Inspire App can't write to ${folder}, so the run saves no files there. Ask an owner of its volume to give the App WRITE VOLUME on it.`;
+    return `The Inspire App can't write to ${folder}, so the run saves no files there. Ask your data owner to give the App WRITE VOLUME on it.`;
   }
   if (!verdict.missing) return `The Inspire App can't write to ${folder}, so the run saves no files there. Ask an App manager to give the App CAN MANAGE on it.`;
   return `${folder} does not exist yet, and the Inspire App can't create it, so the run saves no files there. Create ${folder}, then give the App CAN MANAGE on it.`;
@@ -528,7 +529,7 @@ async function ownFolderPlan(dbFetch, req, home, { manager, appToken, appId }) {
   if (first.refused || !first.app.verdict) return { plan: first, details: [], scope: false };
   const shared = await shareOwnFolder(dbFetch, req, home, appId);
   if (!shared.ok) {
-    console.warn(`output write check: Inspire could not share ${home} with the App: ${shared.details.join('; ')}`);
+    console.warn(`output write check: Inspire could not share ${home} with the ${IMPLEMENT_OUTPUT_LABELS.app}: ${shared.details.join('; ')}`);
     return { plan: first, details: shared.details, scope: shared.scope };
   }
   const after = await folderPlan(dbFetch, req, home, { manager, appToken });

@@ -33,13 +33,13 @@ const ENTRY = {
 const PROMISED = { value: 'The Pricing Manager recovers margin lost to standing discounts.', benefits: ['Recover margin on discounted items [ESTIMATE: depends on value]'] };
 
 test('each figure shows its number with the formula behind it, and the three amounts are never added together', () => {
-  assert.deepEqual(estimatedFigure(ENTRY, 'USD'), { value: '$15,000', amount: 15000.4, n: 10, how: 'Money at stake on the 10 open records flagged Act now or Review, added up',
+  assert.deepEqual(estimatedFigure(ENTRY, 'USD'), { value: '$15,000', amount: 15000.4, n: 10, how: 'Value at stake on the 10 open records flagged Act now or Review, added up',
     formula: 'Act now $12,000 + Review $3,000 = $15,000' });
   assert.deepEqual(reportedFigure(ENTRY, 'USD'), { value: '$2,500', amount: 2500, n: 3, how: 'Amounts people entered when they marked 3 records fixed, added up',
     formula: 'The 3 amounts people entered when they marked records fixed, added up = $2,500' });
   assert.deepEqual(measuredFigure(ENTRY, 'USD'), { value: '$1,800', amount: 1800, n: 2,
-    formula: 'On each of the 2 fixes a later run confirmed: money at stake when fixed minus what that run still finds, added up = $1,800',
-    how: 'Money at stake when fixed, less what a later run still finds, on 2 fixes a later run confirmed. 2 fixes a later run still flags' });
+    formula: 'On each of the 2 fixes a later run confirmed: value at stake when fixed minus what that run still finds, added up = $1,800',
+    how: 'Value at stake when fixed, less what a later run still finds, on 2 fixes a later run confirmed. 2 fixes a later run still flags' });
   assert.deepEqual(wrongFigure(ENTRY), { value: '25%', amount: 25, n: 8, formula: '2 not an issue / 8 closed x 100 = 25%',
     how: 'People marked 2 of 8 closed records not an issue, so 75% were right' });
 });

@@ -333,7 +333,7 @@ test('live status lists the latest control actions, tolerates a missing control 
     });
   await withApp({ history: [BUILT], controlLogError: 'PERMISSION_DENIED: no SELECT on __inspire_control_log' }, async (url) => {
     const got = await call(url, `/api/inspire/implement/live?${Q}`);
-    assert.equal(got.status, 500);
+    assert.equal(got.status, 403, 'a denial answers 403, never a 500 (REQ-314)');
     assert.match(got.data.error, /PERMISSION_DENIED/);
   });
 });
@@ -430,7 +430,8 @@ test('the Build summary counts each use case once, by the same state the rail gr
   const items = w.implementGroups(useCases, latest, null).flatMap((g) => g.items);
   const got = v.buildSummary(items);
   assert.deepEqual({ ...got, building: got.building.map((i) => i.id) },
-    { mvps: 5, building: ['N02'], ready: 2, held: 0, unmet: 0, failed: 2, notebooks: 1, notStarted: 2,
+    { mvps: 5, building: ['N02'], ready: 2, held: 0, vibeHeld: 0, untrusted: 0, untrustedPublished: 0, heldOther: 0, unmet: 0, unmetPublished: 0,
+      failed: 2, notebooks: 1, notStarted: 2, // REQ-295: the header counts added
       delivered: [{ id: 'dashboard', count: 2, text: '2 dashboards' }, { id: 'genie_space', count: 1, text: '1 Genie Agent' },
         { id: 'alert', count: 1, text: '1 alert' }] });
   assert.equal(got.mvps + got.notebooks + got.notStarted, items.length, 'every use case lands in exactly one count');
@@ -442,7 +443,8 @@ test('the Build summary counts each use case once, by the same state the rail gr
     'a failed build that carries an id is not delivered (must-exclude)');
   assert.deepEqual(v.deliveredOutputs({ dashboard_id: 'd1', asset_status: {} }), [], 'an id without a ready state is not delivered (must-exclude)');
   assert.deepEqual(v.deliveredOutputs(null), []);
-  assert.deepEqual(v.buildSummary(null), { mvps: 0, building: [], ready: 0, held: 0, unmet: 0, failed: 0, notebooks: 0, notStarted: 0, delivered: [] });
+  assert.deepEqual(v.buildSummary(null), { mvps: 0, building: [], ready: 0, held: 0, vibeHeld: 0, untrusted: 0, untrustedPublished: 0, heldOther: 0,
+    unmet: 0, unmetPublished: 0, failed: 0, notebooks: 0, notStarted: 0, delivered: [] }); // REQ-295: header counts added
 });
 
 test('the control tower shows a tile for every output: live when built, building while Genie works, failed, missing or not chosen', async () => {
@@ -562,11 +564,11 @@ test('the cards that read Rebuilding follow the recorded plan, and an asset vibe
   assert.deepEqual(busy(app, null), [], 'the spec diff alone cannot see where a whole-MVP vibe went');
   const cards = v.vibeCards([app, v1], app, null, '', appPlan);
   const whole = cards.find((c) => c.id === 'app');
-  assert.equal(v.rebuildingText(whole), 'Rebuilding the App only. Nothing else changes.');
+  assert.equal(v.rebuildingText(whole), 'Rebuilding the Agentic App only. Nothing else changes.');
   assert.equal(v.rebuildingText(cards.find((c) => c.id === 'app:page:decisions')), 'Rebuilding the Decisions page. This version changes other parts too.');
   const core = p.versionPlan([planStep(PLANNED({ classes: ['data'], refill: true, preview: true, refresh: ['genie_space', 'dashboard', 'app', 'alert'] }), 2)], app);
   assert.deepEqual(busy(app, core).sort(), Object.keys(BUILT_PARTS).sort(), 'a core change rebuilds the notebook and every part after it');
-  assert.equal(v.rebuildingText(v.vibeCards([app, v1], app, null, '', core).find((c) => c.id === 'app')), 'Rebuilding the App. This version changes other parts too.');
+  assert.equal(v.rebuildingText(v.vibeCards([app, v1], app, null, '', core).find((c) => c.id === 'app')), 'Rebuilding the Agentic App. This version changes other parts too.');
   const reasoning = p.versionPlan([planStep(PLANNED({ preview: true }), 2)], app);
   assert.deepEqual(busy(app, reasoning), ['ai_reasoning'], 'an AI reasoning ask only runs the notebook again');
   const page = v2({ retry_outputs: ['app:page:decisions'] });

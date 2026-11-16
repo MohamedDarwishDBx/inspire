@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from v140_implement_test import FEEDBACK_SQL, READS, SHELL_FILES, _app_flow, _churn_page, _deploy_inspire, sdk_stub  # noqa: F401
+from v140_implement_test import FEEDBACK_SQL, NO_AUDIENCE, READS, SHELL_FILES, _app_flow, _churn_page, _deploy_inspire, sdk_stub  # noqa: F401
 from v142_merge_test import OWN_SOURCE, _host_files, _host_page, _restyle_inspire
 from v150_app_owners_access_test import GRANT, NEW_APP, Catalog
 
@@ -19,7 +19,7 @@ def _files(layout=None):
 
 def _deploy(agent_ns, options, page_tables, access="sp", files=None):
     spark = Catalog(schema=[("entity_id", "string")])
-    scoped = [dict(NEW_APP[1], user_api_scopes=["sql", "genie"])] if access == "user" else []
+    scoped = [dict(NEW_APP[1], user_api_scopes=["sql", "genie"]), NO_AUDIENCE] if access == "user" else []
     inst, context, _calls, _imported = _deploy_inspire(agent_ns, NEW_APP[:2] + scoped + NEW_APP[2:])
     inst.spark = spark
     context["spec"] = dict(context["spec"], outputs=dict(context["spec"]["outputs"], app_options=options, app_access=access))

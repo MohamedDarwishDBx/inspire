@@ -30,6 +30,11 @@ PARTS = {"app:page:n01_u01": {"state": "ready", "spec_version": 2, "title": "Chu
          "dashboard:by_region": {"state": "ready", "spec_version": 2, "title": "Customers by region"}}
 
 
+# The served App's page meta, as the App check stores it before the vibe gate runs (REQ-214). These tests stub the App build, so the
+# check never runs; without this the region filter ask has no served App to be judged against.
+SERVED_APP = {"n01_u01": {"filters": {"region": {"label": "Region", "problem": ""}}, "columns": {"records": {}}, "shown": None}}
+
+
 def _llm(inst, splits=SPLITS, verdict=("done", "Customers at risk")):
     seen = []
 
@@ -183,6 +188,7 @@ def test_try_again_rebuilds_only_the_missed_asks_on_top_of_the_built_part_and_ke
     inst, previous = _locked(agent_ns, {"app:page:n01_u01_vibes": PAGE_VIBES},
                              lambda s: [{"asset_snapshots": json.dumps(saved)}] if s.startswith("SELECT asset_snapshots") else [])
     inst.local_log_output_dir = str(tmp_path)
+    inst._implement_app_served = SERVED_APP
     done = {"ask": "Keep the region filter", "status": "done", "evidence": "filter region"}
     missed = {"ask": "Add a count of customers at risk", "status": "missing", "evidence": "no KPI counts them"}
     split = {"text": PAGE_VIBES, "asks": SPLITS[PAGE_VIBES]}
@@ -206,8 +212,8 @@ def test_try_again_rebuilds_only_the_missed_asks_on_top_of_the_built_part_and_ke
                                 "kept": {"app:page:n01_u01": ["Keep the region filter"]}, "file": "page.json", "based": True}
     assert json.loads(built["bases"]["app"]["page.json"]) == PAGE, "Genie starts from the page as it is now"
     block = built["block"]
-    assert ("This time Inspire rebuilds only part of this App: the page n01_u01 of the App alone.\nThe page.json in your working folder "
-            "is the App as it is now: start from it, change only what the parts and asks named here need, and keep everything else in "
+    assert ("This time Inspire rebuilds only part of this Agentic App: the page n01_u01 of the Agentic App alone.\nThe page.json in your working folder "
+            "is the Agentic App as it is now: start from it, change only what the parts and asks named here need, and keep everything else in "
             "it as it is.") in block
     assert "try again on only these asks, which the last build missed:\n1. Add a count of customers at risk" in block
     assert "These asks of it are already done; keep them as they are:\n1. Keep the region filter" in block
@@ -235,14 +241,15 @@ def test_the_genie_round_starts_from_the_saved_part_when_one_is_given(agent_ns, 
             return {"exit": 0}
 
     context = {"uc_id": "N01-U01", "key": (5150, "N01-U01", 3), "bases": {"app": {"page.json": json.dumps(PAGE)}}}
-    inst._implement_genie_loop(context, Runner(), "App", "p", lambda work: {"app_name": "a"}, tools={"check.py": "x"})
-    inst._implement_genie_loop(dict(context, bases={}), Runner(), "App", "p", lambda work: {"app_name": "a"}, tools={"check.py": "x"})
+    inst._implement_genie_loop(context, Runner(), "Agentic App", "p", lambda work: {"app_name": "a"}, tools={"check.py": "x"})
+    inst._implement_genie_loop(dict(context, bases={}), Runner(), "Agentic App", "p", lambda work: {"app_name": "a"}, tools={"check.py": "x"})
     assert found == [["check.py", "page.json"], ["check.py"]]
 
 
 def test_every_built_output_and_part_gets_its_own_record_and_only_a_missed_ask_warns_it(agent_ns, tmp_path):
     inst, previous = _locked(agent_ns)
     inst.local_log_output_dir = str(tmp_path)
+    inst._implement_app_served = SERVED_APP
     _carrying(inst, dict(PARTS, **{"dashboard:old_chart": {"state": "ready", "spec_version": 2, "title": "Gone now"}}))
     inst._implement_runner = lambda uc: "genie"
     inst._implement_dashboard, inst._implement_app = _built("dashboard", PAGE), _built("app", PAGE)
@@ -254,8 +261,8 @@ def test_every_built_output_and_part_gets_its_own_record_and_only_a_missed_ask_w
     chart = status_of["dashboard:by_region"]
     assert chart["vibes_checks"] == [
         {"ask": "Make it a horizontal bar chart", "status": "missing",
-         "evidence": "the built Customers by region bar chart on the dashboard chart by_region has no horizontal_bar chart; its charts are "
-                     "bar (by_region)",
+         "evidence": "the built Customers by region bar chart on the dashboard chart Customers by region has no horizontal_bar chart; its charts are "
+                     "bar chart Customers by region",
          "checks": [{"name": "chart_type: horizontal bar", "passed": False}]},
         {"ask": "Keep the biggest regions first", "status": "done", "evidence": "sort: value_desc by value",
          "checks": [{"name": "sort: value", "passed": True}]}]
@@ -267,9 +274,9 @@ def test_every_built_output_and_part_gets_its_own_record_and_only_a_missed_ask_w
     assert "dashboard:old_chart" not in status_of, "a chart the new build no longer has leaves the list"
     assert (status_of["dashboard"]["state"], status_of["app"]["state"]) == ("ready", "ready"), "a part's miss never flags its parent"
     assert status_of["dashboard"]["title"] == "N01-U01 Predict churn" and status_of["app"]["title"] == "churn-desk"
-    assert ("Dashboard (widget by_region): Make it a horizontal bar chart: the built Customers by region bar chart on the dashboard chart "
-            "by_region has no horizontal_bar chart") in inst.updates[-1]["status_message"] or any(
-        "by_region has no horizontal_bar chart" in str(e.get("evidence")) for e in status_of["checklist"]), \
+    assert ("Dashboard (chart Customers by region): Make it a horizontal bar chart: the built Customers by region bar chart on the dashboard chart "
+            "Customers by region has no horizontal_bar chart") in inst.updates[-1]["status_message"] or any(
+        "Customers by region has no horizontal_bar chart" in str(e.get("evidence")) for e in status_of["checklist"]), \
         "the unmet ask is listed in the checklist and the published sentence, with its output and widget"
     assert [k for k, _p in seen] == ["split", "split", "judge"]
     whole, previous = _locked(agent_ns)
@@ -323,12 +330,14 @@ def test_a_failed_build_says_why_for_each_ask_and_fails_only_its_own_part(agent_
 
     inst._implement_app = denied
     _llm(inst)
-    assert _run(inst, _vibed(previous, ["app:page:n01_u01"], **{"app:page:n01_u01_vibes": PAGE_VIBES})) == "ready_with_warnings"
+    assert _run(inst, _vibed(previous, ["app:page:n01_u01"], **{"app:page:n01_u01_vibes": PAGE_VIBES})) == "failed", \
+        "the version is failed, not ready: its App is not published (REQ-252). The per-part records below are unchanged"
     final = inst.updates[-1]
-    assert "App not published: PERMISSION_DENIED: User does not have CAN MANAGE on app churn-desk" in final["status_message"]
+    # REQ-260: error codes stay out of the status line; the plain sentence names the App and the missing right.
+    assert "App not published: User does not have CAN MANAGE on app churn-desk" in final["status_message"]
     page = final["asset_status"]["app:page:n01_u01"]
     assert page["state"] == "failed" and [c["evidence"] for c in page["vibes_checks"]] == [
-        "the App page n01_u01 was not built: PERMISSION_DENIED: User does not have CAN MANAGE on app churn-desk"] * 2
+        "the App page n01_u01 was not built: User does not have CAN MANAGE on app churn-desk"] * 2
     assert final["asset_status"]["dashboard:by_region"] == PARTS["dashboard:by_region"], "another output's part is left as it was"
 
 
@@ -385,27 +394,39 @@ def test_the_split_keeps_every_ask_and_only_checks_it_can_trust(agent_ns):
 
 
 @pytest.mark.parametrize("asset,check,status,evidence", [
-    ("dashboard:by_region", {"kind": "chart_type", "value": "Bar chart"}, "done", "chart by_region: type bar"),
+    ("dashboard:by_region", {"kind": "chart_type", "value": "Bar chart"}, "done", "chart Customers by region: type bar"),
     ("dashboard:by_region", {"kind": "chart_type", "value": "horizontal bar"}, "missing",
-     "the built dashboard chart by_region has no horizontal_bar chart; its charts are bar (by_region)"),
+     "the built dashboard chart Customers by region has no horizontal_bar chart; its charts are bar chart Customers by region"),
     ("dashboard:by_region", {"kind": "sort", "value": "value", "direction": "desc"}, "done", "sort: value_desc"),
     ("dashboard:by_region", {"kind": "sort", "value": "region", "direction": "asc"}, "missing",
-     "the built dashboard chart by_region orders by sort value_desc by value, never by region"),
+     "the built dashboard chart Customers by region orders by sort value_desc by value, never by region"),
     ("app:page:n01_u01", {"kind": "filter", "value": "region"}, "done", "filter region:"),
     ("app:page:n01_u01", {"kind": "filter", "value": "channel"}, "missing",
-     "the built App page n01_u01 has no filter on channel; its filters are region"),
+     "the built App page Churn desk has no filter on channel; its filters are region"),
     ("app:page:n01_u01", {"kind": "column", "value": "value_at_stake"}, "done", "value_at_stake"),
-    ("app:page:n01_u01", {"kind": "column", "value": "margin"}, "missing", "the built App page n01_u01 names no column margin"),
+    ("app:page:n01_u01", {"kind": "column", "value": "margin"}, "missing", "the built App page Churn desk names no column margin"),
     ("app:page:n01_u01", {"kind": "page", "value": "churn desk"}, "done", "page n01_u01: Churn desk"),
     ("app:page:n01_u01", {"kind": "text", "value": "customers  AT risk"}, "done", "Where the customers at risk are"),
-    ("app:page:n01_u01", {"kind": "threshold", "value": 5000}, "missing", "the built App page n01_u01 uses no 5000"),
+    ("app:page:n01_u01", {"kind": "threshold", "value": 5000}, "missing", "the built App page Churn desk uses no 5000"),
     ("dashboard:records", {"kind": "sort", "value": "rank", "direction": "asc"}, "done", "rank: rank"),
 ])
 def test_a_checkable_ask_is_checked_against_exactly_what_was_built(agent_ns, asset, check, status, evidence):
     target, reason = agent_ns["implement_vibes_target"](asset, PAGE)
     assert reason == ""
-    found = agent_ns["implement_vibes_fact"](check, target, agent_ns["implement_asset_label"](asset), ("bar", "horizontal_bar", "line"))
+    found = agent_ns["implement_vibes_fact"](check, target, agent_ns["implement_asset_title_label"](asset, PAGE), ("bar", "horizontal_bar", "line"))
     assert found[0] == status and evidence in found[1], found
+
+
+def test_a_chart_listing_names_each_chart_by_its_title_and_never_by_its_id(agent_ns):
+    # REQ-237 / D-NAMES: person copy names a chart by its title. The internal id must not appear in the evidence (must-exclude).
+    target, reason = agent_ns["implement_vibes_target"]("dashboard:by_region", PAGE)
+    assert reason == ""
+    label = agent_ns["implement_asset_title_label"]("dashboard:by_region", PAGE)
+    assert label == "dashboard chart Customers by region", label
+    status, text = agent_ns["implement_vibes_fact"]({"kind": "chart_type", "value": "horizontal bar"}, target, label, ("bar", "horizontal_bar", "line"))
+    assert status == "missing"
+    assert text == "the built dashboard chart Customers by region has no horizontal_bar chart; its charts are bar chart Customers by region", text
+    assert "by_region" not in text
 
 
 def test_an_ask_for_a_part_this_build_does_not_have_says_exactly_why(agent_ns):
@@ -483,11 +504,11 @@ def test_the_reasoning_asks_reach_only_the_record_reasoning_and_the_formula_asks
                     retry_outputs=["value_formula"], retry_asks={"value_formula": ["Count only the weeks left in the season"]})[0]
     text = agent_ns["implement_choices_markdown"](formula, asks={"value_formula": ["Count only the weeks left in the season"]},
                                                   impact=agent_ns["INSPIRE_MONEY_IMPACT"])
-    assert ('- The customer\'s asks for the money at stake formula, word for word: """Count only the weeks left in the season""" They '
+    assert ('- The customer\'s asks for the value at stake formula, word for word: """Count only the weeks left in the season""" They '
             "are explicit user directives for `VALUE_AT_STAKE_FORMULA`") in text
-    assert ("- Inspire split the asks for the money at stake formula into these, and checks each one in the value_at_stake_formula "
+    assert ("- Inspire split the asks for the value at stake formula into these, and checks each one in the value_at_stake_formula "
             "the run writes: 1. Count only the weeks left in the season") in text
-    assert ("- Try again on only these asks for the money at stake formula, which the last build missed, and keep the rest of the "
+    assert ("- Try again on only these asks for the value at stake formula, which the last build missed, and keep the rest of the "
             "formula as it is: 1. Count only the weeks left in the season") in text
     assert "money at stake formula" not in agent_ns["implement_choices_markdown"](_spec(agent_ns, outputs=ALL)[0])
 
@@ -515,8 +536,8 @@ def test_new_reasoning_asks_rerun_the_notebook_with_them_and_record_their_checks
     assert status_of["ai_reasoning"]["vibes_checks"] == [{"ask": "Answer in French", "status": "done", "evidence": "Appeler le magasin."}]
     assert (status_of["ai_reasoning"]["state"], status_of["ai_reasoning"]["spec_version"]) == ("ready", 3)
     assert status_of["ai_reasoning"]["what"] == "Why each row is flagged, what to do, and how sure"
-    assert status_of["value_formula"] == {"state": "ready", "spec_version": 3, "title": "Money at stake formula",
-                                          "what": "How the money at stake on each row is counted"}
+    assert status_of["value_formula"] == {"state": "ready", "spec_version": 3, "title": "Value at stake formula",
+                                          "what": "How the value at stake on each row is counted"}
 
 
 def test_the_notebook_and_its_parts_are_checked_against_what_the_run_and_genie_wrote(agent_ns):
@@ -549,7 +570,7 @@ def test_the_notebook_and_its_parts_are_checked_against_what_the_run_and_genie_w
     assert context["asset_status"]["ai_reasoning"]["vibes_checks"] == [
         {"ask": "Answer in Spanish", "status": "done", "evidence": "Llamar al gerente de la tienda."}]
     assert context["asset_status"]["value_formula"]["state"] == "failed"
-    assert warnings == ["Money at stake formula vibe not done: Count only the weeks left: the latest run wrote no money at stake "
+    assert warnings == ["Value at stake formula vibe not done: Count only the weeks left: the latest run wrote no value at stake "
                         "formula on any record"]
     assert queries[0] == ("SELECT `record_key`, `priority_tier`, `ai_explanation`, `ai_confidence_reason`, `ai_next_action`, "
                           "`ai_expected_result`, `ai_other_option`, `ai_evidence` FROM `main`.`inspire`.`churn_out` WHERE use_case_id = "
@@ -596,3 +617,56 @@ def test_the_app_names_the_business_and_links_each_page_to_its_alert(agent_ns):
     assert agent_ns["IMPLEMENT_BUILD_ORDER"].index("alert") < agent_ns["IMPLEMENT_BUILD_ORDER"].index("app"), \
         "the alert is built first, so the App links this version's alert"
     assert set(agent_ns["IMPLEMENT_BUILD_ORDER"]) == set(agent_ns["IMPLEMENT_OUTPUTS"])
+
+
+def test_every_person_facing_label_names_a_part_by_title_or_kind_and_never_by_its_id(agent_ns):
+    # REQ-237 / D-NAMES, §3e sweep: every person-facing producer that names an App page or a chart, over a fixture whose ids are
+    # by_region and n01_u01. No raw id may come out. The Genie-facing form (titles=None) keeps the id by design, and is asserted to.
+    status = {"app:page:n01_u01": {"state": "ready", "title": "Churn desk"},
+              "dashboard:by_region": {"state": "ready", "title": "Customers by region"},
+              "dashboard:untitled_one": {"state": "ready"}}
+    titles = agent_ns["implement_asset_titles"](status)
+    assert titles == {"app:page:n01_u01": "Churn desk", "dashboard:by_region": "Customers by region", "dashboard:untitled_one": ""}
+    page, chart = "app:page:n01_u01", "dashboard:by_region"
+    ask = {"ask": "Show the region", "reason": "it asks for a chart"}
+    rendered = {
+        "heading": [agent_ns["implement_asset_heading"](a, None, titles) for a in (page, chart)],
+        "person_label": [agent_ns["implement_person_label"](a, None, titles) for a in (page, chart, "dashboard:untitled_one")],
+        "targets": list(agent_ns["implement_vibe_targets"](status, {"dashboard": True, "app": True}).values()),
+        "sent_lines": agent_ns["implement_vibe_sent_lines"]({page: "Keep the filter"}, [dict(ask, asset=chart)], False, None, titles),
+        "fallback_line": [agent_ns["implement_vibe_fallback_line"](dict(ask, asset=chart), titles)],
+        "undo": list(agent_ns["implement_undo_routes"]({chart: ["Make it a line chart"], page: ["Drop the filter"]}, None, titles).values()),
+        "apply_errors": agent_ns["implement_apply_vibe_routes"]({"outputs": {}, "data": {}, "retry_outputs": []},
+                                                                {chart: "v" * 2001}, None, titles)[2],
+        "missed": [agent_ns["implement_vibes_missed_text"]({chart: [{"ask": "Show it", "evidence": "no bar"}],
+                                                            page: [{"ask": "Keep it", "evidence": "no filter"}]}, None, titles)],
+        "warnings": agent_ns["implement_vibes_warnings"](page, [{"ask": "Keep it", "status": "missing", "evidence": "no filter"}], 0, None, titles),
+        "unmet": [agent_ns["implement_unmet_published_text"]([{"part": chart, "requirement": "Show it", "evidence": "no bar"}], 3, True, titles)],
+        "where": [agent_ns["implement_checklist_where"](chart, "", (), titles), agent_ns["implement_checklist_where"](page, "", [{"id": "n01_u01", "title": "Churn desk"}], titles)],
+    }
+    for name, values in rendered.items():
+        for value in values:
+            assert "by_region" not in str(value) and "n01_u01" not in str(value), (name, value)
+    assert any("Customers by region" in str(v) for v in rendered["sent_lines"] + rendered["undo"] + rendered["missed"])
+    assert any("Churn desk" in str(v) for v in rendered["warnings"] + rendered["where"] + rendered["heading"])
+    # The Genie-facing form keeps the ids, by design (titles=None is the machine path).
+    assert "by_region" in agent_ns["implement_vibes_missed_text"]({chart: [{"ask": "Show it", "evidence": "no bar"}]}, None)
+
+
+def test_the_fill_preview_and_vibes_hold_sites_read_the_part_titles_the_build_carries_on_the_use_case():
+    # §3e sweep (round 5/6): the two person-facing sites that had no title in scope read the titles _implement_one_locked carries on the
+    # use case (the stubbed signatures keep their arity). Source-level, because both run inside the live build.
+    import ast
+    import json
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "agent", "dbx_inspire_ai_agent.ipynb")
+    with open(path, encoding="utf-8") as handle:
+        text = "".join("".join(c["source"]) for c in json.load(handle)["cells"] if c["cell_type"] == "code")
+    functions = {n.name: n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef)}
+    fill, hold, one = functions["_implement_fill_and_preview"], functions["_implement_vibes_hold"], functions["_implement_one_locked"]
+    assert "titles" not in [a.arg for a in fill.args.args] and "titles" not in [a.arg for a in hold.args.args]
+    assert 'use_case.get("_implement_titles") or {}' in ast.unparse(fill).replace("'", '"')
+    assert 'use_case.get("_implement_titles") or {}' in ast.unparse(hold).replace("'", '"')
+    caller = ast.unparse(one).replace("'", '"')
+    assert 'use_case["_implement_titles"] = implement_asset_titles(asset_status)' in caller
+    assert 'use_case["_implement_titles"] = implement_asset_titles(asset_status)' in caller and caller.index(
+        'use_case["_implement_titles"]') < caller.index("self._implement_vibes_hold(")

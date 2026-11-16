@@ -1,6 +1,7 @@
 import datetime
 import functools
 import json
+import uuid
 import math
 import os
 import re
@@ -9,7 +10,7 @@ import zoneinfo
 from html.parser import HTMLParser
 
 import shell_facts
-from shell_facts import (CLOSING_ORDER, CONVERTED, MONEY_CODES, MONEY_COLUMN, date_column, future_source, money_currency_column, money_equation_tokens, money_expression, money_joined, money_rule_problems, money_scope, money_value_sql, money_source, money_value_override, sql_text, closing_ctes, quote, table_name, versions_source)
+from shell_facts import (CLOSING_ORDER, CONVERTED, MONEY_CODES, MONEY_COLUMN, date_column, future_source, read_date, money_currency_column, money_equation_tokens, money_expression, money_joined, money_rule_problems, money_scope, money_value_sql, money_source, money_value_override, sql_text, closing_ctes, quote, table_name, versions_source)
 from shell_redact import inspire_parse_time, inspire_raised_by, inspire_redact_text
 
 SHELL_MODULES = ("shell_redact", "shell_facts", "shell_sql", "shell_db", "shell_pg", "shell_alerts", "shell_core", "app")
@@ -35,7 +36,7 @@ def rebuild_action(what: str = "it", first: bool = False) -> str:
 NO_ACCESS_LEAD = "No access to "
 ACCESS_ON = re.compile(r"\bon (?:table|view|schema|catalog|volume|function) (`[^`]+`(?:\.`[^`]+`){0,2}|'[^']+'|[\w-]+(?:\.[\w-]+){0,2})", re.I)
 PLAIN_ERRORS = {
-    "not_allowed": f"{NO_ACCESS_LEAD}part of this App's data yet. Ask the owner of that data for read access, then try again.",
+    "not_allowed": f"{NO_ACCESS_LEAD}part of this App's data yet. Ask your data owner for read access, then try again.",
     "missing_table": "Part of this App's data is not there yet. It appears after the next run; if it stays missing, ask the person who built "
                      "the App to run it again.",
     "missing_column": f"The data changed since the App was built. Ask the person who built the App to {rebuild_action()}.",
@@ -937,6 +938,11 @@ def spec_problems(page: dict, stored=None) -> list:
             problems.append(f"{where} reads dataset {kpi.get('dataset')}, which the page does not define")
         shape = expression_problems(where, kpi.get("expression"))
         problems += shape
+        if kpi.get("open_work") is not None and not isinstance(kpi.get("open_work"), bool):
+            problems.append(f"{where} open_work must be true or false")
+        elif kpi.get("open_work") and not shape and not (kpi_counts_result_rows(page, kpi) and keeps_record_key(page, kpi.get("dataset"))):
+            problems.append(f"{where} is marked open_work, so it must be a plain count of the result table "
+                            f"(COUNT(*), COUNT(col) or COUNT(DISTINCT col)) over a dataset that reads it and keeps record_key")
         problems += _format_problems(where, kpi)
         if kpi.get("good", "neutral") not in GOODS:
             problems.append(f"{where} good must be up, down or neutral")
@@ -1287,12 +1293,16 @@ def list_column_filters(page: dict, types=None, actions: bool = False) -> list:
              for f in column_filters(records.get(COLUMN_FILTERS), shown, types)]
     listed = {c.lower(): (label, c) for c, (label, _kind) in shown.items()}
     grouped, seen = [], {f["column"].lower() for f in found}
+    # REQ-191: a column the list's column_filters names, on or off, is decided there; a grouping never re-adds an off filter.
+    stated = records.get(COLUMN_FILTERS)
+    decided = {e["column"].lower() for e in stated if isinstance(e, dict) and isinstance(e.get("column"), str)} if isinstance(stated, list) else set()
+    all_off = stated is False  # column_filters false turns every column filter off, Grouping filters included (D-AUTO)
     for g in entries:
         key = g["column"].lower()
-        if key in seen:
+        if all_off or key in seen or key in decided or key not in listed:
             continue
         seen.add(key)
-        label, column = listed.get(key, (g.get("label") or _column_label(g["column"]), g["column"]))
+        label, column = listed[key]
         grouped.append({"column": column, "type": "multi_select", "label": label, "grouping": True})
     taken = {f["column"] for f in found + grouped}
     offered = actions and records.get(COLUMN_FILTERS) is not False
@@ -1916,12 +1926,12 @@ def dashboard_html_problems(page: dict) -> list:
 
 def chart_kind_problems(page: dict, kinds, not_drawn) -> tuple:
     problems, skipped = kind_problems(page, kinds, set(not_drawn))
-    return problems, [f"App: no {CHART_KIND_LABELS[k].lower()} chart, which you picked: {not_drawn[k]}. Pick another kind of chart in "
+    return problems, [f"Agentic App: no {CHART_KIND_LABELS[k].lower()} chart, which you picked: {not_drawn[k]}. Pick another kind of chart in "
                       "App look" for k in skipped]
 
 
 def rule_problems(page: dict, rules: dict) -> tuple:
-    vibes, label = rules.get("vibes") or "", rules.get("label") or "App"
+    vibes, label = rules.get("vibes") or "", rules.get("label") or "Agentic App"
     least = layout_chart_least(page_layout(page))
     fewer = fewer_problems(page, "fewer_charts", vibes, label, f"fewer than {least} charts",
                            f"write at least {least} charts") if layout_takes_charts(page) else []
@@ -2203,7 +2213,7 @@ def run_level_datasets(page: dict) -> set:
     if not result:
         return set()
     whole = scenario_layout(page)
-    tables = [f"{result}{suffix}" for suffix in layout_contract(page) if whole or suffix in RUN_LEVEL_SUFFIXES]
+    tables = [shell_facts.companion(result, suffix) for suffix in layout_contract(page) if whole or suffix in RUN_LEVEL_SUFFIXES]
     return {str(d.get("name")) for d in page.get("datasets") or [] if isinstance(d, dict)
             and any(reads_table(d.get("sql"), table) for table in tables)}
 
@@ -2226,7 +2236,7 @@ def contract_problems(page: dict) -> list:
             read = [(page.get("scenario") or {}).get("model")] if isinstance(page.get("scenario"), dict) else []
         else:
             read = [i.get("dataset") for i in section_items(page, section)]
-        companion = f"{result}{suffix}"
+        companion = shell_facts.companion(result, suffix)
         if read and not any(reads_table(sqls.get(d), companion) for d in read):
             problems.append(f"the {section} section of a {page_layout(page)} page reads {companion}, the companion table its notebook writes "
                             f"with {', '.join(suffixes[suffix])}; point its dataset at that table")
@@ -2392,18 +2402,20 @@ def add_months(day: datetime.date, months: int) -> datetime.date:
     return datetime.date(year, month, min(day.day, last))
 
 
+def preset_start(grain: str, last: datetime.date, months: int) -> datetime.date:
+    """The first day of a window of `months` calendar months ending at `last`, at month or day grain: the one rule every preset uses."""
+    if grain == "month":
+        return add_months(last.replace(day=1), -(months - 1))
+    return add_months(last, -months) + datetime.timedelta(days=1)
+
+
 def preset_ranges(grain: str, low, high) -> list:
     if low is None or high is None:
         return []
     first, last = _date(str(low)[:10]), _date(str(high)[:10])
     out = []
     for ident, label, months in PRESETS:
-        if months is None:
-            start = first
-        elif grain == "month":
-            start = add_months(last.replace(day=1), -(months - 1))
-        else:
-            start = add_months(last, -months) + datetime.timedelta(days=1)
+        start = first if months is None else preset_start(grain, last, months)
         out.append({"id": ident, "label": label, "from": max(start, first).isoformat(), "to": last.isoformat()})
     return out
 
@@ -2562,15 +2574,16 @@ def _condition(kind, target: str, value, params) -> list:
     low, high = (value.get(edge) for edge in RANGE_EDGES[kind])
     cast = "DATE" if kind == "date_range" else "DOUBLE"
     shown = str if kind == "date_range" else (lambda v: repr(float(v)))
+    read = read_date(target) if kind == "date_range" else f"CAST({target} AS DOUBLE)"
     if kind == "date_range" and low and high:
         start, end = sorted((str(low), str(high)))
-        return [f"CAST({target} AS DATE) BETWEEN {params.add(start, 'DATE')} AND {params.add(end, 'DATE')}"]
+        return [f"{read} BETWEEN {params.add(start, 'DATE')} AND {params.add(end, 'DATE')}"]
     if low not in (None, "") and high not in (None, ""):
-        return [f"CAST({target} AS {cast}) BETWEEN {params.add(shown(low), cast)} AND {params.add(shown(high), cast)}"]
+        return [f"{read} BETWEEN {params.add(shown(low), cast)} AND {params.add(shown(high), cast)}"]
     if low not in (None, ""):
-        return [f"CAST({target} AS {cast}) >= {params.add(shown(low), cast)}"]
+        return [f"{read} >= {params.add(shown(low), cast)}"]
     if high not in (None, ""):
-        return [f"CAST({target} AS {cast}) <= {params.add(shown(high), cast)}"]
+        return [f"{read} <= {params.add(shown(high), cast)}"]
     return []
 
 
@@ -2716,7 +2729,7 @@ def money_left_out(page: dict, kpi: dict, values: dict):
         cells += [f"SUM(CASE WHEN {column} IS NULL THEN 1 ELSE 0 END) AS undated",
                   f"SUM(CASE WHEN {column} >= date_trunc('{scope['grain']}', current_date()) THEN 1 ELSE 0 END) AS running"]
     if dated:
-        cells.append(f"SUM(CASE WHEN {quote(dated)} > current_date() THEN 1 ELSE 0 END) AS future")
+        cells.append(f"SUM(CASE WHEN {read_date(quote(dated))} > current_date() THEN 1 ELSE 0 END) AS future")
     if scope["rates"] or scope["rate_column"] or scope["rate_table"]:
         cells.append(f"SUM(CASE WHEN {CONVERTED} IS NULL THEN 1 ELSE 0 END) AS unrated")
     if scope["rate_table"]:
@@ -2758,6 +2771,76 @@ def left_out_text(rows) -> dict:
     if duplicated:
         line += f"; {counted(duplicated, 'date')} {'has' if duplicated == 1 else 'have'} more than one rate, and the latest loaded was used"
     return {"undated": undated, "running": running, "unrated": unrated, "duplicated": duplicated, "future": future, "text": line}
+
+
+SCOPE_COUNT_FORMATS = ("number", "integer")
+
+
+def scope_counts_query(page: dict, names, today: str) -> tuple:
+    """One read of the App's result table under the one scope: open, snoozed, held back, done or closed, and could not be checked.
+    Every count KPI on a page with the quality flag states these numbers, so no count is read as the open work count alone.
+    The open and snoozed cells split the same open-status rows on the snooze date, exactly as the Work list does."""
+    if "data_quality_flag" not in names:
+        return None
+    params = _Params()
+    ok = f"COALESCE(({flagged_ok_sql(names)}), FALSE)"
+    held = "COALESCE(`held_back`, FALSE)" if "held_back" in names else "FALSE"
+    statuses = page_statuses(page)
+    status = (f"COALESCE(CAST(`action_status` AS STRING), {params.add(statuses['unset'])})" if "action_status" in names
+              else params.add(statuses["unset"]))
+    opened = ", ".join(params.add(str(v)) for v in statuses["open"])
+    closed = ", ".join(params.add(str(v)) for v in statuses["closed"])
+    snooze = f"CAST(`{SNOOZE_COLUMN}` AS DATE)" if SNOOZE_COLUMN in names else "CAST(NULL AS DATE)"
+    awake = not_snoozed_sql(snooze, params.add(today, "DATE"))
+    scope = " AND ".join(c for c in (use_case_scope(page, params), "`is_current`", "`change_source` <> 'delete'") if c)
+    text = (f"SELECT COUNT_IF({shell_facts.open_work_sql(names, params.add(today, 'DATE'))}) AS open_, COUNT_IF({ok} AND {held}) AS held_, "
+            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({closed})) AS closed_, COUNT_IF(NOT {ok}) AS unchecked, "
+            f"COUNT_IF({ok} AND NOT {held} AND {status} IN ({opened}) AND NOT {awake}) AS snoozed_ "
+            f"FROM {table_name(page['result_table'])} WHERE {scope}")
+    return f"{text} LIMIT 1", params.items
+
+
+COUNTS_ROWS = re.compile(r"\s*COUNT\s*\(\s*(\*|(?:DISTINCT\s+)?`?[A-Za-z_][A-Za-z0-9_]*`?)\s*\)\s*", re.I)
+
+
+def kpi_counts_result_rows(page: dict, kpi: dict) -> bool:
+    """True when the KPI is a plain count of rows of the App's result table (COUNT(*), COUNT(col), COUNT(DISTINCT col)
+    over a dataset that reads that table). Any other count, or a sum, average or ratio, gets no scope line."""
+    if not page.get("result_table") or not COUNTS_ROWS.fullmatch(str(kpi.get("expression") or "")):
+        return False
+    try:
+        sql = _dataset(page, kpi["dataset"])
+    except KeyError:
+        return False
+    return table_name(page["result_table"]) in sql or page["result_table"] in sql
+
+
+OPEN_NAMES = re.compile(r"\b(open|waiting|to decide|need action|to fix|outstanding)\b", re.I)
+
+
+def keeps_record_key(page: dict, dataset: str) -> bool:
+    """True when the dataset carries record_key: named in its SQL, or passed through by SELECT * over a source."""
+    sql = _dataset_sql(page).get(dataset, "")
+    return "record_key" in sql or re.match(r"\s*SELECT\s+\*", sql, re.I) is not None
+
+
+def kpi_open_work(page: dict, kpi: dict) -> bool:
+    """Whether a KPI counts open work and so reads the one open-work scope. An explicit open_work flag decides. Without one, a plain
+    count of the decision records that names open work in its id or label does (the page-spec default)."""
+    if isinstance(kpi.get("open_work"), bool):
+        return kpi["open_work"]
+    if kpi.get("open_work") is not None or not OPEN_NAMES.search(f"{kpi.get('id') or ''} {kpi.get('label') or ''}"):
+        return False
+    return kpi_counts_result_rows(page, kpi) and keeps_record_key(page, kpi.get("dataset"))
+
+
+def scope_counts_text(rows) -> str:
+    row = (rows or [{}])[0]
+    open_, held, closed, unchecked, snoozed = (int(row.get(k) or 0) for k in ("open_", "held_", "closed_", "unchecked", "snoozed_"))
+    checked = open_ + held + closed + snoozed
+    later = f" {snoozed} snoozed until a later date." if snoozed else ""
+    return (f"Scope: {checked} checked records, {open_} open, {held} held back, {closed} done or closed.{later} "
+            f"{unchecked} could not be checked and are never open work.")
 
 
 MONEY_RULE_NAME = "money_rule"
@@ -2885,6 +2968,33 @@ def money_off(page: dict) -> bool:
     return money.get("off") is True
 
 
+def money_label_problems(page: dict) -> list:
+    """The money rule names the value-at-stake card: a currency card that reads value_at_stake carries the money rule's words, never a
+    name a notebook invented (REQ-293)."""
+    problems = []
+    if not isinstance(page.get("money"), dict) or money_off(page):
+        return problems
+    sqls = _dataset_sql(page)
+    for kpi in page.get("kpis") or []:
+        if kpi.get("format") != "currency" or not kpi.get("dataset"):
+            continue
+        reads = f"{sqls.get(kpi['dataset'], '')} {kpi.get('expression') or ''}".lower()
+        label = " ".join(str(kpi.get("label") or "").split())
+        if "value_at_stake" in reads and "value at stake" not in label.lower():
+            problems.append(f"the {label or 'unnamed'} card reads value_at_stake, so its label must be the money rule's 'Value at stake', "
+                            f"not {label!r}")
+    for chart in page.get("charts") or []:
+        for series in chart.get("y") or []:
+            if not isinstance(series, dict) or series.get("format") != "currency" or not series.get("label"):
+                continue
+            reads = f"{sqls.get(chart.get('dataset'), '')} {series.get('expression') or ''}".lower()
+            label = " ".join(str(series.get("label")).split())
+            if "value_at_stake" in reads and "value at stake" not in label.lower():
+                problems.append(f"the {label} series of the {chart.get('id') or 'unnamed'} chart reads value_at_stake, so its label must be "
+                                f"the money rule's 'Value at stake', not {label!r}")
+    return problems
+
+
 def money_page_problems(page: dict) -> list:
     """The money rule against the page's own datasets: a rate table needs a dated dataset, and the statuses and the
     losses rule must reach the dataset SQL, not be ignored."""
@@ -2903,7 +3013,7 @@ def money_page_problems(page: dict) -> list:
                 problems.append(f"the {name} dataset ignores the status {status!r}; its SQL must keep rows whose status is {status!r}")
         if money.get("rule", "losses") == "losses" and "greatest(" not in sql.lower():
             problems.append(f"the {name} dataset does not count losses only; its SQL must net each loss at zero, as GREATEST(-effect, 0)")
-    return problems
+    return problems + money_label_problems(page)
 
 
 def money_check_queries(page: dict) -> list:
@@ -2988,11 +3098,18 @@ def genie_money_query(page: dict, kpi: dict) -> tuple:
     return money_expression(page, dataset, kpi["expression"]), money_source(page, dataset, _dataset(page, dataset)), quote(by) if by else ""
 
 
-def kpi_query(page: dict, ident: str, values: dict, previous: str = None) -> tuple:
+# The columns a result table has when the App built it (SCHEMA); used when a caller does not pass the table's real columns.
+RESULT_COLUMNS = frozenset({"is_current", "change_source", "action_status", "held_back", "data_quality_flag", SNOOZE_COLUMN})
+
+
+def kpi_query(page: dict, ident: str, values: dict, previous: str = None, names=None) -> tuple:
     kpi = _item(page, "kpis", ident)
     money = kpi.get("format") == "currency"
     dataset = _dataset(page, kpi["dataset"])
     sql, params = (money_source(page, kpi["dataset"], dataset) if money else future_source(page, kpi["dataset"], dataset)), _Params()
+    if kpi_open_work(page, kpi):  # a count of open work keeps the rows whose record is open in the result table, never raw rows
+        open_records = f"SELECT `record_key` FROM {table_name(page['result_table'])} WHERE {shell_facts.open_work_sql(names or RESULT_COLUMNS, 'current_date')}"
+        sql = f"SELECT * FROM ({sql}) AS o WHERE o.`record_key` IN ({open_records})"
     expression = money_expression(page, kpi["dataset"], kpi["expression"]) if money else kpi["expression"]
     where = _where(page, kpi["dataset"], values, params)
     by = money_currency_column(page, kpi)
@@ -3023,6 +3140,57 @@ def kpi_values(rows) -> dict:
     single = by_currency[0] if len(by_currency) == 1 else None
     return {"now": single["now"] if single else None, "before": single["before"] if single else None, "by_currency": by_currency}
 
+
+def kpi_needs_rows_check(shown: dict) -> bool:
+    """A KPI shows a zero or nothing (not a number, not a currency split): only then can its zero be missing data rather than a measure."""
+    return isinstance(shown, dict) and not shown.get("by_currency") and shown.get("now") in (None, 0)
+
+
+def kpi_rows_query(page: dict, ident: str, values: dict) -> tuple:
+    """How many rows the KPI's own dataset gives its filters at these values, before the KPI's expression runs."""
+    kpi = _item(page, "kpis", ident)
+    money = kpi.get("format") == "currency"
+    dataset = _dataset(page, kpi["dataset"])
+    sql, params = (money_source(page, kpi["dataset"], dataset) if money else future_source(page, kpi["dataset"], dataset)), _Params()
+    where = _where(page, kpi["dataset"], values, params)
+    return f"SELECT COUNT(*) AS n FROM ({sql}) AS d{where} LIMIT 1", params.items
+
+
+def zero_run_checked(summary) -> int | None:
+    """REQ-297: the records the latest run checked when it found nothing to act on (no Act now and no Review record), else None: no
+    summary, a count that is missing, a flagged record, or a run that checked no record."""
+    if not summary:
+        return None
+    flagged = [as_number(summary.get("act_now_records")), as_number(summary.get("review_records"))]
+    records = as_number(summary.get("records"))
+    if None in flagged or records is None or sum(flagged) or records < 1:
+        return None
+    return int(records)
+
+
+def kpi_empty_text(page: dict, through: str = "", checked=None) -> dict:
+    """Why a KPI with no rows behind it has no number, in plain words, in every App language: {language code: text}. The words are the
+    tour registry's per-language `reasons` in kinds.json. On a forecast page the reason is the forecast's start. When the latest run checked
+    records and found nothing (checked, REQ-297), the reason says what the run did."""
+    if checked is not None:
+        key, through = "run_found_nothing", shown_number(checked)
+    elif plan_contract(page) == "forecast":
+        key = "forecast_not_yet" if through else "forecast_no_date"
+    else:
+        key = "no_rows_dated" if through else "no_rows"
+    languages = (kinds_registry().get("tour") or {}).get("languages") or {}
+    return {str(lang.get("code")): str(lang["reasons"][key]).replace("{through}", through).replace("{checked}", through)
+            for lang in languages.values() if isinstance(lang, dict) and isinstance(lang.get("reasons"), dict) and key in lang["reasons"]}
+
+
+def kpi_missing(page: dict, shown: dict, rows: int, through: str = "", checked=None) -> dict:
+    """A zero or missing KPI value with no rows behind it says why. REQ-297: when the latest run checked records and found nothing to act
+    on, the KPI is a measured zero with that reason, never a blank number. Otherwise a zero with no rows behind it shows no number."""
+    if not kpi_needs_rows_check(shown) or rows:
+        return shown
+    if checked is not None:
+        return dict(shown, now=0, empty=kpi_empty_text(page, checked=checked))
+    return dict(shown, now=None, empty=kpi_empty_text(page, through))
 
 def split_filters(page: dict, dataset: str) -> list:
     return [f for f in page.get("filters") or [] if f.get("type") not in RANGE_EDGES and (f.get("columns") or {}).get(dataset)]
@@ -3385,9 +3553,26 @@ def column_options_query(page: dict, table, column: str, search: str = "", limit
     return _choice_query(page, [(dataset, column)], search, limit)
 
 
+def date_value(column: str) -> str:
+    return read_date(quote(column))
+
+
 def bounds_query(page: dict, ident: str) -> tuple:
     sql, params = bounds_together_query(page, [ident])
     return f"SELECT low_0 AS low, high_0 AS high FROM ({sql}) AS t", params
+
+
+def filter_scope_query(page: dict, ident: str) -> tuple:
+    """The rows a filter reads over its whole scope, and how many of those rows hold a value its control shows: a date for a date filter
+    (the same date_value its bounds read, over the same datasets), a choice for a choice filter (the same read its options make).
+    No filter is applied, so zero rows means the scope is empty and zero values means its column holds none."""
+    f = _item(page, "filters", ident)
+    if f.get("type") == "date_range":
+        reads = [(dataset, date_value(column)) for dataset, column in f["columns"].items()]
+    else:
+        reads = [(dataset, f"CAST({quote(f['columns'][dataset])} AS STRING)") for dataset in filter_value_datasets(f)]
+    parts = [f"SELECT COUNT(*) AS n_rows, COUNT({read}) AS n_values FROM ({_dataset(page, dataset)}) AS d" for dataset, read in reads]
+    return f"SELECT SUM(n_rows) AS n_rows, SUM(n_values) AS n_values FROM ({' UNION ALL '.join(parts)}) AS s", []
 
 
 def bounds_together_query(page: dict, idents: list) -> tuple:
@@ -3398,7 +3583,7 @@ def bounds_together_query(page: dict, idents: list) -> tuple:
             if (dataset, column) not in spots:
                 at = reads.setdefault(dataset, [])
                 n = len(spots)
-                at.append(f"MIN(CAST({quote(column)} AS DATE)) AS l{n}, MAX(CAST({quote(column)} AS DATE)) AS h{n}")
+                at.append(f"MIN({date_value(column)}) AS l{n}, MAX({date_value(column)}) AS h{n}")
                 spots[(dataset, column)] = (f"b{list(reads).index(dataset)}", n)
             alias, n = spots[(dataset, column)]
             lows.append(f"{alias}.l{n}")
@@ -3423,8 +3608,8 @@ def default_values(page: dict, bounds: dict) -> dict:
     return values
 
 
-def page_queries(page: dict, values: dict, tables=None, previous=None, types=None, sorts=None, searches=None) -> list:
-    out = [("kpi", k["id"]) + kpi_query(page, k["id"], values, (previous or {}).get(k["dataset"])) for k in page.get("kpis") or []]
+def page_queries(page: dict, values: dict, tables=None, previous=None, types=None, sorts=None, searches=None, names=None) -> list:
+    out = [("kpi", k["id"]) + kpi_query(page, k["id"], values, (previous or {}).get(k["dataset"]), names) for k in page.get("kpis") or []]
     out += [("chart", c["id"]) + chart_query(page, c["id"], values) for c in page.get("charts") or []]
     out += [("table", t["id"]) + table_query(page, t["id"], values, (tables or {}).get(t["id"]), (types or {}).get(t["id"]),
                                              (sorts or {}).get(t["id"]), (searches or {}).get(t["id"], "")) for t in page.get("tables") or []]
@@ -3466,12 +3651,14 @@ def list_context(page: dict, columns, fields, decisions: bool) -> dict:
     join = "record_key" if versioned and "record_key" in columns else key if versioned and key in columns and key in names else None
     ai = ([n for n in AI_LISTED if n in names] + sorted(n for n in names if AI_CATEGORY.match(n))) if join else []
     return {"table": table_name(page["result_table"]) if join else None, "join": join, "held": bool(join and "held_back" in names),
+            "snoozed": bool(join and SNOOZE_COLUMN in names),
+            "checked": bool(join and "data_quality_flag" in names),
             "actions": bool(join and decisions), "changes": bool(join),
             "choice": choice_sql(status_choices(page), names) if join and decisions else None,
             "tier": records.get("tier") if records.get("tier") in names else None,
             "tie": "record_key" if "record_key" in columns else key, "ai": ai,
             "categories": [n for n in ai if AI_CATEGORY.match(n)],
-            "scopes": table_name(str(page["result_table"]).strip() + SUMMARY_SUFFIX) if join and page_scopes(page) else None,
+            "scopes": table_name(shell_facts.companion(page["result_table"], SUMMARY_SUFFIX)) if join and page_scopes(page) else None,
             "treatments": segment_column(page) if join and decisions and BATCH_VALUES in names else None,
             "unjoined": "" if join else unjoined_reason(page, columns, fields)}
 
@@ -3620,16 +3807,30 @@ def week_edges(bounds: dict, weeks: int) -> list:
     return out
 
 
-WINDOW_EXTRA = ("CAST(`action_due` AS DATE) AS `_inspire_due`", f"CAST(`{SNOOZE_COLUMN}` AS DATE) AS `_inspire_snooze`",
-                f"`{JOINED_COLUMN}` AS `_inspire_joined`")
-WINDOW_PICKED = ("c.`_inspire_due`", "c.`_inspire_snooze`", "c.`_inspire_joined`")
+WINDOW_EXTRA = ("CAST(`action_due` AS DATE) AS `_inspire_due`", f"`{JOINED_COLUMN}` AS `_inspire_joined`")
+WINDOW_PICKED = ("c.`_inspire_due`", "c.`_inspire_joined`")
+# The snooze date is a row field of every tracked list (Wake now), so it is selected in _current_cte and picked in _current_join.
+SNOOZE_EXTRA = f"CAST(`{SNOOZE_COLUMN}` AS DATE) AS `_inspire_snooze`"
 
 
-def window_conditions(bounds: dict, params, held: bool, today: str, alias: str = "c") -> list:
+def checked_sql(alias: str = "c") -> str:
+    """A row the notebook evaluated (data_quality_flag = 'ok'). Open work is only checked rows; see flagged_ok_sql."""
+    return f"COALESCE({alias}.`_inspire_ok`, FALSE)"
+
+
+def not_snoozed_sql(snooze: str, today: str) -> str:
+    """Open work waits for its snooze date: no snooze, or the snooze date is today or earlier. The Work list, the scope line and
+    the Work tab count all read this one expression, so a snoozed row is counted in none of them until it wakes."""
+    return f"({snooze} IS NULL OR {snooze} <= {today})"
+
+
+def window_conditions(bounds: dict, params, held: bool, today: str, alias: str = "c", checked: bool = False) -> list:
     a = f"{alias}."
-    out = [f"COALESCE({a}`_inspire_status`, '{NEW}') IN ({shell_facts.sql_list(OPEN_STATUSES)})", f"({a}`_inspire_snooze` IS NULL OR {a}`_inspire_snooze` <= {today})"]
+    out = [f"COALESCE({a}`_inspire_status`, '{NEW}') IN ({shell_facts.sql_list(OPEN_STATUSES)})", not_snoozed_sql(f"{a}`_inspire_snooze`", today)]
     if held:
         out.append(f"NOT COALESCE({a}`_inspire_held`, FALSE)")
+    if checked:
+        out.append(checked_sql(alias))
     if bounds["window"] != "all":
         first, last = params.add(bounds["start_day"], "DATE"), params.add(bounds["end_day"], "DATE")
         start, end = params.add(str(bounds["start_us"]), "BIGINT"), params.add(str(bounds["end_us"]), "BIGINT")
@@ -3664,6 +3865,11 @@ def list_request(page: dict, data: dict, context: dict, now: datetime.datetime =
     unowned, within = data.get("unowned", False), data.get("due_within")
     if not isinstance(unowned, bool):
         raise ValueError("unowned takes true or false")
+    unchecked = data.get("unchecked", False)
+    if not isinstance(unchecked, bool):
+        raise ValueError("unchecked takes true or false")
+    if unchecked and not context["actions"]:
+        raise ValueError("this decision list keeps no actions, so it cannot show the records that could not be checked")
     if unowned and data.get("mine"):
         raise ValueError("send mine or unowned, not both")
     if unowned and not context["actions"]:
@@ -3676,7 +3882,8 @@ def list_request(page: dict, data: dict, context: dict, now: datetime.datetime =
     now = now or datetime.datetime.now(datetime.timezone.utc)
     ranked = not sort and (bool(window) or due_first)
     return dict(_list_request(page, data, context, allowed), window=window, ranked=ranked, due_first=due_first, today=now.date().isoformat(),
-                exclude=list(dict.fromkeys(exclude)), unowned=unowned, due_within=within, focus=focus_request(data, context, now))
+                exclude=list(dict.fromkeys(exclude)), unowned=unowned, unchecked=unchecked, due_within=within,
+                focus=focus_request(data, context, now))
 
 
 def focus_request(data: dict, context: dict, now: datetime.datetime):
@@ -3695,6 +3902,10 @@ def focus_conditions(page: dict, focus: dict, context: dict, params) -> list:
     statuses = page_statuses(page)
     opened = ", ".join(params.add(s) for s in statuses["open"])
     out = [f"COALESCE(c.`_inspire_status`, {params.add(statuses['unset'])}) IN ({opened})"]
+    # Held-back rows stay in a focus list: the focus tabs are the Dashboard's "Fix this" lists (trends_query counts held rows as open,
+    # and the All tab that carries a focus sends no window). Only the Open tab hides them (window_conditions).
+    if context.get("checked"):
+        out.append(checked_sql("c"))
     if focus["focus"] == "overdue":
         out.append(f"c.`_inspire_due` < {params.add(focus['today'], 'DATE')}")
     elif focus["focus"] == "unassigned":
@@ -3703,6 +3914,15 @@ def focus_conditions(page: dict, focus: dict, context: dict, params) -> list:
         first = f"(SELECT MIN(t.`valid_from`) FROM {context['table']} AS t WHERE t.`record_key` = c.`_inspire_key`)"
         out.append(f"unix_micros(COALESCE(c.`_inspire_joined`, {first})) < {params.add(str(focus['before_us']), 'BIGINT')}")
     return out
+
+
+def unchecked_conditions(page: dict, context: dict, params) -> list:
+    """The 'Could not be checked' tab: open-status rows the notebook did not evaluate (data_quality_flag is not 'ok'). Never Open."""
+    if not context.get("checked"):
+        return ["FALSE"]
+    statuses = page_statuses(page)
+    opened = ", ".join(params.add(s) for s in statuses["open"])
+    return [f"COALESCE(c.`_inspire_status`, {params.add(statuses['unset'])}) IN ({opened})", f"NOT {checked_sql('c')}"]
 
 
 def _list_request(page: dict, data: dict, context: dict, allowed: list) -> dict:
@@ -4260,7 +4480,7 @@ def runs_compare_sql(sql: str, table: str, columns, backs=(0, 1), history=None, 
     text, carries = _runs_query(tokens, 0, len(tokens), table)
     if not carries:
         raise ValueError(f"it does not read the result table {table} in its FROM, the one table that keeps earlier runs")
-    summary = table_name(str(table).strip() + SUMMARY_SUFFIX) if scopes else None
+    summary = table_name(shell_facts.companion(table, SUMMARY_SUFFIX)) if scopes else None
     rows, text = f"{RUNS_CTE} AS (\n{_runs_rows(table_name(table), columns, backs, history, summary, facts)}\n)", text.replace(_RUNS_MARK, "")
     return f"WITH {rows},\n{text[len('WITH '):]}" if text.startswith("WITH ") else f"WITH {rows}\n{text}"
 
@@ -4569,7 +4789,8 @@ def _current_join(context: dict, alias: str) -> tuple:
     columns = ["c.`_inspire_key`", "c.`_inspire_version`"] + (["c.`_inspire_owner`", "c.`_inspire_status`", "c.`_inspire_choice`"]
                                                                if context["actions"] else [])
     money = ["c.`_inspire_money`", "c.`_inspire_fx`"] if context.get("money") else []
-    windowed = (list(WINDOW_PICKED) + (["c.`_inspire_held`"] if context.get("held") else [])) if context.get("windowed") else []
+    windowed = (list(WINDOW_PICKED) + ["c.`_inspire_snooze`"] + (["c.`_inspire_held`"] if context.get("held") else [])
+                + (["c.`_inspire_ok`", "c.`_inspire_flag`"] if context.get("checked") else [])) if context.get("windowed") else []
     joined = " JOIN" if (context.get("floor") or {}).get("on") == "c" else " LEFT JOIN"
     return (f"{joined} c ON {_current_on(context, alias)}",
             columns + [f"c.{quote(ai_alias(n))}" for n in context["ai"]] + money + ["c.`_inspire_missing`"] + windowed)
@@ -4580,7 +4801,10 @@ def _floored(floor: dict, alias: str) -> str:
 
 
 def _window_extra(context: dict) -> list:
-    return list(WINDOW_EXTRA) + (["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else [])
+    return list(WINDOW_EXTRA) + ([SNOOZE_EXTRA] if context.get("windowed") else []) + (
+        ["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if context.get("held") else []) + (
+        [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`", "CAST(`data_quality_flag` AS STRING) AS `_inspire_flag`"]
+        if context.get("checked") else [])
 
 
 def _stake(context: dict, prefix: str = "") -> str:
@@ -4638,9 +4862,16 @@ def list_queries(page: dict, values: dict, request: dict, context: dict, editor:
     if context.get("closes_inline") is not None:
         ctes.update(inline_closes_ctes(context))
         late, joined = late + [f"cz.`{name}`" for name in INLINE_CLOSE_COLUMNS], f"{joined} LEFT JOIN cz ON cz.`{INLINE_CLOSE_KEY}` = {shown}.`_inspire_key`"
+    if context.get("snoozed") and context["actions"] and not context.get("windowed"):
+        # Wake now needs the snooze date on every page row. It is read for the page rows only (the same way the change decorations are),
+        # never added to the full-list current CTE, and a windowed list already picks it from c above.
+        ctes["sn"] = (f"SELECT DISTINCT u.`record_key` AS `_inspire_sk`, CAST(u.`{SNOOZE_COLUMN}` AS DATE) AS `_inspire_snooze` "
+                      f"FROM {context.get('current') or context['table']} AS u JOIN {shown} AS p ON p.`_inspire_key` = u.`record_key` "
+                      "WHERE u.`is_current` AND u.`change_source` <> 'delete'")
+        joined, late = f"{joined} LEFT JOIN sn AS sn ON sn.`_inspire_sk` = {shown}.`_inspire_key`", late + ["sn.`_inspire_snooze`"]
     outer = f"SELECT {', '.join([f'{shown}.*'] + late)} FROM {shown}{joined}"
     counting = dict(ctes, f=plan["plain"]) if plan["plain"] else ctes
-    out = {"rows": (f"{_with(ctes, ['d', 'c', 'r', 'n', 'l0', 'o0', 'p0', 'f', 'w', 's', 'k', 'l', 'o', 'p', 'cz'])} {outer} ORDER BY {order}",
+    out = {"rows": (f"{_with(ctes, ['d', 'c', 'r', 'n', 'l0', 'o0', 'p0', 'f', 'w', 's', 'k', 'l', 'o', 'p', 'cz', 'sn'])} {outer} ORDER BY {order}",
                     params.items),
            "total": (f"{_with(counting, counted)} {capped_count('f')}", counted_params)}
     if request.get("treatments") and context.get("treatments"):
@@ -4667,19 +4898,22 @@ def list_match_query(page: dict, values: dict, request: dict, context: dict, edi
 def status_counts_query(page: dict, values: dict, request: dict, context: dict, editor: str = "") -> tuple:
     params = _Params()
     columns = {k: v for k, v in (request.get("columns") or {}).items() if k != "action_status"}
-    plan = _list_plan(page, values, dict(request, columns=columns, mine=False, window=None, exclude=[], choice=None, due_first=True), context,
+    plan = _list_plan(page, values, dict(request, columns=columns, mine=False, window=None, exclude=[], choice=None, due_first=True, unchecked=False), context,
                       editor, params, current=True)
     status = f"COALESCE(f.`_inspire_status`, '{NEW}')"
-    listed = f"CASE WHEN {' AND '.join(window_conditions({'window': 'all'}, params, context['held'], params.add(request['today'], 'DATE'), 'f'))} THEN 1 ELSE 0 END"
+    checked = context.get("checked", False)
+    listed = f"CASE WHEN {' AND '.join(window_conditions({'window': 'all'}, params, context['held'], params.add(request['today'], 'DATE'), 'f', checked))} THEN 1 ELSE 0 END"
+    unchecked = f"CASE WHEN {checked_sql('f')} THEN 1 ELSE 0 END" if checked else "CAST(1 AS INT)"
     mine = f"lower(f.`_inspire_owner`) = lower({params.add(editor)})" if editor else "FALSE"
-    return (f"{_with(plan['ctes'], plan['counted'])} SELECT {status} AS v, f.`_inspire_choice` AS c, {listed} AS l, COUNT(*) AS n, "
-            f"COALESCE(SUM(CASE WHEN {mine} THEN 1 ELSE 0 END), 0) AS m FROM f GROUP BY {status}, f.`_inspire_choice`, {listed}", params.items)
+    return (f"{_with(plan['ctes'], plan['counted'])} SELECT {status} AS v, f.`_inspire_choice` AS c, {listed} AS l, {unchecked} AS u, COUNT(*) AS n, "
+            f"COALESCE(SUM(CASE WHEN {mine} THEN 1 ELSE 0 END), 0) AS m FROM f GROUP BY {status}, f.`_inspire_choice`, {listed}, {unchecked}",
+            params.items)
 
 
 def status_counts_of(rows, choices=None) -> dict:
     statuses = dict.fromkeys(ACTION_STATUSES, 0)
     picked = dict.fromkeys((c.get("id") for c in (DEFAULT_CHOICES if choices is None else choices)), 0)
-    mine, listed_open = 0, 0
+    mine, listed_open, unchecked = 0, 0, 0
     for row in rows or []:
         name, n = row.get("v") or NEW, int(row.get("n") or 0)
         statuses[name] = statuses.get(name, 0) + n
@@ -4688,16 +4922,18 @@ def status_counts_of(rows, choices=None) -> dict:
         mine += int(row.get("m") or 0)
         if name in OPEN_STATUSES and int(row.get("l") or 0):
             listed_open += n
+        if name in OPEN_STATUSES and row.get("u") is not None and not int(row.get("u")):
+            unchecked += n
     open_all = sum(statuses.get(s, 0) for s in OPEN_STATUSES)
-    return {"statuses": statuses, "choices": picked, "open": listed_open, "watch": open_all - listed_open, "mine": mine,
-            "all": sum(statuses.values())}
+    return {"statuses": statuses, "choices": picked, "open": listed_open, "watch": open_all - listed_open - unchecked,
+            "unchecked": unchecked, "mine": mine, "all": sum(statuses.values())}
 
 
 def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: str, params, current: bool = False) -> dict:
     records = page.get("records") or {}
     window = request.get("window")
     due_first = bool(request.get("due_first"))
-    context = dict(context, windowed=bool(window) or due_first)
+    context = dict(context, windowed=bool(window) or due_first or bool(request.get("unchecked")))
     listed, money = _listed(page, values, request.get("columns"), context, params)
     ctes = {"d": listed}
     conditions = list(money) + ([_floored(context["floor"], "d")] if (context.get("floor") or {}).get("on") == "d" else [])
@@ -4710,13 +4946,16 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
         early.add("c")
     if window:
         today = params.add(window["today"], "DATE")
-        conditions += window_conditions(window, params, context["held"], today)
+        conditions += window_conditions(window, params, context["held"], today, "c", context.get("checked", False))
     elif due_first:
         today = params.add(request["today"], "DATE")
     focus = request.get("focus")
     if focus:
         early.add("c")
         conditions += focus_conditions(page, focus, context, params)
+    if request.get("unchecked"):
+        early.add("c")
+        conditions += unchecked_conditions(page, context, params)
     if request.get("exclude"):
         conditions.append(f"COALESCE(c.`_inspire_key`, '') NOT IN (SELECT explode(from_json("
                           f"{params.add(json.dumps(request['exclude'], ensure_ascii=False))}, 'ARRAY<STRING>')))")
@@ -4752,7 +4991,7 @@ def _list_plan(page: dict, values: dict, request: dict, context: dict, editor: s
     if context["join"]:
         held = context.get("floor")
         ctes["c"] = _current_cte(dict(context, floor=held if held and (held["on"] == "c" or "c" not in early) else None),
-                                 _window_extra(context) if window or focus or request.get("due_first") else ())
+                                 _window_extra(context) if window or focus or request.get("due_first") or request.get("unchecked") else ())
     picked, joins = ["d.*"], ""
     if "c" in early:
         join, columns = _current_join(context, "d")
@@ -4783,7 +5022,7 @@ def counted_total(row) -> tuple:
 def unfiltered(values: dict, request: dict) -> bool:
     return (not any(v not in (None, "", [], {}) for v in (values or {}).values()) and not request["search"] and not request["mine"]
             and not request.get("unowned") and request.get("due_within") is None and not request["changed"] and not request["ai"] and not request["columns"] and not request.get("window")
-            and not request.get("exclude") and request.get("choice") is None and not request.get("focus"))
+            and not request.get("exclude") and request.get("choice") is None and not request.get("focus") and not request.get("unchecked"))
 
 
 def facts_total_query(facts: dict, table: str, names: set) -> tuple:
@@ -4803,7 +5042,7 @@ def list_floor(page: dict, request: dict, context: dict, facts, model, filtered:
     scaled = live and ready and money_scale(model) is not None
     if live and by_money and not scaled:
         selective = (request["mine"] or request.get("unowned") or request["changed"] or request["ai"] or request.get("ranked") or request.get("choice") is not None
-                     or request.get("focus") or MONEY_COLUMN in (request.get("columns") or {}))
+                     or request.get("focus") or request.get("unchecked") or MONEY_COLUMN in (request.get("columns") or {}))
         if selective or context["join"] != "record_key":
             return None
         depth = shell_facts.floor_depth(shell_facts.FLOOR_DEPTHS, int(request["offset"]) + int(request["limit"]), filtered)
@@ -4874,8 +5113,8 @@ def state_facts(row, result_table: str = "") -> dict:
         facts = None
     if not facts_ready(facts) or str(facts.get("latest")) != str((row or {}).get("run_id")):
         return None
-    base = ".".join(p.strip() for p in str(result_table or "").split(".")).lower()
-    owned = {key: base + suffix for key, suffix in (("log", shell_facts.RUN_LOG_SUFFIX), ("acted", shell_facts.ACTED_SUFFIX),
+    base = shell_facts.companion(result_table, "").lower()
+    owned = {key: shell_facts.companion(result_table, suffix).lower() for key, suffix in (("log", shell_facts.RUN_LOG_SUFFIX), ("acted", shell_facts.ACTED_SUFFIX),
                                                     ("closed", shell_facts.CLOSED_SUFFIX))}
     changes = str(facts.get("changes") or "").lower()
     if not base or (all(str(facts.get(k) or "").lower() == v for k, v in owned.items()) and changes in ("", base + shell_facts.CHANGES_SUFFIX)):
@@ -4905,7 +5144,7 @@ def summary_query(page: dict, limit: int = 1, run_ids=None, index: bool = False)
         conditions.append(f"CAST(`run_id` AS STRING) IN (SELECT explode(from_json({holder}, 'ARRAY<STRING>')))")
     picked = "CAST(`run_id` AS STRING) AS `run_id`, `updated_at`" if index else "*"
     scope = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-    return (f"SELECT {picked} FROM {table_name(str(page['result_table']).strip() + SUMMARY_SUFFIX)}{scope} "
+    return (f"SELECT {picked} FROM {table_name(shell_facts.companion(page['result_table'], SUMMARY_SUFFIX))}{scope} "
             f"ORDER BY `updated_at` DESC NULLS LAST LIMIT {int(limit)}", params.items)
 
 
@@ -5190,7 +5429,8 @@ def money_sql(model, alias: str = "", live: bool = False) -> str:
 def money_values_sql(model, result_table: str, use_case: str) -> str:
     if not model or not model.get("recomputes"):
         return ""
-    edits, summary = table_name(str(result_table).strip() + ASSUMPTIONS_SUFFIX), table_name(str(result_table).strip() + SUMMARY_SUFFIX)
+    edits, summary = (table_name(shell_facts.companion(result_table, ASSUMPTIONS_SUFFIX)),
+                      table_name(shell_facts.companion(result_table, SUMMARY_SUFFIX)))
     scope, cells, pairs = sql_text(use_case), [], []
     for i, a in enumerate(model["assumptions"]):
         name, path = sql_text(a["name"]), f"$[{model['_at'][a['name']]}]"
@@ -5228,7 +5468,7 @@ ALERT_THRESHOLD_SETTING = "alert_threshold"
 
 
 def setting_value_sql(result_table: str, use_case_id: str, name: str) -> str:
-    return (f"(SELECT CAST(a.`value` AS DOUBLE) FROM {table_name(str(result_table).strip() + ASSUMPTIONS_SUFFIX)} AS a WHERE "
+    return (f"(SELECT CAST(a.`value` AS DOUBLE) FROM {table_name(shell_facts.companion(result_table, ASSUMPTIONS_SUFFIX))} AS a WHERE "
             f"a.`use_case_id` = {sql_text(use_case_id)} AND a.`name` = {sql_text(name)} ORDER BY {assumption_order('a')} LIMIT 1)")
 
 
@@ -5243,7 +5483,7 @@ def assumption_order(alias: str = "") -> str:
 
 
 def sibling_table(page: dict, suffix: str) -> str:
-    return table_name(str(page["result_table"]).strip() + suffix)
+    return table_name(shell_facts.companion(page["result_table"], suffix))
 
 
 def assumptions_table(page: dict) -> str:
@@ -5470,6 +5710,25 @@ def plan_performance(plan: dict, version, rows, label: str = None) -> dict:
             "truncated": len(rows or []) >= PLAN_CAPS["lines"]}
 
 
+FORECAST_PLAN = {"recommended": "forecast", "current": "actual"}
+FORECAST_PLAN_EMPTY = "Actuals arrive after the first cycle, so there is nothing to compare with the forecast yet."
+
+
+def forecast_actuals_query(page: dict) -> tuple:
+    return (f"SELECT s.`series_id`, s.`period`, s.`forecast`, s.`actual` FROM {sibling_table(page, '__series')} AS s "
+            f"WHERE NOT COALESCE(s.`is_future`, false) AND s.`actual` IS NOT NULL AND s.`forecast` IS NOT NULL "
+            f"ORDER BY s.`period` DESC, s.`series_id` LIMIT {PLAN_CAPS['series']}", [])
+
+
+def forecast_plan(rows) -> dict:
+    """Plan vs actuals for a forecast App: each past period's forecast is the plan line, its actual is the actual."""
+    lines = [dict(row, record_key=f"{row.get('series_id')}|{row.get('period')}", line_label=f"{row.get('series_id')} for {row.get('period')}")
+             for row in rows or [] if row.get("series_id") is not None]
+    version = {"plan_id": None, "label": "Model forecast", "status": "Model", "lines": {}} if lines else None
+    out = plan_performance(FORECAST_PLAN, version, lines, "line_label")
+    return dict(out, forecast=True, empty="" if lines else FORECAST_PLAN_EMPTY, missing="")
+
+
 def series_text(column: str, alias: str = "s") -> str:
     return f"CAST({alias}.`{column}` AS STRING)"
 
@@ -5547,6 +5806,64 @@ def scenario_events_query(page: dict, limit: int = CAPS["scenario_events"]) -> t
     params = _Params()
     return (f"SELECT {', '.join(f'`{c}`' for c in SCENARIO_COLUMNS)} FROM {scenarios_table(page)} WHERE `use_case_id` = "
             f"{params.add(str(page.get('use_case_id') or ''))} ORDER BY `changed_at` DESC, `event_id` DESC LIMIT {int(limit)}", params.items)
+
+
+# Saved threads: one row per question and answer a person keeps, in the use case's own companion table.
+THREAD_SUFFIX = "_agent_threads"
+THREAD_COLUMNS = ("event_id", "use_case_id", "thread_id", "person", "question", "answer", "blocks", "changed_at")
+THREAD_TYPES = {"event_id": "STRING", "use_case_id": "STRING", "thread_id": "STRING", "person": "STRING", "question": "STRING",
+                "answer": "STRING", "blocks": "STRING", "changed_at": "TIMESTAMP"}
+THREAD_CAPS = {"question": 1000, "answer": 8000, "blocks": 60000, "events": 200}
+
+
+def threads_table(page: dict) -> str:
+    return sibling_table(page, THREAD_SUFFIX)
+
+
+def threads_create_sql(page: dict) -> str:
+    columns = ", ".join(f"`{c}` {THREAD_TYPES[c]}" for c in THREAD_COLUMNS)
+    return f"CREATE TABLE IF NOT EXISTS {threads_table(page)} ({columns}) USING DELTA"
+
+
+def thread_event_write(page: dict, person: str, thread_id: str, question: str, answer: str, blocks: str) -> tuple:
+    params = _Params()
+    cells = [params.add(uuid_hex()), params.add(str(page.get("use_case_id") or "")), params.add(thread_id), params.add(person),
+             params.add(question[:THREAD_CAPS["question"]]), params.add(answer[:THREAD_CAPS["answer"]]), params.add(blocks[:THREAD_CAPS["blocks"]]),
+             "current_timestamp()"]
+    return (f"INSERT INTO {threads_table(page)} ({', '.join(f'`{c}`' for c in THREAD_COLUMNS)}) VALUES ({', '.join(cells)})", params.items)
+
+
+def thread_events_query(page: dict, person: str) -> tuple:
+    params = _Params()
+    return (f"SELECT {', '.join(f'`{c}`' for c in THREAD_COLUMNS)} FROM {threads_table(page)} WHERE `use_case_id` = "
+            f"{params.add(str(page.get('use_case_id') or ''))} AND `person` = {params.add(person)} "
+            f"ORDER BY `changed_at` ASC, `event_id` ASC LIMIT {THREAD_CAPS['events']}", params.items)
+
+
+def threads_of(rows: list) -> list:
+    """Group a person's saved turns into threads: newest thread first, each with its title (the first question) and its turns."""
+    grouped = {}
+    for row in sorted(rows or [], key=lambda r: (str(r.get("changed_at") or ""), str(r.get("event_id") or ""))):
+        grouped.setdefault(str(row.get("thread_id") or ""), []).append(row)
+    out = []
+    for thread_id, turns in grouped.items():
+        if not thread_id:
+            continue
+        out.append({"thread_id": thread_id, "title": str(turns[0].get("question") or "")[:120], "updated_at": str(turns[-1].get("changed_at") or ""),
+                    "turns": [{"question": t.get("question") or "", "answer": t.get("answer") or "", "blocks": _json_list(t.get("blocks"))} for t in turns]})
+    return sorted(out, key=lambda t: t["updated_at"], reverse=True)
+
+
+def _json_list(text) -> list:
+    try:
+        value = json.loads(text or "[]")
+    except (TypeError, ValueError):
+        return []
+    return value if isinstance(value, list) else []
+
+
+def uuid_hex() -> str:
+    return uuid.uuid4().hex
 
 
 def scenario_event_write(page: dict, event: dict) -> tuple:
@@ -5702,11 +6019,7 @@ def setting_set_problems(values: dict) -> list:
     return problems
 
 
-def flagged_ok_sql(names, segments=()) -> str:
-    ok = "`data_quality_flag` = 'ok'" if "data_quality_flag" in names else "TRUE"
-    if segments and "segment_or_item" in names:
-        ok += " AND CAST(`segment_or_item` AS STRING) IN (" + ", ".join(sql_text(str(s)) for s in segments) + ")"
-    return ok
+flagged_ok_sql = shell_facts.flagged_ok_sql
 
 
 def amount_tier_sql(stake: str, cutoffs: tuple, segments, names) -> str:
@@ -5835,9 +6148,11 @@ def overview_query(page: dict, values: dict, picked: dict, context: dict, fields
     money, held = MONEY_COLUMN in names, "held_back" in names
     table, params = context["table"], _Params()
     priced = money_columns(model) or [f"{money_sql(None)} AS `_inspire_money`", "CAST(NULL AS STRING) AS `_inspire_fx`"]
+    checked = "data_quality_flag" in names
     extra = (priced if money else []) + (
-        list(WINDOW_EXTRA) if window else ["CAST(`action_due` AS DATE) AS `_inspire_due`"]) + (
-        ["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if held else [])
+        (list(WINDOW_EXTRA) + [SNOOZE_EXTRA]) if window else ["CAST(`action_due` AS DATE) AS `_inspire_due`"]) + (
+        ["CAST(`held_back` AS BOOLEAN) AS `_inspire_held`"] if held else []) + (
+        [f"CAST({flagged_ok_sql(['data_quality_flag'])} AS BOOLEAN) AS `_inspire_ok`"] if checked else [])
     on = (floor or {}).get("on")
     ctes = {"d": f"SELECT * FROM ({_dataset(page, RECORDS_DATASET)}) AS d{_where(page, RECORDS_DATASET, values, params)}",
             "c": _current_cte(dict(context, actions=True, floor=floor if on == "c" else None), extra)}
@@ -5848,6 +6163,8 @@ def overview_query(page: dict, values: dict, picked: dict, context: dict, fields
     conditions = [f"({flagged} OR {due} IS NOT NULL)", f"COALESCE(c.`_inspire_status`, '{NEW}') IN ({opened})"]
     if held:
         conditions.append("NOT COALESCE(c.`_inspire_held`, FALSE)")
+    if checked:
+        conditions.append(checked_sql("c"))
     if on == "d":
         conditions.append(_floored(floor, "d"))
     conditions += [f"{_ai_value(name)} IN ({', '.join(params.add(v) for v in chosen)})" for name, chosen in picked.items()]
@@ -6107,11 +6424,11 @@ def trends_query(page: dict, names: set, now: datetime.datetime, since: datetime
     ctes = {"kv": (f"SELECT `record_key`, `run_id`, `valid_from`, `valid_to`, `is_current`, `change_source`, {raw} AS `_t_raw`, "
                    f"{status} AS `_t_status`, LAG({raw}) OVER (PARTITION BY `record_key` ORDER BY `valid_from`) AS `_t_was`, "
                    f"{text('action_owner')} AS `_t_owner`, {due} AS `_t_due`, {money} AS `_t_money`, {reason} AS `_t_reason`, "
-                   f"{joined} AS `_t_joined`, MIN(`valid_from`) OVER (PARTITION BY `record_key`) AS `_t_first`, "
+                   f"{joined} AS `_t_joined`, COALESCE(({flagged_ok_sql(names)}), FALSE) AS `_t_ok`, MIN(`valid_from`) OVER (PARTITION BY `record_key`) AS `_t_first`, "
                    f"ROW_NUMBER() OVER (PARTITION BY `record_key` ORDER BY `valid_from` DESC) AS `_t_nth` FROM {table}"
                    f"{' WHERE ' + scope if scope else ''}"),
             "kc": "SELECT * FROM kv WHERE `is_current` AND `change_source` <> 'delete'",
-            "ko": f"SELECT * FROM kc WHERE `_t_status` IN ({opened})"}
+            "ko": f"SELECT * FROM kc WHERE `_t_status` IN ({opened}) AND `_t_ok`"}
     age = f"({now_us} - unix_micros(COALESCE(`_t_joined`, `_t_first`)))"
     fresh, month = DAY_US * (AGE_DAYS[0] + 1), DAY_US * (AGE_DAYS[1] + 1)
     open_cells = {"n": "COUNT(*)", "overdue": _count(f"`_t_due` < {today}"), "unowned": _count("NULLIF(TRIM(`_t_owner`), '') IS NULL"),
@@ -6141,13 +6458,13 @@ def trends_query(page: dict, names: set, now: datetime.datetime, since: datetime
     ctes["kr"] = (f"SELECT CAST(`run_id` AS STRING) AS `_t_run`, MAX({ran}) AS `_t_at` FROM {source}{only} GROUP BY CAST(`run_id` AS STRING) "
                   f"ORDER BY `_t_at` DESC LIMIT {CAPS['trend_runs']}")
     ctes["kp"] = (f"SELECT r.`_t_run`, r.`_t_at`, COUNT(v.`record_key`) AS `_t_n` FROM kr AS r LEFT JOIN kv AS v ON v.`valid_from` <= r.`_t_at` "
-                  f"AND (v.`valid_to` IS NULL OR v.`valid_to` > r.`_t_at`) AND v.`change_source` <> 'delete' AND v.`_t_status` IN ({opened}) "
+                  f"AND (v.`valid_to` IS NULL OR v.`valid_to` > r.`_t_at`) AND v.`change_source` <> 'delete' AND v.`_t_status` IN ({opened}) AND v.`_t_ok` "
                   f"GROUP BY r.`_t_run`, r.`_t_at`")
     ctes["kn"] = ("SELECT CAST(`run_id` AS STRING) AS `_t_run`, COUNT(*) AS `_t_n` FROM kv WHERE `valid_from` = `_t_first` AND "
                   "`change_source` = 'run' GROUP BY CAST(`run_id` AS STRING)")
     branches.append(f"{_overview_select('run', {'k': 'p.`_t_run`', 'at': 'p.`_t_at`', 'n': 'p.`_t_n`', 'm': 'COALESCE(n.`_t_n`, 0)'}, TREND_COLUMNS)} "
                     f"FROM kp AS p LEFT JOIN kn AS n ON n.`_t_run` = p.`_t_run`")
-    still = f"CASE WHEN `is_current` AND `change_source` <> 'delete' AND `_t_status` IN ({opened}) THEN 1 ELSE 0 END"
+    still = f"CASE WHEN `is_current` AND `change_source` <> 'delete' AND `_t_status` IN ({opened}) AND `_t_ok` THEN 1 ELSE 0 END"
     ctes["kf"] = (f"SELECT `record_key`, MIN(`_t_first`) AS `_t_first`, MIN(CASE WHEN `change_source` = 'action' THEN `valid_from` END) AS "
                   f"`_t_act`, MAX({still}) AS `_t_open` FROM kv WHERE unix_micros(`_t_first`) >= {since_us} GROUP BY `record_key`")
     secs = "(unix_micros(`_t_act`) - unix_micros(`_t_first`)) / 1000000.0"
@@ -6161,15 +6478,27 @@ def trends_query(page: dict, names: set, now: datetime.datetime, since: datetime
 
 
 
+UNIT_MAX = 24
+ESTIMATE_TAG = re.compile(r"\[\s*estimate\b|\(\s*estimate\b", re.IGNORECASE)
+
+
+def plain_unit(text) -> str:
+    """REQ-306: a unit is a short plain word. An estimate tag, a bracket, a dotted table path or a sentence is never a unit."""
+    text = " ".join(str(text or "").split())
+    if not text or len(text) > UNIT_MAX or ESTIMATE_TAG.search(text) or re.search(r"[\[\]():.=_]", text):
+        return ""
+    return text
+
+
 def impact_of(summary) -> dict:
     s = summary or {}
     kind = str(s.get("impact_kind") or "").strip().lower()
     currency = " ".join(str(s.get("currency") or "").split())
     if kind not in IMPACT_KINDS:
-        return {"kind": "money", "unit": currency} if not currency or currency in MONEY_CODES else {"kind": "number", "unit": currency}
+        return {"kind": "money", "unit": currency} if not currency or currency in MONEY_CODES else {"kind": "number", "unit": plain_unit(currency)}
     if kind == "money":
         return {"kind": kind, "unit": currency if currency in MONEY_CODES else ""}
-    return {"kind": kind, "unit": " ".join(str(s.get("impact_unit") or "").split())}
+    return {"kind": kind, "unit": plain_unit(s.get("impact_unit"))}
 
 
 def impact_unit(summary) -> str:
@@ -6185,12 +6514,27 @@ def stake_noun(impact) -> str:
 
 
 def stake_words(impact) -> str:
-    return f"{stake_noun(impact)} at stake"
+    money = isinstance(impact, dict) and impact.get("kind") == "money"
+    return f"{'value' if money else stake_noun(impact)} at stake"
 
 
 def stake_label(impact) -> str:
     words = stake_words(impact)
     return f"{words[:1].upper()}{words[1:]}"
+
+
+def stake_measure(item) -> bool:
+    """A chart measure that counts what is at stake: a currency measure, or one the App labels with its own stake words
+    (stake_label, such as 'Amount at stake' when Genie wrote the format as a plain number). A tested-records count is not one."""
+    return item.get("format") == "currency" or str(item.get("label") or "").strip().lower().endswith(" at stake")
+
+
+def exception_measure(item) -> bool:
+    """A chart measure that counts what the rule flagged: a stake measure, or a count the App labels Exceptions (REQ-290: an
+    Exceptions count is the rule's own output, so the flat-chart check reads it when no run summary is readable). A tested-records
+    count, such as 'Exceptions tested', is not one."""
+    words = str(item.get("label") or "").strip().lower().split()
+    return stake_measure(item) or (bool(words) and words[0] in ("exception", "exceptions") and "tested" not in words)
 
 
 def _digest_money(amount: str, currency: str, kept: bool) -> str:
@@ -6227,7 +6571,7 @@ def scope_line_sql(table: str, use_case: str = "") -> str:
     scope = f" WHERE `use_case_id` = {sql_text(use_case)}" if use_case else ""
     covered = _covered_sql("l.`segments`")
     return (f"COALESCE((SELECT CASE WHEN {covered} = '' THEN '' ELSE concat({sql_text(SCOPE_SENTENCE.lstrip())}, {covered}, '.') END FROM "
-            f"(SELECT CAST(`run_segments` AS STRING) AS `segments` FROM {table_name(str(table).strip() + SUMMARY_SUFFIX)}{scope} ORDER BY "
+            f"(SELECT CAST(`run_segments` AS STRING) AS `segments` FROM {table_name(shell_facts.companion(table, SUMMARY_SUFFIX))}{scope} ORDER BY "
             f"`updated_at` DESC NULLS LAST LIMIT 1) AS l), '')")
 
 
@@ -6971,10 +7315,17 @@ def choice_problems(page: dict, stored=None) -> list:
     return problems
 
 
+def default_choice(choice: dict) -> bool:
+    """REQ-285: only a default choice (its id, label and status are the status's own) stands in for its status. A custom choice, such as the
+    Merge choice of an entity-matching page, is named only when a person picked it, so a status change never reads as that choice."""
+    return any(choice.get("id") == d["id"] and choice.get("label") == d["label"] and choice.get("status") == d["status"] for d in DEFAULT_CHOICES)
+
+
 def status_text(page: dict, values: dict) -> str:
     status = (values or {}).get("action_status") or NEW
     choices = [c for c in status_choices(page) if c.get("status") == status]
-    found = next((c for c in choices if c.get("id") == (values or {}).get(CHOICE_COLUMN)), choices[0] if len(choices) == 1 else None)
+    lone = choices[0] if len(choices) == 1 and default_choice(choices[0]) else None
+    found = next((c for c in choices if c.get("id") == (values or {}).get(CHOICE_COLUMN)), lone)
     return str((found or {}).get("label") or shell_facts.status_label(status))
 
 
@@ -6999,10 +7350,17 @@ def choice_sql(choices, names, alias: str = "") -> str:
                             f"ESCAPE '{LIKE_ESCAPE}') THEN {sql_text(c['id'])}")
         if said:
             parts.append(f"CASE {' '.join(said)} END")
-    alone = [c for c in picked if sum(1 for o in picked if o["status"] == c["status"]) == 1]
+    alone = [c for c in picked if sum(1 for o in picked if o["status"] == c["status"]) == 1 and default_choice(c)]
     if alone:
         parts.append("CASE " + " ".join(f"WHEN {status} = {sql_text(c['status'])} THEN {sql_text(c['id'])}" for c in alone) + " END")
     return parts[0] if len(parts) == 1 else f"COALESCE({', '.join(parts)})"
+
+
+def companion_required_suffixes(ident: str) -> set:
+    """The companion suffixes a layout's table sections read, which the App fit check requires of the page (REQ-264). They are declared
+    in the kinds registry (required_companions) so the notebook reads the same list. The notebook leaves the layout as its decision list
+    when one of these companions is not written yet, because no page could pass the check."""
+    return set((layouts().get(ident) or {}).get("required_companions") or [])
 
 
 def part_table_problems(page: dict, section: str) -> list:
@@ -7010,7 +7368,7 @@ def part_table_problems(page: dict, section: str) -> list:
     if not tables:
         return [f"the {section} section of a {page_layout(page)} page needs a table: {section_words(section)}"]
     sqls = {d.get("name"): d.get("sql") for d in page.get("datasets") or [] if isinstance(d, dict)}
-    companion = f"{page.get('result_table') or ''}{(SECTIONS.get(section) or {}).get('suffix') or ''}"
+    companion = shell_facts.companion(page.get("result_table"), (SECTIONS.get(section) or {}).get("suffix") or "")
     problems = []
     for table in tables:
         shown = {str((c or {}).get("column") or "") for c in table.get("columns") or []}
@@ -7020,7 +7378,67 @@ def part_table_problems(page: dict, section: str) -> list:
                             f"add {', '.join(gone)}")
         if page.get("result_table") and not reads_table(sqls.get(table.get("dataset")), companion):
             problems.append(f"table {table.get('id')} in {section} reads {companion}; point its dataset at that table")
+        produced = projected_columns(sqls.get(table.get("dataset")))
+        lost = [c for c in PART_COLUMNS[section] if produced is not None and c not in produced]
+        if lost:
+            problems.append(f"table {table.get('id')} in {section} shows {', '.join(lost)}, which its dataset {table.get('dataset')} does not "
+                            f"select; select {', '.join(lost)} from {companion} under those names, or alias the column to that name")
     return problems
+
+
+_SELECT_LIST_END = re.compile(r"\bFROM\b", re.I)
+
+
+def _top_level_items(text: str) -> list:
+    """The comma-separated items of a select list, with commas inside parentheses, quotes and backticks kept whole."""
+    items, depth, quote, start = [], 0, "", 0
+    for i, ch in enumerate(text):
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"`":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            items.append(text[start:i])
+            start = i + 1
+    items.append(text[start:])
+    return [item.strip() for item in items if item.strip()]
+
+
+def projected_columns(sql):
+    """The names the top-level select list of one dataset returns, lower-cased: each item's alias, else its last identifier. None when the
+    names cannot be read (a star, a union, a WITH clause, or no plain SELECT ... FROM), so a check never flags what it cannot see."""
+    text = clean_sql(sql)
+    if not re.match(r"SELECT\b", text, re.I) or re.search(r"\bUNION\b", text, re.I):
+        return None
+    body = text[len("SELECT"):]
+    end = None
+    depth = 0
+    for match in re.finditer(r"[()]|\bFROM\b", body, re.I):
+        if match.group(0) == "(":
+            depth += 1
+        elif match.group(0) == ")":
+            depth -= 1
+        elif depth == 0:
+            end = match.start()
+            break
+    select_list = body[:end] if end is not None else body
+    select_list = re.sub(r"^\s*(DISTINCT\s+)?", "", select_list, flags=re.I)
+    names = set()
+    for item in _top_level_items(select_list):
+        if item == "*" or item.endswith(".*"):
+            return None
+        alias = re.search(r"\bAS\s+`?([A-Za-z_][A-Za-z0-9_]*)`?\s*$", item, re.I)
+        if alias:
+            names.add(alias.group(1).lower())
+            continue
+        last = re.search(r"(?:^|[\s.])`?([A-Za-z_][A-Za-z0-9_]*)`?\s*$", item)
+        if last and not re.search(r"[()]\s*$", item):
+            names.add(last.group(1).lower())
+    return names
 
 
 def segments_problems(page: dict) -> list:

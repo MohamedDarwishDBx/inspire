@@ -12,10 +12,10 @@ test('the permission checklist asks for the Inspire schema volume privileges the
     { inspireDatabase: 'main._inspire', context: 'launch' },
   );
   assert.equal(out.isPermissionIssue, true);
-  const schemaGrant = out.adminBullets.find((b) => b.includes('ON SCHEMA `main`.`_inspire`') && b.includes('CREATE TABLE'));
-  assert.ok(schemaGrant, out.adminBullets.join('\n'));
-  assert.match(schemaGrant, /CREATE TABLE, MODIFY, SELECT, CREATE VOLUME, READ VOLUME, WRITE VOLUME ON SCHEMA/);
-  assert.match(out.adminEmailText, /WRITE VOLUME ON SCHEMA `main`\.`_inspire`/);
+  // REQ-131, REQ-260: the checklist and the admin text name no GRANT; the exact statements come from the server's Permission Required payload
+  assert.ok(!out.adminBullets.some((b) => /GRANT /.test(b)), 'no GRANT in the inline checklist');
+  assert.doesNotMatch(out.adminEmailText, /GRANT /, 'no GRANT in the admin text');
+  assert.equal(out.permissions, undefined, 'the helper never writes a placeholder grantee');
 });
 
 test('the API error parser reads error, message and error_message, stringifies a structured one, and keeps any other text as it is', async () => {

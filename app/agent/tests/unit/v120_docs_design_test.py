@@ -124,7 +124,7 @@ def test_pptx_domain_slide_carries_the_domain_narrative(docs):
     assert any(SALES_PROSE.split(". ")[0] in t for t in texts), "no slide carries the Sales domain narrative"
     sales = next(t for t in texts if "Sales" in t and "About this domain" in t)
     assert SALES_PROSE.split(". ")[0] in sales
-    assert "| N01-U06 | Forecast Demand N01-u06 | Sales |" in sales and "| High | 9.0 / 10" in sales
+    assert "| N01-U06 | Sales Idea 6 | Sales |" in sales and "| High | 9.0 / 10" in sales
     assert re.findall(r"\| (N01-U0\d) \|", sales) == ["N01-U06", "N01-U05", "N01-U02"]
     operations = next(t for t in texts if t.count("Operations") and OPS_PROSE[:40] in t)
     assert operations
@@ -347,8 +347,8 @@ def test_arabic_deck_is_right_to_left_mirrored_and_tagged(docs):
     assert arabic_labels and all(p._p.pPr.get("rtl") == "1" for p in arabic_labels)
     short_english = [p for p in paragraphs if p.text == "Exec one."]
     assert short_english and all(p._p.pPr.get("rtl") == "0" for p in short_english)
-    joined = [p for p in paragraphs if p.text.startswith("\u2066Sales idea 6\u2069 باستخدام ")]
-    assert joined and all(p._p.pPr.get("rtl") == "1" for p in joined), "an English name joined by the Arabic word reads right to left, the name isolated"
+    names = [p for p in paragraphs if p.text == "Sales idea 6"]
+    assert names and all(p._p.pPr.get("rtl") == "0" for p in names), "REQ-175: an English name stands alone as a left-to-right paragraph"
     covers = labels(docs, "Arabic")["doc_what_it_covers"]
     heading = [p for p in paragraphs if p.text == covers]
     assert heading and all(p._p.pPr.get("rtl") == "1" for p in heading)

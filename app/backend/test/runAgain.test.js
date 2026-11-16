@@ -71,3 +71,77 @@ test('runAgainOf reads the notebook and settings of an ended run and names why i
   assert.match(LC.runAgainOf({}, '9', '2').problem, /has not ended yet/);
   assert.match(LC.runAgainOf(null, '9', '2').problem, /has not ended yet/);
 });
+
+// REQ-184: the run is read with the launcher's own sign-in, so a run the person may see runs again even when the App cannot view its job.
+const readsOf = () => S.state.calls.filter((c) => c.path === '/api/2.1/jobs/runs/get').map((c) => c.token);
+const RUN_AGAIN_ERROR = (runId) => `Inspire could not read run ${runId} to run it again: you need CAN VIEW (or CAN MANAGE RUN) on job 5 in Databricks. `
+  + "Ask an App manager or the job's owner to grant it, then try again.";
+
+test('Run again reads the old run with the launcher\'s own sign-in, so a run the App cannot view still runs again (REQ-184)', async () => {
+  const { runId, before } = await failedLaunch();
+  S.state.runViewDenied = { tokens: [S.APP_TOKEN], jobId: '5' };
+  const again = await S.request('POST', `/api/run/${runId}/again`, { person: ME, body: { session_id: '7200' } });
+  assert.equal(again.status, 200, again.text.slice(0, 300));
+  assert.deepEqual(readsOf(), [S.PERSON_TOKEN], 'the old run is read with the person token, never the App token');
+  assert.equal(creates().length, before + 1);
+  assert.deepEqual([...new Set(S.state.calls.filter((c) => c.path === '/api/2.1/jobs/run-now').map((c) => c.token))], [S.APP_TOKEN],
+    'the launch keeps the App identity launchDiscover always uses');
+});
+
+test('when the person cannot view the job either, Run again names the job and the grant in plain words, with no API body (REQ-184)', async () => {
+  const { runId, before } = await failedLaunch();
+  S.state.runViewDenied = { tokens: [S.APP_TOKEN, S.PERSON_TOKEN], jobId: '5' };
+  const again = await S.request('POST', `/api/run/${runId}/again`, { person: ME, body: { session_id: '7200' } });
+  assert.equal(again.status, 403, again.text.slice(0, 300));
+  assert.equal(again.data.error, RUN_AGAIN_ERROR(runId));
+  assert.doesNotMatch(again.text, /error_code|PERMISSION_DENIED|does not have/);
+  const [grant] = again.data.permissions;
+  assert.equal(grant.principal, ME);
+  // AUTO-4 (round 2): the job CLI line is a copyable step (Copy steps), so it is in `steps`, not in the plain `instructions` notes.
+  assert.match(grant.steps.join('\n'), /\/api\/2\.0\/permissions\/jobs\/5/);
+  assert.match(grant.steps.join('\n'), /CAN_VIEW/);
+  assert.equal(creates().length, before, 'no job starts');
+
+  S.state.launches = [];
+  const unnamed = await S.request('POST', `/api/run/${runId}/again`, { person: ME, body: { session_id: '7200' } });
+  assert.equal(unnamed.status, 403, unnamed.text.slice(0, 300));
+  assert.match(unnamed.data.error, /on the job of this run in Databricks\./);
+  assert.doesNotMatch(unnamed.text, /error_code|PERMISSION_DENIED/);
+  assert.match(unnamed.data.permissions[0].steps.join('\n'), /find the job of run/);
+});
+
+test('a Databricks answer other than a refusal on the read says so in plain words, without the API body (REQ-184)', async () => {
+  const { runId, before } = await failedLaunch();
+  S.state.runViewDenied = { tokens: [S.PERSON_TOKEN], jobId: '5', status: 404 };
+  const again = await S.request('POST', `/api/run/${runId}/again`, { person: ME, body: { session_id: '7200' } });
+  assert.equal(again.status, 404, again.text.slice(0, 300));
+  assert.equal(again.data.error, `Inspire could not read run ${runId} to run it again: Run ${runId} does not exist.`);
+  assert.doesNotMatch(again.text, /error_code|RESOURCE_DOES_NOT_EXIST|request_id/);
+  assert.equal(creates().length, before);
+});
+
+test('the refusal sentence names the status in plain words for each answer and never carries an API body', () => {
+  const { apiRefusalText } = require('../lib/apiRefusal');
+  for (const status of [400, 403, 404, 429, 500]) {
+    const text = apiRefusalText('read run 9', status);
+    assert.match(text, /^Inspire could not read run 9: /);
+    assert.doesNotMatch(text, /[{}"]|error_code|PERMISSION_DENIED/);
+  }
+  assert.match(apiRefusalText('read run 9', 403), /Ask an App manager/);
+  assert.match(apiRefusalText('read run 9', 404), /cannot find it\.$/);
+  assert.match(apiRefusalText('read run 9', 500), /HTTP 500\. Try again/);
+});
+
+test('the refusal carries the platform reason: its message, redacted and capped, never the JSON envelope or request id', () => {
+  const { apiRefusalText, platformReasonOf } = require('../lib/apiRefusal');
+  const body = JSON.stringify({ error_code: 'INVALID_PARAMETER_VALUE', message: 'Cluster configuration is invalid for this workspace. token=dapi0123456789abcdef0123', request_id: 'req-42' });
+  assert.equal(platformReasonOf(body), 'Cluster configuration is invalid for this workspace. token=[redacted]'.replace(/\.$/, ''));
+  assert.equal(apiRefusalText('create the job', 400, body), 'Inspire could not create the job: Cluster configuration is invalid for this workspace. token=[redacted].');
+  assert.doesNotMatch(apiRefusalText('create the job', 400, body), /error_code|request_id|req-42|\{/);
+  assert.equal(platformReasonOf('plain text reason'), 'plain text reason');
+  assert.equal(platformReasonOf('{"error_code":"X"}'), '', 'JSON without a message adds no reason');
+  assert.equal(platformReasonOf('{not json'), '', 'malformed JSON never reaches the person');
+  assert.equal(platformReasonOf('x'.repeat(900)).length, 300, 'the reason is capped');
+  const denied = apiRefusalText('read that file', 403, JSON.stringify({ message: 'User does not have READ on the folder.' }));
+  assert.equal(denied, 'Inspire could not read that file: User does not have READ on the folder. Your sign-in or the App lacks a permission it needs. Ask an App manager to check the grants, then try again.');
+});

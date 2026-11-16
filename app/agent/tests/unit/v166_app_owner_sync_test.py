@@ -10,6 +10,8 @@ from v157_genie_repoint_test import GENIE, OWN_APP, _own_files
 from v163_hold_gate_test import _repoint_run
 from v164_inside_inspire_deploy_test import FOLDER, ID, LIVE_RECORD, _app_calls, _builder, _hosted_spec, _written
 import shell_core
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 FIRST, SECOND, KEEP, RUNNER = "first@example.com", "second@example.com", "keep@example.com", "runner@example.com"
 OWN, OTHER = "n01_u01", "n02_u01"
@@ -100,7 +102,7 @@ def test_an_owner_write_that_fails_is_flagged_and_written_again_on_the_next_vers
     inst._implement_deploy_app = broken
     assert inst._implement_one_locked(target, (5150, "N01-U01", 3)) == "ready_with_warnings"
     stale = agent_ns["IMPLEMENT_APP_OWNERS_STALE"].format(version=3, why="the deployment did not start")
-    assert stale == ("App: Inspire could not write the owners of v3 into the App, so in the App the people it named before can still "
+    assert stale == (f"{APP_LABEL}: Inspire could not write the owners of v3 into the App, so in the App the people it named before can still "
                      "change this use case's settings and the new owners cannot yet: the deployment did not start. Inspire writes them "
                      "again on the next version")
     assert stale in inst.updates[-1]["status_message"]

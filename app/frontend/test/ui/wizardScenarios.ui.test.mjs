@@ -153,8 +153,8 @@ const impactUncheck = (name) => async (page) => { await goToMeasureImpact(page);
 const both = (...fns) => async (page) => { for (const fn of fns) await fn(page); };
 
 const COMBOS = [
-  ['app-off', { 'What to deliver': uncheck(/^App A Databricks/) }],
-  ['app-off-alert-dashboard', { 'What to deliver': both(uncheck(/^App A Databricks/), check(/^Dashboard/), check(/^Alert/)) }],
+  ['app-off', { 'What to deliver': uncheck(/^Agentic App A Databricks/) }],
+  ['app-off-alert-dashboard', { 'What to deliver': both(uncheck(/^Agentic App A Databricks/), check(/^Dashboard/), check(/^Alert/)) }],
   ['per-user', { 'Who uses the App and storage': radio(/^Sensitive data/) }],
   ['per-user-edit', { 'Who uses the App and storage': both(radio(/^Sensitive data/), inFold('What people can do', check(/^Let people edit data/))) }],
   ['one-app-per-use-case', { 'Where it lives': radio(/^One App per use case/) }],
@@ -353,7 +353,8 @@ test('the First run names the chosen Data groups in a plain note, never in the r
 test('every question in the wizard shows at most one Recommended choice', async () => {
   const counts = [];
   const tally = async (page) => counts.push([await current(page), await page.locator('[role="radiogroup"]').evaluateAll((groups) => groups.map((g) => g.querySelectorAll('[data-recommended]').length))]);
-  const steps = ['Data groups', 'First run', 'Results', 'What to deliver', 'Where it lives', 'Who uses the App and storage', 'App look'];
+  // Tallied by the step label the walk shows (Results is Data & results since the merge, and Measure now runs its own tally).
+  const steps = ['Data & results', 'Data groups', 'First run', 'Measure', 'What to deliver', 'Where it lives'];
   const { ui } = await scenario('one-recommended', { profile: PROFILE, extra: counted(PROFILE), actions: Object.fromEntries(steps.map((s) => [s, tally])) });
   try {
     assert.ok(counts.length >= 5, JSON.stringify(counts));

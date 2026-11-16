@@ -13,6 +13,7 @@ import types
 import pytest
 
 from _agentload import agent_source
+from _nbload import prompt_templates
 from v120_artifacts_support import CapturingLogger, make_inspire, make_uc
 
 BOB_KEYS = ("doc_best_of_best", "doc_best_of_best_reason", "doc_bob_score")
@@ -104,7 +105,8 @@ def test_every_check_code_the_pipeline_can_report_has_a_readable_name(agent_ns):
 
 
 def test_the_quality_gate_names_match_the_scoring_prompt(agent_ns):
-    source = agent_source()
+    # The scoring prompt lives in the prompts asset since REQ-298, so the gate list is read from the notebook plus its assets.
+    source = "\n".join([agent_source(), *prompt_templates().values()])
     section = source[source.index("## The 19 gates (D1-D19)"):]
     listed = dict(re.findall(r"^- (D\d+) ([^:\n]+?)(?::|\s+\()", section[:section.index("- D19 ") + 200], re.M))
     assert {code: listed.get(code) for code in agent_ns["INSPIRE_QUALITY_GATE_NAMES"]} == agent_ns["INSPIRE_QUALITY_GATE_NAMES"]

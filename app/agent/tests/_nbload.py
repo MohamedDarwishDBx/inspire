@@ -9,6 +9,7 @@ The doubles are deliberately thin. They exist to let module-level code REACH the
 class definitions, not to emulate Spark. Anything that actually touches Spark, the SDK or a widget
 at call time is out of scope for the offline suite and must be tested against a live run.
 """
+import ast
 import base64
 import gzip
 import json
@@ -216,9 +217,45 @@ def notebook_cells(path=None):
     for cell in nb.get("cells", []):
         src = cell.get("source", [])
         out.append((cell.get("cell_type"), "".join(src) if isinstance(src, list) else str(src)))
+    # The prompt templates left the notebook for the pinned prompts asset (notebook/prompts.json). They are appended as one
+    # non-code cell after the notebook's own cells, so index-addressed readers keep their positions and text scanners still see them.
+    if _pinned_assets_line(nb) is not None:
+        out.append((PROMPT_CELL_TYPE, "\n".join(prompt_templates(path).values())))
     if fp is not None:
         _CELL_CACHE[fp] = list(out)
     return out
+
+
+PROMPT_CELL_TYPE = "prompt_assets"
+
+
+def _pinned_assets_line(nb):
+    """The `INSPIRE_NOTEBOOK_ASSETS = {...}` line of a parsed notebook, or None when it pins no assets.
+
+    A release notebook from before the assets moved out (a vendored reference) keeps its prompts inline and pins nothing,
+    so there is no prompts asset to append for it.
+    """
+    for cell in nb.get("cells", []):
+        src = cell.get("source", [])
+        for item in (src if isinstance(src, list) else str(src).splitlines(True)):
+            if item.startswith("INSPIRE_NOTEBOOK_ASSETS = "):
+                return item
+    return None
+
+
+def asset_path(name, path=None):
+    """The repo file the notebook pins for one asset (`notebook_pins` entry, relative to the repo root)."""
+    with open(path or AGENT_NB, encoding="utf-8") as fh:
+        line = _pinned_assets_line(json.load(fh))
+    if line is None:
+        raise AssertionError(f"{path or AGENT_NB} pins no notebook assets, so it has no {name!r} asset")
+    return os.path.join(ROOT, json.loads(line[len("INSPIRE_NOTEBOOK_ASSETS = "):])[name]["repo"])
+
+
+def prompt_templates(path=None) -> dict:
+    """Every prompt template, read from the pinned prompts asset the notebook loads at runtime."""
+    with open(asset_path("prompts", path), encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def strip_magic_lines(src):
@@ -267,3 +304,15 @@ def notebook_assets(path=None):
             out.append((pin["repo"], fh.read()))
     return out
 
+
+
+def implement_output_label(name):
+    """The person-facing label of one output (D-LABEL209), read from the notebook's IMPLEMENT_OUTPUT_LABELS.
+
+    Tests pin wording with this instead of a copied string, so a relabel of the notebook moves the pins with it.
+    """
+    for _kind, src in notebook_cells():
+        m = re.search(r"^IMPLEMENT_OUTPUT_LABELS = (\{[^\n]*?\})\s*(?:#|$)", src, re.M)
+        if m:
+            return ast.literal_eval(m.group(1))[name]
+    raise AssertionError("the notebook defines no IMPLEMENT_OUTPUT_LABELS")

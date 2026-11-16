@@ -67,7 +67,7 @@ function CaseMenu({ anchor, pages, page, hub, summaries, onPick, onOpen, onClose
           <div className="switch-list" aria-label="Other Apps" data-siblings>
             {siblings.map((item) => (
               <a key={item.use_case_id} className="switch-i" href={item.url} data-sibling={item.use_case_id}>
-                <span className="switch-t"><b>{item.name}</b><small>{item.use_case_id}</small></span>
+                <span className="switch-t"><b>{item.name}</b></span>
               </a>
             ))}
           </div>

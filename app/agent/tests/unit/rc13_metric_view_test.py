@@ -37,6 +37,7 @@ def loader(agent_ns):
     instance._metadata_errors = {}
     instance._canonical_names = {}
     instance.catalog_capabilities = {"main": True}
+    instance.streaming_batch_size = 1000
     return instance
 
 
@@ -58,7 +59,7 @@ def test_a_schema_listing_skips_a_metric_view_and_logs_one_line(loader, agent_ns
     with caplog.at_level(logging.INFO, logger="rc13_metric_view"):
         tables = loader._fetch_tables_for_schema("main", "s")
     assert tables == ["`main`.`s`.`orders`"], "the metric view is not a table the scan reads"
-    assert "[METRIC-VIEW SKIPPED] 1 metric views left out: main.s.customer_value_metrics" in caplog.text
+    assert "[METRIC-VIEW SKIPPED] 1 metric view left out: main.s.customer_value_metrics" in caplog.text
     assert "table_type" in loader.spark.queries[0][0], "the listing reads the table type it splits on"
 
 
@@ -80,11 +81,15 @@ def test_an_explicit_table_that_is_not_a_metric_view_is_scanned_as_before(loader
     assert loader.metadata_unavailable == {}
 
 
-def test_a_failed_type_check_keeps_the_explicit_table_and_does_not_crash(loader):
+def test_a_failed_type_check_leaves_the_explicit_table_out_fail_closed_and_does_not_crash(loader, caplog):
+    # information_schema and DESCRIBE both fail, so the table's type is unknown: it is left out (fail closed), with a run warning.
     class _Broken:
         def sql(self, query, args=None):
             raise RuntimeError("information_schema unavailable")
     loader.spark = _Broken()
     loader.individual_tables = [("main", "s", "orders")]
-    loader._drop_explicit_metric_views()
-    assert loader.individual_tables == [("main", "s", "orders")]
+    with caplog.at_level(logging.INFO, logger="rc13_metric_view"):
+        loader._drop_explicit_metric_views()
+    assert loader.individual_tables == []
+    assert "[METADATA_TABLE_UNAVAILABLE FIRED]" in caplog.text
+    assert "[TABLE-TYPE UNKNOWN] 1 table left out of the explicit tables" in caplog.text

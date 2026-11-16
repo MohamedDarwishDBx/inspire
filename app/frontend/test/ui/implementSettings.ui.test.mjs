@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, dataToResults, openAdvanced, openUi, onStep, startMvp, toAppAccess, goToStep, goToMeasureImpact } from './uiSupport.mjs';
+import { closeBrowser, dataToResults, goToMeasureImpact, goToStep, onStep, openAdvanced, openFolded, openUi, startMvp, toAppAccess } from './uiSupport.mjs';
 
 const OWNER = ['owner', 'example.com'].join('@');
 const PAT = ['pat', 'example.com'].join('@');
@@ -11,7 +11,7 @@ const NO_LAKEBASE = { 'GET /api/2.0/postgres/projects': [{ projects: [] }, 200] 
 
 test.after(closeBrowser);
 
-// Money at stake has its own Next per section; the footer Next is the last one on the page.
+// Value at stake has its own Next per section; the footer Next is the last one on the page.
 const next = (page) => page.getByRole('button', { name: 'Next' }).last().click();
 const footerErrors = (page) => page.locator('[role="alert"] p').allTextContents();
 const advanced = (page, what = 'delivery settings') => page.getByRole('button', { name: new RegExp(`^(Change|Close) ${what}$`) });
@@ -35,7 +35,8 @@ function submittedSpec(made) {
 async function throughApp(page) {
   await toAppAccess(page);
   await page.getByRole('region', { name: 'App access' }).getByRole('radio', { name: /^Internal data/ }).check();
-  await goToStep(page, 'App look');
+  await goToStep(page, 'Where it lives');
+  await openFolded(page, 'App look');
 }
 
 test('a build left alone holds back 10% to measure impact and sends no App owners', async () => {
@@ -77,7 +78,7 @@ test('Measure impact, a screen of Measure, starts ticked with its badge, takes a
     await impact.getByText(SHARE_PROBLEM, { exact: true }).waitFor();
     await next(page);
     await page.locator('[role="alert"] p', { hasText: SHARE_PROBLEM }).waitFor();
-    assert.equal(await page.locator('[data-money-part="impact"]').evaluate((el) => el.closest('li').hasAttribute('data-money-current')), true, 'a share above half the records keeps the person on Measure impact');
+    assert.equal(await page.locator('[data-money-part="holdout"]').evaluate((el) => el.closest('li').hasAttribute('data-money-current')), true, 'a share above half the records keeps the person on the hold-back decision');
     await share.fill('');
     await page.locator('[role="alert"] p', { hasText: SHARE_PROBLEM }).waitFor();
     await box.uncheck();
@@ -135,7 +136,7 @@ test('every list field keeps the comma or new line a person types, and sends eac
     await page.getByRole('button', { name: 'Change failure emails', exact: true }).click();
     await keeps([[page.getByLabel('Failure emails (comma separated; default: the decision owner)'), `${OWNER}, ${OPS}`]]);
     await goToStep(page, 'What to build');
-    for (const name of [/^Dashboard/, /^App A Databricks/, /^Alert/]) await page.getByRole('checkbox', { name }).check();
+    for (const name of [/^Dashboard/, /^Agentic App A Databricks/, /^Alert/]) await page.getByRole('checkbox', { name }).check();
     await advanced(page).click();
     await keeps([
       [page.getByPlaceholder('Filter widgets, comma separated'), 'top_k, region'],
@@ -186,9 +187,9 @@ test('App owners are typed under Advanced settings like alert recipients, checke
     await advanced(page).click();
     const owners = page.getByLabel('App owners (comma separated)');
     await owners.waitFor();
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).uncheck();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).uncheck();
     assert.equal(await owners.count(), 0, 'no App, no owners to name');
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await page.getByText('You can always change this use case\u2019s settings and assumptions in the App and run it now. Add the work emails of other people who may do the same.').waitFor();
     assert.equal(await owners.inputValue(), '', 'nobody else unless named');
     await owners.pressSequentially(`${PAT}, nope`);

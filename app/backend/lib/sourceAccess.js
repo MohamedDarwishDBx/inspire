@@ -3,6 +3,7 @@ const P = require('./requestPerson');
 const { parseExactJson } = require('./exactJson');
 const { redactSecrets } = require('./redact');
 const { runAsPerson } = require('./inspireJobParams');
+const { permissionRequired } = require('./permissions');
 
 const POLICY_PRIVILEGE_DENIED_RE = /does not have .+ on /i;
 
@@ -82,24 +83,29 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
     const app = who.name && who.name !== who.id ? `${who.name} (application id ${who.id})` : `with application id ${who.id}`;
     return { tables, app: { name: who.name, id: who.id }, grants: [], can_grant: false, builtin: [],
       text: `The App service principal ${app} cannot read ${count}, so the build cannot check that its results keep the access rules. `
-        + 'Sign in and build again, or ask the table owner to grant the App read access' };
+        + 'Sign in and build again, or ask your data owner to grant the App read access' };
   }
 
   async function sourceAccess(req, warehouseId, tables, job = 'build') {
     const app = await appTokenOf(req);
     if (!app) return { missing: [], app_unreadable: unverifiedOffer(tables) };
-    const probes = await Promise.all(tables.map((table) => sqlRows(req.dbHost, app, warehouseId, I.tableProbeStatement(table))
-      .then(() => null)
-      .catch((err) => {
-        const reason = I.tableAccessReason(table, err && err.message);
-        return reason ? { table, reason, error: String(err.message || '').slice(0, 300) } : null;
-      })));
-    const lost = probes.filter(Boolean);
     const person = P.personTokenOf(req);
-    const policyLost = (await Promise.all(tables.map(async (t) => ((await abacUnreadable(req, app, t)) ? t : null)))).filter(Boolean);
-    const personPolicyLost = person && person !== app
-      ? (await Promise.all(tables.map(async (t) => ((await personAbacUnreadable(req, person, t)) ? t : null)))).filter(Boolean)
-      : [];
+    // REQ-324: the probes and both policy checks are independent of each other, so they run together, not one after another.
+    const [probes, policyRows, personRows] = await Promise.all([
+      Promise.all(tables.map((table) => sqlRows(req.dbHost, app, warehouseId, I.tableProbeStatement(table))
+        .then(() => null)
+        .catch((err) => {
+          const reason = I.tableAccessReason(table, err && err.message);
+          return reason ? { table, reason, error: String(err.message || '').slice(0, 300) } : null;
+        }))),
+      Promise.all(tables.map(async (t) => ((await abacUnreadable(req, app, t)) ? t : null))),
+      person && person !== app
+        ? Promise.all(tables.map(async (t) => ((await personAbacUnreadable(req, person, t)) ? t : null)))
+        : Promise.resolve([]),
+    ]);
+    const lost = probes.filter(Boolean);
+    const policyLost = policyRows.filter(Boolean);
+    const personPolicyLost = personRows.filter(Boolean);
     if (personPolicyLost.length) {
       const label = (await appIdentity(req, person)).name;
       const builtIn = personPolicyLost.filter((t) => I.builtInSampleTable(t));
@@ -129,9 +135,12 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
     const rows = await Promise.all(grantable.map((t) => accessRowsOf(req, person, warehouseId, t)));
     const offer = I.appReadGrantsOffer(grantable, grantable.map((t, i) => I.accessPlan(t, rows[i], who.id, { needs: I.IMPLEMENT_SOURCE_NEEDS })), who);
     const message = I.appUnreadableMessage(offer, job);
+    // REQ-131, REQ-260: the exact GRANT statements travel as the Permission Required entry the App raises; the prose names the dialog
+    const permissions = offer.grants.length ? [permissionRequired({ statements: offer.grants, principal: who.id,
+      why: 'Inspire reads these source tables with your own access.' })] : [];
     const opener = policyLost.length ? `${I.abacUnreadableSentence(who.name || who.id, { app: true })}. ${message.charAt(0).toUpperCase()}${message.slice(1)}` : message;
     const text = opener + (builtIn.length ? `. ${I.builtInSampleMessage(builtIn)}` : '');
-    return { missing, app_unreadable: { ...offer, builtin: builtIn, text } };
+    return { missing, app_unreadable: { ...offer, permissions, builtin: builtIn, text } };
   }
 
   async function runPersonGrants(req, token, warehouseId, statements) {
@@ -191,13 +200,31 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
 
   // The one derivation the card, Check again and Grant share for the service principal: the live plan of each table for the
   // principal read from its token (IMPLEMENT_SOURCE_NEEDS, READ METADATA included), with the rows the card reads.
+  // REQ-301: the identity id (SCIM) of each person who may open the App. Unity Catalog reports an owner by that id, so a person who owns
+  // an object is recognised as its owner by id as well as by email. A lookup that fails leaves the email as the only identity.
+  async function identityIdsOf(req, token, principals) {
+    const ids = {};
+    await Promise.all(principals.filter((p) => p.includes('@')).map(async (p) => {
+      try {
+        const resp = await dbFetch(req.dbHost, token, `/api/2.0/preview/scim/v2/Users?filter=${encodeURIComponent(`userName eq "${p}"`)}&count=1`);
+        if (!resp.ok) return;
+        const id = String(((parseExactJson((await resp.text()) || '{}').Resources || [])[0] || {}).id || '').trim();
+        if (id) ids[p] = [id];
+      } catch {
+        // the id is unknown: the owner check keeps the email
+      }
+    }));
+    return ids;
+  }
+
   async function appReadsLeftOf(req, token, warehouseId, record, principals, who) {
     if (record.objects) {
       // The App's own objects (its Data Filters views and reasons view): a user-authorization App reads them as each person who
       // may open it, a service-principal App as its live service principal. Both are the same derivation.
       const rowsToken = record.mode === 'user' ? token : P.personTokenOf(req);
       const rows = await Promise.all(record.tables.map((t) => accessRowsOf(req, rowsToken, warehouseId, t.table)));
-      return I.appReadsLeftFor(record, principals, rows);
+      const aliases = record.mode === 'user' ? await identityIdsOf(req, token, principals) : {};
+      return I.appReadsLeftFor(record, principals, rows, aliases);
     }
     const rows = await Promise.all(record.tables.map((t) => accessRowsOf(req, P.personTokenOf(req), warehouseId, t.table)));
     const tables = record.tables.map((t) => t.table);

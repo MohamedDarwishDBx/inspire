@@ -36,7 +36,13 @@ import shell_core
 settings, count = json.loads(sys.argv[3]), int(sys.argv[4])
 with open(sys.argv[2], encoding="utf-8") as handle:
     first = json.load(handle)
-first.update(json.loads(sys.argv[5]))
+changes = json.loads(sys.argv[5])
+original = first.get("result_table")
+first.update(changes)
+if original and changes.get("result_table") and changes["result_table"] != original:
+    # A page that moves its result table reads the new table in every dataset, so its open-work KPIs still read the table they count.
+    for dataset in first.get("datasets") or []:
+        dataset["sql"] = dataset["sql"].replace(original, changes["result_table"])
 root = tempfile.mkdtemp()
 os.mkdir(os.path.join(root, shell_core.PAGES_DIR))
 settings["pages"] = []
@@ -329,8 +335,8 @@ export const moved = (page) => page.evaluate(() => Promise.all(document.getAnima
   .filter((a) => a.effect && a.effect.getComputedTiming().iterations !== Infinity).map((a) => a.finished.catch(() => null))));
 
 export async function openApp(browser, base, info, { width = 1440, height = 900, scheme = 'light', errors = {}, routes = {}, clock, watch, ready = '.kpi-v, .hcard, [data-page-section]:not([data-page-section="dashboard"])',
-  timezone, hash = '', genie = 'closed' } = {}) {
-  const context = await browser.newContext({ viewport: { width, height }, colorScheme: scheme, acceptDownloads: true, ...(timezone ? { timezoneId: timezone } : {}) });
+  timezone, hash = '', genie = 'closed', locale } = {}) {
+  const context = await browser.newContext({ viewport: { width, height }, colorScheme: scheme, acceptDownloads: true, ...(timezone ? { timezoneId: timezone } : {}), ...(locale ? { locale } : {}) });
   const page = await context.newPage();
   if (genie === 'closed') await page.addInitScript(() => { if (window.sessionStorage.getItem('inspire-genie-closed') === null) window.sessionStorage.setItem('inspire-genie-closed', '1'); });
   const seen = { pages: [], records: [], asks: [], errors: [] };

@@ -1,6 +1,15 @@
 import { joinWords } from './implementWizard.js';
+import { plainReason } from './useCaseFields.js';
 
 const MESSAGE_KEYS = ['message', 'text', 'reason', 'summary', 'label'];
+
+// REQ-165: the quality-bar count is rendered from the data by qualityBarCountText, once. A stored message can carry its own copy
+// of the count in an older wording ("11 of 20 use cases found meet your Good bar"), so that clause is removed before the text
+// is shown. The rest of the message (what was found, empty tables, the next step) is kept.
+const STORED_COUNT_CLAUSE = /\b\d+ of \d+ use cases? (?:found )?meets? [^.;:]*?\bbar\b[.;:]?\s*/gi;
+export function withoutStoredCount(text) {
+  return String(text ?? '').replace(STORED_COUNT_CLAUSE, '').trim();
+}
 
 export function outcomeMessage(value) {
   if (value == null) return '';
@@ -53,10 +62,9 @@ export function missingDocumentsOf(results) {
   };
   for (const f of Array.isArray(r.failed_steps) ? r.failed_steps : []) {
     const step = String(f?.step || '').trim();
-    if (!step) continue;
-    const words = DOCUMENT_WORDS[step] || step;
+    if (!step || !DOCUMENT_WORDS[step]) continue;
     const into = add(f.language, 'notWritten');
-    if (!into.includes(words)) into.push(words);
+    if (!into.includes(DOCUMENT_WORDS[step])) into.push(DOCUMENT_WORDS[step]);
   }
   const gaps = r.translation_gaps && typeof r.translation_gaps === 'object' ? r.translation_gaps : {};
   for (const [language, gap] of Object.entries(gaps)) {
@@ -73,6 +81,21 @@ export function missingDocumentsOf(results) {
   return lines;
 }
 
+// REQ-284: a failed analysis step (Strategy Alignment, Best of Best, ...) is not a document, so it never reads "Not written".
+// It reads as what happened, with the step's own reason passed through the plain-reason helper.
+export function unfinishedStepsOf(results) {
+  const r = results && typeof results === 'object' ? results : {};
+  const lines = [];
+  for (const f of Array.isArray(r.failed_steps) ? r.failed_steps : []) {
+    const step = String(f?.step || '').trim();
+    if (!step || DOCUMENT_WORDS[step]) continue;
+    const reason = plainReason(f?.error);
+    const line = `${step} did not finish${reason ? `: ${reason}` : '.'}`;
+    if (!lines.includes(line)) lines.push(line);
+  }
+  return lines;
+}
+
 export function runOutcomeOf(results, counts = null) {
   const r = results && typeof results === 'object' ? results : {};
   const bar = r.quality_bar && typeof r.quality_bar === 'object' ? r.quality_bar : null;
@@ -80,13 +103,14 @@ export function runOutcomeOf(results, counts = null) {
   const found = known ?? 0;
   const meets = count(bar?.meets, count(counts?.meets, found));
   const emptyTables = Array.isArray(bar?.empty_tables) ? bar.empty_tables.map(String).filter(Boolean) : [];
-  const runMessage = outcomeMessage(r.run_message);
+  const runMessage = withoutStoredCount(outcomeMessage(r.run_message));
   const empty = known === 0 && Object.keys(r).length > 0;
   const failed = r.run_status === 'failed' || empty;
   const failureKind = failed ? String(r.run_failure_kind || (empty ? 'no_use_cases' : 'error')) : '';
   const belowAll = found > 0 && meets === 0;
   const missingDocuments = missingDocumentsOf(r);
-  const warning = !failed && (r.run_status === 'warning' || belowAll || missingDocuments.length > 0);
+  const unfinishedSteps = unfinishedStepsOf(r);
+  const warning = !failed && (r.run_status === 'warning' || belowAll || missingDocuments.length > 0 || unfinishedSteps.length > 0);
   const notes = [...new Set([outcomeMessage(r.selection_outcome), outcomeMessage(r.elite_outcome)].filter(Boolean))];
   return {
     failed,
@@ -99,10 +123,11 @@ export function runOutcomeOf(results, counts = null) {
     mode: String(bar?.mode || ''),
     emptyTables,
     allTablesEmpty: emptyTables.length > 0 && bar?.all_tables_empty === true,
-    message: runMessage || outcomeMessage(bar) || (empty ? NO_USE_CASES_MESSAGE : failed ? RUN_FAILED_MESSAGE : ''),
-    barMessage: outcomeMessage(bar),
+    message: runMessage || withoutStoredCount(outcomeMessage(bar)) || (empty ? NO_USE_CASES_MESSAGE : failed ? RUN_FAILED_MESSAGE : ''),
+    barMessage: withoutStoredCount(outcomeMessage(bar)),
     notes,
     missingDocuments,
+    unfinishedSteps,
   };
 }
 

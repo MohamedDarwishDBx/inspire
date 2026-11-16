@@ -5,8 +5,8 @@ const WORK_QUEUE = 'queue';
 const workOf = (page) => (page?.layout ? page.layout.work || '' : WORK_QUEUE);
 export const isQueue = (page) => !!page?.records && workOf(page) === WORK_QUEUE;
 
-export const SECTION_TITLES = { dashboard: 'Dashboard', inbox: 'Inbox', work: 'Work', performance: 'Performance', runs: 'Runs', alerts: 'Alerts', impact: 'Impact',
-  settings: 'Settings' };
+export const SECTION_TITLES = { dashboard: 'Dashboard', inbox: 'Inbox', work: 'Work', plan: 'Plan', performance: 'Performance', runs: 'Runs', alerts: 'Alerts',
+  impact: 'Impact', settings: 'Settings', agent: 'Agent' };
 
 export const MODES = Object.freeze({
   queue: Object.freeze({ id: 'queue', work: 'Work', performance: 'Performance', queue: true }),
@@ -29,6 +29,9 @@ export function layoutMode(layout) {
 }
 
 export const pageMode = (page) => MODES[layoutMode(page?.layout)];
+
+// A forecast App has a Plan page: plan vs actuals per series, with its empty state until actuals arrive.
+export const hasPlan = (page) => pageMode(page).id === 'forecast';
 
 export function hasWork(page) {
   const mode = pageMode(page);

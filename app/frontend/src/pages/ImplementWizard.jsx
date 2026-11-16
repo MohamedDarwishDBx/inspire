@@ -1,8 +1,9 @@
 import { splitTechnical } from '../lib/plainText';
+import { permanentPickProblem } from '../lib/pickProblem';
 import { withStartDeadline } from '../lib/startDeadline';
 import { nameOfUseCase } from '../lib/useCaseFields';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MONEY_PARTS } from '../lib/moneyParts.js';
+import { moneyPartsOf } from '../lib/moneyParts.js';
 import { defaultMoneyRule, moneySummaryOf } from '../lib/moneyDefaults.js';
 import { valueEstimateOf } from '../lib/v130UseCase.js';
 import { Check, Loader2, NotebookPen, X, ChevronLeft, ChevronRight, LayoutDashboard, Sparkles, AppWindow, Bell, Lock, UserRound, KeyRound } from 'lucide-react';
@@ -14,12 +15,11 @@ import TabStrip, { tabPanel } from '../components/TabStrip';
 import AppSample, { paletteVars, pv } from '../components/AppSample';
 import { generationFolder, sharedFolderWarning } from '../lib/workspaceLinks';
 import { catalogRow } from '../lib/useCaseFacets';
-import { insideMoveNote } from '../lib/implementControl';
+import { insideMoveNote, trackBuildSubmit } from '../lib/implementControl';
 import {
   GENIE_CODE_OFF_TITLE,
   genieCodeOff,
   wizardSteps,
-  APP_STEP,
   APP_STORAGE_LABEL,
   PANEL_SECTIONS,
   contextSettings,
@@ -39,12 +39,15 @@ import {
   resultPlaceOf,
   useCaseSchemaTags as schemaTagsOf,
   ownSchemaFallbackNote,
+  ownSchemaGrantPermission,
+  ownSchemaPickPermission,
   defaultSpecFromUseCase,
   specFromLatest,
   tablesOf,
   primaryTableOf,
   restoreTable,
   pickedTable,
+  duplicateSourceNotice,
   revertLostSwaps,
   revertedSwapsText,
   removalBlocker,
@@ -54,6 +57,8 @@ import {
   readinessText,
   countedFor,
   tooFewRowsText,
+  dataMinimumRefusalText,
+  dataMinimumBlocks,
   columnsReadOf,
   filterTablesOutside,
   withoutTableFilters,
@@ -82,12 +87,14 @@ import {
   widgetValueProblem,
   profileFieldProblem,
   initialStepId,
-  MEASURE_IMPACT_PART,
-  opensOnImpact,
+  MEASURE_IMPACT_PARTS, impactPartOf, impactPartSummary,
   stepIndexOf,
   lostTablesText,
+  missingSourcePick,
   SOURCE_REFUSED_REASON,
+  SOURCE_BUILT_IN_REFUSED_REASON,
   ACCESS_CHECKING,
+  accessCheckingText, buildNowDefaultsText, dataCheckingText,
   ACCESS_UNKNOWN,
   accessVerdictOf,
   NEW_APPS_ACCESS_ACTION,
@@ -124,6 +131,10 @@ import {
   buildWarehouseNote,
   joinedWarehouseText,
   APP_OPTIONS,
+  APP_EXPERIENCE_CHOICES,
+  APP_EXPERIENCE_DEFAULT,
+  APP_EXPERIENCE_QUESTION,
+  experienceDefault,
   APP_SCREENS,
   APP_NO_DOWNLOADS,
   APP_REFRESH_NOTE,
@@ -159,6 +170,7 @@ import {
   appPagesOf,
   LAKEVIEW_STYLE_NOTE,
   GENIE_FOR_APP_NOTE,
+  APP_GENIE_NOTE,
   RESULT_TABLE_MOVE_NOTE,
   MERGE_OUTPUTS,
   resultTableParts,
@@ -196,7 +208,7 @@ import {
   vibesProblem,
   vibePreviousProblem,
   vibePreviousChoices,
-  builtVersion,
+  builtVersion, liveVersionForVibes,
   VIBES_STEP_TITLE,
   VIBES_STEP_NOTE,
   vibesSkippedText,
@@ -258,6 +270,7 @@ import {
   nextStepAfter,
   APP_LOOK_DEFAULT,
 } from '../lib/implementWizard';
+import { raisePermissions } from '../lib/permissionBus';
 import {
   bestAppAccess, bestAppBackend, bestHeldApp, bestAppOption, bestAppPolicy, bestAppTarget, bestFreshness, bestHoldout, bestKpi, bestLook,
   bestOutput, bestReplaceEdits, isBest,
@@ -279,12 +292,14 @@ import {
   SETTINGS_ON_THEIR_STEP, isSettingWidget, settingsModelOf, withSetting,
 } from '../lib/useCaseSettings';
 import ScopeSettings, { GroupingChosen } from '../components/ScopeSettings';
+import Advanced from '../components/Advanced';
 import CatalogPicker from '../components/CatalogPicker';
 import { PROFILE_WAITING, noMainTableText, useScopeProfiles } from '../lib/groupingProfile';
 import { fieldOf } from '../lib/useCaseFields.js';
 import { normalizeTableScope, scopeEntryOf, tableScopeSummary } from '../lib/tableScope';
 import SamplesCopyOffer from '../components/SamplesCopyOffer';
 import { samplesTarget, validCopyTarget } from '../lib/samplesCopy';
+import { useModal } from '../components/useModal';
 import { DRAFT_BACK_NOTE, DRAFT_START_OVER, clearWizardDraft, readWizardDraft, draftStampOf, wizardDraftKey, writeWizardDraft } from '../lib/wizardDraft';
 import {
   FIRST_RUN_TITLE, FIRST_RUN_LABEL, GROUPING_EXAMPLE, GROUPING_PICK, GROUPING_TITLE, RUN_SCOPE_UNRECORDED_HIDDEN, builtFirstRunOf, deepGrouping, groupingChosenBy, isFirstRunSetting, isGroupingSetting, isScopeSetting,
@@ -294,6 +309,7 @@ import {
   scopedGroupRows,
 } from '../lib/runScope';
 
+const CARD_CONTROL_SELECTOR = 'label,input,button,a,select,textarea,[role="radio"],[role="checkbox"],[role="button"]';
 const ICONS = { notebook: NotebookPen, dashboard: LayoutDashboard, genie_space: Sparkles, app: AppWindow, alert: Bell };
 const ASSET_NOUNS = { dashboard: 'a dashboard', genie_space: 'a Genie Agent', app: 'an App', alert: 'an alert' };
 const ACCESS_ICONS = { user: UserRound, sp: KeyRound };
@@ -404,21 +420,6 @@ function FoldLine({ label, what, summary, onOpen }) {
   );
 }
 
-function Advanced({ open, onToggle, children, summary = '', what = 'settings' }) {
-  return (
-    <div className="border-t border-border pt-3 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-[12px] text-text-secondary min-w-0">{summary}</p>
-        <button type="button" aria-expanded={open} aria-label={`${open ? 'Close' : CHANGE_LABEL} ${what}`} onClick={onToggle}
-          className="shrink-0 text-xs font-medium text-db-red-fg hover:underline glow-focus">
-          {open ? 'Close' : CHANGE_LABEL}
-        </button>
-      </div>
-      {open && <div className="space-y-4">{children}</div>}
-    </div>
-  );
-}
-
 function SettingRow({ label, value, children, changeLabel = label, help = '', defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -444,7 +445,7 @@ function CheckLine({ check, label }) {
   );
 }
 
-const MONEY_PART_LABEL = { method: 'How the value is measured', direction: 'Which movement counts', currency: 'Currency', window: 'Periods and statuses', off: 'Turn it off', [MEASURE_IMPACT_PART]: 'Measure impact' };
+const MONEY_PART_LABEL = { method: 'How the value is measured', direction: 'Which movement counts', sign: 'Which records are gains', currency: 'Currency', window: 'Periods and statuses', off: 'Turn it off', kpi: 'Target KPI', holdout: 'Hold back' };
 
 export default function ImplementWizard({
   uc,
@@ -455,6 +456,7 @@ export default function ImplementWizard({
   apiPostJson,
   onClose,
   onImplemented,
+  onQueued = null,
   onOpenBuild = null,
   focus = null,
   live = null,
@@ -474,7 +476,7 @@ export default function ImplementWizard({
   const [advanced, setAdvanced] = useState({ data: false, results: false, fresh: false, delivery: false, app_place: false, app_access: false, app_options: false, app_pages: false, summary: false });
   const [details, setDetails] = useState(false);
   const [moneyPart, setMoneyPart] = useState(0);
-  const openOnImpact = useRef(opensOnImpact(focus));
+  const openOnImpact = useRef(impactPartOf(focus));
   const [lookView, setLookView] = useState({ tab: 'style', page: 'fix' });
   const toggleAdvanced = (id) => setAdvanced((prev) => ({ ...prev, [id]: !prev[id] }));
   const [columnsByTable, setColumnsByTable] = useState({});
@@ -483,6 +485,21 @@ export default function ImplementWizard({
   const [preflight, setPreflight] = useState(null);
   const [preflightError, setPreflightError] = useState('');
   const [checksBusy, setChecksBusy] = useState(false);
+  const [checkSeconds, setCheckSeconds] = useState(0);
+  useEffect(() => {
+    if (!checksBusy) { setCheckSeconds(0); return undefined; }
+    const started = Date.now();
+    const timer = setInterval(() => setCheckSeconds(Math.round((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [checksBusy]);
+  // REQ-345: when the data check started (0 when none runs), and the seconds it has run.
+  const [dataCheckAt, setDataCheckAt] = useState(0);
+  const [dataCheckSeconds, setDataCheckSeconds] = useState(0);
+  useEffect(() => {
+    if (!dataCheckAt) { setDataCheckSeconds(0); return undefined; }
+    const timer = setInterval(() => setDataCheckSeconds(Math.round((Date.now() - dataCheckAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [dataCheckAt]);
   const [outputCheck, setOutputCheck] = useState(null);
   // True once Next has run the write check: from then on the check re-runs when its inputs change (see writeCheckKey).
   const writeCheckRun = useRef(false);
@@ -580,7 +597,7 @@ export default function ImplementWizard({
   const stepIndex = stepIndexOf(steps, step);
   const stepId = steps[stepIndex].id;
   const shows = (panel) => steps[stepIndex].panels.includes(panel);
-  const moneyParts = [...(spec.money?.off ? ['off'] : [...MONEY_PARTS.filter((p) => p !== 'off'), 'off']), MEASURE_IMPACT_PART];
+  const moneyParts = [...(spec.money?.off ? ['off'] : moneyPartsOf(spec.money?.rule)), ...MEASURE_IMPACT_PARTS];
   const moneyActive = Math.min(moneyPart, moneyParts.length - 1);
   // The money reads are cached per request, so a section that remounts reads its rates and preview once, not again.
   const postRef = useRef(apiPostJson);
@@ -620,8 +637,8 @@ export default function ImplementWizard({
   }, [mode, spec.money, scopeProfile.state, scopeProfile.profile, uc]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (steps[stepIndex].id !== 'stake') return;
-    setMoneyPart(openOnImpact.current ? moneyParts.length - 1 : 0);
-    openOnImpact.current = false;
+    setMoneyPart(Math.max(0, moneyParts.indexOf(openOnImpact.current)));
+    openOnImpact.current = null;
   }, [stepIndex]); // eslint-disable-line react-hooks/exhaustive-deps
   const resultsOn = shows('results');
   useEffect(() => {
@@ -630,6 +647,8 @@ export default function ImplementWizard({
     setSpec((prev) => withProfileDefaults(prev, scopeProfile.profile, withGroupingDefault));
   }, [scopeSteps.grouping, context, scopeProfile.profile]);
   const lastStep = stepIndex === steps.length - 1;
+  // REQ-344: the steps between this one and Review & build, which the early Build button submits with their defaults.
+  const defaultsLine = buildNowDefaultsText(steps.slice(stepIndex + 1, steps.length - 1).map((x) => x.label));
   const scopeReady = scopeProfile.state !== 'loading';
   const scopeNow = readinessScope(spec, ucRow, context?.table_scope);
   const scopeKey = JSON.stringify(scopeNow);
@@ -640,7 +659,8 @@ export default function ImplementWizard({
   const scopeGroups = scopeCounted ? readCounted.groups || null : null;
   const scopedProfile = narrowed ? withScopedRows(scopeProfile.profile, scopeCount, scopeGroups) : scopeProfile.profile;
   const scopedFirstRun = narrowed && scopeProfile.firstRun ? { ...scopeProfile.firstRun, profile: withScopedRows(scopeProfile.firstRun.profile, scopeCount, scopeGroups) } : scopeProfile.firstRun;
-  const tooFewRows = tooFewRowsText(readCounted);
+  // On the last step the scope note is the build's refusal (REQ-255); earlier steps keep the plain scope sentence that never blocks.
+  const tooFewRows = lastStep ? dataMinimumRefusalText(readCounted) : tooFewRowsText(readCounted);
 
   const q = useMemo(() => {
     const p = new URLSearchParams({
@@ -807,6 +827,7 @@ export default function ImplementWizard({
 
   const groups = context?.widget_groups || NO_WIDGET_GROUPS;
   const built = builtVersion(context?.history);
+  const liveFor = liveVersionForVibes(context?.history);
   const kpiOptions = useMemo(() => kpiTargetOptions(ucRow, context?.history), [ucRow, context?.history]);
   const scopeShown = withGroupingDefault(scopeValues((name) => spec.config.widgets?.[name]), scopeProfile.profile, spec.config.widgets?.[GROUP_BY]);
   const trackedKpi = trackedKpiOf(context?.history);
@@ -815,6 +836,9 @@ export default function ImplementWizard({
   const placeSettled = !spec.outputs.app || (targets !== null && (placeSet === 'default' || placeSet === 'person'));
   const features = preflight?.features || context?.features || ALL_FEATURES;
   const blocks = useMemo(() => outputBlocks(features, outputCheck, context?.assets, preflight), [features, outputCheck, context?.assets, preflight]);
+  // The verdict is dropped while a check runs (no stale reason shows), but an output it blocked stays locked until the new verdict lands.
+  const [blockedAtVerdict, setBlockedAtVerdict] = useState({});
+  useEffect(() => { if (!checksBusy) setBlockedAtVerdict(blocks); }, [checksBusy, blocks]);
   const appRefusal = appAccessRefusalOf(outputCheck, preflight);
   const extras = { columnsByTable, widgets: context?.widgets || [], trainsModel, mergeTargets: targets, held: context?.assets || {}, appLook: look, built, placeSettled,
     lakebase, warehouses, kpiOptions, settings: settingsList, sourceTables, scopeSteps: stepScope, scopeProfile: scopeProfile.profile, outputBlocks: blocks };
@@ -903,22 +927,24 @@ export default function ImplementWizard({
       return uncountedReadiness(scope);
     });
     setCheckNotes((prev) => ({ ...prev, data: counted.unchecked || '' }));
-    let warning = '';
-    if (!counted.skipped && Number(counted.row_count) === 0) {
-      warning = await emptyScopeWarningOf(scope, sourceTables, (table) => apiPostJson(`/api/inspire/implement/readiness?${q}`, {
-        table, discovery_type: discoveryType, columns: [], filters: [], window: {},
-      }, { raise: false }));
-    }
     const groupColumns = scopeNarrowing(scope).length ? groupPartColumns(scopeProfile.profile) : [];
-    const groups = groupColumns.length && !counted.skipped
-      ? await apiPostJson(`/api/inspire/implement/group-counts?${q}`, { table: scope.table, columns: groupColumns, filters: scope.filters, window: scope.window })
-        .then(scopedGroupRows).catch(() => null)
-      : null;
+    // REQ-345: the empty-scope probe and the group counts read the table with no dependency on each other, so they run together.
+    const [warning, groups] = await Promise.all([
+      !counted.skipped && Number(counted.row_count) === 0
+        ? emptyScopeWarningOf(scope, sourceTables, (table) => apiPostJson(`/api/inspire/implement/readiness?${q}`, {
+          table, discovery_type: discoveryType, columns: [], filters: [], window: {},
+        }, { raise: false }))
+        : '',
+      groupColumns.length && !counted.skipped
+        ? apiPostJson(`/api/inspire/implement/group-counts?${q}`, { table: scope.table, columns: groupColumns, filters: scope.filters, window: scope.window })
+          .then(scopedGroupRows).catch(() => null)
+        : null,
+    ]);
     return { ...counted, scope, warning, groups };
   };
 
   useEffect(() => {
-    if (mode !== 'mvp' || !narrowed || scopeCounted || !shows('first_run') || !scopeNow.table) return undefined;
+    if (mode !== 'mvp' || !(narrowed || scopeNow.window?.column) || scopeCounted || !shows('first_run') || !scopeNow.table) return undefined;
     let live = true;
     countScope(scopeNow).then((got) => { if (live) setReadiness(got); }).catch(() => {});
     return () => { live = false; };
@@ -928,7 +954,8 @@ export default function ImplementWizard({
     const scope = readinessScope(spec, ucRow, context?.table_scope);
     if (scope.table) {
       setChecking('Checking the data');
-      setReadiness(await countScope(scope));
+      setDataCheckAt(Date.now());
+      try { setReadiness(await countScope(scope)); } finally { setDataCheckAt(0); }
     }
   };
 
@@ -974,6 +1001,8 @@ export default function ImplementWizard({
         }).catch((e) => {
           setSpec((prev) => withResultTable(prev, resultTableParts(inspireTable)));
           setOwnSchema((prev) => ({ ...(prev || {}), place: 'inspire', create: false }));
+          // REQ-131, REQ-260: the refused CREATE SCHEMA grant opens in Permission Required; the note names it in plain words
+          raisePermissions([ownSchemaGrantPermission(own.catalog, context?.me?.username)]);
           setPlaceNote(`${ownSchemaFallbackNote(own.catalog, context?.me?.username)} ${failureReasonOf(e)}`);
           setOutputCheck(null);
           setSchemaJob({ state: 'failed', text: `${ownSchemaFallbackNote(own.catalog, context?.me?.username)} ${failureReasonOf(e)}` });
@@ -1149,7 +1178,7 @@ export default function ImplementWizard({
   }, [columnsByTable, spec]);
 
   useEffect(() => {
-    const wanted = stepId === 'data' || (spec.outputs.app && (stepId === 'delivery' || stepId === 'where' || stepId === 'app'));
+    const wanted = stepId === 'data' || (spec.outputs.app && (stepId === 'delivery' || stepId === 'where'));
     if (!wanted || warehouses !== null || warehousesError) return undefined;
     let cancelled = false;
     apiFetch('/api/warehouses')
@@ -1254,14 +1283,14 @@ export default function ImplementWizard({
     if (blockedBy(stepId)) return;
     setBusy(true);
     try {
-      const data = await withStartDeadline((signal) => apiPostJson('/api/inspire/implement/submit', {
+      const data = await trackBuildSubmit(sent, () => withStartDeadline((signal) => apiPostJson('/api/inspire/implement/submit', {
         inspire_database: inspireDatabase,
         warehouse_id: warehouseId,
         session_id: String(sessionId),
         notebook_path: settings.notebookPath,
         spec: sent,
         rebuild_as_is: rebuildAsIs,
-      }, { signal }), { label: 'The build' });
+      }, { signal }), { label: 'The build' }), onQueued);
       clearWizardDraft(draftKey);
       onImplemented(data);
     } catch (e) {
@@ -1379,7 +1408,7 @@ export default function ImplementWizard({
   const freshness = freshnessOf(spec.schedule);
   const checkStepOf = (k) => {
     if (PLACE_CHECKS.includes(k)) return 'where';
-    if (ACCESS_CHECKS.includes(k)) return insideInspire(spec) || joinsApp(spec) ? 'where' : APP_STEP.id;
+    if (ACCESS_CHECKS.includes(k)) return 'where';
     return CHOOSE_CHECKS.includes(k) || TILE_CHECK_KEYS.includes(k) ? 'delivery' : SUMMARY_STEP.id;
   };
   const checkStepLabel = (k) => steps.find((s) => s.id === checkStepOf(k))?.label || SUMMARY_STEP.label;
@@ -1394,7 +1423,7 @@ export default function ImplementWizard({
   const footerErrors = [...new Set([
     ...(attempted[stepId] ? ownErrors : []),
     ...errors,
-    ...(stepId === 'data' ? Object.values(columnsErrors) : []),
+    ...(stepId === 'data' ? Object.values(columnsErrors).filter((e) => e && !['metric_view', 'unknown_type'].includes(permanentPickProblem(e))) : []),
     ...(buildStep ? [lastStep ? planError : '', lastStep ? '' : preflightError, ...deliveryChecks, ...earlierGaps] : []),
   ].filter(Boolean))];
   const checkAgain = async () => {
@@ -1407,16 +1436,19 @@ export default function ImplementWizard({
     }
     setGrantRound((n) => n + 1);
   };
+  // A picked table that is gone, a metric view, or a table whose type cannot be read stays wrong until the person changes the pick: no Try again.
   const footerRetry = new Map([
-    ...Object.entries(columnsErrors).map(([table, e]) => [e, () => loadColumns(table)]),
-    [planError, checkAgain],
+    ...Object.entries(columnsErrors).filter(([, e]) => e && !permanentPickProblem(e)).map(([table, e]) => [e, () => loadColumns(table)]),
+    // A refusal of the pick (metric view, unknown type, gone table) stays wrong until the pick changes: no Try again. A busy check does.
+    ...(planError && !permanentPickProblem(planError) ? [[planError, checkAgain]] : []),
     [preflightError, checkAgain],
   ].filter(([e]) => e));
   const accessVerdict = accessVerdictOf({ preflight, error: preflightError, busy: checksBusy, unread: appUnreadable });
   const unchanged = lastStep && accessVerdict === 'ok' && Boolean(plan?.unchanged);
   const sourceRefused = accessVerdict === 'refused';
   const sourceAccessRefused = sourceRefused && !preflight?.checks?.sources?.missing;
-  const implementBlocked = busy || checksBusy || !placeSettled || schemaJob?.state === 'running' || schemaJob?.state === 'failed' || rebuildNeedsChoice(plan, rebuildAsIs) || sourceRefused
+  const refusedFooterText = appUnreadable?.builtin?.length ? SOURCE_BUILT_IN_REFUSED_REASON : SOURCE_REFUSED_REASON;
+  const implementBlocked = busy || checksBusy || !placeSettled || dataMinimumBlocks(readCounted) || schemaJob?.state === 'running' || schemaJob?.state === 'failed' || rebuildNeedsChoice(plan, rebuildAsIs) || sourceRefused
     || (!ownErrors.length && (!preflight || !checkEntries.every(([, c]) => c.ok) || (lastStep && (!plan || Boolean(planError)))))
     || (lastStep && accessVerdict !== 'ok' && accessVerdict !== 'refused');
   const palette = (look?.palette_colors || []).find((p) => p.id === spec.outputs.app_look.palette) || null;
@@ -1443,7 +1475,7 @@ export default function ImplementWizard({
     settings: settingsList.length ? counted(settingsList.length, 'setting') : '',
     dropped: dropped.filter((d) => !spec.outputs[d.id]),
   }).filter((row) => steps.some((s) => s.id === row.step));
-  const changeStep = (id, part) => { setErrors([]); setBackToSummary(true); openOnImpact.current = part === MEASURE_IMPACT_PART; setStep(id); };
+  const changeStep = (id, part) => { setErrors([]); setBackToSummary(true); openOnImpact.current = MEASURE_IMPACT_PARTS.includes(part) ? part : null; setStep(id); };
   const nextIsSummary = backToSummary && nextStepAfter(steps, stepId, { backToSummary, visited }) === SUMMARY_STEP.id;
 
   const copySamples = async () => {
@@ -1461,6 +1493,8 @@ export default function ImplementWizard({
   };
 
   const pickTable = (original, value) => {
+    const refused = duplicateSourceNotice(sourceTables, original, spec.data.tables[original] || original, value);
+    if (refused) { setNotice(refused); return; }
     const picked = pickedTable(spec, original, value);
     setSpec(picked.spec);
     if (picked.notice !== null) setNotice(picked.notice);
@@ -1530,9 +1564,9 @@ export default function ImplementWizard({
           </section>
         )}
 
-        {(appUnreadable || appGrant) && <AppReadAccess offer={appUnreadable} result={appGrant} busy={granting} onGrant={grantAppRead} />}
+        {(appUnreadable || appGrant) && <AppReadAccess offer={appUnreadable?.builtin?.length ? null : appUnreadable} result={appGrant} busy={granting} onGrant={grantAppRead} />}
 
-        {builtInRefused && (
+        {appUnreadable?.builtin?.length > 0 && (
           <SamplesCopyOffer names={appUnreadable.builtin.join(', ')} target={copyTo} onTarget={setCopyTarget} canCopy={validCopyTarget(copyTo)}
             copying={copying} error={copyError} onCopy={copySamples} copyLabel="Copy it now" />
         )}
@@ -1694,7 +1728,14 @@ export default function ImplementWizard({
               place={resultPlace}
               note={placeNote}
               outputCheck={outputCheck}
-              onChange={(parts) => { setSpec((prev) => withResultTable(prev, parts)); setOutputCheck(null); }}
+              onChange={(parts) => {
+                setSpec((prev) => withResultTable(prev, parts));
+                setOutputCheck(null);
+                // REQ-131, REQ-260: picking Its own schema raises its CREATE SCHEMA grant; the wizard does not raise it on load
+                const picked = resultPlaceOf([parts.catalog, parts.schema, parts.table].filter(Boolean).join('.'), ownTable, inspireTable);
+                const grant = ownSchemaPickPermission(picked, ownSchema);
+                if (grant) raisePermissions([grant]);
+              }}
               best={best.result}
               blocks={placeBlocks}
             >
@@ -1798,16 +1839,23 @@ export default function ImplementWizard({
                   const noAppAccess = item.id === 'app' && !context?.assets?.app && Boolean(appRefusal);
                   const block = blocks[item.id];
                   const cannot = Boolean(block);
+                  const lockedWhileChecking = checksBusy && Boolean(blockedAtVerdict[item.id]);
                   const tileChecks = (TILE_CHECKS[item.id] || []).map((k) => [k, preflight?.checks?.[k]])
                     .filter(([, v]) => v && !v.ok && on);
                   const mergeable = on && item.id !== 'app' && MERGE_OUTPUTS.includes(item.id) && !held[item.id];
                   const gone = on && (context?.gone_assets || []).includes(item.id);
                   const holding = sharedHolding(item.id, shared, liveCheck);
+                  // REQ-325: a click on the card outside its label (the padding, the gaps) ticks it too; a click on a control inside it keeps its own action.
+                  const cardClick = (e) => {
+                    if (cannot && !on) return;
+                    if (e.target.closest(CARD_CONTROL_SELECTOR)) return;
+                    toggleOutput(item.id, !on);
+                  };
                   return (
-                    <div key={item.id} data-output={item.id} data-blocked={cannot ? '' : undefined} className={`border rounded-lg p-3 space-y-2 ${on ? 'border-db-red/50 bg-db-red-50/40' : 'border-border'} ${cannot && !on ? 'border-dashed bg-bg cursor-not-allowed' : ''}`}>
+                    <div key={item.id} data-output={item.id} data-blocked={cannot ? '' : undefined} onClick={cardClick} className={`border rounded-lg p-3 space-y-2 ${on ? 'border-db-red/50 bg-db-red-50/40' : 'border-border'} ${cannot && !on ? 'border-dashed bg-bg cursor-not-allowed' : 'cursor-pointer'}`}>
                       <div className="relative">
                         <label className="flex items-start gap-3 cursor-pointer">
-                          <input type="checkbox" value={item.id} className="mt-0.5" checked={on} disabled={cannot && !on} onChange={(e) => toggleOutput(item.id, e.target.checked)} />
+                          <input type="checkbox" value={item.id} className="mt-0.5" checked={on} disabled={(cannot || lockedWhileChecking) && !on} onChange={(e) => toggleOutput(item.id, e.target.checked)} />
                           <span className="flex-1">
                             <span className="flex items-center gap-2 text-sm font-semibold text-text-primary">
                               <Icon size={14} /> {item.label}
@@ -1815,6 +1863,7 @@ export default function ImplementWizard({
                             <span className="block text-[11px] mt-1 text-text-secondary">
                               {item.blurb}
                               {item.id === 'genie_space' && spec.outputs.app && ` ${GENIE_FOR_APP_NOTE}`}
+                              {item.id === 'app' && ` ${APP_GENIE_NOTE}`}
                               {!cannot && item.id === 'app' && ` ${APP_NEXT_NOTE}`}
                             </span>
                             {cannot && on && <span className="block text-[11px] mt-1 text-error-fg">It cannot be built, so turn it off.</span>}
@@ -2010,41 +2059,42 @@ export default function ImplementWizard({
         {shows('stake') && (
           <section className="space-y-3" aria-label={MEASURE_LABEL}>
             <div>
-              <h3 className="text-sm font-semibold text-text-primary">Money at stake</h3>
+              <h3 className="text-sm font-semibold text-text-primary">Value at stake</h3>
               <p className="text-[11px] text-text-secondary">{`Each record is counted in the ${stakeWords(sampleStake)}. Optional: the default already counts it, so Next moves on. Open a section to change it.`}</p>
             </div>
             <ol aria-label="Money decisions" className="space-y-2">
               {moneyParts.map((p, i) => {
+                // One decision on screen: the later decisions are not rendered until Next reaches them.
+                if (i > moneyActive) return null;
                 const open = i === moneyActive;
                 const label = `${i + 1}. ${MONEY_PART_LABEL[p]}`;
                 const nextPart = moneyParts[i + 1];
                 return (
                   <li key={p} data-money-current={open ? '' : undefined} className="block">
                     <div data-money-part={p}>
-                      {!open && i < moneyActive && <FoldLine label={label} what={MONEY_PART_LABEL[p]} summary={moneySummaryOf(spec.money, p)} onOpen={() => setMoneyPart(i)} />}
-                      {!open && i > moneyActive && <p className="border-t border-border pt-3 text-[12px] font-semibold text-text-tertiary">{label}</p>}
+                      {!open && <FoldLine label={label} what={MONEY_PART_LABEL[p]} summary={MEASURE_IMPACT_PARTS.includes(p) ? impactPartSummary(spec, p) : moneySummaryOf(spec.money, p)} onOpen={() => setMoneyPart(i)} />}
                       {open && <p className="border-t border-border pt-3 text-[13px] font-semibold text-text-primary">{label}</p>}
                     </div>
                     {open && (
                       <div className="space-y-3 pt-2 pb-1">
-                        {p === MEASURE_IMPACT_PART ? (
+                        {p === 'kpi' ? (
+                          <KpiTargetSetting
+                            spec={spec}
+                            best={best.kpi}
+                            options={kpiOptions}
+                            tracked={trackedKpi}
+                            before={context?.latest ? kpiTargetOf(context.latest.spec_json) : null}
+                            onPick={(name) => setSpec((prev) => withKpiTarget(prev, name))}
+                          />
+                        ) : p === 'holdout' ? (
                           <div className="space-y-3">
-                            <HoldoutSetting spec={spec} best={best.holdout} onEnabled={(on) => setSpec((prev) => withHoldout(prev, on))}>
-                              <KpiTargetSetting
-                                spec={spec}
-                                best={best.kpi}
-                                options={kpiOptions}
-                                tracked={trackedKpi}
-                                before={context?.latest ? kpiTargetOf(context.latest.spec_json) : null}
-                                onPick={(name) => setSpec((prev) => withKpiTarget(prev, name))}
-                              />
-                            </HoldoutSetting>
+                            <HoldoutSetting spec={spec} best={best.holdout} onEnabled={(on) => setSpec((prev) => withHoldout(prev, on))} />
                             <SettingRow label="Hold back" value={holdoutOf(spec).enabled ? `${holdoutPercentText(spec) || '10'}% of records` : 'off'} changeLabel="hold back share">
                               <HoldoutPercent spec={spec} onPercent={(text) => setSpec((prev) => withHoldoutPercent(prev, text))} />
                             </SettingRow>
                           </div>
                         ) : spec.money ? (
-                          <MoneyRuleEditor part={p} value={spec.money} sample={scopeProfile.profile?.money_sample || null} table={scopeProfile.profile?.table || ''} columns={scopeProfile.profile?.money_columns || []} api={moneyApi.current} onChange={(money) => { setSpec((prev) => withMoneyRule(prev, money)); if (Boolean(money?.off) !== Boolean(spec.money?.off)) setMoneyPart(money?.off ? 0 : MONEY_PARTS.indexOf('off')); }} />
+                          <MoneyRuleEditor part={p} value={spec.money} sample={scopeProfile.profile?.money_sample || null} table={scopeProfile.profile?.table || ''} columns={scopeProfile.profile?.money_columns || []} api={moneyApi.current} onChange={(money) => { setSpec((prev) => withMoneyRule(prev, money)); if (Boolean(money?.off) !== Boolean(spec.money?.off)) setMoneyPart(money?.off ? 0 : moneyPartsOf(money?.rule).indexOf('off')); }} />
                         ) : (
                           <p className="text-[12px] text-text-secondary">Reading this table to pre-fill the money rule</p>
                         )}
@@ -2125,13 +2175,19 @@ export default function ImplementWizard({
           </Advanced>
         )}
 
+        {foldLine('app_experience', APP_EXPERIENCE_QUESTION, APP_EXPERIENCE_CHOICES.find((c) => c.id === (spec.outputs.app_options.experience || experienceDefault(spec)))?.label || '')}
+        {shows('app_experience') && isOpenSection('app_experience') && (
+          <AppExperienceStep spec={spec} onOption={(key, value) => setSpec((prev) => withAppOption(prev, key, value))} />
+        )}
+
         {foldLine('app_pages', 'Pages', `${Object.values(appScreensOf(spec)).filter(Boolean).length} of ${APP_SCREENS.length} pages on`)}
         {shows('app_pages') && isOpenSection('app_pages') && (
           <AppPagesStep spec={spec} look={look} view={lookView} onView={setLookView} open={advanced.app_pages} onToggle={() => toggleAdvanced('app_pages')}
             onPage={(id, on) => setSpec((prev) => withAppPage(prev, id, on))} />
         )}
 
-        {shows('app_look') && (
+        {foldLine('app_look', 'App look', lookText({ ...APP_LOOK_DEFAULT, ...(spec.outputs.app_look || {}) }))}
+        {shows('app_look') && isOpenSection('app_look') && (
           <AppLookStep
             spec={spec}
             look={look}
@@ -2157,7 +2213,7 @@ export default function ImplementWizard({
             )}
             <p data-built-sentence="" className="text-sm font-semibold text-text-primary">{builtSentence(spec)}</p>
             {shows('vibes') && (
-              <VibesPanel spec={spec} built={built} next={(context?.latest?.spec_version ?? 0) + 1} blocks={blocks} onChange={(value) => patch('vibes', value)}
+              <VibesPanel spec={spec} built={built} live={liveFor} next={(context?.latest?.spec_version ?? 0) + 1} blocks={blocks} onChange={(value) => patch('vibes', value)}
                 onPrevious={(choice) => patch('vibe_previous', choice)} />
             )}
             <section aria-label="What Inspire picked" data-picked-summary="" className="bg-bg border border-border rounded-lg p-4 space-y-3 h-48 overflow-y-auto">
@@ -2298,12 +2354,15 @@ export default function ImplementWizard({
         {schemaJob?.text && stepIndex > steps.findIndex((x) => x.id === 'data') && (
           <p role="status" data-schema-job={schemaJob.state} className="bg-bg-subtle border border-border rounded-md px-3 py-2 text-xs text-text-secondary">{schemaJob.text}</p>
         )}
+        {stepId === 'data' && Object.values(columnsErrors).filter((e) => permanentPickProblem(e) === 'metric_view').map((note) => (
+          <p key={note} role="note" data-metric-view-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs font-medium text-warning-fg">{note}</p>
+        ))}
+        {stepId === 'data' && Object.values(columnsErrors).filter((e) => permanentPickProblem(e) === 'unknown_type').map((note) => (
+          <p key={note} role="note" data-unusable-table-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs font-medium text-warning-fg">{note}</p>
+        ))}
         {Object.values(checkNotes).filter(Boolean).map((note) => (
           <p key={note} role="note" data-check-note="" className="bg-warning-bg border border-warning/30 rounded-md px-3 py-2 text-xs text-warning-fg">{note}</p>
         ))}
-        {lastStep && accessVerdict === 'pending' && (
-          <p role="status" data-access-verdict="pending" className="text-xs text-text-secondary">{ACCESS_CHECKING}</p>
-        )}
         {lastStep && (accessVerdict === 'error' || accessVerdict === 'unknown') && (
           <div role="alert" data-access-verdict={accessVerdict} className="flex items-center justify-between gap-3 bg-error-bg border border-error/20 rounded-md px-3 py-2 text-xs text-error-fg">
             <span>{ACCESS_UNKNOWN}</span>
@@ -2312,8 +2371,12 @@ export default function ImplementWizard({
         )}
         {footerErrors.length > 0 && (
           <div role="alert" className="bg-error-bg border border-error/20 rounded-md px-3 py-2 space-y-0.5">
-            {footerErrors.map((e) => <PlainMessage key={e} text={e} onRetry={footerRetry.get(e) || null} copy={footerRetry.has(e)} className="text-xs text-error-fg" />)}
+            {footerErrors.map((e, i) => <PlainMessage key={`${i}-${e}`} text={e} onRetry={footerRetry.get(e) || null} copy={footerRetry.has(e)} className="text-xs text-error-fg" />)}
           </div>
+        )}
+        {missingSourcePick(missingTables) && (
+          <button type="button" data-pick-replacement="" className="self-start text-xs font-semibold text-db-red-solid underline"
+            onClick={() => { changeStep(missingSourcePick(missingTables).step); openFoldSection('data'); setDataChoice('sources'); }}>{missingSourcePick(missingTables).label}</button>
         )}
         <div className="flex items-center justify-between gap-3">
           <button
@@ -2324,9 +2387,24 @@ export default function ImplementWizard({
           >
             <ChevronLeft size={14} /> Back
           </button>
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
+            {/* The Build button already reads Checking access while the check runs, so the status is announced, not shown. Absolute, so it takes no room and the footer keeps its height. */}
+            {dataCheckAt > 0 && (
+              <p data-data-progress="" className="absolute bottom-full end-0 mb-1 whitespace-nowrap text-[11px] text-text-secondary">{dataCheckingText(dataCheckSeconds)}</p>
+            )}
+            {lastStep && checksBusy && (
+              <p data-access-progress="" className="absolute bottom-full end-0 mb-1 whitespace-nowrap text-[11px] text-text-secondary">{accessCheckingText(checkSeconds)}</p>
+            )}
+            {lastStep && (
+              <p role="status" data-access-verdict={accessVerdict === 'pending' ? 'pending' : undefined} className="sr-only">
+                {accessVerdict === 'pending' ? ACCESS_CHECKING : ''}
+              </p>
+            )}
             {mode === 'mvp' && stepIndex > 0 && !lastStep && sourceAccessRefused && (
-              <p data-source-refused="" className="text-[11px] text-warning-fg">{SOURCE_REFUSED_REASON}</p>
+              <p data-source-refused="" className="text-[11px] text-warning-fg">{refusedFooterText}</p>
+            )}
+            {mode === 'mvp' && stepIndex > 0 && !lastStep && !sourceAccessRefused && defaultsLine && (
+              <p data-build-defaults="" className="text-[11px] text-text-secondary">{defaultsLine}</p>
             )}
             {mode === 'mvp' && stepIndex > 0 && !lastStep && !sourceAccessRefused && (
               <button type="button" data-build-now="" disabled={implementBlocked || steps.some((x) => stepErrors(x.id, spec, extras, mode).length > 0)} onClick={submit}
@@ -2354,12 +2432,12 @@ export default function ImplementWizard({
                 {busy ? 'Starting…' : 'Generate notebook'}
               </button>
             ) : sourceAccessRefused ? (
-              <p data-source-refused="" className="text-[11px] text-warning-fg">{SOURCE_REFUSED_REASON}</p>
+              <p data-source-refused="" className="text-[11px] text-warning-fg">{refusedFooterText}</p>
             ) : (
               <button
                 type="button"
                 disabled={implementBlocked}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-db-red-solid disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-1.5 min-w-52 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-db-red-solid disabled:opacity-50"
                 onClick={submit}
               >
                 {(busy || checksBusy || !placeSettled) && <Loader2 size={14} className="animate-spin" />}
@@ -2391,9 +2469,9 @@ function SegmentButton({ on, disabled = false, onClick, option, children }) {
   );
 }
 
-function VibesPanel({ spec, built, next, blocks, onChange, onPrevious }) {
+function VibesPanel({ spec, built, live, next, blocks, onChange, onPrevious }) {
   const asked = String(spec.vibes ?? '').trim() !== '';
-  const choices = built != null && asked ? vibePreviousChoices(built, next, Boolean(spec.outputs?.alert)) : [];
+  const choices = built != null && asked ? vibePreviousChoices(live ?? built, next, Boolean(spec.outputs?.alert)) : [];
   const skipped = vibesSkippedText(spec, blocks);
   const skippedAsks = skippedAsksText(spec);
   return (
@@ -2558,7 +2636,9 @@ function AppPlacementStep({ spec, targets, targetsError, onTargetsRetry, heldApp
                 onRetry={onTargetsRetry} copy data-app-targets-error="" className="block text-[11px] text-text-secondary" />}
             </span>
           </label>
-          {choices.length > 0 && !inside && (
+          {/* One decision per screen (REQ-001, REQ-265): the Apps list is the detail of the join card, shown once it is picked. When no App
+              can be joined, the list is the only account of why each one does not fit, so it stays. */}
+          {choices.length > 0 && (joined || !open.length) && !inside && (
             <ul ref={listRef} aria-label="Apps Inspire built" data-app-list="" data-choice="app-target"
               className={`relative ms-7 space-y-1.5 overflow-y-auto rounded-md border border-border bg-surface px-2 py-1.5 ${APP_LIST_HEIGHT}`}>
               {choices.map((c) => (
@@ -2926,7 +3006,7 @@ function BuildWarehouseField({ value, warehouses, warehousesError, onWarehousesR
       )}
       {note && <p data-build-warehouse-note="" className="text-[11px] text-warning-fg">{note}</p>}
       {warehousesError && <PlainMessage text={`Inspire could not list the SQL warehouses: ${warehousesError}`} after="Type the warehouse id instead."
-        onRetry={onWarehousesRetry} copy data-build-warehouse-error="" className="text-[11px] text-warning-fg" />}
+        securable="compute" onRetry={onWarehousesRetry} copy data-build-warehouse-error="" className="text-[11px] text-warning-fg" />}
       {!note && !warehousesError && state && <p data-build-warehouse-state="" className="text-[11px] text-text-tertiary">{state}</p>}
     </div>
   );
@@ -2950,7 +3030,7 @@ function AppWarehouseField({ spec, lakebase, warehouses, warehousesError, onWare
         </select>
       </label>
       {warehousesError && <PlainMessage text={`Inspire could not list the SQL warehouses: ${warehousesError}`} after={buildWarehouseNote(listed, build)}
-        onRetry={onWarehousesRetry} copy data-app-warehouse-error="" className="text-[11px] text-text-tertiary" />}
+        securable="compute" onRetry={onWarehousesRetry} copy data-app-warehouse-error="" className="text-[11px] text-text-tertiary" />}
       {chosen !== build && !warehousesError && <p className="text-[11px] text-text-tertiary">{buildWarehouseNote(listed, build)}</p>}
       {check && !check.ok && <p data-app-warehouse-check="" className="text-[11px] text-error-fg">{check.detail}</p>}
     </div>
@@ -3056,6 +3136,27 @@ function AppFeaturesStep({ spec, onOption, best = {} }) {
           </div>
         </details>
       </fieldset>
+    </section>
+  );
+}
+
+// REQ-001: the experience is its own panel of Where it lives, so it is never on screen beside the features checklist (D-EXP).
+function AppExperienceStep({ spec, onOption }) {
+  const options = spec.outputs.app_options;
+  return (
+    <section className="space-y-4" aria-label={APP_EXPERIENCE_QUESTION}>
+      <div role="radiogroup" aria-label={APP_EXPERIENCE_QUESTION} data-choice="app-experience" className="space-y-1">
+        <p className="text-[12px] font-medium text-text-primary">{APP_EXPERIENCE_QUESTION}</p>
+        {APP_EXPERIENCE_CHOICES.map((c) => (
+          <label key={c.id} className="flex items-start gap-2 text-[11px] cursor-pointer">
+            <input type="radio" name="app-experience" value={c.id} className="mt-0.5" checked={(options.experience || experienceDefault(spec)) === c.id} onChange={() => onOption('experience', c.id)} />
+            <span>
+              <span className="font-medium text-text-primary">{c.label}</span>
+              <span className="text-text-secondary">: {c.blurb}</span>
+            </span>
+          </label>
+        ))}
+      </div>
     </section>
   );
 }
@@ -3413,6 +3514,8 @@ function SourceTableBlocks({ tables, spec, columnsByTable, values, setSpec, load
 }
 
 function UseCaseDrawer({ title, ucRow, spec, patch, onOwner, onClose }) {
+  const panel = useRef(null);
+  useModal(panel, onClose);
   const facts = [
     ['Who it helps', ucRow.beneficiary || ucRow.Beneficiary],
     ['Sponsor', ucRow.sponsor || ucRow.Sponsor],
@@ -3422,8 +3525,8 @@ function UseCaseDrawer({ title, ucRow, spec, patch, onOwner, onClose }) {
   return (
     <BodyPortal>
       <div className="fixed inset-0 z-[60] bg-black/30 flex justify-end" data-use-case-drawer="">
-        <div role="dialog" aria-modal="true" aria-label={`Use case details: ${title}`} className="bg-surface border-s border-border shadow-elevated w-full max-w-md h-full flex flex-col">
-          <div className="px-5 pt-4 pb-3 border-b border-border flex items-start justify-between gap-3">
+        <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`Use case details: ${title}`} className="bg-surface border-s border-border shadow-elevated w-full max-w-md h-full flex flex-col outline-none">
+          <div className="shrink-0 px-5 pt-4 pb-3 border-b border-border flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <h2 className="text-base font-semibold text-text-primary break-words">{title}</h2>
               {statement && <p className="text-[12px] text-text-secondary">{placeholderWords(statement)}</p>}
@@ -3471,13 +3574,15 @@ function UseCaseDrawer({ title, ucRow, spec, patch, onOwner, onClose }) {
 
 // The step bar shows only once the real spec and scope are known (stepsReady), so its count never changes after it first shows.
 function Overlay({ title, uc, steps, stepsReady = true, step, reach = [], done = [], onGo = null, onDetails = null, onClose, onTouch = undefined, children }) {
+  const panel = useRef(null);
+  useModal(panel, onClose);
   const row = uc ? catalogRow(uc, 0) : null;
   const facts = row ? [['Domain', row.domain], ['Subdomain', row.subdomain], ['Technique', row.technique]].filter(([, v]) => v) : [];
   return (
     <BodyPortal>
       <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-implement-overlay="">
-        <div role="dialog" aria-modal="true" onChangeCapture={onTouch} onClickCapture={onTouch} aria-label={title ? `${START_MVP_LABEL}: ${title}` : START_MVP_LABEL} className="bg-surface border border-border rounded-xl shadow-elevated w-full max-w-6xl max-h-full flex flex-col overflow-hidden">
-          <header className="px-6 pt-4 pb-3 border-b border-border space-y-3" data-wizard-header="">
+        <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" onChangeCapture={onTouch} onClickCapture={onTouch} aria-label={title ? `${START_MVP_LABEL}: ${title}` : START_MVP_LABEL} className="bg-surface border border-border rounded-xl shadow-elevated w-full max-w-6xl max-h-full flex flex-col overflow-hidden outline-none">
+          <header className="shrink-0 px-6 pt-4 pb-3 border-b border-border space-y-3" data-wizard-header="">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-db-red-fg">{START_MVP_LABEL}</p>
@@ -3488,8 +3593,8 @@ function Overlay({ title, uc, steps, stepsReady = true, step, reach = [], done =
                   )}
                   {facts.length > 0 && (
                     <ul aria-label="About this use case" className="flex flex-wrap gap-1.5">
-                      {facts.map(([label, value]) => (
-                        <li key={label} className="rounded-full border border-border bg-bg-subtle px-2 py-0.5 text-[11px] text-text-secondary">
+                      {facts.map(([label, value], i) => (
+                        <li key={`${i}-${label}`} className="rounded-full border border-border bg-bg-subtle px-2 py-0.5 text-[11px] text-text-secondary">
                           <span className="text-text-tertiary">{label}</span> <span className="font-medium text-text-primary">{value}</span>
                         </li>
                       ))}

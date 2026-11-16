@@ -42,17 +42,19 @@ test('a scheduled run that turns unreliable after the build shows on the Build t
   const W = await lib('implementWizard.js');
   const before = row(STAMPED);
   assert.equal(W.implementState(before).label, 'MVP ready', 'before this fix the tile read only the build-time record, so it said ready');
-  const summary = [{ not_reliable: `  ${LATER}  `, updated_at: '2026-11-05T01:00:00Z' }];
+  // The run-summary read returns one row per use case, keyed by use_case_id (REQ-323).
+  const summary = [{ use_case_id: 'N01-U01', not_reliable: `  ${LATER}  `, updated_at: '2026-11-05T01:00:00Z' }];
   for (const route of [`/api/inspire/implement/status?${Q}`, `/api/inspire/implement/history?${Q}`]) {
     const got = await call({ history: [row(STAMPED)], moneySummary: summary }, route);
     assert.equal(got.status, 200, JSON.stringify(got.data));
     const latest = route.includes('/status') ? got.data.latest : got.data.latest[0];
     assert.deepEqual(latest.latest_run, { not_reliable: LATER, updated_at: '2026-11-05T01:00:00Z' }, route);
+    // REQ-323: the newest summary row is read by the one batched run-summary statement, which binds the use case.
     const read = got.made.sqlCalls.find((c) => String(c.sql).includes('`churn_out_summary`'));
-    assert.equal(read.sql, 'SELECT CAST(not_reliable AS STRING) AS not_reliable, CAST(updated_at AS STRING) AS updated_at FROM `main`.`inspire`.`churn_out_summary` '
-      + 'WHERE use_case_id = :uc ORDER BY updated_at DESC NULLS LAST LIMIT 1', 'the same newest summary row the App and the build hold read');
-    assert.deepEqual(read.parameters, [{ name: 'uc', value: 'N01-U01', type: 'STRING' }]);
-    assert.deepEqual(W.implementState(latest), { group: 'held', label: W.UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp' });
+    assert.match(read.sql, /ROW_NUMBER\(\) OVER \(PARTITION BY use_case_id ORDER BY updated_at DESC NULLS LAST\) AS run_rank/, 'the same newest summary row per use case');
+    assert.equal(read.sql.match(/run_rank = 1/g).length, 1);
+    assert.deepEqual(read.parameters, [{ name: 'uc0', value: 'N01-U01', type: 'STRING' }]);
+    assert.deepEqual(W.implementState(latest), { group: 'held', label: W.UNRELIABLE_LABEL, tone: 'warning', kind: 'mvp', hold: 'untrusted' }); // REQ-295: hold kind added
     assert.equal(W.statusReason(latest), `The latest run's results are not reliable yet: ${LATER}. Its App pages show Results not trusted yet until a run passes. `
       + 'Next step: change the data or the method so the run passes what it missed, then build again with Vibe/Add/Remove Features.');
     assert.doesNotMatch(W.statusReason(latest), /not published/, 'this App was published before the run turned unreliable');
@@ -65,7 +67,7 @@ test('a scheduled run that turns unreliable after the build shows on the Build t
 test('a later reliable run clears a build-time hold, a missing summary holds nothing, and an unreadable summary keeps the build-time record', async () => {
   const W = await lib('implementWizard.js');
   const held = row({ ...STAMPED, not_reliable: { reason: 'the data ends on 2024-05-17', spec_version: 3 } });
-  const cleared = await call({ history: [held], moneySummary: [{ not_reliable: null, updated_at: '2026-11-05T02:00:00Z' }] }, `/api/inspire/implement/status?${Q}`);
+  const cleared = await call({ history: [held], moneySummary: [{ use_case_id: 'N01-U01', not_reliable: null, updated_at: '2026-11-05T02:00:00Z' }] }, `/api/inspire/implement/status?${Q}`);
   assert.equal(cleared.data.latest.latest_run.not_reliable, '');
   assert.equal(W.implementState(cleared.data.latest).label, 'MVP ready', 'the newest run is trusted again');
   const none = await call({ history: [row(STAMPED)], moneySummary: [] }, `/api/inspire/implement/status?${Q}`);

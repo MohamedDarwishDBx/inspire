@@ -115,7 +115,7 @@ test('Vibe/Add/Remove Features validates with the impact the built notebook reco
 
 test('a vibe route to the value formula is read in any unit the agent names it, and in the money wording of older runs', async () => {
   const P = await lib('mvpProgress.js');
-  for (const heading of ['Hours at stake formula', 'Money at stake formula', 'Late shipments at stake formula', 'Amount at stake formula']) {
+  for (const heading of ['Hours at stake formula', 'Value at stake formula', 'Late shipments at stake formula', 'Amount at stake formula']) {
     assert.deepEqual(P.vibeLine(`sent to ${heading}: Count only open cases`), { id: 'value_formula', words: 'Count only open cases', note: '' }, heading);
   }
   assert.equal(P.vibeLine('sent to Hours at stake: Count'), null, 'a heading that is not a part is not read as one');

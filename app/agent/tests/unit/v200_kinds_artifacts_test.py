@@ -17,8 +17,9 @@ KINDS = os.path.join(ROOT, "agent", "app_shell", "kinds.json")
 TEXT = ("_id", "label", "lever", "driver", "segment", "name", "tier", "reason", "from", "to", "group", "lane", "kind", "status",
         "code", "entity", "member", "action", "item", "scenario", "flag", "dimension", "source", "target", "stage", "peer", "step")
 DATES = ("period", "date", "as_of", "start", "end", "week", "ts", "time")
-QUEUE_DASHBOARD_SHA = "2a8274feb37e528ecdaec89a10f4ded3723e63f955b948ada79657fedaa6aa28"
-QUEUE_ABOUT_DASHBOARD_SHA = "2b04126ed53861b20898e2d813271989aea2ff080834d339f5ab3af02bd7bce0"
+# f37c9b144 (REQ-327): the dashboard date filter reads TRY_CAST(col AS DATE) where it read CAST; only that changed.
+QUEUE_DASHBOARD_SHA = "d2f2cb6ceff28de2c6fa702dd515df4fd7ed4c7de36b7139e287deb218e04761"
+QUEUE_ABOUT_DASHBOARD_SHA = "52568345d18088726e887dc7ea6f4e17e7d470ab1fa9d4721d73a8d6205463c7"
 QUEUE_ALERT_SHA = "7f733f497737e35344172189c9b9775470f27586a0cc5d97422202d2aafa3233"
 QUEUE_GENIE_SHA = "94ebab939154c7c79d5a46313fc7abef3ee44fd913a48a090047c92d79b94940"
 QUEUE_USE_CASE = {"Name": "Predict churn", "Statement": "Customers leave", "use_case_kind": "risk_propensity",

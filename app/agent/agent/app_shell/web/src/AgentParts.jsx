@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Icon } from './icons.jsx';
-import { confirmText } from './agentView.js';
+import { accessWaiting, confirmText } from './agentView.js';
+import { STEPS_SUMMARY } from './genieAnswerView.js';
+import WaitingForAccess from './WaitingForAccess.jsx';
 import { SaveButton } from './saving.jsx';
 import './styles/agent.css';
-import { AccessActions, PlainNote } from './ui.jsx';
+import { PlainNote } from './ui.jsx';
 
 export const RATINGS = [{ id: 'POSITIVE', label: 'Helpful' }, { id: 'NEGATIVE', label: 'Not helpful' }];
 
@@ -16,7 +18,14 @@ export function AgentSteps({ steps }) {
   );
 }
 
+// The narration of a finished answer (what Genie asked, read and looked at) sits under Details, never in the answer text.
+export function StepsDetails({ steps }) {
+  if (!steps?.length) return null;
+  return <details className="msg-steps" data-steps><summary>{STEPS_SUMMARY}</summary><AgentSteps steps={steps} /></details>;
+}
+
 function savedText(result) {
+  if (result?.app) return 'Saved.';
   const written = result?.written?.length || 0;
   const conflicts = result?.conflicts_count || 0;
   return `Saved ${written} ${written === 1 ? 'record' : 'records'}${conflicts ? `; ${conflicts} changed meanwhile and were left as they are` : ''}.`;
@@ -159,7 +168,7 @@ export function AgentExtras({ message, genie, rating = true }) {
       <NextSteps message={message} genie={genie} />
       <ViewUndo message={message} onUndo={() => genie.undoView(k, message.n)} />
       {message.confirm?.kind === 'access'
-        ? <div className="ag-confirm" data-confirm="access"><AccessActions access={message.confirm.access} /></div>
+        ? <div className="ag-confirm" data-confirm="access"><WaitingForAccess waiting={accessWaiting(message.confirm.access)} compact /></div>
         : <ConfirmCard confirm={message.confirm} write={confirmWrite(k, message.n)} onConfirm={() => genie.confirm(k, message.n)} onCancel={() => genie.cancel(k, message.n)}
           onUndo={() => genie.undoSaved(k, message.n)} />}
       {rating && <Rate message={message} onRate={(r) => genie.rate(k, message.n, r)} />}

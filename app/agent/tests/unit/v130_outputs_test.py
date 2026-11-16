@@ -20,7 +20,7 @@ from v120_artifacts_support import CapturingLogger, make_inspire, make_uc
 
 NEW_LABELS = ("strategy_path", "kpis", "expected_key_results", "measures_of_success", "financial_benefits",
               "non_financial_benefits", "foundations", "doc_foundations_title", "doc_foundations_lead",
-              "doc_foundation_tables", "doc_foundation_unlocks", "doc_discovery_standard", "doc_discovery_ai_enhanced",
+              "doc_foundation_tables", "doc_foundation_unlocks", "doc_discovery_label",
               "doc_data_access_mode", "doc_data_access_none", "doc_data_access_read", "doc_data_access_kept", "doc_data_access_shared",
               "doc_method_1_deep", "doc_guide_lead_deep", "value_not_aligned", "kpi_baseline", "kpi_baseline_newest",
               "kpi_baseline_undated")

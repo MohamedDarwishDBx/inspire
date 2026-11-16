@@ -8,7 +8,7 @@ import { BUILD_IT, assertOneBadgeOnDefault, choicesShown, closeBrowser, goToMeas
 test.after(closeBrowser);
 
 const ME = { me: { userName: OWNER, displayName: 'Owner' } };
-const WITH_APP = ['1. What to deliver', '2. Data & results', '3. Data groups', '4. First run', '5. Measure', '6. Where it lives', '7. Who uses the App and storage', '8. App look', '9. Review & build'];
+const WITH_APP = ['1. What to deliver', '2. Data & results', '3. Data groups', '4. First run', '5. Measure', '6. Where it lives', '7. Review & build'];
 const NO_APP = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Review & build'];
 const next = (page) => page.getByRole('button', { name: 'Next' }).click();
 const builtLine = (page) => page.locator('[data-built-sentence]').innerText();
@@ -100,7 +100,7 @@ test('with the App picked the wizard reads Data, Data groups, First run, Results
     await goToStep(page, 'What to deliver');
     const notebook = page.locator('[data-output="notebook"] input');
     assert.deepEqual([await notebook.isChecked(), await notebook.isDisabled()], [true, true], 'the notebook is always built');
-    assert.equal(await page.getByRole('checkbox', { name: /^App A Databricks/ }).isChecked(), true);
+    assert.equal(await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).isChecked(), true);
     assert.equal(await page.locator('[data-choice="outputs"]').evaluate((g) => [...g.querySelectorAll('[data-recommended]')].filter((b) => b.closest('[data-choice]') === g).length),
       1, 'one Recommended on What to deliver');
     assert.equal(await page.getByRole('region', { name: 'App placement' }).count(), 0, 'where the App goes waits for Where it lives (must-exclude)');
@@ -132,7 +132,8 @@ test('with the App picked the wizard reads Data, Data groups, First run, Results
     assert.equal(await page.getByRole('region', { name: 'App access' }).count(), 0, 'and access on Who uses the App (must-exclude)');
     await onePerQuestion(page, 'App pages');
     await shot(page, '08-app-pages', false);
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await onePerQuestion(page, 'App look');
     await goToStep(page, 'First run');
     await openFolded(page, 'Keep it fresh');
@@ -170,7 +171,7 @@ test('a notebook-only build is Deliver with only Notebook ticked: no App step, a
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goToStep(page, 'What to deliver');
-    for (const name of [/^App A Databricks/, /^Genie Agent/, /^Dashboard/, /^Alert/]) {
+    for (const name of [/^Agentic App A Databricks/, /^Genie Agent/, /^Dashboard/, /^Alert/]) {
       const box = page.getByRole('checkbox', { name });
       if (await box.isChecked()) await box.uncheck();
     }
@@ -200,7 +201,7 @@ test('an App Inspire cannot afford is dimmed on Deliver with one plain reason an
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await goToStep(page, 'What to deliver');
-    const appBox = page.getByRole('checkbox', { name: /^App A Databricks/ });
+    const appBox = page.getByRole('checkbox', { name: /^Agentic App A Databricks/ });
     await page.locator('[data-blocked-reason="app"]').waitFor({ timeout: 15000 });
     assert.deepEqual([await appBox.isDisabled(), await appBox.isChecked()], [true, false]);
     const blocked = page.locator('[data-blocked-reason="app"]');
@@ -212,7 +213,7 @@ test('an App Inspire cannot afford is dimmed on Deliver with one plain reason an
     await shot(page, 'app-unaffordable-05-deliver', false);
     await goToStep(page, 'Review & build');
     assert.doesNotMatch(await builtLine(page), /\bApp\b/);
-    assert.match(await page.locator('[data-picked-row="dropped"] [data-picked-value]').innerText(), /^App: \S/, 'Summary says the App is not built and why');
+    assert.match(await page.locator('[data-picked-row="dropped"] [data-picked-value]').innerText(), /^Agentic App: \S/, 'Summary says the App is not built and why'); // D-LABEL209
     await summaryHasNoCapacity(page);
     await shot(page, 'app-unaffordable-07-summary', false);
     await page.getByRole('button', { name: BUILD_IT, exact: true }).click();

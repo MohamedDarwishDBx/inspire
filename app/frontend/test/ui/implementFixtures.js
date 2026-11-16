@@ -97,6 +97,8 @@ export const STUDIO_STATE = {
     name: 'churn-desk', url: 'https://churn-desk-1.aws.databricksapps.com', description: 'Inspire use case N01-U01 (session 42): Predict churn',
     app_status: { state: 'RUNNING', message: 'App is running' }, compute_status: { state: 'ACTIVE' },
     active_deployment: { status: { state: 'SUCCEEDED', message: 'App started successfully' }, update_time: '2026-10-25T04:10:00Z' },
+    // The platform's App record always names the App's own service principal; Inspire reads it to grant the App's reads.
+    service_principal_client_id: 'app-sp-2', service_principal_name: 'churn-desk',
   },
   runs: { runs: [
     { run_id: 9001, start_time: Date.UTC(2026, 9, 25, 4, 0, 0), run_duration: 95000, trigger: 'ONE_TIME',

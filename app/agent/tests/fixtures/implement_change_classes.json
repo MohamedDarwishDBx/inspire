@@ -7758,6 +7758,18 @@
     [
       "ended_by",
       "STRING"
+    ],
+    [
+      "use_case_name_tag",
+      "STRING"
+    ],
+    [
+      "warehouse_id",
+      "STRING"
+    ],
+    [
+      "lakebase_project_id",
+      "STRING"
     ]
   ],
   "stale_after_seconds": 14400,
@@ -8176,7 +8188,7 @@
           "app": 1
         }
       },
-      "error": "the App cannot be rolled back: it is not selected"
+      "error": "the Agentic App cannot be rolled back: it is not selected"
     },
     {
       "name": "rollback to version 0",
@@ -8249,7 +8261,7 @@
           }
         }
       },
-      "error": "outputs.merge.app 'Churn_Desk' must name an existing Inspire App"
+      "error": "outputs.merge.app 'Churn_Desk' must name an existing Inspire Agentic App"
     },
     {
       "name": "rollback outputs as a list",
@@ -9765,7 +9777,7 @@
     "IMPLEMENT_OUTPUT_LABELS": {
       "dashboard": "Dashboard",
       "genie_space": "Genie Agent",
-      "app": "App",
+      "app": "Agentic App",
       "alert": "Alert"
     },
     "IMPLEMENT_NOTEBOOK": "notebook",
@@ -9875,7 +9887,7 @@
     "IMPLEMENT_MERGE_LABELS": {
       "dashboard": "dashboard",
       "genie_space": "Genie Agent",
-      "app": "App"
+      "app": "Agentic App"
     },
     "IMPLEMENT_ALERT_TIER_SETS": {
       "act_now": [

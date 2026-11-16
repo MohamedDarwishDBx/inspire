@@ -1,7 +1,7 @@
 // v1.5.3-rc.2 (REQ-164): a launch or build start that never answers ends with a reason, never a spinner forever.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { withStartDeadline, startDeadlineError } from '../src/lib/startDeadline.js';
+import { withDeadline, withStartDeadline, startDeadlineError } from '../src/lib/startDeadline.js';
 
 test('a start the server never answers rejects with the reason after the deadline, and aborts the request', async () => {
   let signal = null;
@@ -33,4 +33,14 @@ test('a start that answers in time returns its value and clears the deadline', a
 test('the deadline message states the minutes, singular or plural', () => {
   assert.match(startDeadlineError('Inspire', 240000).message, /within 4 minutes/);
   assert.match(startDeadlineError('Inspire', 60000).message, /within 1 minute\./);
+});
+
+test('a read that never answers rejects with the caller\'s own error at the bound, and aborts the request', async () => {
+  let signal = null;
+  const reason = Object.assign(new Error('the read did not answer'), { deadline: true });
+  await assert.rejects(
+    withDeadline((s) => { signal = s; return new Promise(() => {}); }, { ms: 60, error: reason }),
+    (err) => err === reason,
+  );
+  assert.equal(signal.aborted, true, 'the request is aborted at the bound');
 });

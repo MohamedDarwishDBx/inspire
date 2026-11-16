@@ -70,7 +70,7 @@ test('Results makes a new schema or catalog for the result table with the right 
     assert.deepEqual([await step.getByLabel('Catalog').inputValue(), await step.getByLabel('Schema').inputValue()], ['main', 'mvp_out'], 'a refused create leaves the picked place');
     await step.getByLabel('Catalog').selectOption('sales');
     await until(async () => (await step.getByLabel('Catalog').inputValue()) === 'sales', 'the catalog stays editable');
-    assert.deepEqual(ui.pageErrors, ['Failed to load resource: the server responded with a status of 500 (Internal Server Error)'], 'the refused create is the only error');
+    assert.deepEqual(ui.pageErrors, ['Failed to load resource: the server responded with a status of 403 (Forbidden)'], 'the refused create is the only error (REQ-314: a denial answers 403, never 500)');
   } finally {
     await ui.close();
   }

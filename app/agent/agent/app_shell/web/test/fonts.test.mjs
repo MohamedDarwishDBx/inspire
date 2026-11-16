@@ -4,13 +4,17 @@ import { readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { createRequire } from 'node:module';
 import { appInfo, openApp, serveDist } from './harness.mjs';
+
+// The App shell's policy carries the boot guard's hash, the same constant the backend's CSP builders use.
+const { BOOT_GUARD_SCRIPT_HASH } = createRequire(import.meta.url)('../../../../../backend/lib/bootGuardCsp.js');
 
 const PREFIX = '/run/n01-u05-fonts/';
 const policy = (origin) => {
   const root = `${origin}${PREFIX}`;
   return [
-    "default-src 'none'", `script-src ${root}assets/`, `style-src ${root}assets/`, `img-src ${root} data:`, `font-src ${root}`, `connect-src ${root}`,
+    "default-src 'none'", `script-src ${root}assets/ '${BOOT_GUARD_SCRIPT_HASH}'`, `style-src ${root}assets/`, `img-src ${root} data:`, `font-src ${root}`, `connect-src ${root}`,
     `form-action ${root}`, "object-src 'none'", "base-uri 'none'", "frame-ancestors 'self'",
   ].join('; ');
 };

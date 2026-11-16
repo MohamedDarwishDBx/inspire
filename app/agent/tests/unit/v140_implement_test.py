@@ -603,27 +603,28 @@ def test_grant_sql_renders_one_need_for_one_principal(agent_ns):
     assert grant(GAP_CATALOG, "planners") == GRANT_CATALOG.format("planners")
 
 
-def test_access_gap_messages_name_the_privilege_the_owner_and_the_statement(agent_ns):
+def test_access_gap_messages_name_the_privilege_the_owner_and_the_dialog_not_inline_sql(agent_ns):
+    # REQ-131, REQ-260: the prose names the Permission Required dialog; the GRANT statements are never in the message
     assert agent_ns["implement_access_gap_message"]("bob@x", [GAP_CATALOG]) == (
         "bob@x may not be able to read the result table: Inspire cannot grant this access, because it "
-        "neither owns nor holds MANAGE on it. If bob@x does not have it yet, ask the owner to run: "
-        "GRANT USE CATALOG ON CATALOG `main` TO `bob@x`")
+        "neither owns nor holds MANAGE on it. If bob@x does not have it yet, ask your data owner to grant it: "
+        "the commands are in Permission Required")
     assert agent_ns["implement_access_gap_message"]("bob@x", [GAP_CATALOG, dict(GAP_SCHEMA, owner="")]) == (
         "bob@x may not be able to read the result table: Inspire cannot grant these accesses, because it "
         "neither owns nor holds MANAGE on them. If bob@x does not have them yet, "
-        "ask the owner to run: GRANT USE CATALOG ON CATALOG `main` TO `bob@x`; GRANT USE SCHEMA ON SCHEMA `main`.`inspire` TO `bob@x`")
+        "ask your data owner to grant them: the commands are in Permission Required")
     assert agent_ns["implement_app_access_message"](ACCESS_TABLE, [GAP_CATALOG, GAP_SCHEMA], "inspire-sp") == (
-        "a new App could not read the result table: its service principal needs these accesses, which not all account users have, "
-        "and Inspire can grant them only "
-        "with MANAGE or ownership. Ask the owner to run: GRANT MANAGE ON CATALOG `main` TO `inspire-sp`; GRANT MANAGE ON SCHEMA "
-        "`main`.`inspire` TO `inspire-sp`, or GRANT USE CATALOG ON CATALOG `main` TO `account users`; GRANT USE SCHEMA ON SCHEMA "
-        "`main`.`inspire` TO `account users`, which open no data by themselves; or choose a result table in a catalog and schema "
+        "a new App could not read the result table: its service principal needs these accesses, which not all "
+        "account users have, and Inspire can grant them only "
+        "with MANAGE or ownership. Ask your data owner to grant them on the catalog and on the schema: the commands are in Permission Required, or give all account users "
+        "the same access, which open no data by themselves; or choose a result table in a catalog and schema "
         "Inspire manages")
-    assert ("TO the identity Inspire runs as, or GRANT USE CATALOG ON CATALOG `main` TO `account users`, which opens no data by itself; "
+    assert ("on the catalog: the commands are in Permission Required, or give all account users the same access, which opens no data by itself; "
             "or choose") in agent_ns["implement_app_access_message"](ACCESS_TABLE, [GAP_CATALOG], "")
     with_select = agent_ns["implement_app_access_message"](ACCESS_TABLE, [GAP_CATALOG, dict(NEED_SELECT, owner="data-eng")], "inspire-sp")
-    assert "GRANT MANAGE ON TABLE `main`.`inspire`.`churn_out` TO `inspire-sp`; or choose" in with_select
-    assert "account users`" not in with_select, "SELECT for every account user would open the data, so it is never offered"
+    assert "on the catalog and on the table: the commands are in Permission Required; or choose" in with_select
+    assert "give all account users" not in with_select, "SELECT for every account user would open the data, so it is never offered"
+    assert "GRANT " not in agent_ns["implement_access_gap_message"]("bob@x", [GAP_CATALOG]) + with_select, "a GRANT is never in the prose (REQ-260)"
 
 
 def test_permission_acl_maps_principal_types(agent_ns):
@@ -1972,7 +1973,7 @@ def test_deleting_an_app_deletes_only_this_use_cases_app(agent_ns):
     assert ours.emitted[-1][2:4] == ("deleted churn-desk at the user's request", "ended_success")
     foreign = _delete_app_inspire(agent_ns, {"description": "Finance team tool"})
     refused = foreign._implement_delete_output("app", "churn-desk", (5150, "N01-U01", 3))["note"]
-    assert refused == "App: churn-desk is no longer this use case's App, so Inspire did not delete it"
+    assert refused == "Agentic App: churn-desk is no longer this use case's App, so Inspire did not delete it"
     assert foreign.calls == [("GET", "/api/2.0/apps/churn-desk")], "an App another team now owns under the same name is never deleted"
     assert foreign.updates == [{"app_name": None, "app_url": None}] and foreign.emitted[-1][2:4] == (refused, "ended_warning")
     gone = _delete_app_inspire(agent_ns, None)
@@ -3029,7 +3030,7 @@ def test_sharing_gives_use_on_this_use_cases_app_only(agent_ns):
             assert warnings == [] and patched == ["/api/2.0/permissions/apps/churn-desk"]
             assert calls[-1][2] == {"access_control_list": [{"group_name": "planners", "permission_level": "CAN_USE"}]}
         else:
-            assert warnings == ["Sharing App: churn-desk is no longer this use case's App, so Inspire did not share it"]
+            assert warnings == ["Sharing Agentic App: churn-desk is no longer this use case's App, so Inspire did not share it"]
             assert patched == [], "an App that is no longer this use case's gets no permission change"
 
 
@@ -3125,8 +3126,12 @@ def _access_spark(rows=INSPIRE_OWNS, fail=None, present=()):
     return FakeSpark(responder=respond)
 
 
+# The signed-in builder's name is read before the builder grants its own objects (1d39777f7, AUTO-1/2/3): a read, never a grant.
+BUILDER_NAME_READ = "SELECT current_user() AS me"
+
+
 def _not_access_reads(statements):
-    return [s for s in statements if not s.startswith(("SELECT level, privilege, principal", SHARED_EXISTS, SHARED_READS))]
+    return [s for s in statements if not s.startswith(("SELECT level, privilege, principal", SHARED_EXISTS, SHARED_READS, BUILDER_NAME_READ))]
 
 
 FEEDBACK_SQL = "`main`.`inspire`.`churn_out_feedback`"
@@ -3144,7 +3149,7 @@ def _feedback_writes(agent_ns, client="sp-1", fresh=False):
 
 
 def _feedback_refused(warnings):
-    return [w for w in warnings or [] if w.startswith("App: people cannot report issues about this use case from the App")]
+    return [w for w in warnings or [] if w.startswith("Agentic App: people cannot report issues about this use case from the App")]
 
 
 def test_sharing_grants_only_missing_access_and_names_what_inspire_cannot_grant(agent_ns):
@@ -3189,6 +3194,11 @@ PIP_CONFLICT = (
 
 
 OURS_APP = "Inspire use case N01-U01 (session 5150): Predict churn"
+
+
+# The App's permissions list with nobody but its owner on it. A user-authorization deploy reads it (GET permissions) to find who may open
+# the App, before it deploys.
+NO_AUDIENCE = {"access_control_list": []}
 
 
 def _deploy_inspire(ns, answers, access=None):
@@ -3699,16 +3709,17 @@ def test_a_genie_code_install_failure_fails_only_the_outputs_genie_builds(agent_
                                         (5150, "N01-U01", 3))
     reason = f"Genie Code could not be installed: {INSTALL_ERROR.format(version=agent_ns['__AGENT_VERSION__'])}"
     notebook = _left_by(2)["notebook"]
-    assert status == "ready_with_warnings" and installs == ["N01-U01"], "Genie Code is tried once, and only what it builds fails"
+    assert status == "failed" and installs == ["N01-U01"], "Genie Code is tried once, and a dashboard that did not publish is failed, not ready"
     assert inst.updates[0]["status"] == "filling" and inst.updates[0]["asset_status"] == dict(live, notebook=notebook), \
         "the version records the live outputs' state before it builds, so a failure part-way never hides them"
     final = inst.updates[-1]
-    assert final["status"] == "ready_with_warnings" and final["status_message"] == (f"Genie Agent not built: {agent_ns['implement_short_reason'](reason)}; "
-                                                                      f"Dashboard not published: {agent_ns['implement_short_reason'](reason)}")
+    assert final["status"] == "failed" and final["status_message"] == (f"Genie Agent not built: {agent_ns['implement_short_reason'](reason)}; "
+                                                                      f"Dashboard not published: {agent_ns['implement_short_reason'](reason)}; "
+                                                                      f"{agent_ns['IMPLEMENT_NOT_DONE_NEXT']}"), "an unpublished dashboard is failed, with the next step"
     assert final["asset_status"].pop("target_kpi")["source"] == "evaluated", "the version records the KPI it tracks"
     assert final["asset_status"].pop("built_with") == agent_ns["implement_build_stamp"](), "the version records the release it was built with"
-    assert final["asset_status"] == {"dashboard": {"state": "failed", "error": reason, "spec_version": 3},
-                                     "genie_space": {"state": "failed", "error": reason, "spec_version": 3},
+    assert final["asset_status"] == {"dashboard": {"state": "failed", "error": agent_ns["implement_status_error"](reason), "spec_version": 3},
+                                     "genie_space": {"state": "failed", "error": agent_ns["implement_status_error"](reason), "spec_version": 3},
                                      "app": {"state": "ready", "spec_version": 2},
                                      "alert": {"check_state": "OK", "state": "ready", "spec_version": 3, "title": "N01-U01 Predict churn"},
                                      "notebook": notebook,
@@ -4147,8 +4158,7 @@ def test_the_lost_table_message_names_every_table_and_its_reason(agent_ns):
                                                          {"table": "main.s.b", "reason": "no read access"}], "runner@example.com") == (
         "the preview cannot run because this source table is missing, so open Edit, Data step, and swap it for a table with "
         "the same role or remove it, and this run reads source tables as runner@example.com, which cannot read this source table. "
-        "Ask the owner of that table to run: GRANT USE CATALOG ON CATALOG `main` TO `runner@example.com`; GRANT USE SCHEMA ON SCHEMA "
-        "`main`.`s` TO `runner@example.com`; GRANT SELECT ON TABLE `main`.`s`.`b` TO `runner@example.com`")
+        "Ask your data owner of that table to grant USE CATALOG, USE SCHEMA and SELECT on it to that identity")
 
 
 def _probe_inspire(ns, responder, carried_status):
@@ -4173,9 +4183,8 @@ def _probe_inspire(ns, responder, carried_status):
      "the preview cannot run because this source table is missing, so open Edit, Data step, and swap it for a table "
      "with the same role or remove it"),
     ("[INSUFFICIENT_PERMISSIONS] Insufficient privileges: User does not have SELECT on Table 'main.s.returns'.", "no read access",
-     "the preview cannot run because this run reads source tables as runner@example.com, which cannot read this source table. Ask the "
-     "owner of that table to run: GRANT USE CATALOG ON CATALOG `main` TO `runner@example.com`; GRANT USE SCHEMA ON SCHEMA `main`.`s` "
-     "TO `runner@example.com`; GRANT SELECT ON TABLE `main`.`s`.`returns` TO `runner@example.com`"),
+     "the preview cannot run because this run reads source tables as runner@example.com, which cannot read this source table. Ask your "
+     "data owner of that table to grant USE CATALOG, USE SCHEMA and SELECT on it to that identity"),
 ])
 def test_a_lost_source_table_stops_the_run_before_genie_or_a_preview_and_names_the_table(agent_ns, error, reason, said):
     def responder(statement):
@@ -4865,8 +4874,9 @@ def test_genie_fill_widgets_take_core_ranges_and_flag_unreadable_ones(agent_ns):
     problems = agent_ns["normalize_genie_fill_widgets"](result, core)
     assert {w["name"]: w["allowed"] for w in result["widgets"] if isinstance(w, dict)} == {
         "act_now_share": "0 to 1", "segment": "", "lookback_months": "whole number, 1 to 120", "window": ""}
-    assert problems == ["widget window has allowed 'a month or so', which is not one of Inspire's range forms "
-                        "('0 to 1', 'at least 1', 'at most 5', 'above 0 and below 1', 'whole number, 1 to 10', or empty for any value)"]
+    assert problems == ["widget window has an allowed range Inspire cannot read, which is not one of Inspire's range forms "
+                        "('0 to 1', 'at least 1', 'at most 5', 'above 0 and below 1', 'whole number, 1 to 10', or empty for any value): "
+                        "write allowed for window as one of those forms that holds its default 30, in place of the text a month or so"]
     honest = {"widgets": [{"name": "holdout_fraction", "type": "text", "default": "0.2", "allowed": "greater than 0 and less than 1"}]}
     assert agent_ns["normalize_genie_fill_widgets"](honest, core) == [], "an exclusive range Genie states is read, not sent back to repair"
     assert honest["widgets"][0]["allowed"] == "above 0 and below 1"
@@ -5244,7 +5254,7 @@ def test_the_notebook_carries_a_shell_that_decodes_and_imports_from_its_own_fold
         monkeypatch.delitem(sys.modules, name, raising=False)
     monkeypatch.setattr(sys, "path", list(sys.path))
     payload, modules = _app_shell(agent_ns, tmp_path)
-    assert sorted(modules) == ["shell_agent", "shell_alerts", "shell_core", "shell_db", "shell_facts", "shell_pg", "shell_redact", "shell_sql"]
+    assert sorted(modules) == ["shell_actions", "shell_agent", "shell_alerts", "shell_blocks", "shell_core", "shell_db", "shell_facts", "shell_pg", "shell_redact", "shell_sql"]  # REQ-320: the import closure (0d4690bbd)
     assert all(m.__file__.startswith(str(tmp_path / "_shell")) for m in modules.values())
     assert {"app.py", "app.yaml", "shell_core.py", "static/index.html", "static/assets/app.js"} <= set(payload["files"])
     assert modules["shell_sql"].spec_problems(payload["example"]) == []
@@ -5284,8 +5294,8 @@ def test_the_app_shell_is_loaded_once_per_run_into_the_run_folder(agent_ns, tmp_
     inst.local_log_output_dir = str(tmp_path)
     first = inst._implement_app_shell()
     assert inst._implement_app_shell() is first
-    assert sorted(os.listdir(tmp_path / "implement" / "_app_shell")) == ["kinds.json", "shell_agent.py", "shell_alerts.py", "shell_core.py", "shell_db.py", "shell_facts.py", "shell_pg.py",
-                                                                           "shell_redact.py", "shell_sql.py"]
+    assert sorted(os.listdir(tmp_path / "implement" / "_app_shell")) == ["kinds.json", "shell_actions.py", "shell_agent.py", "shell_alerts.py", "shell_blocks.py", "shell_core.py",
+                                                                           "shell_db.py", "shell_facts.py", "shell_pg.py", "shell_redact.py", "shell_sql.py"]
 
 
 def test_the_app_shell_loads_the_files_it_just_wrote_even_when_a_module_of_that_name_is_already_loaded(agent_ns, tmp_path, monkeypatch):
@@ -5300,8 +5310,8 @@ def test_the_app_shell_loads_the_files_it_just_wrote_even_when_a_module_of_that_
     modules = agent_ns["implement_app_shell_modules"](str(folder), payload["files"])
     assert {name: os.path.dirname(module.__file__) for name, module in modules.items()} == {name: str(folder) for name in modules}
     assert modules["shell_sql"].CAPS != "stale" and modules["shell_core"].shell_sql is modules["shell_sql"]
-    assert sorted(os.listdir(folder)) == ["kinds.json", "shell_agent.py", "shell_alerts.py", "shell_core.py", "shell_db.py", "shell_facts.py", "shell_pg.py", "shell_redact.py",
-                                          "shell_sql.py"], "no bytecode is left in the run folder"
+    assert sorted(os.listdir(folder)) == ["kinds.json", "shell_actions.py", "shell_agent.py", "shell_alerts.py", "shell_blocks.py", "shell_core.py", "shell_db.py", "shell_facts.py",
+                                          "shell_pg.py", "shell_redact.py", "shell_sql.py"], "no bytecode is left in the run folder"
     assert str(folder) not in sys.path and all(sys.modules[n].CAPS == "stale" for n in ("shell_sql", "shell_db", "shell_core")), \
         "the modules the process held before stay its own"
 
@@ -5324,7 +5334,7 @@ def test_the_app_settings_start_with_decisions_on_and_every_other_option_off_and
     settings = agent_ns["implement_app_settings"]
     off = settings(core.SETTINGS_VERSION, " N01-U01   Predict churn ", [page["id"]], None, "no agent", "2026-10-27T00:00:00Z",
                    {"app_access": "sp"})
-    assert off["options"] == {"modify": False, "replace_edits": False, "decisions": True, "alerts": False}
+    assert off["options"] == {"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}
     assert (off["title"], off["style"], off["layout"], off["palette"], off["theme"], off["auth"]) == (
         "N01-U01 Predict churn", "a", "sidebar", "default", "light", "sp")
     assert off["genie"] is None and off["genie_note"] == "no agent"
@@ -5343,8 +5353,19 @@ def _without_requirements(files):
     return {name: text for name, text in files.items() if name != "requirements.txt"}
 
 
+# The columns the workspace reports for the source tables a user-authorization App reads directly. Inspire reads them through its instance
+# reader (_implement_scope_columns), which the offline harness has no Spark session to answer.
+WORKSPACE_COLUMNS = {"main.s.orders": ["order_id", "customer_id", "value"],
+                     "main.s.orders_v2": ["order_id", "customer_id", "value", "region", "order_date"]}
+
+
+def _workspace_columns(inst):
+    inst._implement_scope_columns = lambda table: list(WORKSPACE_COLUMNS.get(table, []))
+    return inst
+
+
 def _app_flow(ns, tmp_path, page=None, write=True, outputs=None, assets=None, asset_status=None, **stubs):
-    inst = _inspire(ns, FakeSpark())
+    inst = _workspace_columns(_inspire(ns, FakeSpark()))
     inst._genie_decision_contract = _contract
     inst.local_log_output_dir = str(tmp_path)
     inst._implement_input_has_dates = lambda context: False
@@ -5384,7 +5405,7 @@ def test_the_app_is_built_from_genie_page_json_checked_at_its_defaults_then_depl
     name, files, reads, space_id = seen["deployed"][0]
     settings, page = json.loads(files["inspire_app.json"]), json.loads(files["pages/n01_u01.json"])
     assert (name, page["id"], page["use_case_id"], settings["pages"]) == ("churn-desk", "n01_u01", "N01-U01", ["n01_u01"])
-    assert settings["genie"]["space_id"] == "g1" and space_id == "g1" and settings["title"] == "N01-U01 Predict churn"
+    assert settings["genie"]["space_id"] == "g1" and space_id == "g1" and settings["title"] == "Predict churn"
     assert reads == ["main.s.orders", "main.inspire.churn_out"]
     assert seen["checked"] == [(_without_requirements(files), "wh1")], "the App's own query path runs once, on the files that deploy"
     assert files["requirements.txt"] == "", "an App on Delta tables deploys an empty requirements.txt, which drops any Lakebase packages"
@@ -5557,7 +5578,7 @@ def test_a_failed_step_whose_error_the_build_logs_once_is_a_warning_with_its_sta
 
 def test_every_failed_step_that_raises_to_the_build_leaves_its_one_error_to_the_build():
     source = agent_source()
-    raising, flagged = 0, 0
+    raising, flagged, misfits = 0, 0, 0
     for node in ast.walk(ast.parse(source)):
         for body in (getattr(node, field, None) for field in ("body", "orelse", "finalbody", "handlers")):
             if not isinstance(body, list):
@@ -5568,10 +5589,14 @@ def test_every_failed_step_that_raises_to_the_build_leaves_its_one_error_to_the_
                         and call.func.attr == "_implement_emit" and isinstance(following, ast.Raise)):
                     continue
                 if any(isinstance(arg, ast.Constant) and arg.value == "ended_error" for arg in call.args):
-                    raising += 1
+                    # An as-is misfit is caught by its caller, which has Genie rewrite the page (REQ-204); it never reaches the build.
+                    raised = following.exc.func if isinstance(following.exc, ast.Call) else None
+                    misfits += isinstance(raised, ast.Name) and raised.id == "ImplementAsIsMisfit"
+                    raising += not (isinstance(raised, ast.Name) and raised.id == "ImplementAsIsMisfit")
                     flagged += any(kw.arg == "error_logged_elsewhere" and getattr(kw.value, "value", None) is True
                                    for kw in call.keywords)
-    assert raising == 16 and flagged == raising, (raising, flagged)
+    assert raising == 16 and misfits == 1 and flagged == raising + misfits, (raising, misfits, flagged)
+    assert "except ImplementAsIsMisfit as misfit" in source
     failed = source[source.index("    def _implement_failed("):]
     failed = failed[:failed.index("\n    def ", 10)]
     assert failed.count("self.logger.error(") == 2 and "error_logged_elsewhere=True" in failed
@@ -5613,7 +5638,7 @@ def test_a_page_json_that_breaks_a_rule_goes_back_to_genie_and_nothing_deploys(a
     assert inst._implement_app(context, None) == {}
     assert len(seen["errors"]) == 1 and needle in seen["errors"][0], seen["errors"]
     if make in (_no_kpis, _two_segments, _reads_salaries):
-        assert seen["errors"][0].startswith("page.json does not fit the App: ")
+        assert seen["errors"][0].startswith("page.json does not fit the Agentic App: ")
     assert seen["deployed"] == []
 
 
@@ -5621,7 +5646,7 @@ def test_the_app_prompt_asks_for_page_json_only_with_the_example_tables_and_user
     inst, context, seen = _app_flow(agent_ns, tmp_path, outputs={"app_purpose": "Let the retention lead see who leaves next"})
     inst._implement_app(context, None)
     prompt = seen["prompt"]
-    assert seen["label"] == "App" and prompt.startswith("Write the file page.json in your working folder")
+    assert seen["label"] == "Agentic App" and prompt.startswith("Write the file page.json in your working folder")
     assert ("What the user asked the App to show or let people do (this wins over every rule below): Let the retention lead see who "
             "leaves next") in prompt
     assert '"title": "Price-loss decision desk"' in prompt, "the example spec is shown in full"

@@ -309,7 +309,7 @@ def test_a_version_saved_with_download_builds_and_its_app_never_sees_the_option(
     got = inst._implement_one_locked({"session_id": 5150, "use_case_id": "N01-U01", "spec_version": 3, "spec_json": target},
                                      (5150, "N01-U01", 3), {})
     assert got == "ready"
-    assert built == [{"modify": False, "replace_edits": False, "decisions": True, "alerts": False}]
+    assert built == [{"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}]
     assert not any("download" in json.dumps(update) for update in inst.updates)
 
 
@@ -467,7 +467,11 @@ def test_a_record_without_its_label_is_named_by_its_record_key_and_a_deleted_one
 ])
 def test_a_record_the_viewer_cannot_read_is_refused_with_the_reason_and_genie_is_never_asked(tmp_path, ws, status, needle):
     (got, out), ws, made = asked(tmp_path, ws=ws, settings=PER_USER, headers=VIEWER)
-    assert (got, out["error"]) == (status, needle)
+    if status == 403:
+        # REQ-313: a read refusal is the waiting state, the one Permission Required path, not plain text.
+        assert got == 200 and out["state"] == "waiting_for_access", (got, out)
+    else:
+        assert (got, out["error"]) == (status, needle)
     assert ws.genie == [] and made["sp"] == 0 and set(made["user"]) == {"tok-a"}
 
 

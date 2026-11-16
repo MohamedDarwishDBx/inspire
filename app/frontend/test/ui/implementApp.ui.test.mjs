@@ -48,7 +48,7 @@ test('the App starts on with its Genie Agent locked on and the alert off, App ac
     await toDelivery(page);
     const genie = page.getByRole('checkbox', { name: /^Genie Agent/ });
     const box = (name) => page.getByRole('checkbox', { name: new RegExp(`^${name}`) });
-    assert.deepEqual([await box('Dashboard').isChecked(), await genie.isChecked(), await box('App ').isChecked(), await box('Alert').isChecked()],
+    assert.deepEqual([await box('Dashboard').isChecked(), await genie.isChecked(), await box('Agentic App').isChecked(), await box('Alert').isChecked()],
       [false, true, true, false], 'the Genie Agent and App start on, the dashboard and the alert off');
     assert.equal(await genie.isDisabled(), false, 'the App does not lock the Genie Agent (REQ-152)');
     await page.locator('[data-output="genie_space"]').getByText("The App's own agent answers Ask.").waitFor();
@@ -102,7 +102,8 @@ test('the App starts on with its Genie Agent locked on and the alert off, App ac
       [true, false], 'a new run keeps edited records by default');
     assert.equal(await features.locator('[data-recommended]').count(), 1, 'one Recommended in App features');
     assert.equal(await replace.locator('[data-recommended]').count(), 0, 'the replace question shows no second badge (must-exclude)');
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     const look = page.getByRole('region', { name: 'App look' });
     assert.deepEqual(await look.locator('[data-preview^="style-"]').evaluateAll((els) => els.map((e) => e.dataset.preview)), ['style-a', 'style-b', 'style-c']);
     assert.deepEqual(await look.locator('[data-preview^="layout-"]').evaluateAll((els) => els.map((e) => e.dataset.preview)),
@@ -142,7 +143,7 @@ test('the App starts on with its Genie Agent locked on and the alert off, App ac
     const spec = submittedSpec(made);
     assert.deepEqual([spec.outputs.app, spec.outputs.genie_space, spec.outputs.app_access], [true, true, 'user']);
     assert.deepEqual(spec.outputs.app_look, { style: 'c', layout: 'home', palette: 'nordic', theme: 'dark' });
-    assert.deepEqual(spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false }, 'per-user sends decisions on and alerts off');
+    assert.deepEqual(spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' }, 'per-user sends decisions on and alerts off');
     assert.deepEqual(spec.outputs.app_charts, ['trend', 'bars', 'split', 'pareto'], 'the build gets the kinds of chart picked');
     assert.deepEqual(spec.outputs.app_pages, { runs: false, impact: true }, 'and the pages turned off');
     assert.deepEqual(ui.pageErrors, []);
@@ -158,7 +159,8 @@ test('App look has Style, Palette, Layout and Charts tabs over a sample page, Ap
     await page.setViewportSize({ width: 1440, height: 900 });
     await toDelivery(page);
     await toSharedAccess(page);
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     const look = page.getByRole('region', { name: 'App look' });
     const tabs = look.getByRole('tablist', { name: 'App look sections' });
     const tab = (name) => tabs.getByRole('tab', { name, exact: true });
@@ -252,7 +254,8 @@ test('App look has Style, Palette, Layout and Charts tabs over a sample page, Ap
     assert.match(await blurb.textContent(), /^What needs action: the totals, the charts you pick, and every flagged record with the reason Inspire flagged it\. People own, track and dismiss each flagged record\.$/,
       'no edits while that App option is off, and the decisions that start on');
     await page.getByRole('region', { name: 'App pages' }).locator('[data-app-page="impact"]').getByRole('switch').uncheck();
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await tab('Style').click();
     await shown({ 'app-sample': 'fix' });
     assert.equal(await sample.getByText('Impact', { exact: true }).count(), 0, 'the sample drops Impact when it is off');
@@ -260,7 +263,8 @@ test('App look has Style, Palette, Layout and Charts tabs over a sample page, Ap
     await openAppPages(page);
     assert.equal(await pages.getByRole('button', { name: /^Impact/ }).isDisabled(), true);
     await page.getByRole('region', { name: 'App pages' }).locator('[data-app-page="impact"]').getByRole('switch').check();
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await sample.getByText('Impact', { exact: true }).first().waitFor();
     await goToStep(page, 'Where it lives');
     await openAppPages(page);
@@ -268,24 +272,28 @@ test('App look has Style, Palette, Layout and Charts tabs over a sample page, Ap
     assert.equal(await pages.getByRole('button', { name: /^Alerts/ }).isDisabled(), false, 'the Alerts switch turns on Send alerts');
     await page.getByRole('region', { name: 'App pages' }).locator('[data-app-page="alerts"]').getByRole('switch').uncheck();
     await pages.getByRole('button', { name: /^Runs/ }).click();
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await shown({ 'app-sample': 'runs' });
     await goToStep(page, 'Where it lives');
     await openAppPages(page);
     assert.equal(await blurb.textContent(), 'Every run of the notebook: when it ran, the data it read and the records it flagged.');
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await sample.getByText('What it covered', { exact: true }).waitFor();
     await goToStep(page, 'Where it lives');
     await openAppPages(page);
     await pages.getByRole('button', { name: /^Ask Genie/ }).click();
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await shown({ 'app-sample': 'genie' });
     await sample.getByText('Why is R-1042 flagged?', { exact: true }).waitFor();
     await tab('Style').click();
     await shown({ 'app-sample': 'genie' });
     await goToStep(page, 'Where it lives');
     await openAppPages(page);
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await shown({ 'app-sample': 'genie' });
 
     await goToStep(page, 'Who uses the App and storage');
@@ -298,13 +306,15 @@ test('App look has Style, Palette, Layout and Charts tabs over a sample page, Ap
     assert.deepEqual(await pageNames(), ['Things to fix', 'Runs', 'Alerts', 'Impact', 'Ask Genie']);
     assert.equal(await pages.getByRole('button', { name: /^Ask Genie/ }).getAttribute('aria-pressed'), 'true', 'the page picked stays picked while App features change');
     await pages.getByRole('button', { name: /^Things to fix/ }).click();
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await shown({ 'app-sample': 'fix' });
     await goToStep(page, 'Where it lives');
     await openAppPages(page);
     assert.match(await blurb.textContent(), /People own, track and dismiss each flagged record\.$/);
     for (const name of ['Style', 'Palette', 'Layout', 'Charts']) {
-      await goToStep(page, 'App look');
+      await goToStep(page, 'Where it lives');
+      await openFolded(page, 'App look');
       await tab(name).click();
       const box = await measure(page, `app-look-all-options-${name.toLowerCase()}`);
       const height = await look.evaluate((el) => Math.round(el.getBoundingClientRect().height));
@@ -332,7 +342,8 @@ async function withEveryAppLookOption(check) {
     const features = page.getByRole('region', { name: 'App features' });
     await features.getByRole('checkbox', { name: /^Record decisions/ }).check();
     await features.getByRole('checkbox', { name: /^Send alerts/ }).check();
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     const look = page.getByRole('region', { name: 'App look' });
     const tabs = look.getByRole('tablist', { name: 'App look sections' });
     const tab = (name) => tabs.getByRole('tab', { name, exact: true });
@@ -341,7 +352,8 @@ async function withEveryAppLookOption(check) {
     await goToStep(page, 'Where it lives');
     await openAppPages(page);
     const pages = page.getByRole('region', { name: 'App pages' }).getByRole('group', { name: 'Pages of the App' });
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await look.locator('[data-swatch="mono"]').waitFor({ state: 'attached' });
     await tab('Palette').click();
     await look.getByRole('group', { name: 'Light or dark' }).getByRole('button', { name: 'Dark' }).click();
@@ -353,7 +365,8 @@ async function withEveryAppLookOption(check) {
     await openAppPages(page);
     assert.deepEqual(await pages.getByRole('button').allTextContents(), ['Things to fix', 'Runs', 'Alerts', 'Impact', 'Ask Genie']);
     assert.equal(await pages.getByRole('button', { name: /^Alerts/ }).isDisabled(), false, 'with Send alerts on, the Alerts page can be shown');
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await check({ page, look, tab, sample, shown, pages });
     assert.deepEqual(ui.pageErrors, []);
   } finally {
@@ -388,13 +401,19 @@ for (const layout of LOOK_LAYOUTS) {
       await tab('Charts').click();
       await shown({ 'app-sample': 'charts' });
       for (const line of await clippedSample(sample)) cut.push(`${layout}/${style}/charts ${line}`);
-      for (const control of ['Runs', 'Alerts', 'Impact', 'Ask Genie', 'Things to fix']) {
-        await goToStep(page, 'Where it lives');
-        await openAppPages(page);
-        await pages.getByRole('button', { name: new RegExp(`^${control}`) }).click();
-        await goToStep(page, 'App look');
+    }
+    // Each page is opened once on Where it lives, then all three styles are checked on it. The page pick is the only trip back.
+    const pageKeys = { Runs: 'runs', Alerts: 'alerts', Impact: 'impact', 'Ask Genie': 'genie', 'Things to fix': 'fix' };
+    for (const [control, key] of Object.entries(pageKeys)) {
+      await goToStep(page, 'Where it lives');
+      await openAppPages(page);
+      await pages.getByRole('button', { name: new RegExp(`^${control}`) }).click();
+      await goToStep(page, 'Where it lives');
+      await openFolded(page, 'App look');
+      for (const style of ['A', 'B', 'C']) {
         await tab('Style').click();
-        await shown({ 'app-sample': { Runs: 'runs', Alerts: 'alerts', Impact: 'impact', 'Ask Genie': 'genie', 'Things to fix': 'fix' }[control] });
+        await look.getByText(`Style ${style}`, { exact: true }).click();
+        await shown({ 'app-sample': key });
         for (const line of await clippedSample(sample)) cut.push(`${layout}/${style}/${control} ${line}`);
       }
     }
@@ -418,13 +437,15 @@ for (const style of ['a', 'b', 'c']) {
         await look.locator(`[data-swatch="${palette}"]`).click();
         for (const [view, control] of LOOK_VIEWS) {
           if (view === 'charts') {
-            await goToStep(page, 'App look');
+            await goToStep(page, 'Where it lives');
+            await openFolded(page, 'App look');
             await tab('Charts').click();
           } else {
             await goToStep(page, 'Where it lives');
             await openAppPages(page);
             await pages.getByRole('button', { name: new RegExp(`^${control}`) }).click();
-            await goToStep(page, 'App look');
+            await goToStep(page, 'Where it lives');
+            await openFolded(page, 'App look');
             await tab('Style').click();
           }
           await shown({ 'app-sample': view, 'sample-style': style, 'sample-theme': theme, 'sample-palette': palette });
@@ -444,14 +465,15 @@ test('a shared App reads Lakebase by default; a per-user App keeps Fast pages wh
   const probe = (data, status) => ({ me: { userName: OWNER, displayName: 'Owner' }, responses: { 'GET /api/2.0/postgres/projects': [data, status] } });
   const toAccess = async (page) => {
     await toDelivery(page);
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await toAppAccess(page);
     await openFolded(page, 'Who sees which rows');
     return page.getByRole('region', { name: 'App access' });
   };
   const radios = async (group) => group.getByRole('radio').evaluateAll((els) => els.map((e) => [e.value, e.checked, e.disabled]));
   const toStart = async (page) => {
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await startWhenReady(page);
   };
 
@@ -582,7 +604,9 @@ test('Where results live offers its own schema, falls back to the Inspire databa
     assert.equal(await places.getByRole('radio', { name: /The Inspire database schema/ }).isChecked(), true, 'no right to create a schema keeps the Inspire database schema');
     const placeNote = step.getByRole('note', { name: 'Where the tables go note' });
     assert.equal(await placeNote.locator('p').innerText().then((t) => /GRANT/.test(t)), false, 'no raw GRANT text in the plain line');
-    assert.match(await placeNote.locator('[data-technical-details] pre').textContent(), /GRANT CREATE SCHEMA ON CATALOG `main`/);
+    // REQ-131, REQ-260: the CREATE SCHEMA grant is in the Permission Required dialog, never in the note's details
+    assert.doesNotMatch((await placeNote.locator('[data-technical-details] pre').allTextContents()).join('\n'), /GRANT/, 'the note carries no GRANT details (REQ-260)');
+    assert.match(await placeNote.locator('p').first().innerText(), /The exact command is in Permission Required\.$/, 'the note points at Permission Required in plain words');
     await step.getByRole('note', { name: 'Moving the result table' }).getByText('Moving the table later copies its history to the new table and keeps the old one.').waitFor();
     await catalog.selectOption('sales');
     assert.equal(await schema.inputValue(), '', 'a new catalog asks for its schema again');
@@ -610,17 +634,18 @@ test('Where results live offers its own schema, falls back to the Inspire databa
     await schema.locator('option[value="mvp"]').waitFor({ state: 'attached' });
     await schema.selectOption('mvp');
     const withoutApp = page.waitForResponse((r) => r.url().includes('/api/inspire/implement/preflight?') && ['app_name', 'merge_app'].every((k) => new URL(r.url()).searchParams.get(k) === ''));
+    withoutApp.catch(() => {}); // a failure before the await must surface as its own error, not as the page closing under this wait
     await goToStep(page, 'What to build');
     await page.locator('[data-blocked-reason="app"]').waitFor({ timeout: 15000 });
-    await until(async () => !(await page.getByRole('checkbox', { name: /^App A Databricks/ }).isChecked()), 'the App Inspire cannot build is turned off on Delivery, in view');
-    assert.equal(await page.getByRole('checkbox', { name: /^App A Databricks/ }).isDisabled(), true);
+    await until(async () => !(await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).isChecked()), 'the App Inspire cannot build is turned off on Delivery, in view');
+    assert.equal(await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).isDisabled(), true);
     await withoutApp;
     await painted(page);
-    assert.equal(await page.getByRole('checkbox', { name: /^App A Databricks/ }).isDisabled(), true, 'the check run without the App still keeps the App it cannot build from being ticked again');
+    assert.equal(await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).isDisabled(), true, 'the check run without the App still keeps the App it cannot build from being ticked again');
     await page.locator('[data-blocked-reason="app"]').waitFor();
     await toSummary(page);
-    await page.locator('[data-picked-row="dropped"]').getByText(/^App: /).waitFor();
-    assert.deepEqual((await footerErrors(page)).filter((e) => /^App /.test(e)), [], 'a check of the dropped App never shows on the Summary (must-exclude)');
+    await page.locator('[data-picked-row="dropped"]').getByText(/^Agentic App: /).waitFor();
+    assert.deepEqual((await footerErrors(page)).filter((e) => /^Agentic App /.test(e)), [], 'a check of the dropped App never shows on the Summary (must-exclude)');
     await startWhenReady(page);
     assert.equal(submittedSpec(made).config.result_table, 'sales.mvp.n01_u01_s42_out');
     assert.equal(submittedSpec(made).outputs.app, false);
@@ -801,19 +826,24 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
     const dash = page.locator('[data-merge="dashboard"]');
     await dash.getByRole('button', { name: 'Create new' }).waitFor();
     assert.equal(await dash.getByRole('button', { name: 'Create new' }).getAttribute('aria-pressed'), 'true', 'Create new is the default');
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     assert.equal(await page.locator('[data-merge="app"]').count(), 0, 'What to deliver no longer picks the App');
     const genie = page.locator('[data-merge="genie_space"]');
     await genie.getByText('Inspire has built none yet').waitFor();
     await goToStep(page, 'Where it lives');
     await openFolded(page, 'Where it lives');
+    // REQ-001/REQ-265 (D-WHERE): the Apps list is the detail of the join card; it shows once that card is picked.
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await placeStep(page).locator('[data-app-target]').first().waitFor();
     assert.deepEqual([await targetRadio(page, 'ops-desk').isChecked(), await targetRadio(page, 'ops-desk').isDisabled()], [false, true],
       'a new use case signs each viewer in, so it does not join an App that shows everyone the same rows (must-exclude)');
+    // REQ-001/REQ-265: Create a new App unpicks the join while App access is set, then the join is picked again for its list.
+    await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await goToStep(page, 'App access');
     await page.getByRole('region', { name: 'App access' }).getByRole('radio', { name: /^Internal data/ }).check();
     await goToStep(page, 'Where it lives');
     await openFolded(page, 'Where it lives');
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await targetRadio(page, 'ops-desk').check();
     assert.equal(await page.getByLabel('App name').count(), 0, 'joining an App asks no App name');
     assert.deepEqual(await placeTargets(page), [['ops-desk', 'recommended', 'Recommended'], ['care-desk', 'not_recommended', '']],
@@ -828,7 +858,7 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
     assert.equal((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), false, 'joining an App keeps its sign-in, so there is no Who uses the App step (must-exclude)');
     await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await page.getByLabel('App name').waitFor();
-    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), (await stepLabels(page)).join(', '));
+    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Where it lives$/.test(s.trim())), (await stepLabels(page)).join(', '));
     assert.equal(await policy(page, /^One App per business domain/).isChecked(), true);
     assert.equal(await placeStep(page).getByRole('radiogroup', { name: 'How Inspire organizes Apps' }).locator('[data-recommended]').count(), 1);
     assert.equal(await page.getByLabel('App name').inputValue(), 'inspire-acme-customer', 'the new App is named for the business and the domain');
@@ -836,6 +866,8 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
     assert.equal(await page.getByLabel('App name').inputValue(), 'predict-churn');
     await policy(page, /^One App for all use cases/).check();
     assert.equal(await page.getByLabel('App name').inputValue(), 'inspire-hub-acme');
+    // REQ-001/REQ-265: the Apps list shows once the join is picked.
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await targetRadio(page, 'ops-desk').check();
     assert.equal(await placeStep(page).getByRole('note', { name: JOIN_NOTE }).textContent(),
       'It keeps the look of ops-desk (Style B, Top tabs, the Ocean palette and Light mode), its sign-in and its data source, '
@@ -850,13 +882,15 @@ test('the App is picked on Deliver under the App tile: it lists the Apps Inspire
     assert.equal((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), false, 'joining an App keeps its sign-in, so there is no Who uses the App step (must-exclude)');
     await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await page.getByLabel('App name').waitFor();
-    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), (await stepLabels(page)).join(', '));
+    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Where it lives$/.test(s.trim())), (await stepLabels(page)).join(', '));
     await policy(page, /^One App per use case/).check();
     await goToStep(page, 'App access');
     await openFolded(page, 'Who sees which rows');
     await page.getByRole('region', { name: 'App access' }).getByRole('radio', { name: /^Sensitive data/ }).check();
     await goToStep(page, 'Where it lives');
     await openFolded(page, 'Where it lives');
+    // REQ-001/REQ-265: the Apps list shows once the join is picked; the blocked App is listed with its reason.
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     assert.equal(await targetRadio(page, 'ops-desk').isDisabled(), true, 'with per-user chosen, the service-principal App cannot be picked');
     assert.match(await placeStep(page).locator('[data-app-target="ops-desk"]').textContent(), /ops-desk shows everyone the same rows/);
     await targetRadio(page, 'care-desk').check();
@@ -893,7 +927,7 @@ test('a new use case joins the App made for its domain by default, the badge sit
   const { page, made } = ui;
   try {
     await toDelivery(page);
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await goToStep(page, 'App placement');
     await placeStep(page).getByRole('note', { name: JOIN_NOTE }).waitFor();
     assert.equal(await targetRadio(page, 'inspire-acme-customer').isChecked(), true, 'the App of this business and domain is joined by default');
@@ -914,11 +948,12 @@ test('a new use case joins the App made for its domain by default, the badge sit
     assert.equal((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), false, 'joining an App keeps its sign-in, so there is no Who uses the App step (must-exclude)');
     await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await page.getByLabel('App name').waitFor();
-    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Who uses the App and storage$/.test(s.trim())), (await stepLabels(page)).join(', '));
+    assert.ok((await stepLabels(page)).some((s) => /^\d+\. Where it lives$/.test(s.trim())), (await stepLabels(page)).join(', '));
     assert.equal(await page.getByLabel('App name').inputValue(), 'inspire-acme-customer-2', 'a new App never takes the name of one Inspire built');
     await asks.quiet(800);
     await page.clock.resume();
     assert.equal(await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).isChecked(), true, 'the person chose Create new, so the default does not come back');
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await targetRadio(page, 'inspire-acme-customer').check();
     await toVibes(page);
     await startWhenReady(page);
@@ -935,7 +970,7 @@ test('a new use case joins the App made for its domain by default, the badge sit
   ] });
   try {
     await toDelivery(remembered.page);
-    await remembered.page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await remembered.page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await goToStep(remembered.page, 'App placement');
     await placeStep(remembered.page).getByText('Last time for Acme: One App per use case.', { exact: false }).waitFor();
     assert.equal(await placeStep(remembered.page).getByRole('radio', { name: /^Create a new App/ }).isChecked(), true, 'one App per use case never joins');
@@ -980,7 +1015,7 @@ test('while the App list loads nothing looks chosen and Next waits, and Create a
   const { page, made } = ui;
   try {
     await toDelivery(page);
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await goToStep(page, 'App placement');
     await until(() => list.asked.length > 0, 'the App list is asked');
     const group = placeStep(page).getByRole('radiogroup', { name: 'Where the App goes' });
@@ -1000,7 +1035,8 @@ test('while the App list loads nothing looks chosen and Next waits, and Create a
     await page.getByLabel('App name').waitFor();
     assert.equal(await group.getAttribute('aria-busy'), 'false');
     assert.equal(await fresh.isChecked(), true, 'the list arriving never turns a new App into joining one');
-    assert.equal(await targetRadio(page, 'inspire-acme-customer').isChecked(), false);
+    // REQ-001/REQ-265 (D-WHERE): the Apps list is the detail of the join card, so it is not on screen while Create a new App is picked.
+    assert.equal(await targetRadio(page, 'inspire-acme-customer').count(), 0, 'no App to join is listed while Create a new App is picked (must-exclude)');
     assert.equal(await page.getByLabel('App name').inputValue(), 'inspire-acme-customer-2');
     await startWhenReady(page);
     const spec = submittedSpec(made);
@@ -1093,15 +1129,17 @@ test('every wizard step but the App steps, Deliver with the App and where it goe
     await fits('3-results');
     await readable('results');
     await goToStep(page, 'What to deliver');
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).uncheck();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).uncheck();
     for (const name of [/^Dashboard/, /^Alert/]) await page.getByRole('checkbox', { name }).check();
     await page.locator('[data-merge="dashboard"]').getByRole('button', { name: 'Create new' }).waitFor();
     await page.getByText(`Emails ${OWNER} when`, { exact: false }).waitFor();
     await fits('4-deliver');
     await page.locator('[data-merge="dashboard"]').getByRole('button', { name: 'Add to an existing one' }).click();
     await fits('4-deliver-joining');
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await goToStep(page, 'Where it lives');
+    // REQ-001/REQ-265 (D-WHERE): the Apps list is the detail of the join card, so it is picked before the list shows.
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await placeStep(page).locator('[data-app-target]').first().waitFor();
     await fits('4-where-app');
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -1117,13 +1155,15 @@ test('every wizard step but the App steps, Deliver with the App and where it goe
     await access.getByRole('radio', { name: /^Sensitive data/ }).check();
     await readable('app access per user');
     await access.getByRole('radio', { name: /^Internal data/ }).check();
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await measure(page, '5-app-pages');
     await readable('app pages');
     await goToStep(page, 'App features');
     await openFolded(page, 'What people can do');
     await page.getByRole('region', { name: 'App features' }).getByRole('checkbox', { name: /^Let people edit data/ }).check();
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await page.locator('[data-swatch="mono"]').waitFor({ state: 'attached' });
     const lookTabs = page.getByRole('tablist', { name: 'App look sections' });
     for (const name of ['Palette', 'Layout', 'Charts']) {
@@ -1157,7 +1197,7 @@ test('Send alerts is a build setting of a shared App: off until ticked, then sen
   const { page, made } = ui;
   try {
     await toDelivery(page);
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await toSharedAccess(page);
     await goToStep(page, 'Who uses the App and storage');
     await openFolded(page, 'What people can do');
@@ -1214,10 +1254,11 @@ test('fifteen Apps scroll inside a list of fixed height: the wizard keeps the he
     const { page, made } = ui;
     try {
       await toDelivery(page);
-      await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+      await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
       await toSharedAccess(page);
       await goToStep(page, 'App placement');
-      await placeStep(page).locator('[data-app-target]').nth(count - 1).waitFor({ state: 'attached' });
+      await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
+    await placeStep(page).locator('[data-app-target]').nth(count - 1).waitFor({ state: 'attached' });
       sizes[count] = await placementBox(page);
       assert.equal(await placeStep(page).locator('[data-app-target] [data-fit]').count(), count, 'every row keeps its fit badge');
       assert.equal(await placeStep(page).locator('[data-app-target]', { hasText: 'It holds only Finance use cases, not Customer' }).count(), count,
@@ -1292,7 +1333,7 @@ test('the App reads and saves with the SQL warehouse picked on App access, label
   const { page, made } = ui;
   try {
     await toDelivery(page);
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await toSharedAccess(page);
     const storage = await goToStorage(page);
     await storage.getByRole('status').waitFor({ state: 'detached' });
@@ -1319,7 +1360,8 @@ test('the App reads and saves with the SQL warehouse picked on App access, label
       const checked = [...document.querySelectorAll('[data-app-warehouse-check]')];
       return !checked.length;
     });
-    await goToStep(page, 'App look');
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'App look');
     await startWhenReady(page);
     const spec = submittedSpec(made);
     assert.deepEqual([spec.outputs.app_warehouse_id, spec.config.warehouse_id, spec.outputs.app_backend], ['wh3', 'wh1', 'delta']);
@@ -1342,13 +1384,19 @@ test('a use case added to another use case\'s App shows that App\'s SQL warehous
   const { page, made } = ui;
   try {
     await toDelivery(page);
-    await page.getByRole('checkbox', { name: /^App A Databricks/ }).check();
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
     await goToStep(page, 'App placement');
+    // REQ-001/REQ-265 (D-WHERE): the Apps list shows once Add to an existing App is picked (it is always shown when no App can be joined).
+    const joinRadio = placeStep(page).getByRole('radio', { name: /^Add to an existing App/ });
+    if (await joinRadio.isEnabled()) await joinRadio.check();
     await placeStep(page).locator('[data-app-target="ops-desk"]').waitFor();
     assert.deepEqual([await targetRadio(page, 'ops-desk').isChecked(), await targetRadio(page, 'ops-desk').isDisabled()], [false, true],
       'a new use case signs each viewer in, so it does not join an App that shows everyone the same rows (must-exclude)');
+    // REQ-001/REQ-265: the join is picked only to list the Apps; Create a new App unpicks it before App access, then the join is picked again.
+    await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).check();
     await toSharedAccess(page);
     await goToStep(page, 'App placement');
+    await placeStep(page).getByRole('radio', { name: /^Add to an existing App/ }).check();
     await targetRadio(page, 'ops-desk').check();
     await placeStep(page).getByRole('note', { name: JOIN_NOTE }).waitFor();
     const locked = placeStep(page).locator('[data-app-warehouse="locked"]');
@@ -1407,6 +1455,30 @@ test('a result table the person cannot write says why on Data, with the reason t
     await openFolded(page, 'Result table');
     await page.getByRole('button', { name: 'Next', exact: true }).click();
     await page.getByText(/to write to |to create /).first().waitFor({ timeout: 15000 });
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});
+
+// REQ-001/REQ-265 (D-WHERE): Where it lives holds one open decision. The Apps list is the detail of "Add to an existing App": it is
+// not on screen until that card is picked, and it is picked by the person, never by the screen. (fail-pre: the list was always shown.)
+test('REQ-265: Where it lives shows no App to join until Add to an existing App is picked, and the list shows once it is (must-exclude: two open decisions)', async () => {
+  const ui = await openUi('wizard', { ...MERGE_STATE, useCase: PLACE_UC, useCaseScope: PLACE_SCOPE });
+  const { page } = ui;
+  try {
+    await toDelivery(page);
+    await page.getByRole('checkbox', { name: /^Agentic App A Databricks/ }).check();
+    await goToStep(page, 'Where it lives');
+    await openFolded(page, 'Where it lives');
+    const join = placeStep(page).getByRole('radio', { name: /^Add to an existing App/ });
+    await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).waitFor();
+    assert.equal(await join.isChecked(), false, 'no place is picked yet');
+    assert.equal(await placeStep(page).locator('[data-app-target]').count(), 0, 'no App to join is listed before the join card is picked (must-exclude)');
+    assert.equal(await placeStep(page).locator('input[name="app-target"]').count(), 0, 'no App radio on screen before the join card is picked (must-exclude)');
+    await join.check();
+    await placeStep(page).locator('[data-app-target]').first().waitFor();
+    assert.ok(await placeStep(page).locator('[data-app-target]').count() > 0, 'the list shows once Add to an existing App is picked');
     assert.deepEqual(ui.pageErrors, []);
   } finally {
     await ui.close();

@@ -11,7 +11,7 @@ const ORDERS = 'main.sales.orders';
 const SCOPE = {
   [ORDERS]: {
     columns: ['brand_name', 'location', 'total_sales'],
-    rows: [{ column: 'brand_name', op: '=', values: ['Starbucks'] }],
+    rows: [{ column: 'brand_name', op: '=', values: ['Northwind'] }],
   },
 };
 
@@ -62,7 +62,7 @@ test('the job parameter keeps only tables still picked and only valid scopes, so
 
 test('the scope summary names the columns and the filters in business words', async () => {
   const T = await lib('tableScope.js');
-  assert.equal(T.tableScopeSummary(SCOPE[ORDERS]), '3 columns, rows where brand_name is Starbucks');
+  assert.equal(T.tableScopeSummary(SCOPE[ORDERS]), '3 columns, rows where brand_name is Northwind');
   assert.equal(T.tableScopeSummary({ columns: ['a'], rows: [] }), '1 column, all rows');
   assert.equal(T.tableScopeSummary({ columns: ['a'], rows: [{ column: 'x', op: 'is null', values: [] }] }), '1 column, rows where x is empty');
 });
@@ -86,7 +86,7 @@ test('the readiness row count and the Filter rows share one builder: is-null and
     'SELECT COUNT(*) AS row_count FROM `main`.`sales`.`orders` WHERE `note` IS NULL');
   assert.equal(sql([{ column: 'total_sales', op: '>=', values: ['100'] }]),
     'SELECT COUNT(*) AS row_count FROM `main`.`sales`.`orders` WHERE `total_sales` >= :f0_0');
-  assert.equal(sql([{ column: 'brand_name', op: '=', values: ['Starbucks'] }]),
+  assert.equal(sql([{ column: 'brand_name', op: '=', values: ['Northwind'] }]),
     'SELECT COUNT(*) AS row_count FROM `main`.`sales`.`orders` WHERE CAST(`brand_name` AS STRING) = :f0_0');
   assert.equal(sql([{ column: 'total_sales', op: 'between', values: ['1', '9'] }]),
     'SELECT COUNT(*) AS row_count FROM `main`.`sales`.`orders` WHERE `total_sales` BETWEEN :f0_0 AND :f0_1');

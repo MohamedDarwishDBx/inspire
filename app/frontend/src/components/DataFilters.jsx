@@ -3,8 +3,11 @@ import { ChevronDown, ChevronRight, Table2, X } from 'lucide-react';
 import { PlainMessage } from './TechnicalDetails';
 import { groupLabelOf } from '../lib/implementWizard';
 import { raisePermissions } from '../lib/permissionBus';
+import { METRIC_VIEW_REFUSAL } from '../lib/pickProblem';
+import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
+import TypeCheckBusyTryAgain from './TypeCheckBusyTryAgain';
 import {
-  SCOPE_OPS, columnKindOf, filterValuesOf, filteredTablesOf, isGroupRow, normalizeTableScope, pickedTableNames, scopeKeyOf,
+  SCOPE_OPS, columnKindOf, filterValuesOf, isGroupRow, labelAvailable, normalizeTableScope, pickedTableNames, scopeKeyOf,
   scopeOpOf, scopeProblems, tableBrowseQuery, tableScopeOf,
 } from '../lib/tableScope';
 
@@ -58,26 +61,28 @@ function conditionText(f) {
   return `${label} ${f.values.join(def.op === 'in' ? ', ' : ' and ')}`;
 }
 
-function buildTree(picks, tables) {
+// The tree is built from the same picked scope the run reads (pickedScope): a catalog or schema is whole only when the run reads
+// all of it, and only a whole node lists every table under it. A picked table is listed alone.
+function buildTree(scope, tables) {
   const catalogs = new Map();
   const catalogOf = (name) => {
     const key = scopeKeyOf(name);
-    if (!catalogs.has(key)) catalogs.set(key, { name, picked: false, schemas: new Map() });
+    if (!catalogs.has(key)) catalogs.set(key, { name, whole: false, schemas: new Map() });
     return catalogs.get(key);
   };
   const schemaOf = (catalog, schema) => {
     const cat = catalogOf(catalog);
     const key = scopeKeyOf(schema);
-    if (!cat.schemas.has(key)) cat.schemas.set(key, { name: schema, picked: false, tables: new Map() });
+    if (!cat.schemas.has(key)) cat.schemas.set(key, { name: schema, whole: false, tables: new Map() });
     return cat.schemas.get(key);
   };
-  picks.catalogs.forEach((c) => { catalogOf(c).picked = true; });
-  picks.schemas.forEach((s) => { const [c, sc] = s.split('.'); schemaOf(c, sc).picked = true; });
+  scope.catalogs.forEach((c) => { catalogOf(c).whole = true; });
+  scope.schemas.forEach((s) => { const [c, sc] = s.split('.'); schemaOf(c, sc).whole = true; });
   tables.forEach((t) => { const [c, sc] = t.split('.'); schemaOf(c, sc).tables.set(scopeKeyOf(t), t); });
   return [...catalogs.values()].map((c) => ({
     name: c.name,
-    picked: c.picked,
-    schemas: [...c.schemas.values()].map((s) => ({ name: s.name, picked: s.picked, tables: [...s.tables.values()] })).sort(byName),
+    whole: c.whole,
+    schemas: [...c.schemas.values()].map((s) => ({ name: s.name, whole: s.whole, tables: [...s.tables.values()] })).sort(byName),
   })).sort(byName);
 }
 
@@ -134,6 +139,19 @@ function TableLeaf({ level, table, summary, selected, onSelect }) {
   );
 }
 
+// The listed tables of one schema, with the tables that cannot be picked (fail closed) and the count the listing left out.
+function listedOf(d, name) {
+  const rows = d.tables || [];
+  const fqn = (t) => t.full_name || `${name}.${t.name}`;
+  return {
+    tables: rows.map(fqn),
+    // A busy type check is not a verdict on the table: it is listed apart, with Try again, and is never shown as not usable.
+    unusable: Object.fromEntries(rows.filter((t) => !typeCheckBusyOf(t) && unusableReasonOf(t)).map((t) => [fqn(t), unusableReasonOf(t)])),
+    busy: Object.fromEntries(rows.filter(typeCheckBusyOf).map((t) => [fqn(t), unusableReasonOf(t)])),
+    leftOut: d.left_out ? { count: d.left_out.count, schema: d.left_out.schema || name } : null,
+  };
+}
+
 function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouseId, renderTable }) {
   const [manual, setOpen] = useState(null);
   const open = manual ?? tableNames.length > 0;
@@ -143,7 +161,7 @@ function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouse
     if (!open || !listable || listed) return undefined;
     let cancelled = false;
     apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
-      .then((d) => { if (!cancelled) setListed({ tables: (d.tables || []).map((t) => t.full_name || `${name}.${t.name}`) }); })
+      .then((d) => { if (!cancelled) setListed(listedOf(d, name)); })
       .catch((e) => { if (!cancelled) setListed({ error: e.message || `Inspire could not list the tables of ${name}.` }); });
     return () => { cancelled = true; };
   }, [open, listable, listed, apiFetch, warehouseId, catalog, schema, name]);
@@ -157,25 +175,38 @@ function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouse
       error={open ? listed?.error : ''}>
       {open && listable && !listed && <li role="none" className="px-2 text-text-tertiary">Listing the tables of {name}</li>}
       {open && listed?.tables && listed.tables.length === 0 && <li role="none" className="px-2 text-text-secondary">{name} has no tables.</li>}
-      {names.map(renderTable)}
+      {names.map((t) => {
+        if (listed?.busy?.[t]) {
+          return (
+            <li role="none" key={t} data-type-check-busy={t} className="px-2 text-[11px] text-warning-fg flex flex-wrap items-center gap-2">
+              <TypeCheckBusyTryAgain name={shortName(t)} onTryAgain={() => setListed(null)} />
+            </li>
+          );
+        }
+        if (listed?.unusable?.[t]) {
+          return <li role="none" key={t} data-unusable-table={t} className="px-2 text-[11px] text-text-secondary">{shortName(t)}: {listed.unusable[t]}</li>;
+        }
+        return renderTable(t);
+      })}
+      {open && listed?.leftOut && <li role="none" data-left-out="" className="px-2 text-[11px] text-text-secondary">{leftOutLine(listed.leftOut)}</li>}
     </Branch>
   );
 }
 
-function CatalogNode({ catalog, picked, schemas, apiFetch, warehouseId, renderSchema }) {
+function CatalogNode({ catalog, whole, schemas, apiFetch, warehouseId, renderSchema }) {
   const [manual, setOpen] = useState(null);
   const open = manual ?? schemas.length > 0;
   const [listed, setListed] = useState(null);
   useEffect(() => {
-    if (!open || !picked || listed) return undefined;
+    if (!open || !whole || listed) return undefined;
     let cancelled = false;
     apiFetch(`/api/catalogs/${encodeURIComponent(catalog)}/schemas${tableBrowseQuery(warehouseId)}`)
       .then((d) => { if (!cancelled) setListed({ schemas: (d.schemas || []).map((s) => s.name) }); })
       .catch((e) => { if (!cancelled) setListed({ error: e.message || `Inspire could not list the schemas of ${catalog}.` }); });
     return () => { cancelled = true; };
-  }, [open, picked, listed, apiFetch, warehouseId, catalog]);
+  }, [open, whole, listed, apiFetch, warehouseId, catalog]);
   const merged = new Map();
-  (listed?.schemas || []).forEach((name) => merged.set(scopeKeyOf(name), { name, picked: false, tables: [] }));
+  (listed?.schemas || []).forEach((name) => merged.set(scopeKeyOf(name), { name, whole: false, tables: [] }));
   schemas.forEach((s) => merged.set(scopeKeyOf(s.name), s));
   const children = [...merged.values()].sort(byName);
   const count = listed?.schemas ? `${listed.schemas.length} schema${listed.schemas.length === 1 ? '' : 's'}`
@@ -183,8 +214,8 @@ function CatalogNode({ catalog, picked, schemas, apiFetch, warehouseId, renderSc
   return (
     <Branch level={1} label={catalog} dataKey="data-catalog-group" name={catalog} open={open} setOpen={setOpen} count={count}
       error={open ? listed?.error : ''}>
-      {open && picked && !listed && <li role="none" className="px-2 text-text-tertiary">Listing the schemas of {catalog}</li>}
-      {children.map((s) => renderSchema(catalog, s, picked))}
+      {open && whole && !listed && <li role="none" className="px-2 text-text-tertiary">Listing the schemas of {catalog}</li>}
+      {children.map((s) => renderSchema(catalog, s, whole))}
     </Branch>
   );
 }
@@ -223,8 +254,8 @@ function AddRowFilter({ table, column, suggestions, loadValues, onCommit }) {
       </div>
       {needsValues && draft.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {draft.map((v) => (
-            <span key={v} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
+          {draft.map((v, i) => (
+            <span key={`${i}-${v}`} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
               {v}
               <button type="button" aria-label={`Remove value ${v}`} onClick={() => setDraft(draft.filter((x) => x !== v))}><X size={10} /></button>
             </span>
@@ -233,8 +264,8 @@ function AddRowFilter({ table, column, suggestions, loadValues, onCommit }) {
       )}
       {needsValues && suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1" aria-label={`Values in ${column}`}>
-          {suggestions.map((v) => (
-            <button key={v} type="button" data-scope-value={v} onClick={() => addValue(v)}
+          {suggestions.map((v, i) => (
+            <button key={`${i}-${v}`} type="button" data-scope-value={v} onClick={() => addValue(v)}
               className="rounded-md border border-border bg-bg-subtle px-2 py-0.5 text-text-secondary hover:text-text-primary">
               {v}
             </button>
@@ -303,8 +334,8 @@ function RowGroups({ column, ticked, picked, loaded, onLoad, onPick }) {
       {loaded?.status === 'done' && values.length === 0 && <p className="text-text-secondary">{column} has no values in the rows in scope.</p>}
       {picked.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {picked.map((v) => (
-            <span key={v} data-scope-group={column} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
+          {picked.map((v, i) => (
+            <span key={`${i}-${v}`} data-scope-group={column} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
               <span dir="auto">{v}</span>
               <button type="button" aria-label={`Remove group ${v}`} onClick={() => onPick(picked.filter((x) => x !== v))}><X size={10} /></button>
             </span>
@@ -452,34 +483,33 @@ function ColumnGrid({ table, entry, meta, problems, onEntry, valuesOf, loadValue
 }
 
 function UseCaseLabel({ scopes, tables, label, onLabel }) {
-  const filtered = filteredTablesOf(scopes, tables);
+  const available = labelAvailable(scopes, tables);
   const prefill = groupLabelOf(filterValuesOf(scopes, tables));
   const shown = label.text == null ? prefill : label.text;
   return (
     <div data-use-case-label className="rounded-xl border border-border p-3 space-y-2">
       <label className="flex items-center gap-2 font-semibold text-text-primary">
-        <input type="checkbox" data-use-case-label-on checked={label.on} onChange={(e) => onLabel({ ...label, on: e.target.checked })} />
+        <input type="checkbox" data-use-case-label-on checked={label.on && available} disabled={!available}
+          onChange={(e) => onLabel({ ...label, on: e.target.checked })} />
         Use case labeling enhanced using filters
       </label>
-      <input dir="auto" type="text" aria-label="Use case label" data-use-case-label-text value={shown} disabled={!label.on}
-        placeholder={label.on ? 'Pick row groups, then the label fills in here' : 'Tick the box above to use a label'}
+      <input dir="auto" type="text" aria-label="Use case label" data-use-case-label-text value={shown} disabled={!label.on || !available}
+        placeholder={!available ? 'Add a row group to fill in the label' : label.on ? 'Pick row groups, then the label fills in here' : 'Tick the box above to use a label'}
         onChange={(e) => onLabel({ ...label, text: e.target.value })}
         className={`${FIELD} h-9 w-full disabled:opacity-50`} />
-      {label.text != null && label.on && (
+      {label.text != null && label.on && available && (
         <button type="button" className={BUTTON} onClick={() => onLabel({ ...label, text: null })}>Use the group values</button>
       )}
+      {!available && <p data-use-case-label-reason className="text-text-secondary">Add a row group above to label your use cases.</p>}
       <p className="text-text-tertiary">
         Inspire puts this label in the name of every use case that reads a filtered table, for example
         &quot;Improve Contoso customer experience using segmentation&quot;.
-        {label.on && !filtered.length && ' Pick row groups first: the label has nothing to name yet.'}
       </p>
     </div>
   );
 }
 
-const METRIC_VIEW_REFUSAL = /is a metric view, so Inspire leaves it out of Data Filters/;
-
-export default function DataFilters({ picks, scopes, onScopes, label, onLabel, apiFetch, warehouseId, onProblems }) {
+export default function DataFilters({ scope, scopes, onScopes, label, onLabel, apiFetch, warehouseId, onProblems }) {
   const [split, setSplit] = useState(readSplit);
   const rootRef = useRef(null);
   useEffect(() => { writeSplit(split); }, [split]);
@@ -490,15 +520,15 @@ export default function DataFilters({ picks, scopes, onScopes, label, onLabel, a
   const requested = useRef(new Set());
   const fired = useRef({});
 
-  const tables = pickedTableNames(scopes, picks);
+  const tables = pickedTableNames(scopes, scope);
   const coveredBy = (table) => {
     const key = scopeKeyOf(table);
     return tables.some((t) => scopeKeyOf(t) === key)
-      || picks.schemas.some((s) => key.startsWith(`${scopeKeyOf(s)}.`))
-      || picks.catalogs.some((c) => key.startsWith(`${scopeKeyOf(c)}.`));
+      || scope.schemas.some((s) => key.startsWith(`${scopeKeyOf(s)}.`))
+      || scope.catalogs.some((c) => key.startsWith(`${scopeKeyOf(c)}.`));
   };
   const shownTable = openTable && coveredBy(openTable) ? openTable : null;
-  const tree = buildTree(picks, tables);
+  const tree = buildTree(scope, tables);
   const jobs = tables
     .map((table) => ({ table, filters: normalizeTableScope(tableScopeOf(scopes, table)).rows.filter(filterIsComplete) }))
     .filter((job) => job.filters.length)
@@ -564,7 +594,7 @@ export default function DataFilters({ picks, scopes, onScopes, label, onLabel, a
   };
   const tableProblems = tables.map(problemsOf);
   const problems = tableProblems.flat();
-  const labelProblem = label.on && filteredTablesOf(scopes, tables).length && !(label.text ?? groupLabelOf(filterValuesOf(scopes, tables))).trim()
+  const labelProblem = label.on && labelAvailable(scopes, tables) && !(label.text ?? groupLabelOf(filterValuesOf(scopes, tables))).trim()
     ? ['Use case labeling is ticked but the label is empty: type the label or untick the box.'] : [];
   const allProblems = [...problems, ...labelProblem];
   const allKey = allProblems.join('\n');
@@ -610,11 +640,11 @@ export default function DataFilters({ picks, scopes, onScopes, label, onLabel, a
     <TableLeaf key={table} level={3} table={table} summary={summaryOf(table)} selected={table === shownTable}
       onSelect={() => setOpenTable(table)} />
   );
-  const renderSchema = (catalog, s, catalogPicked) => (
+  const renderSchema = (catalog, s, catalogWhole) => (
     <SchemaNode key={`${catalog}.${s.name}`} catalog={catalog} schema={s.name}
-      listable={catalogPicked || s.picked} tableNames={s.tables} apiFetch={apiFetch} warehouseId={warehouseId} renderTable={renderTable} />
+      listable={catalogWhole || s.whole} tableNames={s.tables} apiFetch={apiFetch} warehouseId={warehouseId} renderTable={renderTable} />
   );
-  const nothingPicked = !picks.tables.length && !picks.schemas.length && !picks.catalogs.length;
+  const nothingPicked = !scope.entries.length;
 
   return (
     <div data-data-filters className="space-y-4 text-xs">
@@ -634,7 +664,7 @@ export default function DataFilters({ picks, scopes, onScopes, label, onLabel, a
           <div data-filters-tree className="min-w-0 max-h-[28rem] overflow-y-auto">
             <ul role="tree" aria-label="Tables you picked, by catalog, schema and table" className="space-y-1">
               {tree.map((c) => (
-                <CatalogNode key={c.name} catalog={c.name} picked={c.picked} schemas={c.schemas} apiFetch={apiFetch}
+                <CatalogNode key={c.name} catalog={c.name} whole={c.whole} schemas={c.schemas} apiFetch={apiFetch}
                   warehouseId={warehouseId} renderSchema={renderSchema} />
               ))}
             </ul>

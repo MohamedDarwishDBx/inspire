@@ -187,6 +187,7 @@ function UseCaseCardBody({
           uc={u}
           className="border-t border-border px-5 py-5 bg-panel space-y-4"
           v130={v130}
+          valueEstimate={estimate}
           feedbackCurrent={feedbackCurrent}
           {...detailProps}
         />

@@ -266,7 +266,7 @@ test('Check the value now reads only the latest run, as the person, on the wareh
   });
   await withAlerts({ sqlErrors: { 'WITH latest AS': 'SQL failed (403): {"error_code":"PERMISSION_DENIED","message":"no CAN_USE on warehouse wh1"}' } }, async (base) => {
     const out = await send(base, 'preview', { watch: ROWS_TO_ACT });
-    assert.equal(out.status, 409);
+    assert.equal(out.status, 403, 'a warehouse refusal answers 403, never a 409 or 500 (REQ-314)');
     assert.match(out.data.error, /^Inspire could not check the value on the SQL warehouse wh1 as you: .*You need Can Use on it\.$/);
   });
 });
@@ -304,7 +304,7 @@ test('a use case with its own App lists the alerts people set up in that App and
     assert.equal(out.status, 200, JSON.stringify(out.data));
     const body = ws.alerts[out.data.alert.id];
     assert.deepEqual([body.parent_path, body.owner_user_name], [APP_FOLDER, OWNER]);
-    assert.ok(body.custom_description.includes(`Where to look:\nApp: ${APP_URL}/#/n01_u01\n`), body.custom_description);
+    assert.ok(body.custom_description.includes(`Where to look:\nAgentic App: ${APP_URL}/#/n01_u01\n`), body.custom_description);
     const lee = await listed(base, { 'x-forwarded-access-token': 'lee-token', 'x-forwarded-email': LEE });
     assert.equal(lee.data.admin, true, 'the admin of the App may change every alert in it');
     assert.deepEqual(lee.data.alerts.map((a) => a.can_change), [true, true]);

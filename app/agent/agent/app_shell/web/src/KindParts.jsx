@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { getRecords } from './api.js';
 import { cellText, formatValue, integer, isKeyColumn, numberOf } from './format.js';
-import { IN_PROGRESS, NEW, UNDO_CLOSE, isClosed, statusKind, actError, canDecide, choiceLabel, choiceValues, listAsOf, matchOf, noDecisionText, pageDecides, recordKeyOf, statusChoices, undoBatchOf } from './records.js';
+import { IN_PROGRESS, NEW, UNDO_CLOSE, isClosed, undoWordOf, statusKind, actError, canDecide, choiceLabel, choiceValues, listAsOf, matchOf, noDecisionText, pageDecides, recordKeyOf, rowChoiceId, statusChoices, undoBatchOf } from './records.js';
 import { QueueBulk, useActs } from './Work.jsx';
 const RecordPanel = lazy(() => import('./Records.jsx').then((m) => ({ default: m.RecordPanel })));
 import { useList } from './Layouts.jsx';
@@ -155,6 +155,9 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
   const key = String(recordKeyOf(row));
   const closed = isClosed(row);
   const batch = closed ? undoBatchOf(row, app?.user?.email) : '';
+  // REQ-285: the kind's undo word (Unmerge) names only a row that carries its choice; a status-only bulk change says Reopen.
+  const chosen = !!rowChoiceId(row);
+  const undo = undoWordOf(chosen ? page.records : {}, !chosen);
   return (
     <li className="choice-row" data-choice-row={key}>
       <div className="choice-main">
@@ -166,7 +169,7 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
       </div>
       <div className="choice-act" role="group" aria-label={`Decide ${row[page.records?.label] ?? key}`}>
         {closed && <span className="choice-done" data-decided><Icon name="check" size={13} />{decidedText(row, statusChoices(page))}</span>}
-        {batch && !undoing && <button type="button" className="link" data-unmerge onClick={() => setUndoing(true)}><Icon name="undo" size={13} />{page.records?.undo || 'Undo'}</button>}
+        {batch && !undoing && <button type="button" className="link" data-unmerge onClick={() => setUndoing(true)}><Icon name="undo" size={13} />{undo}</button>}
         {!closed && canAct && choices.map((c) => (
           <SaveButton key={c.id} write={`choice:${key}:${c.id}`} className={`btn btn--sm ${suggested?.id === c.id ? 'btn--pri' : ''}`} data-choice={c.id}
             onClick={() => (statusKind(c.status) === 'dismissed' ? setSkipping(c) : onChoose(row, c))}>
@@ -180,15 +183,15 @@ function ChoiceRow({ page, app, row, choices, suggested, canAct, onChoose, onOpe
       {undoing && (
         <div className="choice-why" role="group" aria-label="Undo this decision">
           <span>{UNDO_CLOSE}</span>
-          <SaveButton write={`undo:${key}`} className="btn btn--sm btn--pri" onClick={async () => { if (await onUndo(batch, `undo:${key}`)) setUndoing(false); }}>Undo it</SaveButton>
+          <SaveButton write={`undo:${key}`} className="btn btn--sm btn--pri" onClick={async () => { if (await onUndo(batch, `undo:${key}`)) setUndoing(false); }}>{undo}</SaveButton>
           <button type="button" className="link" onClick={() => setUndoing(false)}>Keep it</button>
         </div>
       )}
       {skipping && (
         <div className="choice-why" role="group" aria-label={`Why ${skipping.label.toLowerCase()}`}>
           <span>Why?</span>
-          {(skipping.reasons || []).map((r) => (
-            <SaveButton key={r} write={`choice:${key}:${skipping.id}`} className="chip" onClick={async () => { if (await onChoose(row, skipping, r)) setSkipping(null); }}>{r}</SaveButton>
+          {(skipping.reasons || []).map((r, i) => (
+            <SaveButton key={`${i}-${r}`} write={`choice:${key}:${skipping.id}`} className="chip" onClick={async () => { if (await onChoose(row, skipping, r)) setSkipping(null); }}>{r}</SaveButton>
           ))}
           <button type="button" className="link" onClick={() => setSkipping(null)}>Cancel</button>
         </div>
@@ -278,7 +281,7 @@ export function RecList({ page, app, filters, ready, nonce, onChanged }) {
               <ChoiceRow key={recordKeyOf(row)} page={page} app={app} row={row} choices={choices} suggested={suggest(row)} canAct={can}
                 onChoose={decide.choose} onUndo={decide.undo} onOpen={opened.open}
                 detail={row[recs.score] != null && <span className="choice-score">{scoreMeta?.label || 'Score'} {shown(scoreMeta || { format: 'number' }, row[recs.score])}</span>}>
-                {reasonsOf(row[meta.reasons]).length > 0 && <div className="reasons">{reasonsOf(row[meta.reasons]).map((t) => <span key={t} className="chip chip--static">{t}</span>)}</div>}
+                {reasonsOf(row[meta.reasons]).length > 0 && <div className="reasons">{reasonsOf(row[meta.reasons]).map((t, i) => <span key={`${i}-${t}`} className="chip chip--static">{t}</span>)}</div>}
               </ChoiceRow>
             ))}
           </ol>
@@ -340,7 +343,7 @@ function useSegmentCounts(page, ids, ready, nonce) {
         const treated = treatedBySegment(probe.treatments);
         const unread = !!probe.errors?.treatments;
         return Promise.all(ids.map((id) => getRecords({ ...view, page: page.id, filters: { [filter]: [id] }, offset: 0, limit: 1 })
-          .then((data) => [id, { waiting: data.total ?? 0, asOf: listAsOf(data), actions: !!data.actions, view, treated: treated[id] || [], unread }])
+          .then((data) => [id, { waiting: data.total ?? null, asOf: listAsOf(data), actions: !!data.actions, view, treated: treated[id] || [], unread }])
           .catch((e) => [id, { error: e.message }])));
       })
       .catch((e) => ids.map((id) => [id, { error: e.message }]))
@@ -420,8 +423,8 @@ export function SegmentCards({ page, app, ready, nonce, filters, onChanged, onPi
                 )}
                 {can && c.actions && (
                   <div className="seg-act" role="group" aria-label={`Treatment for ${row.label}`}>
-                    {(block.treatments || []).map((t) => (
-                      <SaveButton key={t} write={`choice:seg:${id}:${t}`} className={`btn btn--sm ${star === t ? 'btn--pri' : ''}`} disabled={!c.asOf || !c.waiting}
+                    {(block.treatments || []).map((t, i) => (
+                      <SaveButton key={`${i}-${t}`} write={`choice:seg:${id}:${t}`} className={`btn btn--sm ${star === t ? 'btn--pri' : ''}`} disabled={!c.asOf || !c.waiting}
                         why={!c.asOf ? 'This group has no as-of date yet, so a treatment cannot be recorded.' : 'No member of this group waits for a treatment.'}
                         data-treatment={t} onClick={() => choose(row, t)}>{star === t && <span aria-hidden="true">★ </span>}{t}</SaveButton>
                     ))}
@@ -481,7 +484,7 @@ export function ClusterBar({ page, app, name, items, decide, can }) {
   const choice = (page.choices || []).find((c) => c.id === group.choice);
   const open = items.filter((r) => !isClosed(r) && r._inspire_version);
   const batches = [...new Set(items.map((r) => undoBatchOf(r, app?.user?.email)))];
-  const undoable = items.every(isClosed) && batches.length === 1 && batches[0] ? batches[0] : '';
+  const undoable = items.every(isClosed) && items.every((r) => rowChoiceId(r) === group.choice) && batches.length === 1 && batches[0] ? batches[0] : '';
   const merge = () => decide.run(`group:${name}`, { record_keys: open.map((r) => String(recordKeyOf(r))),
     seen: Object.fromEntries(open.map((r) => [String(recordKeyOf(r)), String(r._inspire_version)])) },
   choiceValues(choice, '', page.choices), `${choice.label}: ${open.length} records in ${name}`).then((out) => out && setAsking(''));

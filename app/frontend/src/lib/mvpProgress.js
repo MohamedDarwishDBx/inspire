@@ -17,10 +17,13 @@ const VIBE_STAGE = { id: 'Vibe', label: 'Vibe', working: 'Inspire is reading you
 
 export const MVP_BUILD_ORDER = ['genie_space', 'dashboard', 'alert', 'app'];
 const OUTPUT_LABEL = Object.fromEntries(IMPLEMENT_OUTPUTS.map((o) => [o.id, o.label]));
+// The step each output reports under (the App's step is 'App' whatever its label says); progress stages and events match on it.
+export const OUTPUT_STEP = { dashboard: 'Dashboard', genie_space: 'Genie Agent', app: 'App', alert: 'Alert' };
 export const DECISION_LIST_NOTES = 'decision_list';
 const STAGE_NOTES = {
   'Genie build': ['notebook', 'Notebook'],
-  ...Object.fromEntries(IMPLEMENT_OUTPUTS.map((o) => [o.label, [o.id, o.label]])),
+  // Progress events name each output by its step (the App's step is 'App'), so the step name keys the lookup, not the display label.
+  ...Object.fromEntries(IMPLEMENT_OUTPUTS.map((o) => [OUTPUT_STEP[o.id], [o.id, o.label]])),
   Done: [DECISION_LIST_NOTES, 'Decision list'],
 };
 
@@ -244,7 +247,7 @@ function legacyStages(latest) {
   const outputs = latest?.spec_json?.outputs || {};
   return [
     ...MVP_BUILD_STAGES,
-    ...IMPLEMENT_OUTPUTS.filter((o) => outputs[o.id]).map((o) => ({ id: o.label, label: o.label, phases: EARLIER_PHASES[o.id] || [], working: `Genie is building the ${o.label}` })),
+    ...IMPLEMENT_OUTPUTS.filter((o) => outputs[o.id]).map((o) => ({ id: OUTPUT_STEP[o.id], label: o.label, phases: EARLIER_PHASES[o.id] || [], working: `Genie is building the ${o.label}` })),
     FINISH_STAGE,
   ];
 }
@@ -256,7 +259,7 @@ function plannedStages(plan, latest, seen) {
   const acts = planActions(plan);
   const stageOf = (act) => {
     const words = planActionText(act);
-    return { id: OUTPUT_LABEL[act.id], label: words.label, working: words.working, phases: EARLIER_PHASES[act.id] || [] };
+    return { id: OUTPUT_STEP[act.id], label: words.label, working: words.working, phases: EARLIER_PHASES[act.id] || [] };
   };
   const genie = plan.refill || acts.some((a) => GENIE_ACTIONS.includes(a.action) && a.id !== 'alert') || was('Genie Code');
   return [
@@ -426,7 +429,7 @@ const STEP_OF = {
   Instruction: 'Notebook', 'Genie Code': 'Notebook', 'Genie build': 'Notebook',
   [SELF_FIX_PHASE]: 'Finish', [FINISH_STAGE.id]: 'Finish',
 };
-export const STEP_ASSET = { [JOB_STEP]: 'job', Notebook: 'notebook', ...Object.fromEntries(IMPLEMENT_OUTPUTS.map((o) => [o.label, o.id])) };
+export const STEP_ASSET = { [JOB_STEP]: 'job', Notebook: 'notebook', ...Object.fromEntries(IMPLEMENT_OUTPUTS.map((o) => [OUTPUT_STEP[o.id], o.id])) };
 const SETTLED = ['done', 'warning', 'skipped'];
 const REACHED = ['done', 'warning', 'error', 'running', 'next'];
 const LIVE = ['running', 'next'];
@@ -844,7 +847,7 @@ const NAMED_STAGES = [...MVP_BUILD_STAGES, VIBE_STAGE, FINISH_STAGE, SELF_FIX_ST
 export const MVP_PHASE_WORDS = [...new Set([
   ...NAMED_STAGES.flatMap((s) => [s.id, s.label, ...(s.phases || [])]),
   PLAN_PHASE, VIBE_PHASE, MVP_REPAIR_PHASE, GENIE_CHANGES_PHASE, WHOLE_BUILD, ...Object.values(EARLIER_PHASES).flat(),
-  ...IMPLEMENT_OUTPUTS.flatMap((o) => [o.id, o.label]),
+  ...IMPLEMENT_OUTPUTS.flatMap((o) => [o.id, o.label, OUTPUT_STEP[o.id]]),
 ])];
 export const MVP_WORKING_TEXTS = [...new Set([
   ...NAMED_STAGES.map((s) => s.working),

@@ -140,14 +140,14 @@ test('an App needs its access chosen: a missing or unknown app_access is an erro
   const all = { modify: true, replace_edits: true, decisions: true, alerts: true };
   const sp = check({ app_options: all });
   assert.deepEqual(sp.errors, []);
-  assert.deepEqual(sp.spec.outputs.app_options, all);
+  assert.deepEqual(sp.spec.outputs.app_options, { ...all, experience: 'agentic' });
   const user = check({ app_access: 'USER', app_options: all });
   assert.deepEqual(user.errors, []);
   assert.equal(user.spec.outputs.app_access, 'user');
-  assert.deepEqual(user.spec.outputs.app_options, { modify: true, replace_edits: true, decisions: true, alerts: false }, 'per-user sends no alerts and still records decisions');
+  assert.deepEqual(user.spec.outputs.app_options, { modify: true, replace_edits: true, decisions: true, alerts: false, experience: 'agentic' }, 'per-user sends no alerts and still records decisions');
   assert.deepEqual(check({ app_access: 'user', app_options: { decisions: false } }).spec.outputs.app_options.decisions, false, 'an explicit off is kept');
   assert.deepEqual(check({ app_options: { replace_edits: true } }).spec.outputs.app_options,
-    { modify: false, replace_edits: false, decisions: true, alerts: false }, 'replacing edits means nothing while edits are off');
+    { modify: false, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' }, 'replacing edits means nothing while edits are off');
   const off = I.validateImplementSpec({ ...BASE, outputs: { dashboard: true, app: false, app_access: 'nobody', app_options: { download: 'yes' }, inspire_url: 'https://inspire.example.com' } });
   assert.deepEqual(off.errors, [], 'App settings are not checked while the App is unticked');
   assert.deepEqual([off.spec.outputs.app_access, off.spec.outputs.app_look, off.spec.outputs.app_options], ['', {}, {}]);
@@ -161,7 +161,7 @@ test('App options are true or false only, and an unknown option, download among 
   for (const value of [true, false, 'yes', null]) {
     const got = check({ app_options: { download: value, modify: true } });
     assert.deepEqual(got.errors, [unknown('download')], `download ${JSON.stringify(value)} is refused as an option the App does not have`);
-    assert.deepEqual(got.spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false });
+    assert.deepEqual(got.spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' });
   }
   assert.deepEqual(check({ app_access: 'user', app_options: { download: false } }).errors, [unknown('download')], 'per-user refuses it too');
   assert.ok(check({ app_options: ['modify'] }).errors.includes('outputs.app_options must be an object'));
@@ -199,11 +199,11 @@ test('a merge names an existing App, dashboard or Genie Agent, "" creates a new 
   assert.deepEqual(merged.errors, []);
   assert.deepEqual(merged.spec.outputs.merge, { app: 'churn-desk', dashboard: '01ef2a3b4c5d6e7f', genie_space: '01abc_def-9' });
   assert.equal(merged.spec.outputs.app_name, 'churn-desk', 'joining an App deploys to that App');
-  assert.ok(check({ merge: { app: 'Churn_Desk' } }).errors.includes("outputs.merge.app 'Churn_Desk' must name an existing Inspire App"));
+  assert.ok(check({ merge: { app: 'Churn_Desk' } }).errors.includes("outputs.merge.app 'Churn_Desk' must name an existing Inspire Agentic App"));
   assert.ok(check({ merge: { dashboard: 'a b' } }).errors.includes("outputs.merge.dashboard 'a b' must name an existing Inspire dashboard"));
   assert.ok(check({ merge: { genie_space: 'x'.repeat(65) } }).errors.includes(`outputs.merge.genie_space '${'x'.repeat(65)}' must name an existing Inspire Genie Agent`));
   assert.ok(check({ merge: { alert: 'a1' } }).errors.includes('outputs.merge.alert is not one of dashboard, genie_space, app'));
-  for (const [name, label] of [['app', 'App'], ['dashboard', 'dashboard'], ['genie_space', 'Genie Agent']]) {
+  for (const [name, label] of [['app', 'Agentic App'], ['dashboard', 'dashboard'], ['genie_space', 'Genie Agent']]) {
     for (const value of [7, true, ['d1']]) {
       assert.ok(check({ merge: { [name]: value } }).errors.includes(`outputs.merge.${name} must be text: the ${label} to add to, or "" for a new one`), `${name} ${JSON.stringify(value)}`);
     }
@@ -242,9 +242,10 @@ test('a version built before the access choice keeps its service principal when 
 
 test('an Edit that only states the service principal an older App already had is no change', () => {
   const legacy = { spec_version: 1, status: 'ready', spec_json: { ...BASE, outputs: { dashboard: true, genie_space: true, app: true, app_name: 'churn-desk', inspire_url: 'https://inspire.example.com' } } };
-  const same = check({ app_access: 'sp' }).spec;
+  // An Edit of an App with no experience key carries the classic (ui) experience the App already has (D-EXP).
+  const same = check({ app_access: 'sp' }, { appExperience: 'ui' }).spec;
   assert.equal(I.planSubmission([legacy], { ...same, based_on_version: 1 }).unchanged, true);
-  const plan = I.planSubmission([legacy], { ...check({ app_access: 'user' }).spec, based_on_version: 1 });
+  const plan = I.planSubmission([legacy], { ...check({ app_access: 'user' }, { appExperience: 'ui' }).spec, based_on_version: 1 });
   assert.deepEqual([plan.summary.classes, plan.summary.build, plan.summary.refresh], [['outputs'], ['dashboard', 'genie_space', 'app'], []]);
 });
 
@@ -455,7 +456,7 @@ test('plan and submit refuse a per-user use case joining a service-principal App
     assert.match(refused.data.error, /churn-desk shows everyone the same rows, so a per-user \(sensitive\) use case cannot join it/);
     const notListed = await call(srv.url, '/api/inspire/implement/submit', body({ merge: { app: 'not-ours' } }));
     assert.equal(notListed.status, 400);
-    assert.match(notListed.data.error, /not-ours is not an App Inspire built that you can open/);
+    assert.match(notListed.data.error, /not-ours is not an Agentic App Inspire built that you can open/);
     assert.equal(jobs.length, 0);
     fetches.length = 0;
     const ok = await call(srv.url, '/api/inspire/implement/plan', body({}));
@@ -527,7 +528,7 @@ test('a version saved while the App offered downloads is read without them, so E
   assert.deepEqual(I.parseImplementRow({ spec_json: JSON.stringify({ outputs: { dashboard: true } }) }).spec_json, { outputs: { dashboard: true } });
   assert.equal(I.parseImplementRow({ spec_json: null }).spec_json, null);
   const offRow = I.parseImplementRow({ ...old, spec_json: JSON.stringify(saved({ download: false, modify: false, replace_edits: false, decisions: true })) });
-  assert.equal(I.planSubmission([offRow], { ...check({}).spec, based_on_version: 1 }).unchanged, true, 'the same choices without the download are no change');
+  assert.equal(I.planSubmission([offRow], { ...check({}, { appExperience: 'ui' }).spec, based_on_version: 1 }).unchanged, true, 'the same choices without the download are no change');
 
   const { app, sqlCalls, jobs } = makeApp({ history: [old] });
   const srv = await listen(app);
@@ -542,7 +543,7 @@ test('a version saved while the App offered downloads is read without them, so E
     assert.equal(rebuild.status, 200, JSON.stringify(rebuild.data));
     const insert = sqlCalls.find((c) => String(c.sql).includes('INSERT INTO'));
     assert.deepEqual(JSON.parse(insert.parameters.find((p) => p.name === 'spec').value).outputs.app_options,
-      { modify: true, replace_edits: false, decisions: false, alerts: false }, 'the re-submission is checked again, so alerts are set off');
+      { modify: true, replace_edits: false, decisions: false, alerts: false, experience: 'ui' }, 'the re-submission is checked again, so alerts are set off; an App that never chose an experience keeps it classic');
     assert.equal(jobs.length, 1);
   } finally {
     await srv.close();

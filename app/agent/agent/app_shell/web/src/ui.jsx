@@ -1,6 +1,7 @@
 import { Children, Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './icons.jsx';
+import WaitingForAccess from './WaitingForAccess.jsx';
 import { COPIED_SEND_TEXT, COPY_SEND_LABEL, DETAILS_LABEL, NO_ACCESS_LEAD, RETRYING_LABEL, RETRY_LABEL, SOME_DATA, failureCausesLoaded, noAccessOf, sendText, setFailureCauses, splitTechnical } from './plainText.js';
 import { retryable, toneOf } from './api.js';
 
@@ -89,7 +90,7 @@ export function noAccessBanner(tables, owners, auth) {
   const who = [...new Set(tables.map((t) => owners?.[t]).filter(Boolean))];
   const reader = auth === 'user' ? 'You cannot' : 'This App cannot';
   const what = tables.length ? tables.join(', ') : SOME_DATA.replace("this App's", 'its');
-  const grant = `${who.length ? who.join(', ') : 'The owner of that data'} can give ${auth === 'user' ? 'you' : 'the App'} read access in Unity Catalog`;
+  const grant = `${who.length ? who.join(', ') : 'Your data owner'} can give ${auth === 'user' ? 'you' : 'the App'} read access in Unity Catalog`;
   return `${reader} read ${what} yet, so parts of this page show no data from ${tables.length === 1 ? 'it' : 'them'}. ${grant}. Then press Check again.`;
 }
 
@@ -107,8 +108,12 @@ function NoAccessLine({ tables, as: Tag, icon, rest }) {
 export const ACCESS_CHECKED = 'inspire:access-checked';
 const tablesOf = (found) => (found?.tables || []).map((t) => t.table).join(', ');
 
-export function AccessActions({ access: given }) {
-  const [access, setAccess] = useState(given || null);
+// onFound: reports the grants this control reads (the Permission Required dialog uses them for its copy and request). REQ-311.
+export function AccessActions({ access: given, onFound }) {
+  const [access, setAccessState] = useState(given || null);
+  const foundRef = useRef(onFound);
+  foundRef.current = onFound;
+  const setAccess = (found) => { setAccessState(found); foundRef.current?.(found); };
   const [phase, setPhase] = useState('idle');
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
@@ -148,7 +153,7 @@ export function AccessActions({ access: given }) {
     setSql(found.sql);
     try {
       await navigator.clipboard.writeText(found.sql);
-      setNote('The grant SQL is copied. Send it to the owner of that data, or run it in the SQL editor if you own it.');
+      setNote('The grant SQL is copied. Send it to your data owner, or run it in the SQL editor if you own it.');
     } catch {
       setNote('Select the grant SQL below to copy it.');
     }
@@ -171,7 +176,7 @@ export function AccessActions({ access: given }) {
         </span>
       )}
       {access?.can_grant && !access.you_can_grant && !note && (
-        <small data-access-hint="">You cannot grant this access yourself, because you neither own the data nor hold MANAGE on it. Copy the grant SQL and send it to {access.tables.map((t) => t.owner).filter(Boolean).join(' or ') || 'the owner of that data'}.</small>
+        <small data-access-hint="">You cannot grant this access yourself, because you neither own the data nor hold MANAGE on it. Copy the grant SQL and send it to {access.tables.map((t) => t.owner).filter(Boolean).join(' or ') || 'your data owner'}.</small>
       )}
       {note && <small role="status" data-access-note="">{note}</small>}
       {error && <PlainNote text={error} as="small" className="g-err" role="alert" data-access-error="" />}
@@ -199,11 +204,8 @@ export function NoAccessScope({ app, children }) {
   return (
     <NoAccessContext.Provider value={scope}>
       {lists.length > 0 && (
-        <div className="note note--warn" role="alert" data-no-access-banner="">
-          <Icon name="info" size={14} />
-          <span>{noAccessBanner(tables, app?.no_access, app?.auth)}</span>
-          <AccessActions />
-        </div>
+        // REQ-310/311: the no-access banner is the Permission Required dialog too, with the same rules as every other access issue.
+        <WaitingForAccess waiting={{ tables, owners: app?.no_access }} reason={noAccessBanner(tables, app?.no_access, app?.auth)} compact />
       )}
       <Fragment key={round}>{children}</Fragment>
     </NoAccessContext.Provider>
@@ -304,17 +306,20 @@ export function Popover({ anchor, onClose, children, label, role = 'dialog', wid
   useLayoutEffect(() => {
     if (!anchor || !ref.current) return;
     const place = () => {
-      const a = anchor.getBoundingClientRect();
+      // The anchor is clamped into the viewport first: a button scrolled below the fold must not drop its menu below the screen.
+      const r = anchor.getBoundingClientRect();
+      const top = Math.min(Math.max(r.top, 8), window.innerHeight - 8);
+      const bottom = Math.min(Math.max(r.bottom, 8), window.innerHeight - 8);
       const w = ref.current.offsetWidth;
       const h = ref.current.scrollHeight;
-      const roomBelow = window.innerHeight - 8 - (a.bottom + 6);
-      const roomAbove = a.top - 6 - 8;
+      const roomBelow = window.innerHeight - 8 - (bottom + 6);
+      const roomAbove = top - 6 - 8;
       const below = h <= roomBelow || roomBelow >= roomAbove;
-      const room = Math.max(below ? roomBelow : roomAbove, 120);
+      // Above the anchor the popover is pinned by its bottom edge, so its real height can never push it under the anchor.
       setAt({
-        top: below ? a.bottom + 6 : a.top - 6 - Math.min(h, room),
-        left: Math.max(8, Math.min(window.innerWidth - w - 8, a.left)),
-        room,
+        ...(below ? { top: bottom + 6 } : { bottom: window.innerHeight - top + 6 }),
+        left: Math.max(8, Math.min(window.innerWidth - w - 8, r.left)),
+        room: Math.max(below ? roomBelow : roomAbove, 0),
       });
     };
     const moved = (e) => { if (!ref.current?.contains(e.target)) place(); };
@@ -336,7 +341,7 @@ export function Popover({ anchor, onClose, children, label, role = 'dialog', wid
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
   }, [anchor, onClose]);
   return createPortal(
-    <div ref={ref} className="pop" role={role} aria-label={label} style={{ top: at.top, left: at.left, width, maxHeight: at.room }}>{children}</div>,
+    <div ref={ref} className="pop" role={role} aria-label={label} style={{ top: at.top, bottom: at.bottom, left: at.left, width, maxHeight: at.room }}>{children}</div>,
     anchor?.closest('dialog[open]') || document.body,
   );
 }

@@ -1,9 +1,10 @@
 import json
 import pathlib
+import types
 
 from v140_implement_test import _inspire
 
-RESULT = "inspire_kinds._inspire.n02_u01_s1793835077878779514_out"
+RESULT = "inspire_kinds._inspire.n02_u01_s9000000000000000012_out"
 SERIES = f"{RESULT}__series"
 OWNER = "1f0e-owner-sp"
 VIEWER = "viewer@example.com"
@@ -113,6 +114,10 @@ class _Frame:
 
     def count(self):
         return 3
+
+    def selectExpr(self, *exprs):
+        # REQ-249 (860e79ca5): the write guard scans each text column for an object dump; this fake's values are plain text.
+        return types.SimpleNamespace(first=lambda: [0] * len(exprs))
 
     def mode(self, _m):
         return self

@@ -15,11 +15,11 @@ test('copying a samples table runs CREATE TABLE AS SELECT into the destination s
   S.reset({ notebookPresent: true });
   const got = await copy({ entries: [SOURCE], destination: DEST });
   assert.equal(got.status, 200, got.text.slice(0, 300));
-  assert.deepEqual(got.data.copies, [{ source: SOURCE, copy: `${DEST}.sales_transactions` }]);
+  assert.deepEqual(got.data.copies, [{ source: SOURCE, copy: `${DEST}.bakehouse__sales_transactions` }]);
   assert.deepEqual(got.data.failed, []);
   const sent = copyCalls();
   assert.equal(sent.length, 1);
-  assert.equal(sent[0].statement, 'CREATE TABLE `main`.`inspire`.`sales_transactions` AS SELECT * FROM `samples`.`bakehouse`.`sales_transactions`');
+  assert.equal(sent[0].statement, 'CREATE TABLE `main`.`inspire`.`bakehouse__sales_transactions` AS SELECT * FROM `samples`.`bakehouse`.`sales_transactions`');
   assert.equal(sent[0].token, S.PERSON_TOKEN, 'the copy runs with the person sign-in, not the App');
 });
 
@@ -27,7 +27,7 @@ test('a copy the warehouse refuses is named per table, and the other tables stil
   S.reset({ notebookPresent: true, conflictOn: (sql) => (sql.includes('`sales`') ? '[TABLE_OR_VIEW_ALREADY_EXISTS] main.inspire.sales already exists' : '') });
   const got = await copy({ entries: ['samples.bakehouse.sales', 'samples.bakehouse.trips'], destination: DEST });
   assert.equal(got.status, 200, got.text.slice(0, 300));
-  assert.deepEqual(got.data.copies, [{ source: 'samples.bakehouse.trips', copy: `${DEST}.trips` }]);
+  assert.deepEqual(got.data.copies, [{ source: 'samples.bakehouse.trips', copy: `${DEST}.bakehouse__trips` }]);
   assert.equal(got.data.failed.length, 1);
   assert.equal(got.data.failed[0].source, 'samples.bakehouse.sales');
   assert.match(got.data.failed[0].reason, /already holds a different table/, 'a name taken by another table is named in plain words');
@@ -71,7 +71,7 @@ test('a copy that would expand past the read limit is refused, so no picked tabl
   assert.equal(copyCalls().length, 0);
 });
 
-const COPY_NAME = `${DEST}.sales_transactions`;
+const COPY_NAME = `${DEST}.bakehouse__sales_transactions`;
 const SOURCE_COLUMNS = ['transaction_id', 'amount'];
 const copyStatements = (verb) => S.state.calls.filter((c) => c.path === '/api/2.0/sql/statements' && c.statement.startsWith(verb));
 
@@ -79,7 +79,7 @@ test('a copy that already exists with the same columns as the source is reused, 
   S.reset({
     notebookPresent: true,
     tableColumns: { [SOURCE]: SOURCE_COLUMNS, [COPY_NAME]: SOURCE_COLUMNS },
-    conflictOn: (sql) => (sql.startsWith('CREATE TABLE') ? '[TABLE_OR_VIEW_ALREADY_EXISTS] main.inspire.sales_transactions already exists' : ''),
+    conflictOn: (sql) => (sql.startsWith('CREATE TABLE') ? '[TABLE_OR_VIEW_ALREADY_EXISTS] main.inspire.bakehouse__sales_transactions already exists' : ''),
   });
   const got = await copy({ entries: [SOURCE], destination: DEST });
   assert.equal(got.status, 200, got.text.slice(0, 300));
@@ -92,7 +92,7 @@ test('a table already at the copy name with different columns is never overwritt
   S.reset({
     notebookPresent: true,
     tableColumns: { [SOURCE]: SOURCE_COLUMNS, [COPY_NAME]: ['order_id'] },
-    conflictOn: (sql) => (sql.startsWith('CREATE TABLE') ? '[TABLE_OR_VIEW_ALREADY_EXISTS] main.inspire.sales_transactions already exists' : ''),
+    conflictOn: (sql) => (sql.startsWith('CREATE TABLE') ? '[TABLE_OR_VIEW_ALREADY_EXISTS] main.inspire.bakehouse__sales_transactions already exists' : ''),
   });
   const got = await copy({ entries: [SOURCE], destination: DEST });
   assert.equal(got.status, 200, got.text.slice(0, 300));
@@ -131,7 +131,7 @@ test('a missing target schema the person cannot create answers 409 with the exac
     },
   });
   const got = await copy({ entries: [SOURCE], destination: DEST });
-  assert.equal(got.status, 409, got.text.slice(0, 300));
+  assert.equal(got.status, 403, 'a refusal to create answers 403 with the payload, never a 500 (REQ-314)');
   assert.match(got.data.error, /main\.inspire does not exist/);
   assert.match(got.data.error, /cannot create it/);
   assert.ok(got.data.error.includes('CREATE SCHEMA IF NOT EXISTS `main`.`inspire`'), 'the message carries the exact statement to copy');
@@ -151,4 +151,19 @@ test('the destination and sample-name checks are shared helpers', () => {
   assert.throws(() => I.schemaParts('main.inspire.x'), /must be catalog.schema/);
   assert.equal(I.isBuiltInSampleEntry('samples.bakehouse'), true);
   assert.equal(I.isBuiltInSampleEntry('main.samples'), false);
+});
+
+test('a copy request with a schema whose copy name would be ambiguous is refused before any copy runs, and the message names the table', async () => {
+  S.reset({ notebookPresent: true });
+  const got = await copy({ entries: ['samples.a__b.c', 'samples.a.b__c'], destination: DEST });
+  assert.equal(got.status, 409, got.text.slice(0, 300));
+  assert.match(got.data.error, /^samples\.a__b\.c cannot be copied: its schema name has a double underscore/);
+  assert.equal(copyCalls().length, 0, 'no table is copied when the request is refused');
+});
+
+test('a copy request with underscore names that stay distinct copies both tables', async () => {
+  S.reset({ notebookPresent: true });
+  const got = await copy({ entries: ['samples.a_b.c', 'samples.a.b_c'], destination: DEST });
+  assert.equal(got.status, 200, got.text.slice(0, 300));
+  assert.deepEqual(got.data.copies.map((c) => c.copy), [`${DEST}.a_b__c`, `${DEST}.a__b_c`]);
 });

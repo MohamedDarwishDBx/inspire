@@ -164,7 +164,7 @@ def test_a_page_without_column_filters_gets_a_filter_on_every_column_it_shows_an
     assert [f["column"] for f in shell_sql.page_column_filters(tabled)["tables"]["worst"]] == ["category", "loss_amount", "event_date"]
     values = {"run_date": {"from": "2026-01-01", "to": "2026-10-15"}, "channel": ["Web"]}
     assert plan(plain, values=values) == plan(returns_page(), values=values) == plan(returns_page(), {}, values=values)
-    assert "WHERE CAST(`as_of_date` AS DATE) BETWEEN :p0 AND :p1 AND CAST(`channel` AS STRING) IN (:p2)" in plan(plain, values=values)["rows"][0]
+    assert "WHERE COALESCE(TRY_CAST(`as_of_date` AS DATE)" in plan(plain, values=values)["rows"][0] and "BETWEEN :p0 AND :p1 AND CAST(`channel` AS STRING) IN (:p2)" in plan(plain, values=values)["rows"][0]
     assert shell_sql.table_query(with_table(plain), "worst", values) == shell_sql.table_query(with_table(plain), "worst", values, {})
 
 
@@ -340,7 +340,7 @@ def test_a_date_range_column_filter_takes_either_end_and_refuses_an_end_before_i
     sql, params = shell_sql.table_query(with_table(returns_page()), "worst", {"channel": ["Web"]},
                                         {"event_date": {"from": "2026-01-01"}, "category": ["Books", "Toys"], "loss_amount": {"max": 50}})
     assert ("WHERE CAST(`channel` AS STRING) IN (:p0) AND CAST(`category` AS STRING) IN (:p1, :p2) AND CAST(`loss_amount` AS DOUBLE) <= :p3 "
-            "AND CAST(`event_date` AS DATE) >= :p4") in sql
+            "AND COALESCE(TRY_CAST(`event_date` AS DATE)") in sql and ") >= :p4" in sql
     assert [(p["value"], p["type"]) for p in params] == [("Web", "STRING"), ("Books", "STRING"), ("Toys", "STRING"), ("50.0", "DOUBLE"),
                                                          ("2026-01-01", "DATE")]
 
@@ -535,7 +535,7 @@ def test_every_column_filter_kind_renders_for_lakebase_on_the_list_the_money_and
         assert all(isinstance(v, (str, float, datetime.date)) for v in values.values())
     assert 'CAST("priority_tier" AS TEXT) IN' in rendered[0] and 'CAST("value_at_stake" AS DOUBLE PRECISION) BETWEEN' in rendered[0]
     assert 'COALESCE("c"."_inspire_money", CAST("d"."value_at_stake" AS DOUBLE PRECISION))' in rendered[1]
-    assert 'CAST("event_date" AS DATE) >=' in rendered[2] and 'CAST("loss_amount" AS DOUBLE PRECISION) <=' in rendered[2]
+    assert 'CAST("event_date" AS TEXT) ~' in rendered[2] and '>= %(p2)s' in rendered[2] and 'CAST("loss_amount" AS DOUBLE PRECISION) <=' in rendered[2]
 
 
 def lakebase_page():

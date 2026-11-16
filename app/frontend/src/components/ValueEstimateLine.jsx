@@ -16,15 +16,17 @@ function RuleEstimateLine({ estimate, className, onSetRule }) {
   if (estimate.status === 'set_rule') {
     return (
       <p data-value-estimate="set-rule" className={base}>
-        Set a money rule to see its value.
-        {onSetRule && <button type="button" className="lnk ms-2" onClick={onSetRule} data-value-set-rule="">Set a money rule</button>}
+        Set a money rule to see the value at stake.
+        {onSetRule && <button type="button" className="lnk ms-2" onClick={onSetRule} data-value-set-rule="">Set rule</button>}
       </p>
     );
   }
   if (estimate.status === 'cannot') {
     return (
       <p data-value-estimate="cannot" className={base}>
-        {`Cannot estimate yet: ${estimate.app}'s money rule values each record by ${estimate.method}. A fixed amount gives an estimate.`}
+        {estimate.borrowed
+          ? `Cannot estimate yet: this use case has no money rule of its own. It borrows ${estimate.app}'s money rule, which values each record by ${estimate.method}. Set a fixed amount, or this use case's own money rule, to estimate.`
+          : `Cannot estimate yet: this use case's money rule values each record by ${estimate.method}. Set a fixed amount to estimate.`}
       </p>
     );
   }
@@ -46,8 +48,10 @@ export function EstimateTotals({ totals, className = '' }) {
 }
 
 export default function ValueEstimateLine({ uc = null, estimate: given = null, className = '', onSetRule = null }) {
-  if (given && given.status) return <RuleEstimateLine estimate={given} className={className} onSetRule={onSetRule} />;
-  const estimate = given || valueEstimateOf(uc);
+  const own = valueEstimateOf(uc);
+  // A measured figure is the figure: a rule estimate never replaces it (REQ-078).
+  if (given && given.status && !own?.measured) return <RuleEstimateLine estimate={given} className={className} onSetRule={onSetRule} />;
+  const estimate = own?.measured ? own : (given || own);
   if (!estimate) return null;
   return (
     <p data-value-estimate={estimate.measured ? 'measured' : 'not-measured'}

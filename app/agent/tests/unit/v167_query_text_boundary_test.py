@@ -456,7 +456,16 @@ def test_the_words_redaction_checks_against_leave_out_embedded_payloads(agent_ns
 def test_repeated_redactions_of_one_error_stay_within_a_bound(agent_ns):
     inst = _inspire(agent_ns, FakeSpark())
     inst._implement_redacted(CAST)
-    began = time.perf_counter()
-    for _ in range(300):
-        inst._implement_redacted(CAST)
-    assert time.perf_counter() - began < 1.0
+
+    def per_call(n):
+        began = time.perf_counter()
+        for _ in range(n):
+            inst._implement_redacted(CAST)
+        return (time.perf_counter() - began) / n
+
+    # The bound is on growth, not on this machine's speed: the 300th repeat costs what the 30th does (a cost that grows with each
+    # repeat would multiply), and a generous ceiling still catches a pathological single call even on a loaded machine.
+    early = min(per_call(30) for _ in range(3))
+    late = per_call(300)
+    assert late < 4 * early + 0.00002, f"repeated redaction slows down: {early * 1000:.3f} ms per call early, {late * 1000:.3f} ms late"
+    assert late < 0.02, f"one redaction takes {late * 1000:.1f} ms"
