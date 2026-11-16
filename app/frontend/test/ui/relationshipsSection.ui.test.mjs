@@ -28,18 +28,28 @@ const STATE = {
 };
 const SHOTS = '/private/tmp/inspire_v15/shots/u4';
 const SHOTS_U7 = '/private/tmp/inspire_v15/shots/u7';
+const SHOTS_U13 = '/private/tmp/inspire_v15/shots/u13';
 
-async function openRelationships(page) {
+async function openRelationships(page, extra = []) {
   await page.getByPlaceholder(BUSINESS).fill('Acme');
   await page.locator('button[title="main"]').click();
   await page.locator('button[title="s"]').click();
   await page.locator('button[title="orders"]').click();
   await page.locator('button[title="customers"]').click();
+  for (const table of extra) await page.locator(`button[title="${table}"]`).click();
   await idle(page);
   await page.getByRole('button', { name: /Advanced Settings/ }).click();
   await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
   await page.locator('[data-relationships]').waitFor({ timeout: 15000 });
 }
+
+// REQ-394: a third picked table lets the Source and Target lists move from A to B and back (a list cannot pick the other side's table).
+const REFUNDS = 'main.s.refunds';
+const STATE_WITH_REFUNDS = {
+  ...STATE,
+  tables: { 'main.s': ['orders', 'customers', 'refunds'] },
+  columnsByTable: { ...STATE.columnsByTable, [REFUNDS]: [{ column_name: 'refund_id', data_type: 'BIGINT', ordinal_position: 1 }, { column_name: 'customer_id', data_type: 'BIGINT', ordinal_position: 2 }] },
+};
 
 const source = (page, name) => page.locator('[data-list="source"]').getByRole('button', { name, exact: true });
 const target = (page, name) => page.locator('[data-list="target"]').getByRole('button', { name, exact: true });
@@ -255,6 +265,49 @@ test('REQ-382: long names truncate, Source and Target stay equal and inside the 
       assert.ok(Math.abs(left.width - right.width) <= 1, `${width}x${height}: the two column lists are the same width`);
       await dialog.screenshot({ path: `${SHOTS_U7}/req382-dialog-${width}x${height}.png` });
     }
+  } finally {
+    await ui.close();
+  }
+});
+
+test('a link whose reverse already exists is refused at Link with one plain line, and nothing is added (REQ-394)', async () => {
+  const ui = await openUi('launch', STATE_WITH_REFUNDS);
+  const { page } = ui;
+  const refused = () => page.locator('[data-link-refused]');
+  try {
+    await openRelationships(page, ['refunds']);
+    await source(page, 'orders').click();
+    await target(page, 'customers').click();
+    await page.getByRole('button', { name: 'Link', exact: true }).click();
+    const dialog = page.locator('[data-link-dialog]');
+    await dialog.getByRole('list', { name: 'Columns of orders' }).waitFor({ timeout: 15000 });
+    await dialog.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'customer_id', exact: true }).click();
+    await dialog.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'customer_id', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Link', exact: true }).click();
+    assert.equal(await page.locator('[data-relationship="orders.customer_id → customers.customer_id"]').count(), 1, 'the first direction is kept');
+    // The same pair again, in the same dialog, is refused.
+    await dialog.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'customer_id', exact: true }).click();
+    await dialog.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'customer_id', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Link', exact: true }).click();
+    assert.equal(await refused().innerText(), 'orders.customer_id and customers.customer_id are already linked.');
+    for (const [width, height] of [[1440, 900], [1280, 800]]) {
+      await page.setViewportSize({ width, height });
+      await dialog.screenshot({ path: `${SHOTS_U13}/req394-refused-${width}x${height}.png` });
+    }
+    // Move the lists to customers → orders through refunds, then try the reverse.
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await source(page, 'refunds').click();
+    await target(page, 'orders').click();
+    await source(page, 'customers').click();
+    await page.getByRole('button', { name: 'Link', exact: true }).click();
+    const reverse = page.locator('[data-link-dialog]');
+    await reverse.getByRole('list', { name: 'Columns of customers' }).waitFor({ timeout: 15000 });
+    await reverse.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'customer_id', exact: true }).click();
+    await reverse.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'customer_id', exact: true }).click();
+    await reverse.getByRole('button', { name: 'Link', exact: true }).click();
+    assert.equal(await refused().innerText(), 'customers.customer_id and orders.customer_id are already linked.', 'the reverse is refused too');
+    assert.equal(await page.locator('[data-relationship]').count(), 1, 'no duplicate link is listed');
+    assert.equal(await page.locator('[data-links]').getByText('Links (1)', { exact: true }).count(), 1);
   } finally {
     await ui.close();
   }

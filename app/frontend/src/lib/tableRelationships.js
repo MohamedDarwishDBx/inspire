@@ -69,3 +69,27 @@ export function launchRelationshipsText(relationships, pickedTables = []) {
   }
   return kept.length ? JSON.stringify(kept) : '';
 }
+
+const sameSide = (a, b) => a.table === b.table && a.column === b.column;
+
+/** Two links are one link when they join the same two columns, in either direction: A.col -> B.col is the same join as B.col -> A.col (REQ-394). */
+export function sameLink(a, b) {
+  return (sameSide(a.from, b.from) && sameSide(a.to, b.to)) || (sameSide(a.from, b.to) && sameSide(a.to, b.from));
+}
+
+/**
+ * The links a saved draft or profile restores (REQ-362, REQ-394): each side names a table and a column, and the source says where the link
+ * came from. A link already restored is not restored again, so a saved profile with both directions of one join loads one link.
+ */
+export function restoredRelationshipList(value) {
+  const side = (v) => (v && typeof v === 'object' && typeof v.table === 'string' && typeof v.column === 'string' ? { table: v.table, column: v.column } : null);
+  if (!Array.isArray(value)) return [];
+  const kept = [];
+  for (const l of value) {
+    const entry = l && typeof l === 'object' && side(l.from) && side(l.to) && typeof l.source === 'string'
+      ? { from: side(l.from), to: side(l.to), source: l.source }
+      : null;
+    if (entry && !kept.some((k) => sameLink(k, entry))) kept.push(entry);
+  }
+  return kept;
+}
