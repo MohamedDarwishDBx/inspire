@@ -45,7 +45,7 @@ import {
   keptVersions, loadAssetFilters, saveAssetFilters,
   loadCollectedVibes, missingAsks, notDoneLines, rebuildSpec, rebuildingText, rephrasedAsk, removeChanges, removeKeptChanges, rollbackChanges, rollingBackText,
   saveCollectedVibes, statusWarnings, tryAgainChanges, uninstallChanges, vibeCards, vibeFeaturesLabel,
-  noteBuildSubmitted, withPendingBuilds,
+  trackBuildSubmit, withPendingBuilds,
 } from '../lib/implementControl';
 import {
   buildingAssets, mvpScope, mvpStages, mvpProgressSummary, mvpRepairOf, feedArrivals, railProgress, sortedTo, statusProgress, steadyFeed, versionPlan, vibeChecklist,
@@ -551,7 +551,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
             <BuildNextStep showcase={readOnly} apiFetch={apiFetch} apiPostJson={apiPostJson} inspireDatabase={settings.inspireDatabase} warehouseId={settings.warehouseId} sessionId={sessionId}
               notebookPath={settings.notebookPath} focusId={selected.id} live={IMPLEMENT_DONE_STATUSES.includes(String(selected.latest?.status || ''))}
               caseOf={(id) => allItems.find((item) => item.id === id)?.uc}
-              onBuilt={readOnly ? undefined : onImplemented} onBuildCustom={readOnly ? undefined : (uc) => setWizard({ uc, focus: null, live: false })}
+              onBuilt={readOnly ? undefined : onImplemented} onQueued={readOnly ? undefined : showQueuedBuild} onBuildCustom={readOnly ? undefined : (uc) => setWizard({ uc, focus: null, live: false })}
               onMeasure={readOnly ? undefined : openMeasure} />
           )}
           {selected ? (
@@ -594,6 +594,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
           focus={wizard.focus}
           live={wizard.live}
           onClose={() => setWizard(null)}
+          onQueued={showQueuedBuild}
           onImplemented={onImplemented}
           onOpenBuild={() => setWizard(null)}
         />
@@ -1076,8 +1077,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     setError('');
     setNotice('');
     try {
-      const data = await apiPostJson(path, body);
-      noteBuildSubmitted(data, body.spec);
+      const data = await trackBuildSubmit(body.spec, () => apiPostJson(path, body), showQueuedBuild);
       onBuildQueued?.();
       setNotice([resultTableMoveNote(data?.summary), ...(Array.isArray(data?.warnings) ? data.warnings : [])].filter(Boolean).join(' '));
       await loadStatus();

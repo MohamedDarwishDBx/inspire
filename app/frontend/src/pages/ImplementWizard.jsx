@@ -15,7 +15,7 @@ import TabStrip, { tabPanel } from '../components/TabStrip';
 import AppSample, { paletteVars, pv } from '../components/AppSample';
 import { generationFolder, sharedFolderWarning } from '../lib/workspaceLinks';
 import { catalogRow } from '../lib/useCaseFacets';
-import { insideMoveNote, noteBuildSubmitted } from '../lib/implementControl';
+import { insideMoveNote, trackBuildSubmit } from '../lib/implementControl';
 import {
   GENIE_CODE_OFF_TITLE,
   genieCodeOff,
@@ -456,6 +456,7 @@ export default function ImplementWizard({
   apiPostJson,
   onClose,
   onImplemented,
+  onQueued = null,
   onOpenBuild = null,
   focus = null,
   live = null,
@@ -1282,16 +1283,15 @@ export default function ImplementWizard({
     if (blockedBy(stepId)) return;
     setBusy(true);
     try {
-      const data = await withStartDeadline((signal) => apiPostJson('/api/inspire/implement/submit', {
+      const data = await trackBuildSubmit(sent, () => withStartDeadline((signal) => apiPostJson('/api/inspire/implement/submit', {
         inspire_database: inspireDatabase,
         warehouse_id: warehouseId,
         session_id: String(sessionId),
         notebook_path: settings.notebookPath,
         spec: sent,
         rebuild_as_is: rebuildAsIs,
-      }, { signal }), { label: 'The build' });
+      }, { signal }), { label: 'The build' }), onQueued);
       clearWizardDraft(draftKey);
-      noteBuildSubmitted(data, sent);
       onImplemented(data);
     } catch (e) {
       setErrors([e.message]);

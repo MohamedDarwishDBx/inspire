@@ -5,7 +5,7 @@ import { AppReadAccess } from './AppReadAccess';
 import { PlainMessage } from './TechnicalDetails';
 import { raisePermissions } from '../lib/permissionBus';
 import { buildItems, buildNextOf, moneyText, nextSharingTables } from '../lib/buildNext';
-import { noteBuildSubmitted } from '../lib/implementControl';
+import { trackBuildSubmit } from '../lib/implementControl';
 import { appGrantText, moneyRuleColumns, preflightParams, primaryTableOf, specForSibling } from '../lib/implementWizard';
 
 const BUILD_NOW_BUTTON = 'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white bg-db-red-solid shadow-sm shadow-db-red/20 hover:bg-db-red-solid-hover disabled:opacity-70';
@@ -99,7 +99,7 @@ export function BuildNextPanel({ apiFetch, inspireDatabase, warehouseId, session
   );
 }
 
-export function BuildNextStep({ apiFetch, apiPostJson, inspireDatabase, warehouseId, sessionId, notebookPath = '', focusId, live, caseOf, onBuilt, onBuildCustom, onMeasure = null, showcase = false }) {
+export function BuildNextStep({ apiFetch, apiPostJson, inspireDatabase, warehouseId, sessionId, notebookPath = '', focusId, live, caseOf, onBuilt, onBuildCustom, onQueued = null, onMeasure = null, showcase = false }) {
   const { rows, liveSpecs, error } = useBuildRows(apiFetch, inspireDatabase, warehouseId, sessionId, showcase);
   const next = useMemo(() => (rows && live ? nextSharingTables(rows, focusId) : []), [rows, live, focusId]);
   const [builds, setBuilds] = useState({});
@@ -136,15 +136,14 @@ export function BuildNextStep({ apiFetch, apiPostJson, inspireDatabase, warehous
         if (permissions.length) raisePermissions(permissions);
         return;
       }
-      const data = await apiPostJson('/api/inspire/implement/submit', {
+      const data = await trackBuildSubmit(spec, () => apiPostJson('/api/inspire/implement/submit', {
         inspire_database: inspireDatabase,
         warehouse_id: warehouseId,
         session_id: String(sessionId),
         notebook_path: notebookPath,
         spec,
-      });
+      }), onQueued);
       patch(row.id, { busy: false });
-      noteBuildSubmitted(data, spec);
       onBuilt(data);
     } catch (e) {
       const refusal = e.body?.app_unreadable || null;

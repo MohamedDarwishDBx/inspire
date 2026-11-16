@@ -231,31 +231,52 @@ function savePendingBuilds() {
   try { sessionStore()?.setItem(PENDING_KEY, JSON.stringify(Object.fromEntries(PENDING_BUILDS))); } catch { /* no storage: the store stays in memory for this page */ }
 }
 
-export function markBuildPending(useCaseId, { name = '', version = 0 } = {}, now = Date.now()) {
-  PENDING_BUILDS.set(String(useCaseId), { at: now, name: String(name || ''), version: Number(version) || 0 });
+// version is null until the server answers with the version it queued. Until then no history row can count as landed.
+export function markBuildPending(useCaseId, { name = '', version = null } = {}, now = Date.now()) {
+  PENDING_BUILDS.set(String(useCaseId), { at: now, name: String(name || ''), version: version == null ? null : Number(version) || 0 });
   savePendingBuilds();
   noteBuildStarted(useCaseId, now);
 }
 
-// REQ-323: the one call every build submit makes with the server's answer (wizard, Build next, Rebuild, Try again, Change choices, Results). A path that skips it shows no queued build.
-export function noteBuildSubmitted(data, spec, now = Date.now()) {
-  if (data?.use_case_id) markBuildPending(data.use_case_id, { name: spec?.use_case_name, version: data.spec_version }, now);
-  return data;
+export function forgetBuildPending(useCaseId) {
+  if (PENDING_BUILDS.delete(String(useCaseId))) savePendingBuilds();
+}
+
+// REQ-323: the one wrapper every build submit goes through (wizard, Build next, Rebuild, Try again, Change choices, Results). The queued build is
+// stored the moment the person submits, not when the server answers: the answer can take about a minute, and a reload during that wait must still show it.
+// A failed submit takes its placeholder back out.
+export async function trackBuildSubmit(spec, send, onQueued = null, now = Date.now()) {
+  const id = String(spec?.use_case_id ?? '').trim();
+  const name = spec?.use_case_name;
+  if (id) markBuildPending(id, { name, version: null }, now);
+  onQueued?.();
+  try {
+    const data = await send();
+    if (data?.use_case_id) markBuildPending(data.use_case_id, { name, version: data.spec_version }, now);
+    return data;
+  } catch (e) {
+    if (id) forgetBuildPending(id);
+    throw e;
+  }
 }
 
 export function withPendingBuilds(latest, now = Date.now()) {
   const rows = Array.isArray(latest) ? latest : [];
   const byId = new Map(rows.map((row) => [String(row?.use_case_id ?? ''), row]));
+  const overlay = new Map();
   const placeholders = [];
   let changed = false;
   for (const [id, entry] of [...PENDING_BUILDS]) {
     const row = byId.get(id);
-    const landed = Boolean(row) && Number(row.spec_version) >= entry.version;
+    const landed = Boolean(row) && entry.version != null && Number(row.spec_version) >= entry.version;
     if (landed || now - entry.at > PENDING_BUILD_TTL_MS) { PENDING_BUILDS.delete(id); changed = true; continue; }
-    if (!row) placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, pending: true });
+    // A row from an older version still reads as the build in progress until the new version lands.
+    if (row) overlay.set(id, { ...row, status: 'queued', pending: true });
+    else placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, pending: true });
   }
   if (changed) savePendingBuilds();
-  return placeholders.length ? [...rows, ...placeholders] : rows;
+  if (!overlay.size && !placeholders.length) return rows;
+  return [...rows.map((row) => overlay.get(String(row?.use_case_id ?? '')) || row), ...placeholders];
 }
 
 export function buildSummary(items) {
