@@ -37,7 +37,7 @@ const SAVED_SPEC = {
   strategyTouched: true,
   prioritiesTouched: true,
 };
-const SAVED_PROFILE = { profile_id: 'profile-1', name: 'Acme retail', business_name: 'Acme', saved_by: 'amr@x', saved_at: '2026-11-16T09:00:00Z', spec: SAVED_SPEC };
+const SAVED_PROFILE = { profile_id: 'profile-1', name: 'Acme retail', business_name: 'Acme', updated_by: 'amr@x', updated_at: '2026-11-16T09:00:00Z', spec: SAVED_SPEC };
 
 async function fillForm(page, business = 'Draft Corp') {
   await page.getByPlaceholder(BUSINESS).fill(business);
@@ -90,7 +90,7 @@ test('Run without saving starts the same run with no profile and saves nothing (
   }
 });
 
-test('a name that is already saved shows that it will be replaced, and saving sends the overwrite (must-keep)', async () => {
+test('replacing a listed name needs a second confirm that names the profile, who updated it and when, and only then sends the overwrite (must-fail before the confirm)', async () => {
   const ui = await openUi('launch', { ...STATE, profiles: [SAVED_PROFILE] });
   const { page, made } = ui;
   try {
@@ -99,6 +99,14 @@ test('a name that is already saved shows that it will be replaced, and saving se
     await getStarted(page).click();
     await dialog(page).waitFor({ timeout: 10000 });
     await page.getByText('already exists. Saving replaces it.').waitFor({ timeout: 10000 });
+    await page.locator('[data-launch-save-run]').click();
+    // The first click only asks. Nothing is saved or run yet.
+    const question = page.locator('[data-launch-profile-replace-confirm]');
+    await question.waitFor({ timeout: 10000 });
+    assert.match(await question.innerText(), /^Replace the profile Acme retail saved by amr@x on .+\?$/);
+    assert.equal(made.state.profileSaves, undefined, 'no save was sent before the confirm');
+    assert.equal(made.launches.length, 0, 'no run was sent before the confirm');
+    assert.equal(await page.locator('[data-launch-save-run]').innerText(), 'Replace and run');
     await page.locator('[data-launch-save-run]').click();
     await until(() => made.launches.length === 1, 'the run was sent once');
     assert.equal(made.state.profileSaves[0].overwrite, true);
@@ -175,7 +183,7 @@ test('the profile list shows each profile with who saved it and when', async () 
   try {
     await getStarted(page).waitFor({ timeout: 20000 });
     const label = await page.locator('[data-launch-profile] option', { hasText: 'Acme retail' }).textContent();
-    assert.match(label, /^Acme retail: saved by amr@x on /);
+    assert.match(label, /^Acme retail: updated by amr@x on /);
     assert.doesNotMatch(label, /—/);
   } finally {
     await ui.close();

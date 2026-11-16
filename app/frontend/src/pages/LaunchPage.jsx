@@ -777,7 +777,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [profiles, setProfiles] = useState([]);
   const [profilesError, setProfilesError] = useState('');
   const [profileBusy, setProfileBusy] = useState(false);
-  // The save dialog: null when closed, else { name } of the profile it would save.
+  // The save dialog: null when closed, else { name, confirmReplace } of the profile it would save. A listed name needs a second confirm.
   const [saveAsk, setSaveAsk] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -820,12 +820,13 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     }
   };
 
-  const profileLabel = (p) => `${p.name}: saved by ${p.saved_by || 'someone'} on ${formatWhen(p.saved_at, 'an unknown date')}`;
+  const profileLabel = (p) => `${p.name}: updated by ${p.updated_by || 'someone'} on ${formatWhen(p.updated_at, 'an unknown date')}`;
   const profileNamed = (name) => profiles.find((p) => String(p.name).trim().toLowerCase() === String(name || '').trim().toLowerCase()) || null;
 
   const saveAndRun = async () => {
     const name = saveAsk.name.trim();
     const replacing = profileNamed(name);
+    if (replacing && !saveAsk.confirmReplace) return setSaveAsk({ name: saveAsk.name, confirmReplace: true });
     setSaving(true);
     setSaveError('');
     try {
@@ -911,7 +912,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       return setLaunchError(outputCheck.text || 'Wait until Inspire has checked that you can write to the output folder.');
     if (loadedProfile && sameSettings(draftForm, loadedProfile.spec)) return launchNow(loadedProfile.profile_id);
     setSaveError('');
-    return setSaveAsk({ name: String(params['00_business_name'] || '').trim() });
+    return setSaveAsk({ name: String(params['00_business_name'] || '').trim(), confirmReplace: false });
   };
 
   const copySamples = async () => {
@@ -2136,19 +2137,24 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 </button>
                 <button type="button" data-launch-save-run="" onClick={saveAndRun} disabled={saving || !saveAsk.name.trim()}
                   className="rounded-lg bg-db-red-solid px-4 py-2 text-sm font-bold text-white hover:bg-db-red-solid-hover disabled:opacity-50">
-                  {saving ? 'Saving…' : 'Save and run'}
+                  {saving ? 'Saving…' : profileNamed(saveAsk.name) && saveAsk.confirmReplace ? 'Replace and run' : 'Save and run'}
                 </button>
               </>
             )}>
             <label className="block text-xs font-semibold text-text-primary">
               Profile name
               <input data-launch-profile-name="" dir="auto" type="text" value={saveAsk.name} disabled={saving}
-                onChange={(e) => setSaveAsk({ name: e.target.value })}
+                onChange={(e) => setSaveAsk({ name: e.target.value, confirmReplace: false })}
                 className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary glow-focus" />
             </label>
-            {profileNamed(saveAsk.name) && (
+            {profileNamed(saveAsk.name) && !saveAsk.confirmReplace && (
               <p data-launch-profile-replace="" className="text-xs text-warning-fg">
                 A profile named {profileNamed(saveAsk.name).name} already exists. Saving replaces it.
+              </p>
+            )}
+            {profileNamed(saveAsk.name) && saveAsk.confirmReplace && (
+              <p data-launch-profile-replace-confirm="" role="alert" className="text-xs font-semibold text-warning-fg">
+                Replace the profile {profileNamed(saveAsk.name).name} saved by {profileNamed(saveAsk.name).updated_by || 'someone'} on {formatWhen(profileNamed(saveAsk.name).updated_at, 'an unknown date')}?
               </p>
             )}
             {saveError && <p role="alert" data-launch-profile-error="" className="text-xs text-error-fg">{saveError}</p>}

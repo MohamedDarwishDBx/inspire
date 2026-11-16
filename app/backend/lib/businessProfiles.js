@@ -115,8 +115,8 @@ function profileSummary(row) {
     profile_id: String(row.profile_id),
     name: String(row.name || ''),
     business_name: String(row.business_name || ''),
-    saved_by: String(row.updated_by || row.created_by || ''),
-    saved_at: row.updated_at || row.created_at || null,
+    updated_by: String(row.updated_by || row.created_by || ''),
+    updated_at: row.updated_at || row.created_at || null,
   };
 }
 

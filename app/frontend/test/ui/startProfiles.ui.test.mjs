@@ -14,7 +14,7 @@ const SESSIONS = [
   { session_id: '42', completed_percent: 100, business_name: 'Acme', profile_id: 'profile-1', profile_name: 'Acme retail', create_at: '2026-11-16T09:00:00Z', widget_values: { business: 'Acme' } },
   { session_id: '43', completed_percent: 100, business_name: 'Beta', create_at: '2026-11-15T09:00:00Z', widget_values: { business: 'Beta' } },
 ];
-const PROFILES = [{ profile_id: 'profile-1', name: 'Acme retail', business_name: 'Acme', saved_by: 'amr@x', saved_at: '2026-11-16T09:00:00Z', spec: SAVED }];
+const PROFILES = [{ profile_id: 'profile-1', name: 'Acme retail', business_name: 'Acme', updated_by: 'amr@x', updated_at: '2026-11-16T09:00:00Z', spec: SAVED }];
 
 test('a run started with a profile shows the profile name on Start, and a run without one shows none (must-exclude)', async () => {
   const ui = await openUi('choose', { sessions: SESSIONS, profiles: PROFILES });
@@ -41,7 +41,7 @@ test('Download profile saves the profile as inspire_profile_<name>.json with its
     assert.equal(download.suggestedFilename(), 'inspire_profile_Acme_retail.json');
     const text = await (await import('node:fs')).promises.readFile(await download.path(), 'utf8');
     const body = JSON.parse(text);
-    assert.deepEqual([body.format, body.name, body.saved_by], ['inspire_profile', 'Acme retail', 'amr@x']);
+    assert.deepEqual([body.format, body.name, body.updated_by], ['inspire_profile', 'Acme retail', 'amr@x']);
     assert.deepEqual(body.spec, SAVED, 'the file carries the settings the profile stored');
   } finally {
     await ui.close();

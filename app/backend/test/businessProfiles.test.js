@@ -57,8 +57,8 @@ test('an insert and an overwrite carry the same values; the overwrite keeps the 
 
 test('the summary names who saved the profile last and when, and the detail parses the spec (a bad spec reads as empty, never throws)', () => {
   const row = { profile_id: 'p1', name: 'Acme', business_name: 'Acme', created_by: 'a@x', created_at: 't1', updated_by: 'b@x', updated_at: 't2', spec_json: '{"params":{"00_business_name":"Acme"}}' };
-  assert.deepEqual(BP.profileSummary(row), { profile_id: 'p1', name: 'Acme', business_name: 'Acme', saved_by: 'b@x', saved_at: 't2' });
-  assert.deepEqual(BP.profileSummary({ ...row, updated_by: null, updated_at: null }), { profile_id: 'p1', name: 'Acme', business_name: 'Acme', saved_by: 'a@x', saved_at: 't1' });
+  assert.deepEqual(BP.profileSummary(row), { profile_id: 'p1', name: 'Acme', business_name: 'Acme', updated_by: 'b@x', updated_at: 't2' });
+  assert.deepEqual(BP.profileSummary({ ...row, updated_by: null, updated_at: null }), { profile_id: 'p1', name: 'Acme', business_name: 'Acme', updated_by: 'a@x', updated_at: 't1' });
   assert.deepEqual(BP.profileDetail(row).spec, { params: { '00_business_name': 'Acme' } });
   assert.deepEqual(BP.profileDetail({ ...row, spec_json: '{not json' }).spec, {}, 'a corrupt spec reads as no settings, the save never wrote it');
   assert.deepEqual(BP.profileDetail({ ...row, spec_json: '[1,2]' }).spec, {}, 'a spec that is not an object reads as no settings');
@@ -87,4 +87,17 @@ test('a link row names the run session, the database and the saver', () => {
   const st = BP.linkInsertStatement('L', { inspireDatabase: 'Main.Inspire', sessionId: '7001', profileId: 'p1', by: 'amr@example.com' });
   assert.match(st.sql, /^INSERT INTO L \(session_id, inspire_database, profile_id, linked_by, linked_at\)/);
   assert.deepEqual(st.parameters.map((p) => [p.name, p.value]), [['session_id', '7001'], ['inspire_database', 'main.inspire'], ['profile_id', 'p1'], ['by', 'amr@example.com']]);
+});
+
+test('openapi.yaml documents the three profile routes the server registers, with their refusal codes (must-fail before the doc existed)', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const yaml = require('js-yaml');
+  const doc = yaml.load(fs.readFileSync(path.join(__dirname, '..', 'openapi.yaml'), 'utf8'));
+  const ops = (route) => Object.keys(doc.paths[route] || {}).sort();
+  assert.deepEqual(ops('/api/inspire/profiles'), ['get', 'post']);
+  assert.deepEqual(ops('/api/inspire/profiles/{profileId}'), ['get']);
+  assert.deepEqual(Object.keys(doc.paths['/api/inspire/profiles'].post.responses).sort(), ['200', '400', '401', '409', '503']);
+  assert.deepEqual(Object.keys(doc.paths['/api/inspire/profiles/{profileId}'].get.responses).sort(), ['200', '400', '401', '404', '503']);
+  assert.ok(doc.components.schemas.BusinessProfileSummary, 'the summary schema exists');
 });

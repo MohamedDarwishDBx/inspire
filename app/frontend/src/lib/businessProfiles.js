@@ -34,8 +34,8 @@ export function profileFileText(profile) {
     version: 1,
     name: profile.name,
     business_name: profile.business_name || '',
-    saved_by: profile.saved_by || '',
-    saved_at: profile.saved_at || null,
+    updated_by: profile.updated_by || '',
+    updated_at: profile.updated_at || null,
     spec: profile.spec || {},
   }, null, 2)}\n`;
 }

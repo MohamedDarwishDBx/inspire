@@ -17,13 +17,13 @@ test('a profile saved on the App is listed for everyone, shows who saved it and 
   const made = await save({ name: 'Acme retail', spec: SETTINGS });
   assert.equal(made.status, 200, made.text);
   assert.equal(made.data.profile.name, 'Acme retail');
-  assert.equal(made.data.profile.saved_by, 'amr@example.com');
+  assert.equal(made.data.profile.updated_by, 'amr@example.com');
   const id = made.data.profile.profile_id;
   assert.match(id, /^[0-9a-f-]{36}$/, 'the id is an opaque uuid, not a number');
 
   const listed = await S.request('GET', '/api/inspire/profiles?business_name=ACME', { person: 'colleague@example.com' });
   assert.equal(listed.status, 200, listed.text);
-  assert.deepEqual(listed.data.profiles.map((p) => [p.name, p.business_name, p.saved_by]), [['Acme retail', 'Acme', 'amr@example.com']]);
+  assert.deepEqual(listed.data.profiles.map((p) => [p.name, p.business_name, p.updated_by]), [['Acme retail', 'Acme', 'amr@example.com']]);
 
   const got = await S.request('GET', `/api/inspire/profiles/${id}`, { person: 'colleague@example.com' });
   assert.equal(got.status, 200, got.text);
@@ -44,6 +44,18 @@ test('a name that is already taken answers 409 and changes nothing, and overwrit
   assert.equal(replaced.data.profile.profile_id, first.data.profile.profile_id, 'the same profile, not a second one');
   assert.equal(S.state.profiles.length, 1);
   assert.equal(JSON.parse(S.state.profiles[0].spec_json).params['00_business_name'], 'Other');
+});
+
+test('any App user may replace a listed profile: the replacement keeps the id and names the person who updated it last (must-keep)', async () => {
+  S.reset();
+  const first = await save({ name: 'Acme', spec: SETTINGS }, 'amr@example.com');
+  const replaced = await save({ name: 'ACME', spec: { ...SETTINGS, params: { '00_business_name': 'Other' } }, overwrite: true }, 'colleague@example.com');
+  assert.equal(replaced.status, 200, replaced.text);
+  assert.equal(replaced.data.profile.profile_id, first.data.profile.profile_id);
+  assert.equal(replaced.data.profile.updated_by, 'colleague@example.com', 'the last person to update it is named');
+  const listed = await S.request('GET', '/api/inspire/profiles', { person: 'reader@example.com' });
+  assert.deepEqual(listed.data.profiles.map((p) => [p.name, p.updated_by]), [['ACME', 'colleague@example.com']]);
+  assert.equal(Object.hasOwn(listed.data.profiles[0], 'saved_by'), false, 'the list uses the updated_by name');
 });
 
 test('a save with no name, no settings or a bad profile id is refused before it touches the tables (must-fail)', async () => {

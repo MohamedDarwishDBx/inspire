@@ -22,7 +22,7 @@ test('the download name is inspire_profile_<name>.json, with characters a file s
 });
 
 test('the download file carries the name, who saved it, when, and the whole settings object', () => {
-  const text = profileFileText({ name: 'Acme', business_name: 'Acme', saved_by: 'amr@example.com', saved_at: '2026-11-16T09:00:00Z', spec: form });
+  const text = profileFileText({ name: 'Acme', business_name: 'Acme', updated_by: 'amr@example.com', updated_at: '2026-11-16T09:00:00Z', spec: form });
   assert.equal(text.endsWith('\n'), true);
-  assert.deepEqual(JSON.parse(text), { format: 'inspire_profile', version: 1, name: 'Acme', business_name: 'Acme', saved_by: 'amr@example.com', saved_at: '2026-11-16T09:00:00Z', spec: form });
+  assert.deepEqual(JSON.parse(text), { format: 'inspire_profile', version: 1, name: 'Acme', business_name: 'Acme', updated_by: 'amr@example.com', updated_at: '2026-11-16T09:00:00Z', spec: form });
 });

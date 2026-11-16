@@ -630,6 +630,22 @@ components:
         _step_count:
           type: integer
 
+    BusinessProfileSummary:
+      type: object
+      description: A business profile the App shares with everyone on it. updated_by and updated_at name the person who saved it last.
+      properties:
+        profile_id:
+          type: string
+        name:
+          type: string
+        business_name:
+          type: string
+        updated_by:
+          type: string
+          description: The person who saved this profile last.
+        updated_at:
+          type: string
+          nullable: true
     SessionSummary:
       type: object
       properties:
@@ -1709,6 +1725,147 @@ paths:
         '401':
           $ref: '#/components/responses/PersonSignInRequired'
 
+  /api/inspire/profiles:
+    get:
+      tags: [Results]
+      summary: List business profiles
+      description: Lists the business profiles saved on this App, newest first. business_name narrows the list to one business, without regard to case. Everyone on the App sees every profile.
+      parameters:
+        - name: business_name
+          in: query
+          required: false
+          description: Only profiles saved for this business name.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profile list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BusinessProfileSummary'
+        '401':
+          $ref: '#/components/responses/PersonSignInRequired'
+        '503':
+          description: The App has no database of its own set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags: [Results]
+      summary: Save a business profile
+      description: Saves the Start form under a name. A new name creates the profile. A name that is already saved answers 409 unless overwrite is true, and then the profile is replaced in place, keeping its id and naming the person who replaced it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, spec]
+              properties:
+                name:
+                  type: string
+                  maxLength: 120
+                business_name:
+                  type: string
+                  description: Defaults to the business name in the form settings.
+                spec:
+                  type: object
+                  description: The whole Start form, with every key it carries.
+                overwrite:
+                  type: boolean
+                  description: Replace the profile that already has this name.
+      responses:
+        '200':
+          description: The saved profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: '#/components/schemas/BusinessProfileSummary'
+        '401':
+          $ref: '#/components/responses/PersonSignInRequired'
+        '400':
+          description: No name, no settings, or settings too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The name is already saved and overwrite was not set. The body carries profile_id.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  exists:
+                    type: boolean
+                  profile_id:
+                    type: string
+        '503':
+          description: The App has no database of its own set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/inspire/profiles/{profileId}:
+    get:
+      tags: [Results]
+      summary: Read a business profile
+      description: Returns one saved profile with its whole spec, which is what Download profile writes to a file and what the Start form restores.
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          description: The profile id Inspire gave out when the profile was saved.
+          schema:
+            type: string
+            maxLength: 64
+      responses:
+        '200':
+          description: The profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    allOf:
+                      - $ref: '#/components/schemas/BusinessProfileSummary'
+                      - type: object
+                        properties:
+                          spec:
+                            type: object
+        '401':
+          $ref: '#/components/responses/PersonSignInRequired'
+        '400':
+          description: profile_id is not an id Inspire gave out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No profile has that id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: The App has no database of its own set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/inspire/sessions:
     get:
       tags: [Results]

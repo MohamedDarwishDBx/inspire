@@ -338,7 +338,7 @@ function makeApp(overrides = {}, { mount } = {}) {
     const taken = (state.profiles || []).find((p) => p.name.toLowerCase() === String(body.name || '').trim().toLowerCase());
     if (taken && !body.overwrite) return res.status(409).json({ error: `A business profile named "${body.name}" already exists.`, exists: true, profile_id: taken.profile_id });
     const row = { profile_id: taken ? taken.profile_id : `profile-${(state.profiles || []).length + 1}`, name: String(body.name || '').trim(),
-      business_name: String(body.business_name || ''), saved_by: 'amr@x', saved_at: '2026-11-16T09:00:00Z', spec: body.spec || {} };
+      business_name: String(body.business_name || ''), updated_by: 'amr@x', updated_at: '2026-11-16T09:00:00Z', spec: body.spec || {} };
     state.profiles = taken ? state.profiles.map((p) => (p.profile_id === taken.profile_id ? row : p)) : [...(state.profiles || []), row];
     return res.json({ profile: profileSummaryOf(row) });
   });
@@ -424,7 +424,7 @@ function makeApp(overrides = {}, { mount } = {}) {
 
 // Business profiles as the App shares them (REQ-364 to REQ-366). state.profiles holds the saved rows; state.profileSaves records each save the page sent.
 function profileSummaryOf(row) {
-  return { profile_id: row.profile_id, name: row.name, business_name: row.business_name, saved_by: row.saved_by, saved_at: row.saved_at };
+  return { profile_id: row.profile_id, name: row.name, business_name: row.business_name, updated_by: row.updated_by, updated_at: row.updated_at };
 }
 
 function json(data, status = 200) {
