@@ -2111,6 +2111,16 @@ function previousBuilt(history) {
   return row && row.status !== IMPLEMENT_UNINSTALLED ? row : null;
 }
 
+// REQ-389 (Results list): the one row per use case that previousBuilt reads, the newest row whose status is done or uninstalled. The window
+// keeps the read to that row, so a session's whole build history is not read for the Results list.
+function latestBuiltRowsSql(table, sessionIds) {
+  const statuses = [...IMPLEMENT_DONE_STATUSES, IMPLEMENT_UNINSTALLED].map((s) => `'${s}'`).join(', ');
+  return 'SELECT session_id, use_case_id, spec_version, status, spec_json FROM ('
+    + 'SELECT CAST(session_id AS STRING) AS session_id, use_case_id, CAST(spec_version AS STRING) AS spec_version, status, '
+    + 'to_json(spec_json) AS spec_json, ROW_NUMBER() OVER (PARTITION BY session_id, use_case_id ORDER BY spec_version DESC) AS latest '
+    + `FROM ${table} WHERE session_id IN (${sessionIds.join(', ')}) AND status IN (${statuses})) WHERE latest = 1`;
+}
+
 // REQ-389 (Results list): the Table Scope the latest built version of a use case read, when its build chose one on the Data step.
 // undefined when no build chose a scope, so the caller keeps the Discover run's scope.
 function builtTableScopeOf(history) {
@@ -4073,6 +4083,7 @@ module.exports = {
   withVibePreviousDefault,
   previousBuilt,
   builtTableScopeOf,
+  latestBuiltRowsSql,
   appExperienceOf,
   IMPLEMENT_OUTPUTS,
   IMPLEMENT_OUTPUT_LABELS,

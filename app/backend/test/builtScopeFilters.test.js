@@ -19,7 +19,7 @@ const version = (spec_version, spec_json, status = 'ready') => ({ session_id: SI
 const GOLD = { [TABLE]: { columns: ['status'], rows: [{ column: 'status', op: '=', values: ['gold'] }] } };
 
 async function filtersShown(history) {
-  S.reset({ listedUseCases: [USE_CASE], sessionTableScopes: { [SID]: DISCOVER }, history });
+  S.reset({ listedUseCases: [USE_CASE], sessionTableScopes: { [SID]: DISCOVER }, history, implementReadError: '' });
   const got = await S.request('GET', LIST, { person: 'amr@example.com' });
   assert.equal(got.status, 200, JSON.stringify(got.data));
   return got.data.usecases[0].data_filters.map((f) => f.column);
@@ -57,4 +57,29 @@ test('previewScopesOf keeps the Discover scope with no choice, reads the chosen 
   assert.deepEqual(previewScopesOf(JSON.stringify(GOLD), carried), GOLD);
   assert.deepEqual(previewScopesOf(GOLD, carried), GOLD);
   assert.throws(() => previewScopesOf('{not json', carried), (err) => err.statusCode === 400 && /not valid JSON/.test(err.message));
+});
+
+// The Results list reads one row per use case: the newest done or uninstalled build row of each use case, in the statement the route sends.
+test('the Results list build read is windowed to the latest built row per use case, and names no other version (REQ-389, must-fail before)', async () => {
+  await filtersShown([version(1, { data: {} })]);
+  const reads = S.state.calls.filter((c) => c.statement.includes('__inspire_implement'));
+  assert.equal(reads.length, 1, 'one read of the build record');
+  const sql = reads[0].statement;
+  assert.match(sql, /ROW_NUMBER\(\) OVER \(PARTITION BY session_id, use_case_id ORDER BY spec_version DESC\) AS latest/);
+  assert.match(sql, /\) WHERE latest = 1$/, 'only the newest row of each use case is returned');
+  assert.match(sql, /AND status IN \('ready', 'ready_with_warnings', 'uninstalled'\)/, 'the rows are the ones previousBuilt reads');
+});
+
+test('a build record that cannot be read shows the Discover filters and says so on the use case (REQ-389, must-fail before)', async () => {
+  S.reset({ listedUseCases: [USE_CASE], sessionTableScopes: { [SID]: DISCOVER }, history: [], implementReadError: 'the build record is not readable' });
+  const got = await S.request('GET', LIST, { person: 'amr@example.com' });
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  assert.deepEqual(got.data.usecases[0].data_filters.map((f) => f.column), ['paymentMethod'], 'the Discover filters are shown');
+  assert.equal(got.data.usecases[0].build_scope_unread, true, 'the row is flagged, so the App says the build scope could not be read');
+});
+
+test('a readable build record leaves the use case unflagged (must-keep)', async () => {
+  S.reset({ listedUseCases: [USE_CASE], sessionTableScopes: { [SID]: DISCOVER }, history: [version(1, { data: {} })], implementReadError: '' });
+  const got = await S.request('GET', LIST, { person: 'amr@example.com' });
+  assert.equal(got.data.usecases[0].build_scope_unread, false);
 });

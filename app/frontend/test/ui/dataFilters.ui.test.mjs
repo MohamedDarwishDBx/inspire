@@ -37,3 +37,18 @@ test('a use case with no filter shows no Data Filters line, and a session whose 
   assert.equal(unread.unread, 1, 'an unreadable session is said so, never shown as no filters');
   assert.match(unread.line, /could not be read from this session/);
 });
+
+// REQ-389 follow-up (risk 2): when the build record cannot be read, the Discover filters stay and the details say the build's scope is unknown.
+test('a use case whose build record cannot be read keeps the Discover filters and says the build scope could not be read (must-fail before)', async () => {
+  const ui = await openUi('implement', { useCase: { ...HARNESS_USE_CASE, data_filters: FILTERED, build_scope_unread: true } });
+  const { page } = ui;
+  try {
+    await page.getByRole('button', { name: 'Use case details', exact: true }).click();
+    await page.getByRole('dialog', { name: /^Use case details: / }).waitFor();
+    assert.equal((await page.locator('[data-data-filters]').first().innerText()).trim(), 'Data Filters: product: Tokyo Tidbits; region: north, south');
+    assert.equal((await page.locator('[data-build-scope-unread]').innerText()).trim(), "The build's scope could not be read. The Data Filters above are the Discover run's.");
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});
