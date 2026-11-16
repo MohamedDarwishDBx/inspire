@@ -108,7 +108,7 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
   const ctxFor = (item) => ({
     page, app, charts, themeKey, ticketActions,
     turnId: item?.turn?.turn_id || '',
-    openRecord: onRecord,
+    openRecord: (key) => onRecord?.(page.id, key),
     ask,
     prepare,
     confirm: (c, update) => write(c, update),
@@ -142,13 +142,13 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
 
       <form className="agp-ask" role="search" aria-label="Ask the agent" onSubmit={(e) => { e.preventDefault(); ask(text); }}>
         <input type="text" dir="auto" value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask about this use case, or tell me what to do"
-          aria-label="Ask the agent" disabled={busy} />
+          aria-label="Ask the agent" />
         <button type="submit" className="btn btn--pri" disabled={busy || !text.trim()}>Ask</button>
       </form>
 
       <div className="agp-chips" role="group" aria-label="Suggested questions">
-        {(briefing?.chips || []).map((c) => (
-          <button key={c} type="button" className="sugg" disabled={busy} onClick={() => ask(c)}>{c}</button>
+        {(briefing?.chips || []).map((c, i) => (
+          <button key={`${i}-${c}`} type="button" className="sugg" disabled={busy} onClick={() => ask(c)}>{c}</button>
         ))}
       </div>
 

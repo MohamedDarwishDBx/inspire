@@ -183,3 +183,81 @@ test('an outlier page shows its kind question as the first chip, and clicking it
     await context.close();
   }
 });
+
+// Three records of one franchise, told apart only by their key (the label column is the franchise alone).
+const SAME_LABEL = [
+  { record_key: 'f-1 | 2024-05-19', label: 'Franchise 3000000', value_at_stake: '1700', tier: 'Act now', status: 'New', why: 'forecast gap', due: '' },
+  { record_key: 'f-1 | 2024-05-20', label: 'Franchise 3000000', value_at_stake: '1700', tier: 'Act now', status: 'New', why: 'forecast gap', due: '' },
+  { record_key: 'f-1 | 2024-05-21', label: 'Franchise 3000000', value_at_stake: '1700', tier: 'Act now', status: 'New', why: 'forecast gap', due: '' },
+];
+
+test('three distinct records give three distinct cards on the Agent page, each showing its own key', async () => {
+  const info = appInfo(AGENTIC);
+  const pageId = info.pages[0].id;
+  const routes = { 'agent/briefing': ({ json }) => json(200, { ...briefing(pageId), total: 3, tickets: SAME_LABEL }) };
+  const { page, seen, context } = await openApp(browser, served.base, info, { routes, hash: `#/${pageId}/agent`, ready: '[data-agent-page]' });
+  try {
+    await page.locator('[data-ticket]').nth(2).waitFor({ timeout: 20000 });
+    const keys = await page.locator('[data-ticket]').evaluateAll((els) => els.map((e) => e.getAttribute('data-ticket')));
+    assert.equal(new Set(keys).size, 3, 'three cards for three records, not one record three times');
+    const texts = await page.locator('[data-ticket]').evaluateAll((els) => els.map((e) => e.innerText));
+    assert.equal(new Set(texts).size, 3, 'each card reads differently, so a person can tell them apart');
+    assert.match(texts[0], /2024-05-19/);
+    assert.match(texts[2], /2024-05-21/);
+    assert.deepEqual(seen.errors.filter((e) => !/favicon|Failed to load resource/.test(e)), [], 'no page errors');
+  } finally {
+    await context.close();
+  }
+});
+
+test('the Agent input takes typing while a question is still running, and Enter sends the next question', async () => {
+  const info = appInfo(AGENTIC);
+  const pageId = info.pages[0].id;
+  const asked = [];
+  const running = { turn_id: 'c'.repeat(32), state: 'running', steps: [{ tool: 'find_records', text: 'Looking' }], answer: '', error: '', confirm: null, refused: false, offers: null, next: [],
+    conversation_id: '', actions: [], model: 'x', genie: null, blocks: [] };
+  const done = { ...running, state: 'done', steps: [], blocks: [{ type: 'text', markdown: 'Second question answered.' }] };
+  let polls = 0;
+  const routes = {
+    'agent/briefing': ({ json }) => json(200, briefing(pageId)),
+    'agent/ask': ({ json, route }) => { asked.push(JSON.parse(route.request().postData()).question); return json(200, running); },
+    'agent/turn': ({ json }) => { polls += 1; return json(200, polls < 3 ? running : done); },
+  };
+  const { page, seen, context } = await openApp(browser, served.base, info, { routes, hash: `#/${pageId}/agent`, ready: '[data-agent-page]' });
+  try {
+    const box = page.getByRole('textbox', { name: 'Ask the agent' });
+    await box.click();
+    await box.pressSequentially('Which franchise is most overdue?');
+    await box.press('Enter');
+    await until(() => asked.length === 1, 5000);
+    await page.locator('.agp-turn').first().waitFor({ timeout: 5000 });
+    assert.equal(await box.isEnabled(), true, 'the input is not locked while the first question runs');
+    await box.click();
+    await box.pressSequentially('Then which one is largest?');
+    assert.equal(await box.inputValue(), 'Then which one is largest?', 'typing lands in the box while a question is running');
+    await until(() => polls >= 3, 10000);
+    await box.press('Enter');
+    await until(() => asked.length === 2, 5000);
+    assert.equal(asked[1], 'Then which one is largest?');
+    assert.deepEqual(seen.errors.filter((e) => !/favicon|Failed to load resource/.test(e)), [], 'no page errors');
+  } finally {
+    await context.close();
+  }
+});
+
+test('the record link on an Agent page card opens that record, with its own key', async () => {
+  const info = appInfo(AGENTIC);
+  const pageId = info.pages[0].id;
+  const routes = { 'agent/briefing': ({ json }) => json(200, { ...briefing(pageId), total: 3, tickets: SAME_LABEL }) };
+  const { page, seen, context } = await openApp(browser, served.base, info, { routes, hash: `#/${pageId}/agent`, ready: '[data-agent-page]' });
+  try {
+    await page.locator('[data-ticket]').nth(1).waitFor({ timeout: 20000 });
+    await page.locator('[data-ticket]').nth(1).getByRole('button', { name: 'Franchise 3000000' }).click();
+    await until(() => new URL(page.url()).hash.includes('rec='), 5000);
+    const rec = new URLSearchParams(new URL(page.url()).hash.split('?')[1] || '').get('rec');
+    assert.equal(rec, 'f-1 | 2024-05-20', 'the link opens the record it sits on, not undefined');
+    assert.deepEqual(seen.errors.filter((e) => !/favicon|Failed to load resource/.test(e)), [], 'no page errors');
+  } finally {
+    await context.close();
+  }
+});

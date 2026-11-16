@@ -22,6 +22,7 @@ export function Ticket({ ticket, ctx, actions = [] }) {
         <button type="button" className="agp-link" onClick={() => ctx.openRecord?.(key)}>{ticket.label}</button>
         <Money value={ticket.value_at_stake} page={ctx.page} />
       </header>
+      {key && key !== ticket.label && <p className="agp-meta agp-key">{key}</p>}
       {(ticket.status || ticket.tier || ticket.due) && (
         <p className="agp-meta">{[ticket.status, ticket.tier, ticket.due && `due ${ticket.due}`].filter(Boolean).join(' · ')}</p>
       )}
