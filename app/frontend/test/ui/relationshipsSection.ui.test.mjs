@@ -137,13 +137,15 @@ test('Relationships fits 1280x800 with a kept relationship, and the picture is s
   const ui = await openUi('launch', STATE);
   const { page } = ui;
   try {
-    await page.setViewportSize({ width: 1280, height: 800 });
     await openRelationships(page);
     await page.getByRole('button', { name: `Add suggested relationship ${DECLARED}` }).click();
     await page.locator('[data-relationships]').waitFor({ timeout: 15000 });
-    const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    assert.ok(sideways <= 0, `no sideways scroll at 1280x800 (overflow ${sideways}px)`);
-    await page.locator('[data-data-management]').screenshot({ path: `${SHOTS}/req362-relationships-1280x800.png` });
+    for (const [width, height] of [[1440, 900], [1280, 800]]) {
+      await page.setViewportSize({ width, height });
+      const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(sideways <= 0, `no sideways scroll at ${width}x${height} (overflow ${sideways}px)`);
+      await page.locator('[data-data-management]').screenshot({ path: `${SHOTS}/req362-relationships-${width}x${height}.png` });
+    }
   } finally {
     await ui.close();
   }

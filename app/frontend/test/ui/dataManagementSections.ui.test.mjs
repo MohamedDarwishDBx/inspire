@@ -36,9 +36,12 @@ test('Data Management holds Relationships then Data filter, and no Data Filters 
     assert.ok(await top('relationships') < await top('data-filter'), 'Relationships sits above Data filter');
     const panel = await page.locator('[data-data-management]').innerText();
     assert.doesNotMatch(panel, /Data Filters/, 'no person sees the old step name in this panel');
-    const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    assert.ok(sideways <= 0, `no sideways scroll at 1280x800 (overflow ${sideways}px)`);
-    await page.locator('[data-data-management]').screenshot({ path: `${SHOTS}/req361-sections-1280x800.png` });
+    for (const [width, height] of [[1440, 900], [1280, 800]]) {
+      await page.setViewportSize({ width, height });
+      const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(sideways <= 0, `no sideways scroll at ${width}x${height} (overflow ${sideways}px)`);
+      await page.locator('[data-data-management]').screenshot({ path: `${SHOTS}/req361-sections-${width}x${height}.png` });
+    }
   } finally {
     await ui.close();
   }

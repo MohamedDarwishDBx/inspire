@@ -106,7 +106,6 @@ test('the column search fits 1280x800 with filters in use, and the picture is sa
   const ui = await openUi('launch', STATE);
   const { page } = ui;
   try {
-    await page.setViewportSize({ width: 1280, height: 800 });
     await openSearch(page);
     const search = page.getByRole('searchbox', { name: 'Search column names' });
     await search.fill('brand');
@@ -116,9 +115,12 @@ test('the column search fits 1280x800 with filters in use, and the picture is sa
     await page.getByRole('button', { name: 'Add value' }).click();
     await page.getByRole('button', { name: 'Apply to all tables' }).click();
     await page.locator('[data-filters-in-use]').waitFor({ timeout: 5000 });
-    const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    assert.ok(sideways <= 0, `no sideways scroll at 1280x800 (overflow ${sideways}px)`);
-    await page.locator('[data-data-management]').screenshot({ path: `${SHOTS}/req363-data-filter-1280x800.png` });
+    for (const [width, height] of [[1440, 900], [1280, 800]]) {
+      await page.setViewportSize({ width, height });
+      const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(sideways <= 0, `no sideways scroll at ${width}x${height} (overflow ${sideways}px)`);
+      await page.locator('[data-data-management]').screenshot({ path: `${SHOTS}/req363-data-filter-${width}x${height}.png` });
+    }
   } finally {
     await ui.close();
   }
