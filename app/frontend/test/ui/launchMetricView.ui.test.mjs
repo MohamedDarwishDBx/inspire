@@ -48,6 +48,7 @@ test('a saved Data Filters pick that is a metric view is dropped from the scope 
     const block = await page.locator('#launch-block').count() ? await page.locator('#launch-block').innerText() : '';
     assert.equal(block, '', `Get Started is blocked by: ${block}`);
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1, 'the launch was sent once');
     const params = made.launches[0].params;
     assert.equal('17_table_scope' in params, false, 'the metric view has no scope in the run');

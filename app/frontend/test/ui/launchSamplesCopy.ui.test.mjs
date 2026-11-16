@@ -58,6 +58,7 @@ test('copy chosen: one action copies into the schema the person named, and the r
     assert.match(await page.locator('[data-samples-copied]').innerText(), /Copied 1 table into main\.inspire\. The run reads your copies\./);
     await until(async () => !(await startButton(page).isDisabled()), 'Start is ready once the copies are in the picks');
     await startButton(page).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1, 'the run was sent once');
     assert.equal(made.launches[0].params['01_uc_metadata'], `${DEST}.bakehouse__sales_transactions`, 'the run request names the copy (schema length, schema, table)');
   } finally {
@@ -75,6 +76,7 @@ test('descriptions only: one plain sentence says value cannot be measured, and t
     assert.equal(await page.locator('[data-samples-sentence]').innerText(), 'Value cannot be measured on samples, so this run reads only the table descriptions.');
     await until(async () => !(await startButton(page).isDisabled()), 'Start is ready after the choice');
     await startButton(page).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1, 'the run was sent once');
     assert.equal(made.launches[0].params['01_uc_metadata'], SALES, 'the run reads the samples table as picked');
     assert.equal(made.launches[0].samples_choice, 'descriptions', 'the /api/run body carries the choice the server refuses without (REQ-109)');

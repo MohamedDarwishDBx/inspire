@@ -71,6 +71,7 @@ test('starting the run clears the Start draft, so the next visit opens an empty 
     await reloaded(page);
     assert.equal(await note(page).count(), 1);
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1, 'the launch was sent once');
     assert.equal(made.launches[0].params['00_business_name'], 'Draft Corp', 'the restored picks are the ones launched');
     assert.equal(made.launches[0].params['01_uc_metadata'], 'main.s.orders');

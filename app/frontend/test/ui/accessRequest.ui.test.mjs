@@ -28,6 +28,7 @@ async function openDialog(overrides) {
   await idle(page);
   await until(async () => !(await page.getByRole('button', { name: 'Get Started' }).isDisabled()), 'Get Started opens');
   await page.getByRole('button', { name: 'Get Started' }).click();
+  await page.locator('[data-launch-run-unsaved]').click();
   const dialog = page.locator('[data-permission-dialog=""]');
   await dialog.waitFor({ timeout: 15000 });
   return { ui, page, dialog };

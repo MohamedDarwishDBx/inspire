@@ -50,6 +50,7 @@ test('the Strategy (optional) section renames a level, imports a pasted list thr
     assert.equal(await section.getByTestId('strategy-paste').count(), 0);
     await pickData(page);
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1, 'the launch was sent once');
     const sent = JSON.parse(made.launches[0].params['10_strategic_context']);
     assert.deepEqual(sent.levels, ['Theme', 'Goal', 'Objective', 'Priority']);
@@ -75,6 +76,7 @@ test('with the strategy left alone the launch sends no strategy, and a level nam
     assert.equal(await quiet.page.getByTestId('launch-strategy').count(), 0, 'the strategy sits closed inside Advanced Settings');
     await pickData(quiet.page);
     await quiet.page.getByRole('button', { name: 'Get Started' }).click();
+    await quiet.page.locator('[data-launch-run-unsaved]').click();
     await until(() => quiet.made.launches.length === 1, 'the launch was sent once');
     assert.equal(quiet.made.launches[0].params['10_strategic_context'], '', 'no strategy is invented (must-exclude)');
   } finally {
