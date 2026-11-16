@@ -60,3 +60,23 @@ test('a Download that the App refuses says so on that run, and downloads nothing
     await ui.close();
   }
 });
+
+// REQ-313, REQ-220: a Download the workspace refuses opens Permission Required, and the run shows no second message beside it.
+const REFUSED_PERMISSION = {
+  statements: ['GRANT SELECT ON TABLE `main`.`s`.`orders` TO `11111111-2222-3333-4444-555555555555`;'],
+  principal: '11111111-2222-3333-4444-555555555555',
+  why: 'Start reads the profile as the App, and the App cannot read it yet.',
+};
+
+test('a Download the workspace refuses opens Permission Required and shows no second message on the run (REQ-313, REQ-220)', async () => {
+  const ui = await openUi('choose', { sessions: SESSIONS, profiles: PROFILES, profileRefusal: { message: 'User does not have SELECT', permissions: [REFUSED_PERMISSION] } });
+  const { page } = ui;
+  try {
+    await page.locator('[data-run="42"]').first().waitFor({ timeout: 20000 });
+    await page.locator('[data-run="42"] [data-run-profile-download]').click();
+    await page.locator('[data-permission-dialog=""]').waitFor({ timeout: 15000 });
+    assert.equal(await page.locator('[data-run-profile-error]').count(), 0, 'the dialog carries the reason, so no second message shows on the run');
+  } finally {
+    await ui.close();
+  }
+});

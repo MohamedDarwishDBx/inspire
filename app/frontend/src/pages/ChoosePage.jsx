@@ -205,11 +205,12 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
     setProfileError(null);
     try {
       const resp = await fetch(`/api/inspire/profiles/${encodeURIComponent(profileId)}`, { headers: requestHeaders(token, databricksHost, {}, showcase) });
-      if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || `Inspire could not read that business profile (${resp.status}).`);
+      // A refused read raises the Permission Required dialog (REQ-313); the dialog then shows the reason, so no second message appears here (REQ-220).
+      if (!resp.ok) throw await responseError(resp);
       const { profile } = await resp.json();
       saveBlob(new Blob([profileFileText(profile)], { type: 'application/json' }), profileFileName(profile.name));
     } catch (e) {
-      setProfileError({ sessionId: String(sessionId), message: e.message });
+      if (!e.dialog) setProfileError({ sessionId: String(sessionId), message: e.message });
     }
   }, [token, databricksHost, showcase]);
 
@@ -497,7 +498,7 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
                         )}
                       </div>
                       {profileError?.sessionId === sidStr && (
-                        <p role="alert" data-run-profile-error="" className="mt-1 text-[11px] text-error-fg">{profileError.message}</p>
+                        <PlainMessage as="p" text={profileError.message} role="alert" data-run-profile-error="" className="mt-1 text-[11px] text-error-fg" />
                       )}
                       <>
                           {counts.items.length > 0 && (

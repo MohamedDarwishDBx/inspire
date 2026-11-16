@@ -1,6 +1,7 @@
 // Business profiles: a named, server-stored copy of the Start form, shared by everyone on the App (D-PROF2A).
 // The tables live in the App's own database, next to the launch record. A run started with a profile is linked to it by session.
 const { quoted } = require('./launchLedger');
+const { parseExactJson } = require('./exactJson');
 
 const PROFILE_TABLE = '__inspire_profile';
 const LINK_TABLE = '__inspire_profile_link';
@@ -123,7 +124,7 @@ function profileSummary(row) {
 function profileDetail(row) {
   let spec = null;
   try {
-    spec = JSON.parse(row.spec_json || 'null');
+    spec = parseExactJson(row.spec_json || 'null');
   } catch {
     spec = null;
   }

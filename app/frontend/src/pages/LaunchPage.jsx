@@ -1384,7 +1384,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                     : `You changed the profile ${loadedProfile.name}. Get Started asks whether to save these settings.`}
                 </p>
               )}
-              {profilesError && <p role="alert" data-launch-profile-error="" className="mt-2 text-xs text-error-fg">{profilesError}</p>}
+              {profilesError && <PlainMessage text={profilesError} role="alert" data-launch-profile-error="" className="mt-2 text-xs text-error-fg" />}
             </Field>
 
             {/* UC Metadata — Catalog/Schema/Table pickers with shopping basket */}
@@ -2166,7 +2166,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 Replace the profile {profileNamed(saveAsk.name).name} saved by {profileNamed(saveAsk.name).updated_by || 'someone'} on {formatWhen(profileNamed(saveAsk.name).updated_at, 'an unknown date')}?
               </p>
             )}
-            {saveError && <p role="alert" data-launch-profile-error="" className="text-xs text-error-fg">{saveError}</p>}
+            {saveError && <PlainMessage text={saveError} role="alert" data-launch-profile-error="" className="text-xs text-error-fg" />}
             <p className="text-xs text-text-secondary">Everyone on this App can load a saved profile. The list shows who saved it and when.</p>
           </ModalDialog>
         )}
