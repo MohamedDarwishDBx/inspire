@@ -44,6 +44,8 @@ import DataFilters from '../components/DataFilters';
 import { groupLabelOf } from '../lib/implementWizard';
 import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
 import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
+import ModalDialog from '../components/ModalDialog';
+import { sameSettings } from '../lib/businessProfiles';
 import { scopesFromObject, launchTableScopeText, filterValuesOf, labelAvailable, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
@@ -216,6 +218,8 @@ function restoredForm(draft) {
     tableScopes: scopesFromObject(spec.tableScopes).scopes,
     dataFilterLabel: restoredLabel(spec.dataFilterLabel),
     ...Object.fromEntries(FLAGS.map((key) => [key, spec[key] === true])),
+    // The profile the draft was loaded from (REQ-364): a reload keeps the link, so an unchanged profile still runs without the question.
+    profile: draft && draft.profile ? draft.profile : null,
   };
 }
 
@@ -235,6 +239,8 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [draft] = useState(() => restoredForm(readWizardDraft(draftKey, START_DRAFT_STAMP)));
   const [draftBack, setDraftBack] = useState(Boolean(draft));
   const start = draft || FORM_DEFAULTS;
+  // The profile the form was loaded from, with its saved settings (REQ-364). Declared before the draft effect, which saves it.
+  const [loadedProfile, setLoadedProfile] = useState(start.profile || null);
 
   // ── Widget params (must match notebook widget names exactly) ──
   const [params, setParams] = useState(() => ({ ...defaultParams(inspireDatabase), ...(draft ? draft.params : {}) }));
@@ -651,30 +657,36 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   }), [params, genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
     electionTouched, discoveryTouched, strategyTouched, prioritiesTouched]);
   useEffect(() => {
-    if (JSON.stringify(draftForm) === PRISTINE_FORM) clearWizardDraft(draftKey);
-    else writeWizardDraft(draftKey, { stamp: START_DRAFT_STAMP, spec: draftForm, step: START_DRAFT_STEP });
-  }, [draftKey, draftForm]);
+    if (JSON.stringify(draftForm) === PRISTINE_FORM && !loadedProfile) clearWizardDraft(draftKey);
+    else writeWizardDraft(draftKey, { stamp: START_DRAFT_STAMP, spec: draftForm, step: START_DRAFT_STEP, profile: loadedProfile });
+  }, [draftKey, draftForm, loadedProfile]);
+
+  // One code path sets the whole form: Start over sets the defaults, and a picked profile sets its saved settings.
+  const applyForm = (form) => {
+    setParams(form.params);
+    setGenChecks(form.genChecks);
+    setPriorityChecks(form.priorityChecks);
+    setCustomPriorities(form.customPriorities);
+    setStrategyBase(form.strategyBase);
+    setSelectedCatalogs(form.selectedCatalogs);
+    setWholeCatalogs(form.wholeCatalogs);
+    setSelectedSchemas(form.selectedSchemas);
+    setSelectedTables(form.selectedTables);
+    setTableScopes(form.tableScopes);
+    setDataFilterLabel(form.dataFilterLabel);
+    setElectionTouched(form.electionTouched);
+    setDiscoveryTouched(form.discoveryTouched);
+    setStrategyTouched(form.strategyTouched);
+    setPrioritiesTouched(form.prioritiesTouched);
+    setPrefillNote('');
+    setStrategyEditorKey((k) => k + 1);
+  };
 
   const startOver = () => {
     clearWizardDraft(draftKey);
     setDraftBack(false);
-    setParams(defaultParams(inspireDatabase));
-    setGenChecks(FORM_DEFAULTS.genChecks);
-    setPriorityChecks(FORM_DEFAULTS.priorityChecks);
-    setCustomPriorities(FORM_DEFAULTS.customPriorities);
-    setStrategyBase(FORM_DEFAULTS.strategyBase);
-    setSelectedCatalogs(FORM_DEFAULTS.selectedCatalogs);
-    setWholeCatalogs(FORM_DEFAULTS.wholeCatalogs);
-    setSelectedSchemas(FORM_DEFAULTS.selectedSchemas);
-    setSelectedTables(FORM_DEFAULTS.selectedTables);
-    setTableScopes(FORM_DEFAULTS.tableScopes);
-    setDataFilterLabel(FORM_DEFAULTS.dataFilterLabel);
-    setElectionTouched(false);
-    setDiscoveryTouched(false);
-    setStrategyTouched(false);
-    setPrioritiesTouched(false);
-    setPrefillNote('');
-    setStrategyEditorKey((k) => k + 1);
+    setLoadedProfile(null);
+    applyForm({ ...FORM_DEFAULTS, params: defaultParams(inspireDatabase) });
   };
 
   const handleStrategyChange = useCallback((value) => {
@@ -764,12 +776,85 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       : []),
   ], [strategicContextText, customPriorities, strategyBase]);
 
-  // Launch
-  const handleLaunch = async () => {
-    if (launchBlock) return setLaunchError(launchBlock);
-    if (!outputCheck.ready)
-      return setLaunchError(outputCheck.text || 'Wait until Inspire has checked that you can write to the output folder.');
+  // ── Business profiles (REQ-364, REQ-365): named copies of this form, shared by everyone on the App ──
+  const [profiles, setProfiles] = useState([]);
+  const [profilesError, setProfilesError] = useState('');
+  const [profileBusy, setProfileBusy] = useState(false);
+  // The save dialog: null when closed, else { name, confirmReplace } of the profile it would save. A listed name needs a second confirm.
+  const [saveAsk, setSaveAsk] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
+  const loadProfiles = useCallback(async () => {
+    if (!canUseUcApi) return;
+    try {
+      const data = await apiFetch('/api/inspire/profiles');
+      setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
+      setProfilesError('');
+    } catch (err) {
+      setProfilesError(parseApiErrorMessage(err.message));
+    }
+  }, [apiFetch, canUseUcApi]);
+
+  useEffect(() => { loadProfiles(); }, [loadProfiles]);
+
+  // A picked profile sets the whole form through applyForm, from its saved settings (restoredForm is the draft's own reader).
+  // Every touch flag is set, so the last run's prefill never overwrites a value the profile saved.
+  const pickProfile = async (profileId) => {
+    if (!profileId) return setLoadedProfile(null);
+    setProfileBusy(true);
+    setProfilesError('');
+    try {
+      const data = await apiFetch(`/api/inspire/profiles/${encodeURIComponent(profileId)}`);
+      const form = restoredForm({ step: START_DRAFT_STEP, spec: data.profile.spec });
+      applyForm({
+        ...form,
+        params: { ...defaultParams(inspireDatabase), ...form.params },
+        electionTouched: true,
+        discoveryTouched: true,
+        strategyTouched: true,
+        prioritiesTouched: true,
+      });
+      setLoadedProfile({ profile_id: data.profile.profile_id, name: data.profile.name, spec: data.profile.spec });
+    } catch (err) {
+      setProfilesError(parseApiErrorMessage(err.message));
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const profileLabel = (p) => `${p.name}: updated by ${p.updated_by || 'someone'} on ${formatWhen(p.updated_at, 'an unknown date')}`;
+  const profileNamed = (name) => profiles.find((p) => String(p.name).trim().toLowerCase() === String(name || '').trim().toLowerCase()) || null;
+
+  const saveAndRun = async () => {
+    const name = saveAsk.name.trim();
+    const replacing = profileNamed(name);
+    if (replacing && !saveAsk.confirmReplace) return setSaveAsk({ name: saveAsk.name, confirmReplace: true });
+    setSaving(true);
+    setSaveError('');
+    try {
+      const data = await apiFetch('/api/inspire/profiles', {
+        method: 'POST',
+        body: JSON.stringify({ name, business_name: params['00_business_name'], spec: draftForm, overwrite: Boolean(replacing) }),
+      });
+      setSaveAsk(null);
+      setLoadedProfile({ profile_id: data.profile.profile_id, name: data.profile.name, spec: draftForm });
+      loadProfiles();
+      launchNow(data.profile.profile_id);
+    } catch (err) {
+      setSaveError(parseApiErrorMessage(err.message));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runWithoutSaving = () => {
+    setSaveAsk(null);
+    launchNow('');
+  };
+
+  // The launch itself: the grant check, then the run. A profile id links the run to its profile once it is submitted.
+  const launchNow = async (profileId = '') => {
     setLaunching(true);
     setLaunchError('');
     const finalParams = { ...params };
@@ -790,6 +875,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
             params: finalParams,
             warehouse_id: warehouseId,
             samples_choice: sampleEntries.length ? samplesChoice.choice : undefined,
+            profile_id: profileId || undefined,
           }),
         }), { label: 'The launch' });
         clearWizardDraft(draftKey);
@@ -820,6 +906,16 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       return;
     }
     startRun();
+  };
+
+  // Get Started asks to save the settings as a profile. A loaded profile whose settings are unchanged runs without asking.
+  const handleLaunch = () => {
+    if (launchBlock) return setLaunchError(launchBlock);
+    if (!outputCheck.ready)
+      return setLaunchError(outputCheck.text || 'Wait until Inspire has checked that you can write to the output folder.');
+    if (loadedProfile && sameSettings(draftForm, loadedProfile.spec)) return launchNow(loadedProfile.profile_id);
+    setSaveError('');
+    return setSaveAsk({ name: String(params['00_business_name'] || '').trim(), confirmReplace: false });
   };
 
   const copySamples = async () => {
@@ -1260,14 +1356,35 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
           <div className="px-6 py-6 space-y-6">
             {/* Business Name */}
             <Field label="Business Name" required icon={Building2} hint="The company or business unit to analyze">
-              <input dir="auto"
-                type="text"
-                placeholder="e.g. Contoso, Acme Corp, Retail Division"
-                value={params['00_business_name']}
-                onChange={(e) => updateParam('00_business_name', e.target.value)}
-                onBlur={(e) => setHeadlineBusiness((e.target.value || '').trim())}
-                className="w-full ps-10 pe-4 py-2.5 text-sm border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-tertiary glow-focus transition-smooth"
-              />
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <input dir="auto"
+                  type="text"
+                  placeholder="e.g. Contoso, Acme Corp, Retail Division"
+                  value={params['00_business_name']}
+                  onChange={(e) => updateParam('00_business_name', e.target.value)}
+                  onBlur={(e) => setHeadlineBusiness((e.target.value || '').trim())}
+                  className="min-w-0 flex-1 w-full ps-10 pe-4 py-2.5 text-sm border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-tertiary glow-focus transition-smooth"
+                />
+                <label className="flex shrink-0 items-center gap-2 text-xs font-medium text-text-primary">
+                  <span className="whitespace-nowrap">Profile</span>
+                  <select data-launch-profile="" aria-label="Business profile"
+                    value={loadedProfile?.profile_id || ''}
+                    disabled={profileBusy || launching}
+                    onChange={(e) => pickProfile(e.target.value)}
+                    className="min-w-0 w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-primary glow-focus sm:w-80">
+                    <option value="">No profile</option>
+                    {profiles.map((p) => <option key={p.profile_id} value={p.profile_id}>{profileLabel(p)}</option>)}
+                  </select>
+                </label>
+              </div>
+              {loadedProfile && (
+                <p data-launch-profile-note="" role="status" className="mt-2 text-xs text-text-secondary">
+                  {sameSettings(draftForm, loadedProfile.spec)
+                    ? `This run uses the profile ${loadedProfile.name}.`
+                    : `You changed the profile ${loadedProfile.name}. Get Started asks whether to save these settings.`}
+                </p>
+              )}
+              {profilesError && <p role="alert" data-launch-profile-error="" className="mt-2 text-xs text-error-fg">{profilesError}</p>}
             </Field>
 
             {/* UC Metadata — Catalog/Schema/Table pickers with shopping basket */}
@@ -2017,6 +2134,42 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
           )}
         </button>
         {launchBlock && !launching && <p id="launch-block" data-launch-block="" role="status" className="text-xs text-text-secondary mt-2 text-center">{launchBlock}</p>}
+        {saveAsk && (
+          <ModalDialog titleId="launch-save-profile-title" title="Save these settings as a business profile?"
+            onClose={() => { if (!saving) setSaveAsk(null); }} widthClass="max-w-md"
+            dialogAttrs={{ 'data-launch-save-profile': '' }}
+            footer={(
+              <>
+                <button type="button" data-launch-run-unsaved="" onClick={runWithoutSaving} disabled={saving}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-text-primary hover:bg-bg-subtle disabled:opacity-50">
+                  Run without saving
+                </button>
+                <button type="button" data-launch-save-run="" onClick={saveAndRun} disabled={saving || !saveAsk.name.trim()}
+                  className="rounded-lg bg-db-red-solid px-4 py-2 text-sm font-bold text-white hover:bg-db-red-solid-hover disabled:opacity-50">
+                  {saving ? 'Saving…' : profileNamed(saveAsk.name) && saveAsk.confirmReplace ? 'Replace and run' : 'Save and run'}
+                </button>
+              </>
+            )}>
+            <label className="block text-xs font-semibold text-text-primary">
+              Profile name
+              <input data-launch-profile-name="" dir="auto" type="text" value={saveAsk.name} disabled={saving}
+                onChange={(e) => setSaveAsk({ name: e.target.value, confirmReplace: false })}
+                className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary glow-focus" />
+            </label>
+            {profileNamed(saveAsk.name) && !saveAsk.confirmReplace && (
+              <p data-launch-profile-replace="" className="text-xs text-warning-fg">
+                A profile named {profileNamed(saveAsk.name).name} already exists. Saving replaces it.
+              </p>
+            )}
+            {profileNamed(saveAsk.name) && saveAsk.confirmReplace && (
+              <p data-launch-profile-replace-confirm="" role="alert" className="text-xs font-semibold text-warning-fg">
+                Replace the profile {profileNamed(saveAsk.name).name} saved by {profileNamed(saveAsk.name).updated_by || 'someone'} on {formatWhen(profileNamed(saveAsk.name).updated_at, 'an unknown date')}?
+              </p>
+            )}
+            {saveError && <p role="alert" data-launch-profile-error="" className="text-xs text-error-fg">{saveError}</p>}
+            <p className="text-xs text-text-secondary">Everyone on this App can load a saved profile. The list shows who saved it and when.</p>
+          </ModalDialog>
+        )}
 
         <p data-admin-footer="" className="text-xs text-text-tertiary mt-3 text-center">
           Notebook: <span className="font-mono text-text-secondary">{notebookPath || 'not set'}</span>

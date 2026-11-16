@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useCallback, useMemo, useId } from 'react';
-import { Rocket, BarChart3, Loader2, AlertCircle, Clock, CheckCircle2, ArrowRight, ChevronRight, ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Target, FileText, Sparkles, X } from 'lucide-react';
+import { Rocket, BarChart3, Loader2, AlertCircle, Clock, CheckCircle2, ArrowRight, ChevronRight, ChevronDown, ChevronUp, Trash2, Eye, EyeOff, Target, FileText, Sparkles, X, Download } from 'lucide-react';
 import SessionSparkline from '../components/SessionSparkline';
 import MagneticButton from '../components/MagneticButton';
 import { SkeletonCard } from '../components/SkeletonLoader';
@@ -10,6 +10,8 @@ import { EstimateTotals } from '../components/ValueEstimateLine';
 import { valueChips, valueQuery } from '../lib/valueLedger';
 import { useValueRead } from '../lib/useValueLedger';
 import { makeApiFetch, requestHeaders, responseError } from '../lib/apiClient';
+import { saveBlob } from '../lib/download';
+import { profileFileName, profileFileText } from '../lib/businessProfiles';
 import { buildFilterOf, portfolioCard, runCounts, runLabel, runFilterText, runsOfCard } from '../lib/reviewFigures';
 import { sessionCountsLine, sessionStatus } from '../lib/monitorState';
 import { SHOWCASE_BUTTON } from '../lib/showcase';
@@ -196,6 +198,20 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
   const [expandedQuickView, setExpandedQuickView] = useState(null);
   const [quickViewUcsBySession, setQuickViewUcsBySession] = useState({});
   const [quickViewLoadingSid, setQuickViewLoadingSid] = useState(null);
+  const [profileError, setProfileError] = useState(null);
+
+  // Download profile (REQ-366): the profile a run was started with, saved as inspire_profile_<name>.json.
+  const downloadProfile = useCallback(async (profileId, sessionId) => {
+    setProfileError(null);
+    try {
+      const resp = await fetch(`/api/inspire/profiles/${encodeURIComponent(profileId)}`, { headers: requestHeaders(token, databricksHost, {}, showcase) });
+      if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || `Inspire could not read that business profile (${resp.status}).`);
+      const { profile } = await resp.json();
+      saveBlob(new Blob([profileFileText(profile)], { type: 'application/json' }), profileFileName(profile.name));
+    } catch (e) {
+      setProfileError({ sessionId: String(sessionId), message: e.message });
+    }
+  }, [token, databricksHost, showcase]);
 
   const deleteSession = useCallback(async (sessionId) => {
     if (!inspireDatabase || !warehouseId || showcase) return;
@@ -474,7 +490,15 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${cfg.bg} ${cfg.text}`}>
                           {cfg.label}
                         </span>
+                        {session.profile_id && (
+                          <span data-run-profile="" className="text-[10px] px-1.5 py-0.5 rounded bg-bg-subtle text-text-secondary">
+                            Profile: {session.profile_name || 'saved profile'}
+                          </span>
+                        )}
                       </div>
+                      {profileError?.sessionId === sidStr && (
+                        <p role="alert" data-run-profile-error="" className="mt-1 text-[11px] text-error-fg">{profileError.message}</p>
+                      )}
                       <>
                           {counts.items.length > 0 && (
                             <ul data-run-counts="" aria-label="Counts for this run" className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11px] text-text-secondary">
@@ -525,6 +549,16 @@ export default function ChoosePage({ settings, onNewExperiment, onNoData, onDemo
                   </button>
 
                     <div className="flex-shrink-0 flex items-center gap-2">
+                      {session.profile_id && (
+                        <button
+                          type="button"
+                          data-run-profile-download=""
+                          onClick={(e) => { e.stopPropagation(); downloadProfile(session.profile_id, sidStr); }}
+                          className="relative z-10 inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[11px] font-semibold text-text-primary hover:bg-bg-subtle"
+                        >
+                          <Download size={11} aria-hidden /> Download profile
+                        </button>
+                      )}
                       {Number(portfolio?.sessions?.[sidStr]?.mvps_live) > 0 && (
                         <span data-run-live="" className="rounded-lg border border-success/35 bg-success-bg px-2.5 py-1.5 text-[11px] font-semibold tabular-nums text-success-fg">
                           {portfolio.sessions[sidStr].mvps_live.toLocaleString('en-US')} live

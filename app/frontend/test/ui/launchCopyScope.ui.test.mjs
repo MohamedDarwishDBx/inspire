@@ -81,6 +81,7 @@ test('Copy into carries the Data Filter to the copy, and Get Started sends the s
 async function launchParams(page, made) {
   await idle(page);
   await page.getByRole('button', { name: 'Get Started' }).click();
+  await page.locator('[data-launch-run-unsaved]').click();
   await until(() => made.launches.length === 1, 'the launch was sent once');
   return made.launches[0].params;
 }

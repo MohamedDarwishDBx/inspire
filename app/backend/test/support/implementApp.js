@@ -27,6 +27,7 @@ function makeApp(overrides = {}, { mount } = {}) {
     session: { business_name: 'Acme', discovery_type: 'Deep', catalogs: 'main', schemas_str: 's', tables_str: 'main.s.orders', generation_path: '/tmp/out', inspire_database_name: 'main.inspire' },
     useCase: { id: 'N01-U01', use_case: 'Predict churn', genie_instruction: '## Parameters\n| top_k | text | 25 | Top K |\n' },
     history: [],
+    profiles: [],
     columns: [{ column_name: 'order_id', data_type: 'STRING', ordinal_position: 1 }],
     warehouses: { warehouses: [{ id: 'wh1', name: 'SQL' }] },
     appsOk: true,
@@ -321,6 +322,26 @@ function makeApp(overrides = {}, { mount } = {}) {
       truncated: Boolean(state.sessionsTruncated),
     });
   });
+  app.get('/api/inspire/profiles', (req, res) => {
+    const business = String(req.query.business_name || '').trim().toLowerCase();
+    const listed = (state.profiles || []).filter((p) => !business || String(p.business_name).toLowerCase() === business);
+    res.json({ profiles: listed.map(profileSummaryOf) });
+  });
+  app.get('/api/inspire/profiles/:profileId', (req, res) => {
+    const found = (state.profiles || []).find((p) => p.profile_id === req.params.profileId);
+    if (!found) return res.status(404).json({ error: 'That business profile was not found' });
+    return res.json({ profile: found });
+  });
+  app.post('/api/inspire/profiles', (req, res) => {
+    const body = req.body || {};
+    state.profileSaves = [...(state.profileSaves || []), body];
+    const taken = (state.profiles || []).find((p) => p.name.toLowerCase() === String(body.name || '').trim().toLowerCase());
+    if (taken && !body.overwrite) return res.status(409).json({ error: `A business profile named "${body.name}" already exists.`, exists: true, profile_id: taken.profile_id });
+    const row = { profile_id: taken ? taken.profile_id : `profile-${(state.profiles || []).length + 1}`, name: String(body.name || '').trim(),
+      business_name: String(body.business_name || ''), updated_by: 'amr@x', updated_at: '2026-11-16T09:00:00Z', spec: body.spec || {} };
+    state.profiles = taken ? state.profiles.map((p) => (p.profile_id === taken.profile_id ? row : p)) : [...(state.profiles || []), row];
+    return res.json({ profile: profileSummaryOf(row) });
+  });
   app.get('/api/inspire/step-results', (_req, res) => res.json({ results: state.stepResults || null }));
   app.get('/api/warehouses', (_req, res) => {
     const listed = (state.warehouses && state.warehouses.warehouses) || [];
@@ -399,6 +420,11 @@ function makeApp(overrides = {}, { mount } = {}) {
   app.get('/api/inspire/value/runs', (_req, res) => res.json(state.valueRuns || { runs: {} }));
   app.get('/api/inspire/value/estimates', (_req, res) => res.json(state.valueEstimates || { use_cases: {}, totals: { estimated: {} } }));
   return { app, sqlCalls, fetches, jobs, state, altered, flagged, appCalls, launches, catalogLists, sampleCopies };
+}
+
+// Business profiles as the App shares them (REQ-364 to REQ-366). state.profiles holds the saved rows; state.profileSaves records each save the page sent.
+function profileSummaryOf(row) {
+  return { profile_id: row.profile_id, name: row.name, business_name: row.business_name, updated_by: row.updated_by, updated_at: row.updated_at };
 }
 
 function json(data, status = 200) {

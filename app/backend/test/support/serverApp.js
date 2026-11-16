@@ -37,7 +37,7 @@ const state = {
 function reset(overrides = {}) {
   Object.assign(state, {
     managers: [], managerGroups: [], personGroups: [], aclStatus: 200, personAppsScope: true, launchers: {}, sessionLaunchers: {}, history: [], calls: [],
-    launches: [], knownSessions: [], ledgerSessions: [], nextRunId: 501, holdFetch: null, createFailure: '', sessionRows: {}, groupParents: {}, indirectGroups: [], conflictOn: null, ucSchemas: null, ucTables: null,
+    launches: [], profiles: [], profileLinks: [], knownSessions: [], ledgerSessions: [], nextRunId: 501, holdFetch: null, createFailure: '', sessionRows: {}, groupParents: {}, indirectGroups: [], conflictOn: null, ucSchemas: null, ucTables: null,
     createdJob: null, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runViewDenied: null, exportDenied: false, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, tableColumns: {}, files: {}, sessionBusiness: {},
     ...folderModel({ folders: { '/Shared/demos': { id: 7, writers: '*' } } }),
   }, overrides);
@@ -66,6 +66,49 @@ function answerSql(body) {
     const value = Object.hasOwn(state.catalogPaths || {}, sid) ? state.catalogPaths[sid] : undefined;
     const reason = (state.catalogReasons || {})[sid] || null;
     return sqlResult(['catalog_json_path', 'catalog_json_reason'], value === undefined ? [] : [[value, reason]]);
+  }
+  // Business profiles (REQ-364 to REQ-366): the profile table and its run links, kept in state.profiles and state.profileLinks.
+  if (/^\s*CREATE TABLE IF NOT EXISTS\b/i.test(sql) && sql.includes('__inspire_profile')) return sqlResult(['ok'], []);
+  if (/^\s*INSERT INTO\b/i.test(sql) && sql.includes('__inspire_profile_link')) {
+    const row = Object.fromEntries((body.parameters || []).map((p) => [p.name, p.value]));
+    state.profileLinks.push({ ...row, linked_at: String(state.profileLinks.length + 1) });
+    return sqlResult(['num_inserted_rows'], [['1']]);
+  }
+  if (/^\s*INSERT INTO\b/i.test(sql) && sql.includes('__inspire_profile')) {
+    const row = Object.fromEntries((body.parameters || []).map((p) => [p.name, p.value]));
+    state.profiles.push({ ...row, created_by: row.by, updated_by: row.by, updated_at: '2026-11-16T09:00:00Z' });
+    return sqlResult(['num_inserted_rows'], [['1']]);
+  }
+  if (/^\s*UPDATE\b/i.test(sql) && sql.includes('__inspire_profile')) {
+    const row = Object.fromEntries((body.parameters || []).map((p) => [p.name, p.value]));
+    const saved = state.profiles.find((p) => p.profile_id === row.profile_id);
+    if (saved) Object.assign(saved, { name: row.name, business_name: row.business_name, spec_json: row.spec_json, updated_by: row.by, updated_at: '2026-11-16T10:00:00Z' });
+    return sqlResult(['num_affected_rows'], [[saved ? '1' : '0']]);
+  }
+  if (/^\s*SELECT CAST\(l\.session_id AS STRING\)/.test(sql) && sql.includes('__inspire_profile_link')) {
+    const db = paramOf(body, 'inspire_database');
+    const asked = (body.parameters || []).filter((p) => /^s\d+$/.test(p.name)).map((p) => p.value);
+    const rows = state.profileLinks.filter((l) => l.inspire_database === db && asked.includes(l.session_id)).slice().reverse()
+      .map((l) => {
+        const profile = state.profiles.find((p) => p.profile_id === l.profile_id);
+        return profile ? [l.session_id, l.profile_id, profile.name] : null;
+      }).filter(Boolean);
+    return sqlResult(['session_id', 'profile_id', 'profile_name'], rows);
+  }
+  if (/^\s*SELECT profile_id FROM\b/i.test(sql) && sql.includes('__inspire_profile')) {
+    const name = String(paramOf(body, 'name') || '').toLowerCase();
+    return sqlResult(['profile_id'], state.profiles.filter((p) => String(p.name).toLowerCase() === name).map((p) => [p.profile_id]));
+  }
+  if (/^\s*SELECT profile_id, name, business_name, spec_json\b/.test(sql) && sql.includes('__inspire_profile')) {
+    const id = paramOf(body, 'profile_id');
+    return sqlResult(['profile_id', 'name', 'business_name', 'spec_json', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+      state.profiles.filter((p) => p.profile_id === id).map((p) => [p.profile_id, p.name, p.business_name, p.spec_json, p.created_by, p.created_at ?? null, p.updated_by, p.updated_at]));
+  }
+  if (/^\s*SELECT profile_id, name, business_name, created_by\b/.test(sql) && sql.includes('__inspire_profile')) {
+    const business = paramOf(body, 'business_name');
+    const rows = state.profiles.filter((p) => !business || String(p.business_name).toLowerCase() === String(business).toLowerCase());
+    return sqlResult(['profile_id', 'name', 'business_name', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+      rows.map((p) => [p.profile_id, p.name, p.business_name, p.created_by, p.created_at ?? null, p.updated_by, p.updated_at]));
   }
   if (/^\s*INSERT INTO\b/i.test(sql) && sql.includes('__inspire_launch')) {
     const row = Object.fromEntries((body.parameters || []).map((p) => [p.name, p.value]));

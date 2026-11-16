@@ -19,6 +19,7 @@ test('a launch whose check never answers ends the spinner with the reason, and t
     await PICK(page);
     const button = page.getByRole('button', { name: /Get Started|Starting the run/ });
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await page.getByText('Starting the run…').waitFor({ timeout: 15000 });
     await page.clock.fastForward(241000);
     await page.getByText(/did not answer within 4 minutes/).waitFor({ timeout: 15000 });
@@ -38,6 +39,7 @@ test('a launch the backend refuses shows the backend reason and stops the spinne
   try {
     await PICK(page);
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await page.getByText('Cluster configuration is invalid for this workspace').waitFor({ timeout: 15000 });
     assert.equal(await page.getByText('Starting the run…').count(), 0);
     assert.equal(made.launches.length, 1);

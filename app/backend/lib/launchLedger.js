@@ -149,6 +149,7 @@ function launcherOf(rows) {
 
 module.exports = {
   LAUNCH_TABLE,
+  quoted,
   OUTPUT_CHECKS,
   launchTableName,
   launchCreateSql,

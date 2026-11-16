@@ -37,6 +37,7 @@ test('a run refused for a table the person cannot read shows the reason as it ca
     await page.locator('button[title="salaries"]').click();
     assert.equal(await page.locator('[data-uc-why]').count(), 0, 'no reason while the person can list');
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await page.getByText(REFUSED, { exact: true }).waitFor({ timeout: 20000 });
     assert.equal(await page.locator('[data-uc-permission]').count(), 0, 'a refusal of the person\u2019s own reads is not a grant problem of the App');
     await until(() => made.launches.length === 1, 'the launch was sent once');
@@ -107,6 +108,7 @@ test('a launch whose App auto-grant succeeded shows no sign-in or grant notice o
     await page.locator('button[title="s"]').click();
     await page.locator('button[title="orders"]').click();
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1, 'the launch was sent once');
     await page.getByRole('status').filter({ hasText: /Launched|started/i }).first().waitFor({ timeout: 15000 }).catch(() => null);
     assert.equal(await page.locator('[data-testid="launch-notes"]').count(), 0, 'a successful auto-grant leaves no launch note');

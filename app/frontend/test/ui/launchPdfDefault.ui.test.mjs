@@ -18,6 +18,7 @@ const pressed = async (page, name) => (await option(page, name).getAttribute('ar
 const launchOf = async (page, made) => {
   await idle(page);
   await page.getByRole('button', { name: 'Get Started' }).click();
+  await page.locator('[data-launch-run-unsaved]').click();
   await until(() => made.launches.length === 1, 'the launch was sent once');
   return made.launches[0].params;
 };
