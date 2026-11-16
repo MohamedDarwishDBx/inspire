@@ -26,3 +26,8 @@ test('a classic App, or one without the Agent section, lands on the dashboard as
   const noAgent = canonicalHash('#/loss', { pages, sectionsOf: sectionsOf(['dashboard']), landingOf: () => 'agent' });
   assert.equal(noAgent, '#/loss/dashboard', 'a landing the App does not show falls back to the dashboard');
 });
+
+test('D-NOAGENT: a deep link to the Agent section falls back to the dashboard when the App shows no Agent section', () => {
+  const next = canonicalHash('#/loss/agent', { pages, sectionsOf: sectionsOf(['dashboard', 'work']), landingOf: () => '' });
+  assert.equal(next, '#/loss/dashboard', 'the hidden section is not a valid landing, so the dashboard opens');
+});
