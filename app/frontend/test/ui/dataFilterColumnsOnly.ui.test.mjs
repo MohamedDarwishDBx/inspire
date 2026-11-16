@@ -49,8 +49,9 @@ test('REQ-383: the Data filter section shows no table, schema or catalog tree, p
     assert.doesNotMatch(text, /orders|customers/, 'no table is named before a search');
     await page.evaluate(() => { window.scrollTo(0, 0); });
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
-    await page.locator('[data-column-group="brand"]').waitFor({ timeout: 10000 });
-    assert.equal(await section.locator('[data-column-group]').count(), 1, 'the search lists one column name');
+    await page.locator('[data-column-hit="brand"]').first().waitFor({ timeout: 10000 });
+    assert.deepEqual(await section.locator('[data-column-hit]').evaluateAll((els) => els.map((el) => el.getAttribute('data-column-hit'))), ['brand', 'brand'],
+      'the search lists brand in each table and no other column');
     assert.equal(await section.locator('[data-scope-row]').count(), 2, 'one row per table that has the column');
     assert.equal(await section.locator('button[title]').count(), 0, 'the search adds no tree or picker');
     await page.locator('[data-section="data-filter"]').screenshot({ path: `${SHOTS_U7}/req383-search-1280x800.png` }).catch(() => {});
@@ -65,7 +66,7 @@ test('REQ-383: Your filters lists each row filter as one flat row with its table
   try {
     await openFilter(page);
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
-    await page.locator('[data-column-group="brand"]').waitFor({ timeout: 10000 });
+    await page.locator('[data-column-hit="brand"]').first().waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: 'Row filter on brand in orders' }).click();
     await page.getByLabel('Value for brand in orders').fill('Acme');
     await page.getByRole('button', { name: 'Add value' }).click();

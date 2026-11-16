@@ -45,7 +45,7 @@ async function pickSampleAndOpenDataFilters(page) {
   await page.getByRole('button', { name: /Advanced Settings/ }).click();
   await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
   await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand_name');
-  await page.locator(`[data-column-group="brand_name"] [data-scope-row="${SOURCE}"]`).waitFor({ timeout: 15000 });
+  await page.locator(`[data-column-hit="brand_name"][data-scope-row="${SOURCE}"]`).waitFor({ timeout: 15000 });
 }
 
 test('Copy into carries the Data Filter to the copy, and Get Started sends the scope under the copy name', async () => {

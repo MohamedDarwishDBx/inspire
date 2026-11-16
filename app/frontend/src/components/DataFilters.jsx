@@ -13,8 +13,8 @@ const VALUE_CHIPS = 40;
 const COUNT_DEBOUNCE_MS = 350;
 const GROUP_TOP = 500;
 const ANSWER_MS = 20000;
-const HITS_SHOWN = 60;
 const SEARCH_DEBOUNCE_MS = 300;
+const COLLAPSE_KEY = 'inspire-data-filter-collapse-names';
 const IDLE_SEARCH = { status: 'idle', rows: [], total: 0 };
 const BUTTON = 'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle disabled:opacity-50';
 const FIELD = 'h-8 rounded-md border border-border bg-surface px-2 text-xs text-text-primary';
@@ -34,6 +34,8 @@ function filterIsComplete(f) {
 }
 
 const shortName = (table) => table.split('.').pop();
+// The catalog and schema of a table: the part a row collapses to <..> (REQ-385).
+const prefixOf = (table) => table.split('.').slice(0, -1).join('.');
 const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error('Inspire did not get an answer in time.')), ms);
   promise.then((value) => { clearTimeout(timer); resolve(value); }, (err) => { clearTimeout(timer); reject(err); });
@@ -53,15 +55,36 @@ function conditionText(f) {
 // One row of a table's filter: a condition on a column, or a row group (the values the person picked for a column).
 const rowText = (f) => (isGroupRow(f) ? `groups: ${f.values.join(', ')}` : conditionText(f));
 
-// The search hits (one row per table and column, from the column search route) grouped by the exact column name. A group lists the tables that have it.
-function hitsOf(rows) {
-  const groups = new Map();
+// The search hits (one row per table and column, from the column search route) as one flat list of matching columns (REQ-384).
+// Exact names come first, then names that start with the text, then names that contain it; then by column name, then by table.
+// `first` marks the first row of a column name, and `sameTables` lists every table that has that name (for Apply to all).
+const termOf = (q) => q.replace(/\*/g, '').trim().toLowerCase();
+
+function hitRowsOf(rows, q) {
+  const term = termOf(q);
+  const tablesOf = new Map();
   for (const row of rows) {
     const key = row.column.toLowerCase();
-    if (!groups.has(key)) groups.set(key, { name: row.column, hits: [] });
-    groups.get(key).hits.push({ table: row.table, type: row.data_type || '' });
+    if (!tablesOf.has(key)) tablesOf.set(key, []);
+    tablesOf.get(key).push(row.table);
   }
-  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const rankOf = (key) => (key === term ? 0 : key.startsWith(term) ? 1 : 2);
+  const hits = rows.map((row) => {
+    const key = row.column.toLowerCase();
+    return { column: row.column, table: row.table, type: row.data_type || '', key, rank: rankOf(key), sameTables: tablesOf.get(key) };
+  }).sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) || (a.table < b.table ? -1 : a.table > b.table ? 1 : 0));
+  return hits.map((hit, i) => ({ ...hit, first: i === 0 || hits[i - 1].key !== hit.key }));
+}
+
+// The matched text of a column name in bold, so the person sees why the row matched (REQ-384).
+function ColumnName({ name, term }) {
+  const at = term ? name.toLowerCase().indexOf(term) : -1;
+  if (at < 0) return <span className="font-mono font-semibold text-text-primary">{name}</span>;
+  return (
+    <span className="font-mono font-semibold text-text-primary">
+      {name.slice(0, at)}<mark className="rounded-sm bg-db-red-50 text-db-red-fg">{name.slice(at, at + term.length)}</mark>{name.slice(at + term.length)}
+    </span>
+  );
 }
 
 function AddRowFilter({ table, column, who, openLabel = 'Row filter', commitLabel = 'Add filter', suggestions, loadValues, onCommit }) {
@@ -221,15 +244,26 @@ function UseCaseLabel({ scopes, tables, label, onLabel }) {
   );
 }
 
-// One table that has the searched column: its type, the filter on it (if any), and its row groups (categorical columns only).
-function HitRow({ hit, name, rows, read, onRead, valuesOf, loadValues, groupOf, groupState, onLoadGroups, onPickGroups, onAdd }) {
+// One matching column in one table (REQ-384, REQ-385): one dotted name, catalog.schema.table.column with the column highlighted, then its type
+// in small text, then the Read box, the filter on it (if any), Row filter, and Load groups (categorical columns only). The <..> part
+// (catalog.schema) expands in place for this row when `collapsed`. `applyAll` is the Apply to all action, set on the first row of a
+// column name that several tables have.
+function HitRow({ hit, term, rows, read, onRead, valuesOf, loadValues, groupOf, groupState, onLoadGroups, onPickGroups, onAdd, applyAll, collapsed, onToggleName }) {
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const name = hit.column;
   const conditions = rows.map((f, index) => ({ f, index })).filter(({ f }) => f.column === name);
   const categorical = columnKindOf(hit.type) === 'categorical';
   return (
-    <li data-scope-row={hit.table} className="flex flex-wrap items-start gap-2 border-t border-border pt-2">
-      <span className="text-text-tertiary" title={hit.table}>{shortName(hit.table)}</span>
-      <span className="text-text-tertiary">{hit.type}</span>
+    <li data-column-hit={name} data-scope-row={hit.table} className="flex flex-wrap items-start gap-2 border-t border-border pt-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
+        <span data-dotted-name className="font-mono break-all" title={hit.table}>
+          <button type="button" aria-expanded={!collapsed} aria-label={`${collapsed ? 'Show' : 'Hide'} the catalog and schema of ${name} in ${shortName(hit.table)}`}
+            onClick={onToggleName} className="text-text-tertiary hover:text-text-primary">{collapsed ? '<..>' : prefixOf(hit.table)}</button>
+          <span className="text-text-tertiary">.{shortName(hit.table)}.</span>
+          <ColumnName name={name} term={term} />
+        </span>
+        <span className="text-text-tertiary">{hit.type}</span>
+      </div>
       <label className="flex items-center gap-1.5 text-text-secondary">
         <input type="checkbox" aria-label={`Read ${name} in ${shortName(hit.table)}`} checked={read} onChange={(e) => onRead(e.target.checked)} />
         Read
@@ -237,7 +271,8 @@ function HitRow({ hit, name, rows, read, onRead, valuesOf, loadValues, groupOf, 
       <div className="flex flex-wrap gap-1.5 min-w-0">
         {conditions.map(({ f }, i) => <span key={i} data-scope-filtered={name} className="text-text-secondary">{conditionText(f)}</span>)}
       </div>
-      <div className="ms-auto flex flex-wrap gap-2">
+      <div className="ms-auto flex flex-wrap items-center gap-2">
+        {applyAll}
         <AddRowFilter table={hit.table} column={name} who={`${name} in ${shortName(hit.table)}`} suggestions={valuesOf(hit.table, name)}
           loadValues={loadValues} onCommit={(condition) => onAdd(hit.table, condition)} />
         {categorical && (
@@ -269,6 +304,16 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   const [note, setNote] = useState('');
   const [search, setSearch] = useState(IDLE_SEARCH);
   const [attempt, setAttempt] = useState(0);
+  // Collapse names (REQ-385): ticked by default, remembered in this browser. nameOverrides holds the rows a click on <..> changed.
+  const [collapseNames, setCollapseNames] = useState(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) !== '0'; } catch { return true; }
+  });
+  const [nameOverrides, setNameOverrides] = useState({});
+  const chooseCollapse = (next) => {
+    setCollapseNames(next);
+    setNameOverrides({});
+    try { localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0'); } catch { /* storage off: the choice lasts this visit */ }
+  };
   // A Read change waits for the column names of a table it has not read yet: the box shows the new state at once, until the write lands.
   const [pendingReads, setPendingReads] = useState({});
   const fired = useRef({});
@@ -340,7 +385,7 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
         method: 'POST',
         body: JSON.stringify({ scope: scopeNow.current || {}, q: searchText }),
       }), ANSWER_MS)
-        .then((d) => { if (!cancelled) setSearch({ status: 'done', rows: d.hits || [], total: Number(d.total) || 0 }); })
+        .then((d) => { if (!cancelled) setSearch({ status: 'done', q: searchText, rows: d.hits || [], total: Number(d.total) || 0 }); })
         .catch((e) => {
           if (cancelled) return;
           const permissions = Array.isArray(e.body?.permissions) ? e.body.permissions : [];
@@ -521,8 +566,9 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
     setNote(`Removed the saved filters on ${saved.map(shortName).join(', ')}: a metric view cannot be filtered.`);
   }, [columnsOf, scopes, onScopes, onMetricViews]);
 
-  const hits = hitsOf(answer.rows);
-  const hitTables = hits.reduce((n, g) => n + g.hits.length, 0);
+  const hits = hitRowsOf(answer.rows, answer.q || '');
+  const term = termOf(answer.q || '');
+  const columnNames = hits.filter((hit) => hit.first).length;
   // Every picked table that has a saved scope is listed, so a problem with it is shown where the person can fix it.
   const withFilters = tables.filter((t) => tableScopeOf(scopes, t));
   // The columns of a saved table that Inspire does not read, named as table.column (the person can see them without a search).
@@ -575,8 +621,14 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
           )}
           {note && <p data-scope-note="dropped" role="status" className="text-text-secondary">{note}</p>}
           <div data-column-search className="space-y-3">
-            <input type="search" aria-label="Search column names" value={query} dir="auto" onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search a column name, for example brand" className={`${FIELD} h-9 w-full`} />
+            <div className="flex flex-wrap items-center gap-3">
+              <input type="search" aria-label="Search column names" value={query} dir="auto" onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search a column name, for example brand" className={`${FIELD} h-9 min-w-0 flex-1`} />
+              <label className="flex items-center gap-1.5 whitespace-nowrap text-text-secondary">
+                <input type="checkbox" aria-label="Collapse names" checked={collapseNames} onChange={(e) => chooseCollapse(e.target.checked)} />
+                Collapse names
+              </label>
+            </div>
             <p data-search-syntax className="text-text-tertiary">Use * at the start or end, for example brand* or *_id.</p>
             {answer.status === 'loading' && <p data-search-loading className="text-text-tertiary">Searching the columns you picked</p>}
             {answer.status === 'error' && (
@@ -597,7 +649,7 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
               <p data-search-none className="text-text-secondary">No column name contains &quot;{query.trim()}&quot; in the {plural(tables.length, 'table')} you picked.</p>
             )}
             {hits.length > 0 && (
-              <p className="text-text-secondary">{plural(hits.length, 'column name')} match, in {plural(hitTables, 'table')}.</p>
+              <p className="text-text-secondary">{plural(columnNames, 'column name')} match, in {plural(hits.length, 'table')}.</p>
             )}
             {answer.total > answer.rows.length && (
               <p data-hits-capped className="text-text-secondary">
@@ -612,39 +664,32 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
               </div>
             )}
             {listing.leftOut.map((l) => <p key={`${l.schema}-${l.count}`} data-left-out="" className="text-text-secondary">{leftOutLine(l)}</p>)}
-            {hits.slice(0, HITS_SHOWN).map((group) => (
-              <section key={group.name.toLowerCase()} data-column-group={group.name} className="rounded-lg border border-border p-3 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono font-semibold text-text-primary">{group.name}</span>
-                  <span className="text-text-tertiary">in {plural(group.hits.length, 'table')}</span>
-                  {group.hits.length > 1 && (
-                    <label className="ms-auto flex items-center gap-1.5 text-text-secondary">
-                      <input type="checkbox" aria-label={`Read ${group.name} in all ${group.hits.length} tables`}
-                        checked={group.hits.every((h) => readOf(h.table, group.name))}
-                        onChange={(e) => readColumn(group.hits.map((h) => h.table), group.name, e.target.checked)} />
-                      Read in all {group.hits.length} tables
-                    </label>
-                  )}
-                  {group.hits.length > 1 && (
-                    <div>
-                      <AddRowFilter table={group.hits[0].table} column={group.name} who={`${group.name} in ${group.hits.length} tables`}
-                        openLabel="Apply to all" commitLabel="Apply to all tables" suggestions={valuesFor(group.hits[0].table, group.name)} loadValues={loadValues}
-                        onCommit={(condition) => commitRows(group.hits.map((h) => ({ table: h.table, rows: [...rowsOf(h.table), condition] })))} />
-                    </div>
-                  )}
-                </div>
-                <ul className="space-y-1">
-                  {group.hits.map((hit) => (
-                    <HitRow key={hit.table} hit={hit} name={group.name} rows={rowsOf(hit.table)} read={readOf(hit.table, group.name)}
-                      onRead={(next) => readColumn([hit.table], group.name, next)} valuesOf={valuesFor} loadValues={loadValues}
-                      groupOf={groupOf} groupState={groupState} onLoadGroups={loadGroups} onPickGroups={pickGroups}
-                      onAdd={addRow} />
-                  ))}
-                </ul>
-              </section>
-            ))}
-            {hits.length > HITS_SHOWN && (
-              <p data-hits-more className="text-text-secondary">Showing {HITS_SHOWN} of {plural(hits.length, 'column name')}. Type more letters to narrow it down.</p>
+            {hits.length > 0 && (
+              <ul data-column-hits className="space-y-1">
+                {hits.map((hit) => (
+                  <HitRow key={`${hit.key}\u0000${hit.table}`} hit={hit} term={term} rows={rowsOf(hit.table)} read={readOf(hit.table, hit.column)}
+                    collapsed={nameOverrides[`${hit.table}\u0000${hit.column}`] ?? collapseNames}
+                    onToggleName={() => setNameOverrides((prev) => {
+                      const key = `${hit.table}\u0000${hit.column}`;
+                      return { ...prev, [key]: !(prev[key] ?? collapseNames) };
+                    })}
+                    onRead={(next) => readColumn([hit.table], hit.column, next)} valuesOf={valuesFor} loadValues={loadValues}
+                    groupOf={groupOf} groupState={groupState} onLoadGroups={loadGroups} onPickGroups={pickGroups} onAdd={addRow}
+                    applyAll={hit.first && hit.sameTables.length > 1 ? (
+                      <>
+                        <label className="flex items-center gap-1.5 text-text-secondary">
+                          <input type="checkbox" aria-label={`Read ${hit.column} in all ${hit.sameTables.length} tables`}
+                            checked={hit.sameTables.every((table) => readOf(table, hit.column))}
+                            onChange={(e) => readColumn(hit.sameTables, hit.column, e.target.checked)} />
+                          Read in all {hit.sameTables.length} tables
+                        </label>
+                        <AddRowFilter table={hit.table} column={hit.column} who={`${hit.column} in ${hit.sameTables.length} tables`}
+                          openLabel="Apply to all" commitLabel="Apply to all tables" suggestions={valuesFor(hit.table, hit.column)} loadValues={loadValues}
+                          onCommit={(condition) => commitRows(hit.sameTables.map((table) => ({ table, rows: [...rowsOf(table), condition] })))} />
+                      </>
+                    ) : null} />
+                ))}
+              </ul>
             )}
           </div>
         </>

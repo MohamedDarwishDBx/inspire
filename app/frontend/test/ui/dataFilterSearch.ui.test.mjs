@@ -50,9 +50,10 @@ test('typing brand lists only the columns whose name contains brand, case-insens
   try {
     await openSearch(page);
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('BRAND');
-    await page.locator('[data-column-group="brand"]').waitFor({ timeout: 10000 });
-    assert.equal(await page.locator('[data-column-group]').count(), 1, 'one column name matches');
-    const rows = await page.locator('[data-column-group="brand"] [data-scope-row]').allInnerTexts();
+    await page.locator('[data-column-hit="brand"]').first().waitFor({ timeout: 10000 });
+    assert.deepEqual(await page.locator('[data-column-hit]').evaluateAll((els) => els.map((el) => el.getAttribute('data-column-hit'))), ['brand', 'brand'],
+      'one row per table that has brand, and no other column');
+    const rows = await page.locator('[data-column-hit="brand"][data-scope-row]').allInnerTexts();
     assert.equal(rows.length, 2, 'both tables have brand');
     assert.match(rows.join('\n'), /orders/);
     assert.match(rows.join('\n'), /customers/);
@@ -69,7 +70,7 @@ test('Apply to all adds one filter to every table that has the column, and each 
   try {
     await openSearch(page);
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
-    const group = page.locator('[data-column-group="brand"]');
+    const group = page.locator('[data-column-hit="brand"]').first();
     await group.waitFor({ timeout: 10000 });
     await group.getByRole('button', { name: /Apply to all/ }).click();
     await page.getByLabel('Value for brand in 2 tables').fill('Acme');
@@ -128,7 +129,7 @@ test('REQ-372: each search row has Row filter and Load groups, and Load groups l
   try {
     await openSearch(page);
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
-    const row = page.locator(`[data-column-group="brand"] [data-scope-row="${ORDERS}"]`);
+    const row = page.locator(`[data-column-hit="brand"][data-scope-row="${ORDERS}"]`);
     await row.waitFor({ timeout: 10000 });
     assert.equal(await row.getByRole('button', { name: 'Row filter on brand in orders' }).count(), 1, 'Row filter is on the row');
     assert.equal(await row.getByRole('button', { name: 'Load groups on brand in orders' }).count(), 1, 'Load groups is on the row');
@@ -152,7 +153,7 @@ test('a row adds a filter to just that table, and the empty states say what to d
     await search.fill('zzz');
     assert.match(await page.locator('[data-search-none]').innerText(), /No column name contains "zzz" in the 2 tables you picked/);
     await search.fill('name');
-    await page.locator('[data-column-group="name"]').waitFor({ timeout: 10000 });
+    await page.locator('[data-column-hit="name"]').waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: 'Row filter on name in customers' }).click();
     await page.getByLabel('Value for name in customers').fill('Ada');
     await page.getByRole('button', { name: 'Add value' }).click();
@@ -173,7 +174,7 @@ test('the column search fits 1280x800 with filters in use, and the picture is sa
     await openSearch(page);
     const search = page.getByRole('searchbox', { name: 'Search column names' });
     await search.fill('brand');
-    await page.locator('[data-column-group="brand"]').waitFor({ timeout: 10000 });
+    await page.locator('[data-column-hit="brand"]').first().waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: /Apply to all/ }).click();
     await page.getByLabel('Value for brand in 2 tables').fill('Acme');
     await page.getByRole('button', { name: 'Add value' }).click();
@@ -264,8 +265,8 @@ test('a schema of 550 tables: the search finds a column in the last table, with 
     await page.getByRole('searchbox', { name: 'Search column names' }).waitFor({ timeout: 15000 });
     assert.equal(await page.locator('[data-tables-not-searched]').count(), 0, 'no table is left out of the search');
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('zz_only');
-    await page.locator('[data-column-group="zz_only"]').waitFor({ timeout: 15000 });
-    assert.equal(await page.locator('[data-column-group="zz_only"] [data-scope-row]').count(), 1, 'the one table in the last place is found');
+    await page.locator('[data-column-hit="zz_only"]').waitFor({ timeout: 15000 });
+    assert.equal(await page.locator('[data-column-hit="zz_only"][data-scope-row]').count(), 1, 'the one table in the last place is found');
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('name');
     await page.locator('[data-hits-capped]').waitFor({ timeout: 15000 });
     assert.match(await page.locator('[data-hits-capped]').innerText(), /Showing 300 of 549 matches\. Type more letters to narrow it down\./);
@@ -292,7 +293,7 @@ test('REQ-377: no Filters block until a row filter exists, then it reads Your fi
     await page.locator('[data-left-out-column="orders.amount"]').waitFor({ state: 'detached', timeout: 5000 });
     assert.equal(await page.locator('[data-columns-left-out]').count(), 0, 'Columns left out is gone at 0');
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
-    await page.locator('[data-column-group="brand"]').waitFor({ timeout: 10000 });
+    await page.locator('[data-column-hit="brand"]').first().waitFor({ timeout: 10000 });
     await page.getByRole('button', { name: 'Row filter on brand in orders' }).click();
     await page.getByLabel('Value for brand in orders').fill('Acme');
     await page.getByRole('button', { name: 'Add value' }).click();
@@ -314,12 +315,12 @@ test('REQ-379: cust* lists the names that start with cust, *_id lists the names 
     const box = page.getByRole('searchbox', { name: 'Search column names' });
     assert.match(await page.locator('[data-search-syntax]').innerText(), /Use \* at the start or end/, 'the hint says how to use the star');
     await box.fill('cust*');
-    await page.locator('[data-column-group="customer_id"]').waitFor({ timeout: 10000 });
-    assert.deepEqual(await page.locator('[data-column-group]').allInnerTexts().then((t) => t.map((x) => x.split('\n')[0])), ['customer_id'],
+    await page.locator('[data-column-hit="customer_id"]').waitFor({ timeout: 10000 });
+    assert.deepEqual(await page.locator('[data-column-hit]').evaluateAll((els) => els.map((el) => el.getAttribute('data-column-hit'))), ['customer_id'],
       'cust* lists customer_id only');
     await box.fill('*_id');
-    await page.locator('[data-column-group="order_id"]').waitFor({ timeout: 10000 });
-    const names = await page.locator('[data-column-group]').allInnerTexts().then((t) => t.map((x) => x.split('\n')[0]).sort());
+    await page.locator('[data-column-hit="order_id"]').waitFor({ timeout: 10000 });
+    const names = await page.locator('[data-column-hit]').evaluateAll((els) => els.map((el) => el.getAttribute('data-column-hit')).sort());
     assert.deepEqual(names, ['customer_id', 'order_id'], '*_id lists the two _id columns and not amount, brand or name');
   } finally {
     await ui.close();
@@ -334,7 +335,7 @@ test('REQ-380: Load groups on an empty column says why, in one plain line', asyn
   try {
     await openSearch(page);
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
-    const row = page.locator(`[data-column-group="brand"] [data-scope-row="${ORDERS}"]`);
+    const row = page.locator(`[data-column-hit="brand"][data-scope-row="${ORDERS}"]`);
     await row.getByRole('button', { name: 'Load groups on brand in orders' }).click();
     const line = page.locator('[data-groups-reason="brand"]');
     await line.waitFor({ timeout: 10000 });
@@ -350,7 +351,7 @@ test('REQ-380: a table with no rows you can read says so, not that the column is
   try {
     await openSearch(page);
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
-    const row = page.locator(`[data-column-group="brand"] [data-scope-row="${ORDERS}"]`);
+    const row = page.locator(`[data-column-hit="brand"][data-scope-row="${ORDERS}"]`);
     await row.getByRole('button', { name: 'Load groups on brand in orders' }).click();
     const line = page.locator('[data-groups-reason="brand"]');
     await line.waitFor({ timeout: 10000 });
