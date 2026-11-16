@@ -270,3 +270,4 @@ def test_without_person_joins_the_loop_profiles_every_table_as_before(agent_ns, 
         "main.sales.customers", "main.sales.orders", "main.sales.returns"]
     assert "joined_datasets" not in evidence and all(p.get("via_join") is None for p in evidence["profiles"].values())
     assert all(known is None for *_rest, known in deep.profiled), "without a join the count is read as before"
+
