@@ -40,7 +40,8 @@ const launchOf = async (page, made) => {
 };
 const search = (page) => page.getByRole('searchbox', { name: 'Search column names' });
 const rowOf = (page, column, table = ORDERS) => page.locator(`[data-column-group="${column}"] [data-scope-row="${table}"]`);
-const inUseOf = (page, table = ORDERS) => page.locator(`[data-filter-table="${table}"]`);
+// REQ-383: Your filters is one flat list for every table, so the block is the whole Your filters box.
+const inUseOf = (page) => page.locator('[data-filters-in-use]');
 const rowsListed = (page, column) => page.locator(`[data-column-group="${column}"] [data-scope-row]`)
   .evaluateAll((els) => els.map((el) => el.getAttribute('data-scope-row')).sort());
 
@@ -102,7 +103,7 @@ test('a row filter found by search counts the rows and reaches the run with ever
     await findColumn(page, 'brand_name');
     await addFilter(page, 'brand_name', 'Northwind');
     await until(async () => (await inUseOf(page).innerText()).includes('120 rows match'), 'the live row count shows the rows the filter keeps');
-    assert.equal(await inUseOf(page).locator('[data-scope-condition="brand_name"]').innerText(), 'brand_name: is Northwind', 'the condition shows as a chip');
+    assert.match(await inUseOf(page).locator('[data-scope-condition="brand_name"]').innerText(), /^brand_name: is Northwind/, 'the condition shows as a chip');
     const params = await launchOf(page, made);
     assert.deepEqual(JSON.parse(params['17_table_scope']), {
       [ORDERS]: {

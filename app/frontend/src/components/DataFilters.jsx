@@ -228,7 +228,7 @@ function HitRow({ hit, name, rows, read, onRead, valuesOf, loadValues, groupOf, 
   const categorical = columnKindOf(hit.type) === 'categorical';
   return (
     <li data-scope-row={hit.table} className="flex flex-wrap items-start gap-2 border-t border-border pt-2">
-      <span className="font-mono text-text-primary" title={hit.table}>{shortName(hit.table)}</span>
+      <span className="text-text-tertiary" title={hit.table}>{shortName(hit.table)}</span>
       <span className="text-text-tertiary">{hit.type}</span>
       <label className="flex items-center gap-1.5 text-text-secondary">
         <input type="checkbox" aria-label={`Read ${name} in ${shortName(hit.table)}`} checked={read} onChange={(e) => onRead(e.target.checked)} />
@@ -530,51 +530,39 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
     const kept = normalizeTableScope(tableScopeOf(scopes, table)).columns;
     return namesOf(table).filter((n) => !kept.includes(n)).map((n) => `${shortName(table)}.${n}`);
   });
-  const nothingPicked = !scope.entries.length;
-  // Filters in use lists the row filters and row groups saved on the tables (REQ-377): the block exists only once one exists.
-  const filterCount = withFilters.reduce((n, table) => n + rowsOf(table).length, 0);
   const countLine = (table) => {
     const job = jobs.find((j) => j.table === table);
     if (!job) return '';
     const c = counts[table];
     return !c || c.key !== job.key ? 'counting rows' : c.error ? 'rows could not be counted' : `${c.rows.toLocaleString()} rows match`;
   };
+  const nothingPicked = !scope.entries.length;
+  // Filters in use lists the row filters and row groups saved on the tables (REQ-377): the block exists only once one exists.
+  const filterCount = withFilters.reduce((n, table) => n + rowsOf(table).length, 0);
 
   return (
     <div data-data-filters className="space-y-4 text-xs">
-      <p className="text-text-secondary">
-        A table with no filter is read whole: every column, every row. Search a column name to add a filter to it.
-        Use Apply to all to filter a column that several tables have, in one step.
-      </p>
-      {nothingPicked && <p data-data-filters-empty className="text-text-tertiary">Pick tables, schemas or catalogs under Unity Catalog Metadata to filter them.</p>}
+      {nothingPicked && <p data-data-filters-empty className="text-text-tertiary">Pick tables above to filter their columns.</p>}
       {!nothingPicked && (
         <>
           {filterCount > 0 && (
             <div data-filters-in-use className="rounded-lg border border-border p-3 space-y-2">
               <p className="font-semibold text-text-primary">Your filters ({filterCount})</p>
-              {withFilters.filter((table) => rowsOf(table).length > 0 || problemsOf(table).length > 0).map((table) => (
-                <div key={table} data-filter-table={table} className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-text-primary" title={table}>{shortName(table)}</span>
-                    {countLine(table) && <span className="text-text-secondary">{countLine(table)}</span>}
-                    {problemsOf(table).length > 0 && <span className="text-db-red-fg">needs a fix</span>}
-                  </div>
-                  {problemsOf(table).length > 0 && (
-                    <ul role="alert" className="list-disc ps-4 text-error-fg">{problemsOf(table).map((p) => <li key={p}>{p}</li>)}</ul>
-                  )}
-                  <ul className="flex flex-wrap gap-1.5">
-                    {rowsOf(table).map((f, index) => (
-                      <li key={index} data-scope-condition={f.column} className={CHIP}>
-                        <span>{f.column}: {rowText(f)}</span>
-                        <button type="button" aria-label={`Remove ${f.group ? 'row group' : 'row filter'} on ${f.column} in ${shortName(table)}: ${rowText(f)}`}
-                          onClick={() => removeRow(table, index)}>
-                          <X size={10} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+              <ul className="flex flex-wrap gap-1.5">
+                {withFilters.flatMap((table) => rowsOf(table).map((f, index) => (
+                  <li key={`${table}\u0000${index}`} data-filter-table={table} data-scope-condition={f.column} className={CHIP}>
+                    <span>{f.column}: {rowText(f)}</span>
+                    <span className="text-text-tertiary">{shortName(table)}{countLine(table) && ` · ${countLine(table)}`}</span>
+                    <button type="button" aria-label={`Remove ${f.group ? 'row group' : 'row filter'} on ${f.column} in ${shortName(table)}: ${rowText(f)}`}
+                      onClick={() => removeRow(table, index)}>
+                      <X size={10} />
+                    </button>
+                  </li>
+                )))}
+              </ul>
+              {problems.length > 0 && (
+                <ul role="alert" className="list-disc ps-4 text-error-fg">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+              )}
             </div>
           )}
           {leftOutColumns.length > 0 && (
@@ -599,7 +587,7 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
             )}
             {tables.length === 0 && (
               <p data-search-empty className="text-text-secondary">
-                None of the tables you picked can be searched yet. Check them in the table picker above, then Try again.
+                The tables you picked cannot be searched yet. Pick tables above to search their columns.
               </p>
             )}
             {!query.trim() && tables.length > 0 && (

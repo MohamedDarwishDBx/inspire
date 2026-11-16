@@ -76,12 +76,12 @@ test('Apply to all adds one filter to every table that has the column, and each 
     await page.getByRole('button', { name: 'Add value' }).click();
     await page.getByRole('button', { name: 'Apply to all tables' }).click();
     const inUse = page.locator('[data-filters-in-use]');
-    await inUse.locator(`[data-filter-table="${ORDERS}"] [data-scope-condition="brand"]`).waitFor({ timeout: 5000 });
-    await inUse.locator(`[data-filter-table="${CUSTOMERS}"] [data-scope-condition="brand"]`).waitFor({ timeout: 5000 });
+    await inUse.locator(`[data-filter-table="${ORDERS}"][data-scope-condition="brand"]`).waitFor({ timeout: 5000 });
+    await inUse.locator(`[data-filter-table="${CUSTOMERS}"][data-scope-condition="brand"]`).waitFor({ timeout: 5000 });
     assert.match(await inUse.innerText(), /brand: is Acme/);
     await page.getByRole('button', { name: 'Remove row filter on brand in orders: is Acme' }).click();
-    assert.equal(await inUse.locator(`[data-filter-table="${ORDERS}"] [data-scope-condition="brand"]`).count(), 0, 'orders filter removed');
-    assert.equal(await inUse.locator(`[data-filter-table="${CUSTOMERS}"] [data-scope-condition="brand"]`).count(), 1, 'customers keeps its own filter');
+    assert.equal(await inUse.locator(`[data-filter-table="${ORDERS}"][data-scope-condition="brand"]`).count(), 0, 'orders filter removed');
+    assert.equal(await inUse.locator(`[data-filter-table="${CUSTOMERS}"][data-scope-condition="brand"]`).count(), 1, 'customers keeps its own filter');
     await until(() => made.sqlCalls.some((c) => /GROUP BY|COUNT\(\*\)/.test(c.sql) || c.sql.includes('row_count')), 'the rows are counted', 10000).catch(() => null);
   } finally {
     await ui.close();
@@ -157,7 +157,7 @@ test('a row adds a filter to just that table, and the empty states say what to d
     await page.getByLabel('Value for name in customers').fill('Ada');
     await page.getByRole('button', { name: 'Add value' }).click();
     await page.getByRole('button', { name: 'Add filter' }).click();
-    await page.locator(`[data-filter-table="${CUSTOMERS}"] [data-scope-condition="name"]`).waitFor({ timeout: 5000 });
+    await page.locator(`[data-filter-table="${CUSTOMERS}"][data-scope-condition="name"]`).waitFor({ timeout: 5000 });
     assert.equal(await page.locator(`[data-filter-table="${ORDERS}"]`).count(), 0, 'orders gets no filter');
     await search.fill('');
     assert.match(await page.locator('[data-search-hint]').innerText(), /Type a column name to find it in the 2 tables you picked/);
