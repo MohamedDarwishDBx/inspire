@@ -235,6 +235,7 @@ function answerSql(body) {
     return sqlResult(['session_id', 'title', 'rn'], rows.map((u, i) => [u.session_id, u.use_case, String(i + 1)]));
   }
   if (/^\s*SELECT\b/i.test(sql) && sql.includes('__inspire_implement')) {
+    if (state.implementReadError) return { statement_id: 's1', status: { state: 'FAILED', error: { message: state.implementReadError } } };
     const rows = state.history.map((r) => HISTORY_COLUMNS.map((c) => (c === 'spec_json' ? JSON.stringify(r[c] || {}) : (r[c] == null ? null : String(r[c])))));
     return sqlResult(HISTORY_COLUMNS, rows);
   }
