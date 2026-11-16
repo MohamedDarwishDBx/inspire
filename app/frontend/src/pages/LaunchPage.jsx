@@ -40,7 +40,7 @@ import DocumentLanguagesMultiselect from '../components/DocumentLanguagesMultise
 import StrategyEditor from '../components/StrategyEditor';
 import { parseStrategicContext, splitPriorities, validateStrategicContextText, withPriorities } from '../lib/strategyContext';
 import UcPermissionErrorHelp from '../components/UcPermissionErrorHelp';
-import DataFilters from '../components/DataFilters';
+import DataManagement from '../components/DataManagement';
 import { groupLabelOf } from '../lib/implementWizard';
 import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
 import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
@@ -187,7 +187,7 @@ const DRAFT_PARAMS = ['00_business_name', '03_discovery_type', '04_table_electio
   '11_generation_path', '12_documents_languages', '13_generate_genie_code_for', '15_operation', '16_best_of_best_count'];
 const FORM_DEFAULTS = {
   genChecks: { 'PDF Catalog': true, Presentation: false, Excel: true }, priorityChecks: {}, customPriorities: [], strategyBase: '',
-  selectedCatalogs: [], wholeCatalogs: [], selectedSchemas: [], selectedTables: [], tableScopes: {}, dataFilterLabel: { on: false, text: null },
+  selectedCatalogs: [], wholeCatalogs: [], selectedSchemas: [], selectedTables: [], tableScopes: {}, dataFilterLabel: { on: false, text: null }, relationships: [],
   electionTouched: false, discoveryTouched: false, strategyTouched: false, prioritiesTouched: false,
 };
 const FLAGS = ['electionTouched', 'discoveryTouched', 'strategyTouched', 'prioritiesTouched'];
@@ -217,10 +217,19 @@ function restoredForm(draft) {
       .filter((x) => typeof x === 'string'),
     tableScopes: scopesFromObject(spec.tableScopes).scopes,
     dataFilterLabel: restoredLabel(spec.dataFilterLabel),
+    relationships: restoredRelationships(spec.relationships),
     ...Object.fromEntries(FLAGS.map((key) => [key, spec[key] === true])),
     // The profile the draft was loaded from (REQ-364): a reload keeps the link, so an unchanged profile still runs without the question.
     profile: draft && draft.profile ? draft.profile : null,
   };
+}
+
+// A relationship the person kept in Data Management (REQ-362): both sides name a table and a column, and the source says where it came from.
+function restoredRelationships(value) {
+  const side = (v) => (v && typeof v === 'object' && typeof v.table === 'string' && typeof v.column === 'string' ? { table: v.table, column: v.column } : null);
+  return Array.isArray(value)
+    ? value.map((l) => (l && typeof l === 'object' && side(l.from) && side(l.to) && typeof l.source === 'string' ? { from: side(l.from), to: side(l.to), source: l.source } : null)).filter(Boolean)
+    : [];
 }
 
 function restoredLabel(value) {
@@ -267,6 +276,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [selectedTables, setSelectedTables] = useState(start.selectedTables);
   const [tableScopes, setTableScopes] = useState(start.tableScopes);
   const [dataFilterLabel, setDataFilterLabel] = useState(start.dataFilterLabel);
+  const [relationships, setRelationships] = useState(start.relationships);
   const [showDataFilters, setShowDataFilters] = useState(false);
   const [dataFilterProblems, setDataFilterProblems] = useState([]);
   const [loadingTables, setLoadingTables] = useState(false);
@@ -652,9 +662,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [prioritiesTouched, setPrioritiesTouched] = useState(start.prioritiesTouched);
 
   const draftForm = useMemo(() => draftFormOf(params, {
-    genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
+    genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel, relationships,
     electionTouched, discoveryTouched, strategyTouched, prioritiesTouched,
-  }), [params, genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
+  }), [params, genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel, relationships,
     electionTouched, discoveryTouched, strategyTouched, prioritiesTouched]);
   useEffect(() => {
     if (JSON.stringify(draftForm) === PRISTINE_FORM && !loadedProfile) clearWizardDraft(draftKey);
@@ -674,6 +684,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     setSelectedTables(form.selectedTables);
     setTableScopes(form.tableScopes);
     setDataFilterLabel(form.dataFilterLabel);
+    setRelationships(form.relationships || []);
     setElectionTouched(form.electionTouched);
     setDiscoveryTouched(form.discoveryTouched);
     setStrategyTouched(form.strategyTouched);
@@ -806,16 +817,19 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     setProfilesError('');
     try {
       const data = await apiFetch(`/api/inspire/profiles/${encodeURIComponent(profileId)}`);
-      const form = restoredForm({ step: START_DRAFT_STEP, spec: data.profile.spec });
-      applyForm({
+      const { profile: _drafted, ...form } = restoredForm({ step: START_DRAFT_STEP, spec: data.profile.spec });
+      const applied = {
         ...form,
         params: { ...defaultParams(inspireDatabase), ...form.params },
         electionTouched: true,
         discoveryTouched: true,
         strategyTouched: true,
         prioritiesTouched: true,
-      });
-      setLoadedProfile({ profile_id: data.profile.profile_id, name: data.profile.name, spec: data.profile.spec });
+      };
+      applyForm(applied);
+      // Compare later edits against the form as it was loaded, not the stored spec: a profile saved before a form key
+      // existed (for example relationships) restores that key to its default, and that is not a change.
+      setLoadedProfile({ profile_id: data.profile.profile_id, name: data.profile.name, spec: draftFormOf(applied.params, applied) });
     } catch (err) {
       setProfilesError(parseApiErrorMessage(err.message));
     } finally {
@@ -997,7 +1011,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       : !params['01_uc_metadata'] ? 'Pick at least one catalog, schema or table under Unity Catalog Metadata to get started.'
         : sampleEntries.length > 0 && !samplesDecided ? 'Copy the samples tables into a schema you own, or use descriptions only, above Get Started.'
           : strategyProblems.length ? `Fix the strategy first, in Advanced Settings under Strategy (optional): ${strategyProblems[0]}`
-            : dataFilterProblems.length ? `Fix the data filters first, in Advanced Settings under Data Filters (optional): ${dataFilterProblems[0]}`
+            : dataFilterProblems.length ? `Fix the data filters first, in Advanced Settings under Data Management (optional): ${dataFilterProblems[0]}`
           : bestOfBestInvalid ? 'Best of Best stars takes a whole number from 0 to 100. Fix it in Advanced Settings.' : '';
   const canLaunch = !launchBlock;
   const liveRunNote = useMemo(() => {
@@ -1841,7 +1855,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 >
                   <Table2 size={14} className="text-text-tertiary mt-0.5 shrink-0" />
                   <span className="min-w-0">
-                    <span className="block text-xs font-bold text-text-primary">Data Filters (optional)</span>
+                    <span className="block text-xs font-bold text-text-primary">Data Management (optional)</span>
                     <span className="block text-[10px] text-text-tertiary">
                       The columns Inspire reads and the rows it keeps, per table you picked. Leave it empty to read every column and every row.
                     </span>
@@ -1858,12 +1872,14 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 </button>
                 {showDataFilters && (
                   <div className="px-4 pb-4 pt-1 border-t border-border">
-                    <DataFilters
+                    <DataManagement
                       scope={scope}
                       scopes={tableScopes}
                       onScopes={setTableScopes}
                       label={dataFilterLabel}
                       onLabel={setDataFilterLabel}
+                      relationships={relationships}
+                      onRelationships={setRelationships}
                       apiFetch={apiFetch}
                       warehouseId={warehouseId}
                       onProblems={setDataFilterProblems}

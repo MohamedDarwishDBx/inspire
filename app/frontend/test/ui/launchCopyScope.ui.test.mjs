@@ -17,7 +17,7 @@ const STATE = {
   catalogs: ['main', 'samples'],
   schemas: { main: ['s'], samples: ['bakehouse'] },
   tables: { 'main.s': ['orders'], 'samples.bakehouse': ['sales_franchises'] },
-  columnsByTable: { [SOURCE]: COLUMNS },
+  columnsByTable: { [SOURCE]: COLUMNS, [COPY]: COLUMNS },
   valuesByColumn: { brand_name: ['Northwind', 'Costa'] },
   readinessByFilter: { Northwind: '120', Nobody: '0' },
   groupCountsByColumn: {
@@ -35,8 +35,6 @@ const mount = (app) => {
   }));
 };
 
-const sourceLeaf = (page) => page.locator(`[data-scope-table="${SOURCE}"]`);
-const gridOf = (page) => page.locator(`[data-column-grid="${SOURCE}"]`);
 
 async function pickSampleAndOpenDataFilters(page) {
   await page.getByPlaceholder(BUSINESS).fill('Acme');
@@ -45,9 +43,9 @@ async function pickSampleAndOpenDataFilters(page) {
   await page.locator('button[title="sales_franchises"]').click();
   await idle(page);
   await page.getByRole('button', { name: /Advanced Settings/ }).click();
-  await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
-  await sourceLeaf(page).click();
-  await gridOf(page).locator('[data-scope-column="brand_name"]').waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
+  await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand_name');
+  await page.locator(`[data-column-group="brand_name"] [data-scope-row="${SOURCE}"]`).waitFor({ timeout: 15000 });
 }
 
 test('Copy into carries the Data Filter to the copy, and Get Started sends the scope under the copy name', async () => {
@@ -55,7 +53,7 @@ test('Copy into carries the Data Filter to the copy, and Get Started sends the s
   const { page, made } = ui;
   try {
     await pickSampleAndOpenDataFilters(page);
-    await page.getByRole('button', { name: 'Add row filter on brand_name' }).click();
+    await page.getByRole('button', { name: `Add row filter on brand_name in ${SOURCE.split('.').pop()}` }).click();
     await page.locator('[data-scope-value="Northwind"]').waitFor({ timeout: 15000 });
     await page.locator('[data-scope-value="Northwind"]').click();
     await page.getByRole('button', { name: 'Add filter' }).click();

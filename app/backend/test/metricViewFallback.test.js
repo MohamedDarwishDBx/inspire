@@ -128,7 +128,7 @@ test('the free table lookup refuses a metric view with the Data Filters line, no
       { headers: signedIn });
     const got = await resp.json();
     assert.equal(got.readable, false);
-    assert.match(got.reason, /is a metric view, so Inspire leaves it out of Data Filters/);
+    assert.match(got.reason, /is a metric view, so Inspire leaves it out of Data Management/);
   });
 });
 

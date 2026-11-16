@@ -1,6 +1,7 @@
 const { isMissingTableError } = require('./lib/inspireFeedback');
 const { INSPIRE_DB_SHAPE, USE_CASE_ID_SHAPE, noSessionText, stepsStatement } = require('./lib/sqlInputs');
 const I = require('./lib/inspireImplement');
+const RL = require('./lib/relationships');
 const { createGenieJobGuard } = require('./lib/genieJobGuard');
 const { mapLimit } = require('./lib/mapLimit');
 
@@ -804,6 +805,28 @@ function registerImplementRoutes(app, deps) {
         return { ...c, tags, personal: personalColumn(c.column_name, tags) };
       });
       res.json({ table, columns, primary_keys: keyRows.map((r) => String(r.column_name)), tags_read: !read.error, ...(read.error ? { tags_note: TAGS_UNREAD_NOTE } : {}) });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // The relationships between the picked tables (REQ-362): each table's columns and keys, and the declared and name-matched links.
+  app.post('/api/relationships', requireToken, async (req, res) => {
+    try {
+      const warehouseId = warehouseOf(req);
+      const picked = RL.pickedTablesOf(req.body?.tables);
+      const token = personReadToken(req);
+      // A metric view is not a table: it is named back and left out, the same rule as the Data Management search (REQ-362).
+      const looked = await Promise.all(picked.map((table) => tableTypeOf(req, () => token, warehouseId, table)));
+      const metricViews = picked.filter((_t, i) => looked[i].type && MV.isMetricViewType(looked[i].type));
+      const names = picked.filter((t) => !metricViews.includes(t));
+      const reads = await Promise.all(names.map((table) => I.readPickedTable(table, async () => {
+        const [cols, keys, fks] = await Promise.all([sqlRows(req.dbHost, token, warehouseId, I.columnsStatement(table)),
+          sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table)), sqlRows(req.dbHost, token, warehouseId, RL.declaredKeysStatement(table))]);
+        if (!cols.length) throw I.unreadableTableError(table);
+        return [cols, keys, fks];
+      })));
+      res.json({ ...RL.relationshipsOf(names, reads), metric_views: metricViews });
     } catch (err) {
       sendError(res, err);
     }
