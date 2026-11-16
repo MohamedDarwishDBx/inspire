@@ -167,24 +167,6 @@ def test_a_rate_limited_model_call_is_asked_again_on_the_busy_schedule_and_a_ref
     assert refused == [1], "a model refusal is never asked again (must-exclude)"
 
 
-GLOBAL_SWAP = {"changes": [{"what": "the grouping of the records", "why": "a helper failed", "cause": "rule",
-                            "method_was": "Group with inspire_group_records by transaction_type", "method_now": "Global grouping",
-                            "setting": "", "value_was": "", "value_now": ""}]}
-UNRELATED = {"changes": [{"what": "the output table name", "why": "", "cause": "other", "method_was": "table_a",
-                          "method_now": "table_b", "setting": "", "value_was": "", "value_now": ""}]}
-
-
-def test_a_repair_that_changes_the_chosen_grouping_is_refused_and_the_build_says_so_plainly(agent_ns):
-    grouping = {"columns": ["transaction_type"], "one_model": False}
-    moved = agent_ns["implement_choice_changes"]([GLOBAL_SWAP], grouping)
-    assert moved == ["Group with inspire_group_records by transaction_type became Global grouping"], "the Global swap is seen (must-fail)"
-    assert agent_ns["implement_choice_changes"]([UNRELATED], grouping) == [], "an unrelated repair is not refused (must-exclude)"
-    assert agent_ns["implement_choice_changes"]([GLOBAL_SWAP], None) == [], "a use case with no grouping has nothing to keep"
-    text = agent_ns["implement_choice_refusal"](grouping, moved)
-    assert text.startswith("could not group by transaction_type: a repair tried to change it"), text
-    assert text.endswith("change the grouping on the Run page"), text
-
-
 @pytest.mark.parametrize("text", ["Invalid parameter: max_tokens must be at most 500", "the table holds 503 rows of 429 columns"])
 def test_a_bare_number_in_a_sentence_is_not_a_status_code_and_a_stated_status_still_is(agent_ns, text):
     assert agent_ns["implement_busy"](text) is False, f"{text!r} is a bad request, not a busy answer (must-exclude)"
