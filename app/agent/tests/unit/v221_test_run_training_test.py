@@ -70,7 +70,29 @@ def test_the_training_text_says_it_trained_on_a_sample_and_scored_the_scope(fres
 def test_a_small_mvp_test_run_that_shrank_training_is_named_with_where_to_change_it(fresh_ns):
     cause = fresh_ns["inspire_unreliable_cause"](False, NARROWED, COARSE, {"trains_model": True})
     assert cause.startswith(fresh_ns["INSPIRE_CAUSE_LEAD"]) and "First run" in cause
-    assert "choose all for First run on the Run page" in cause and "Vibe/Add/Remove Features on the Build page" in cause
+    assert "choose Run on everything on the Run page" in cause and "Vibe/Add/Remove Features on the Build page" not in cause
+
+
+def test_the_first_run_line_counts_the_records_it_left_out_and_names_the_full_run(fresh_ns):
+    # Fails before the fix: the old clause said "the First run scope, 1,000 records ..." and never said what was left out.
+    left = dict(NARROWED, scope=dict(RECORDS, available=3333))
+    cause = fresh_ns["inspire_unreliable_cause"](False, left, COARSE, {"trains_model": True})
+    assert cause.startswith(fresh_ns["INSPIRE_CAUSE_LEAD"] + " the First run left out 2,333 of 3,333 records, so the model learned from "
+                            "only 1,000 records; choose Run on everything on the Run page to use all of them."), cause
+    assert "spread across" not in cause and "stable hash" not in cause
+
+
+def test_a_first_run_that_covers_every_record_is_not_blamed_for_leaving_any_out(fresh_ns):
+    whole = dict(NARROWED, scope=dict(RECORDS, available=1000))
+    assert fresh_ns["inspire_unreliable_cause"](False, whole, {"mode": "none"}, {"trains_model": True}) == ""
+
+
+def test_a_first_run_on_groups_says_it_covers_only_those_groups(fresh_ns):
+    groups = dict(NARROWED, scope={"scope": "groups", "table": ORDERS, "column": "region", "values": ["EMEA"]},
+                  reads={ORDERS: {"where": "CAST(`region` AS STRING) IN ('EMEA')", "limit": None}})
+    cause = fresh_ns["inspire_unreliable_cause"](False, groups, {"mode": "none"}, {"trains_model": True})
+    assert "the First run covers only the 1 group EMEA of region" in cause, cause
+    assert "choose Run on everything on the Run page to use all of them" in cause
     fresh_ns["INSPIRE_RUN_LOG"], fresh_ns["INSPIRE_RUN_GROUPING"] = NARROWED, COARSE
     said = fresh_ns["inspire_with_cause"]("no model passed its acceptance check", False)
     assert said.startswith("no model passed its acceptance check. This may come from a setting you can change:"), said
