@@ -14,6 +14,8 @@ from v140_implement_test import (GRANT_SELECT, INSPIRE_OWNS, NO_AUDIENCE, OURS_A
 from v141_app_shell_test import PAGE, SETTINGS, call, shell
 from v120_artifacts_support import CapturingLogger, absent_scope_views
 import shell_core
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WEB = os.path.join(ROOT, "agent", "app_shell", "web", "src")

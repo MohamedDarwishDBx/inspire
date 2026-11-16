@@ -7,6 +7,8 @@ import pytest
 from rc7p_per_user_lakebase_test import enforced_pg  # noqa: F401  (the real Postgres cluster the App role reads from)
 from v140_implement_test import _churn_page
 from v145_lakebase_test import shell_pg, shell_sql
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 CASES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures", "row_filter_cases.json")))
 ROW = "_inspire_row"
@@ -153,7 +155,7 @@ def test_the_plan_notes_name_each_table_that_reads_delta_and_why(agent_ns):
     notes = agent_ns["implement_lakebase_plan_notes"]({
         "main.inspire.a": {"enforced": True, "enforce": None, "masked": [], "reason": ""},
         "main.inspire.b": {"enforced": False, "enforce": None, "masked": [], "reason": "the result table has no brand column"}})
-    assert notes == ["App: main.inspire.b uses Standard pages, not Fast pages, because the result table has no brand column"]
+    assert notes == [f"{APP_LABEL}: main.inspire.b uses Standard pages, not Fast pages, because the result table has no brand column"]
 
 
 def test_the_builder_reads_a_source_filter_and_its_function_as_unity_catalog_returns_them(agent_ns):

@@ -5,6 +5,8 @@ import pytest
 
 from v120_artifacts_support import FakeSpark
 from v140_implement_test import _delete_app_inspire
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 KEY = (5150, "N01-U01", 3)
 OURS = {"description": "Inspire use case N01-U01 (session 5150): Predict churn"}
@@ -114,7 +116,7 @@ def test_a_revoke_refused_on_permission_is_one_clear_line_and_the_app_is_still_d
     outcome = inst._implement_delete_output("app", "churn-desk", KEY, grants=_record(sql))
     assert ("DELETE", "/api/2.0/apps/churn-desk") in inst.calls and outcome["refused"] is False and outcome["state"] == "deleted"
     # REQ-260: no SQL in the App's warning; the sentence names the access it could not take back
-    assert outcome["warnings"] == [f"App: removing the App's access to the schema {obj} failed, so its service principal may still use it: "
+    assert outcome["warnings"] == [f"{APP_LABEL}: removing the App's access to the schema {obj} failed, so its service principal may still use it: "
                                    f"[PERMISSION_DENIED] User does not have MANAGE on Schema 'main._inspire_x'."]
     warned = [line for level, line in inst.logger.lines if level == "warning" and "GRANTS" in line]
     assert len(warned) == 1 and warned[0].startswith("[IMPLEMENT-DELETE-GRANTS FIRED] N01-U01: the App churn-desk is deleted, but")

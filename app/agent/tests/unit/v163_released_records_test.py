@@ -1,5 +1,7 @@
 from v120_artifacts_support import FakeSpark
 from v140_implement_test import _inspire
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 RELEASED_NOTEBOOK = {"modified_at": 1000, "spec_version": 2}
 TABLE = "main.inspire.churn_out"
@@ -22,7 +24,7 @@ def test_a_page_leaving_an_app_a_released_build_granted_names_the_grants_nobody_
     needs = {"service_principal": "sp-9", "departed": TABLE}
     out = inst._implement_take_back("app", "churn-desk", KEY, [], None, needs)
     tables = agent_ns["implement_and_list"](agent_ns["implement_companion_tables"](TABLE))
-    assert out["warnings"] == [f"App: an older Inspire built this use case's page and kept no record of the grants it ran, so the App's service "
+    assert out["warnings"] == [f"{APP_LABEL}: an older Inspire built this use case's page and kept no record of the grants it ran, so the App's service "
                                f"principal sp-9 may still read {tables}; check its grants on them"]
     inst._implement_revoke_app_sp = lambda asset_id, sp, wanted, own=(): ([], [], sp)
     recorded = inst._implement_take_back("app", "churn-desk", KEY, [], {"people": [], "service_principal": {"sql": []}}, needs)

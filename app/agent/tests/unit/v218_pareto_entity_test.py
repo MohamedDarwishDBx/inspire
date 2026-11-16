@@ -20,6 +20,8 @@ import shell_sql  # noqa: E402
 from v140_implement_test import _app_flow  # noqa: E402
 from v146_lakebase_build_test import FALLBACK, _app_lakebase  # noqa: E402
 from v218_kpi_genie_parity_test import RESULT, _checked, _concentration, _queue_page  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 ENTITY_SQL = (f"SELECT record_key, entity_id, entity_label, priority_tier, ai_cat_rule, top_reasons, recommended_action, value_at_stake, "
               f"as_of_date FROM {RESULT} WHERE is_current")

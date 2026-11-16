@@ -10,6 +10,8 @@ from v120_artifacts_support import CapturingLogger, FakeSpark
 from v140_implement_test import _app_shell, _churn_page, _inspire, _output_context
 from v145_lakebase_test import postgres, shell_core, shell_pg, shell_sql  # noqa: F401
 from v218_filter_grain_test import BILLS, POINTS, RESULT, _live_page, _skipped
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 IX_SCHEMA = "rf_ix"
 IX_TABLE = "n01_u01__d_bill_activity_x"
@@ -227,7 +229,7 @@ def test_a_redeploy_keeps_a_saved_page_whose_problems_it_already_had_and_says_so
     assert problems == [] and len(deployed) == 1, "the redeploy changed nothing these problems come from, so no Genie rebuild"
     assert [c[0] for c in checks] == ["new", "old"] and checks[1][1] == "wh-old", "the saved pages are checked as they are deployed"
     assert inst._implement_app_speeds == {"look": "new"}, "the speed of the redeployed App is the one reported"
-    warned = [w for w in fields["_warnings"] if w.startswith("App: this redeploy kept 2 problems its pages already had; a rebuild of")]
+    warned = [w for w in fields["_warnings"] if w.startswith(f"{APP_LABEL}: this redeploy kept 2 problems its pages already had; a rebuild of")]
     assert len(warned) == 1 and PROBLEM in warned[0] and later in warned[0], fields["_warnings"]
     assert any("[REDEPLOY-KEPT-PROBLEMS FIRED]" in m for _level, m in inst.logger.records)
 

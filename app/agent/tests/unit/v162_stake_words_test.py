@@ -17,6 +17,8 @@ from v162_target_kpi_test import HOURS, _spec_for
 
 import shell_core  # noqa: E402
 import shell_sql  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 NB = os.path.join(ROOT, "agent", "dbx_inspire_ai_agent.ipynb")
@@ -136,7 +138,7 @@ def test_the_app_grant_warning_names_the_use_case_s_unit(agent_ns, sdk_stub):
     context["use_case"] = dict(context["use_case"], _implement_impact=dict(HOURS_IMPACT))
     fields = inst._implement_deploy_app(context, "churn-desk", SHELL_FILES, READS, poll_s=0)
     assert [w for w in fields["_warnings"] if "assumptions" in w] == [
-        "App: the owners of this use case cannot change its hours at stake assumptions in the App until its service principal sp-1 "
+        f"{APP_LABEL}: the owners of this use case cannot change its hours at stake assumptions in the App until its service principal sp-1 "
         "can read and change the result table. Inspire could not create it: main.inspire.churn_out_assumptions: PERMISSION_DENIED: no CREATE TABLE"]
 
 

@@ -6,6 +6,8 @@ import pytest
 from v140_implement_test import _FileRunner, _app_flow, _churn_page, _output_context
 from v142_genie_test import RESULT, _definition, _deploy_inspire, _posted_space, _rich_space
 from v142_merge_test import _genie_answer, _genie_body
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 ACT = "Which customers act now?"
 REASONS = "Which reason codes account for the customers requiring attention?"
@@ -249,7 +251,7 @@ def test_the_app_keeps_a_users_question_with_no_rows_and_warns(agent_ns, tmp_pat
     context["genie_proofs"] = [{"question": REASONS, "rows": 0, "error": ""}, {"question": ACT, "rows": 2, "error": ""}]
     fields = inst._implement_app(context, None)
     assert _page(seen)["questions"] == [REASONS, ACT]
-    assert agent_ns["implement_unproven_question_warning"]("App", REASONS, agent_ns["IMPLEMENT_QUESTION_NO_ROWS"]) in fields["_warnings"]
+    assert agent_ns["implement_unproven_question_warning"](APP_LABEL, REASONS, agent_ns["IMPLEMENT_QUESTION_NO_ROWS"]) in fields["_warnings"]
 
 
 def test_an_unreadable_genie_agent_leaves_ask_genie_with_no_unproven_suggestion(agent_ns, tmp_path):
