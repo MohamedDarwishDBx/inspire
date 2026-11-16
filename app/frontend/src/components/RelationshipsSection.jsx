@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { PlainMessage } from './TechnicalDetails';
 import { raisePermissions } from '../lib/permissionBus';
@@ -46,13 +46,27 @@ function PickList({ label, items, picked, disabledItem, onPick, filterLabel }) {
   );
 }
 
-// The Link dialog (REQ-371): the columns of the source table on the left, the target's on the right. The person picks one column on
-// each side and Add link; the pairs wait in the dialog until Done. Suggestions (declared keys, matching names) are listed and added only by a click.
-function LinkDialog({ dialog, onPick, onAdd, onRemove, onAddSuggested, onDone, onCancel, onRetry }) {
+// The Link dialog (REQ-371, REQ-376): the columns of the source table on the left, the target's on the right. One click on Link, between
+// the two lists, adds the pair at once and shows it in the dialog's list. Every link is kept as it is made, so the dialog closes with
+// Close, Esc or a click outside it and nothing is lost. Suggestions (declared keys, matching names) are added only by their own button.
+function LinkDialog({ dialog, links, suggestions, onPick, onLink, onRemove, onAddSuggested, onClose, onRetry }) {
   const { source, target } = dialog;
+  const boxRef = useRef(null);
   const columnsOf = (table) => dialog.columns?.[table]?.columns || [];
   const [filter, setFilter] = useState({ source: '', target: '' });
   const ready = dialog.pickSource && dialog.pickTarget;
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onDown = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target) && !e.target.closest?.('[data-link-open]')) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [onClose]);
   const sideList = (side, table, picked) => {
     const names = columnsOf(table);
     const term = filter[side].trim().toLowerCase();
@@ -77,9 +91,8 @@ function LinkDialog({ dialog, onPick, onAdd, onRemove, onAddSuggested, onDone, o
       </div>
     );
   };
-  const suggestions = (dialog.suggestions || []).filter((s) => !dialog.staged.some((l) => sameLink(l, s)));
   return (
-    <div role="dialog" aria-label={`Link ${shortName(source)} to ${shortName(target)}`} data-link-dialog className="space-y-3 rounded-xl border border-border bg-surface p-3">
+    <div ref={boxRef} role="dialog" aria-label={`Link ${shortName(source)} to ${shortName(target)}`} data-link-dialog className="space-y-3 rounded-xl border border-border bg-surface p-3">
       <p className="font-semibold text-text-primary">Link {shortName(source)} to {shortName(target)}</p>
       {dialog.status === 'loading' && <p data-link-loading className="text-text-tertiary">Reading the columns of both tables</p>}
       {dialog.status === 'error' && (
@@ -94,17 +107,17 @@ function LinkDialog({ dialog, onPick, onAdd, onRemove, onAddSuggested, onDone, o
           <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3">
             {sideList('source', source, dialog.pickSource)}
             <div className="flex flex-col items-center gap-2 pt-8">
-              <button type="button" aria-label="Add link" className={BUTTON} disabled={!ready} onClick={onAdd}>Add link</button>
-              {!ready && <p data-add-link-reason className="max-w-[10rem] text-center text-text-tertiary">Pick one column in each table, then Add link.</p>}
+              <button type="button" aria-label="Link" className={BUTTON} disabled={!ready} onClick={onLink}>Link</button>
+              {!ready && <p data-link-pick-reason className="max-w-[10rem] text-center text-text-tertiary">Pick one column in each table, then Link.</p>}
             </div>
             {sideList('target', target, dialog.pickTarget)}
           </div>
-          {dialog.staged.length > 0 && (
-            <ul aria-label="Links to add" className="grid gap-1">
-              {dialog.staged.map((link) => (
-                <li key={linkText(link)} data-staged-link={linkText(link)} className="flex items-center gap-2 rounded-md border border-border px-2 py-1">
+          {links.length > 0 && (
+            <ul aria-label="Links between these tables" className="grid gap-1">
+              {links.map((link) => (
+                <li key={linkText(link)} data-dialog-link={linkText(link)} className="flex items-center gap-2 rounded-md border border-border px-2 py-1">
                   <span className="font-mono text-text-primary">{linkText(link)}</span>
-                  <button type="button" aria-label={`Remove link ${linkText(link)} from this dialog`} onClick={() => onRemove(link)}
+                  <button type="button" aria-label={`Remove link ${linkText(link)}`} onClick={() => onRemove(link)}
                     className="ms-auto text-text-tertiary hover:text-db-red-fg"><X size={12} /></button>
                 </li>
               ))}
@@ -127,15 +140,15 @@ function LinkDialog({ dialog, onPick, onAdd, onRemove, onAddSuggested, onDone, o
         </>
       )}
       <div className="flex gap-2">
-        <button type="button" className={BUTTON} onClick={onDone} disabled={dialog.status !== 'done'}>Done</button>
-        <button type="button" className={BUTTON} onClick={onCancel}>Cancel</button>
+        <button type="button" className={BUTTON} onClick={onClose}>Close</button>
       </div>
     </div>
   );
 }
 
-// The Relationships section of Data Management (REQ-362, REQ-370, REQ-371). Two lists of the picked tables sit side by side, Source and
-// Target; one table on each side. Link opens the dialog to pair their columns. The links are listed below and each can be removed.
+// The Relationships section of Data Management (REQ-362, REQ-370, REQ-371, REQ-376). Two lists of the picked tables sit side by side,
+// Source and Target; the picks stay when a link is made, so one side can change alone. Link opens the dialog to pair columns. Every link
+// is kept at once and listed below with a count, and each can be removed.
 export default function RelationshipsSection({ tables, relationships, onRelationships, apiFetch, warehouseId, onMetricViews = () => {} }) {
   const [source, setSource] = useState('');
   const [target, setTarget] = useState('');
@@ -174,19 +187,21 @@ export default function RelationshipsSection({ tables, relationships, onRelation
   if (!tables.length) {
     return <p data-relationships-empty className="text-text-tertiary">Pick tables under Unity Catalog Metadata to see how they join.</p>;
   }
-  const openLink = () => setDialog({ run: run + 1, source, target, status: 'loading', columns: {}, suggestions: [], staged: [], pickSource: '', pickTarget: '' });
+  const openLink = () => setDialog({ run: run + 1, source, target, status: 'loading', columns: {}, suggestions: [], pickSource: '', pickTarget: '' });
+  const closeDialog = () => setDialog(null);
   const pickSide = (side, column) => setDialog((prev) => ({ ...prev, [side === 'source' ? 'pickSource' : 'pickTarget']: column }));
-  const addStaged = (link) => setDialog((prev) => (prev.staged.some((l) => sameLink(l, link)) ? prev : { ...prev, staged: [...prev.staged, link] }));
-  const addPicked = () => setDialog((prev) => {
-    const link = { from: { table: prev.source, column: prev.pickSource }, to: { table: prev.target, column: prev.pickTarget }, source: PERSON };
-    return { ...prev, pickSource: '', pickTarget: '', staged: prev.staged.some((l) => sameLink(l, link)) ? prev.staged : [...prev.staged, link] };
-  });
-  const done = () => {
-    const fresh = dialog.staged.filter((s) => !relationships.some((l) => sameLink(l, s)));
-    onRelationships([...relationships, ...fresh]);
-    setDialog(null);
+  // Every link is written at once: a link already listed is not added twice.
+  const commitLinks = (added) => {
+    const fresh = added.filter((s, i) => !relationships.some((l) => sameLink(l, s)) && added.findIndex((x) => sameLink(x, s)) === i);
+    if (fresh.length) onRelationships([...relationships, ...fresh]);
+  };
+  const linkPicked = () => {
+    commitLinks([{ from: { table: dialog.source, column: dialog.pickSource }, to: { table: dialog.target, column: dialog.pickTarget }, source: PERSON }]);
+    setDialog((prev) => ({ ...prev, pickSource: '', pickTarget: '' }));
   };
   const linkReason = !source || !target ? 'Pick one source table and one target table to link them.' : '';
+  const betweenDialog = dialog ? relationships.filter((l) => [l.from.table, l.to.table].sort().join('|') === [dialog.source, dialog.target].sort().join('|')) : [];
+  const suggestions = dialog ? (dialog.suggestions || []).filter((s) => !relationships.some((l) => sameLink(l, s))) : [];
 
   return (
     <div data-relationships className="space-y-3">
@@ -195,7 +210,7 @@ export default function RelationshipsSection({ tables, relationships, onRelation
           <PickList label="Source tables" items={tables} picked={source} disabledItem={target} onPick={setSource} filterLabel="Filter source tables" />
         </div>
         <div className="flex flex-col items-center gap-2 pt-8">
-          <button type="button" className={BUTTON} disabled={!source || !target} onClick={openLink}>Link</button>
+          <button type="button" data-link-open="" className={BUTTON} disabled={!source || !target} onClick={openLink}>Link</button>
           {linkReason && <p data-link-reason className="max-w-[10rem] text-center text-text-tertiary">{linkReason}</p>}
         </div>
         <div data-list="target">
@@ -203,13 +218,13 @@ export default function RelationshipsSection({ tables, relationships, onRelation
         </div>
       </div>
       {dialog && (
-        <LinkDialog dialog={dialog} onPick={pickSide} onAdd={addPicked}
-          onRemove={(link) => setDialog((prev) => ({ ...prev, staged: prev.staged.filter((l) => l !== link) }))}
-          onAddSuggested={addStaged} onDone={done} onCancel={() => setDialog(null)}
+        <LinkDialog dialog={dialog} links={betweenDialog} suggestions={suggestions} onPick={pickSide} onLink={linkPicked}
+          onRemove={(link) => onRelationships(relationships.filter((l) => l !== link))}
+          onAddSuggested={(s) => commitLinks([s])} onClose={closeDialog}
           onRetry={() => setDialog((prev) => ({ ...prev, run: prev.run + 1, status: 'loading' }))} />
       )}
       <div data-links className="space-y-2">
-        <p className="font-semibold text-text-primary">Links</p>
+        <p className="font-semibold text-text-primary">Links ({relationships.length})</p>
         {relationships.length === 0 && <p data-links-empty className="text-text-secondary">No links yet. Pick a source and a target table, then Link.</p>}
         {relationships.length > 0 && (
           <ul aria-label="Links" className="grid gap-2">
