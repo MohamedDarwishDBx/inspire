@@ -26,12 +26,14 @@ def test_the_generator_asks_for_the_value_fact_only_when_a_distinct_value_assump
 
 # --- training read: a model-fitting technique must read its training rows ------------------------------------------------
 # One representative technique per family of the generator's catalog. A to E fit or train a model on their read, and so do the
-# two F techniques that fit a slope or trend line; every other F, G, H, I, J, K and L technique reads without fitting.
+# two F techniques that fit a slope or trend line, and family I, whose causal, uplift and mix models fit a control or pre-period model;
+# every other F, G, H, J, K and L technique reads without fitting.
 FAMILY_FITS = [
     ("A", "Classification", True), ("B", "Anomaly Detection", True), ("C", "Clustering", True),
     ("D", "Recommendation", True), ("E", "Forecasting", True), ("F", "Regression Analysis", True), ("F", "Trend Analysis", True),
     ("F", "Correlation Analysis", False), ("G", "Sentiment Analysis", False), ("H", "Simulation", False),
-    ("I", "Causal Impact", False), ("J", "Process Mining", False), ("K", "Controls Testing", False), ("L", "Data Agent", False),
+    ("I", "Causal Impact", True), ("I", "Uplift Modeling", True), ("J", "Process Mining", False),
+    ("K", "Controls Testing", False), ("L", "Data Agent", False),
 ]
 
 
