@@ -277,3 +277,29 @@ test('a schema of 550 tables: the search finds a column in the last table, with 
     await ui.close();
   }
 });
+
+// REQ-377: "Your filters (N)" appears only once a row filter exists. A column left out alone is named, but no Filters block is shown.
+test('REQ-377: no Filters block until a row filter exists, then it reads Your filters (N); Columns left out shows only when some are left out', async () => {
+  const ui = await openUi('launch', STATE);
+  const { page } = ui;
+  try {
+    await openSearch(page);
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('amount');
+    await page.getByRole('checkbox', { name: 'Read amount in orders' }).uncheck();
+    await page.locator('[data-left-out-column="orders.amount"]').waitFor({ timeout: 5000 });
+    assert.equal(await page.locator('[data-filters-in-use]').count(), 0, 'a left-out column alone shows no Filters block');
+    await page.getByRole('checkbox', { name: 'Read amount in orders' }).check();
+    await page.locator('[data-left-out-column="orders.amount"]').waitFor({ state: 'detached', timeout: 5000 });
+    assert.equal(await page.locator('[data-columns-left-out]').count(), 0, 'Columns left out is gone at 0');
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
+    await page.locator('[data-column-group="brand"]').waitFor({ timeout: 10000 });
+    await page.getByRole('button', { name: 'Row filter on brand in orders' }).click();
+    await page.getByLabel('Value for brand in orders').fill('Acme');
+    await page.getByRole('button', { name: 'Add value' }).click();
+    await page.getByRole('button', { name: 'Add filter' }).click();
+    await page.locator('[data-filters-in-use]').waitFor({ timeout: 5000 });
+    assert.match(await page.locator('[data-filters-in-use]').innerText(), /Your filters \(1\)/);
+  } finally {
+    await ui.close();
+  }
+});
