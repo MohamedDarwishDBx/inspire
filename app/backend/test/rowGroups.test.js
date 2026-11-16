@@ -85,3 +85,34 @@ test('the label names only the picked groups: one to three joined, more than thr
   assert.equal(T.serializeTableScopes(filterOnly, [TABLE], 'Anything'), JSON.stringify({ [TABLE]: { columns: ['brand_name'], rows: [{ column: 'brand_name', op: '=', values: ['Northwind'] }] } }),
     'a label is written only when a group names it');
 });
+
+// REQ-380: an empty group list says why. One count under the same filters decides the reason: no rows the person can read, a column
+// with no value in any row, or nothing (the groups are listed). The reason is a plain line, never an internal name.
+test('an empty group list names the cause: no rows you can read, or the column empty in every row, and says nothing when groups exist', async () => {
+  const ask = async (overrides) => {
+    const made = makeApp({ forwardedToken: PERSON, ...overrides });
+    const srv = await listen(made.app);
+    try {
+      const resp = await fetch(`${srv.url}/api/inspire/implement/group-counts?warehouse_id=wh1&table=${TABLE}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table: TABLE, columns: ['customer_1'], filters: [], window: {}, top: 500 }),
+      });
+      assert.equal(resp.status, 200);
+      return (await resp.json()).reason;
+    } finally {
+      await srv.close();
+    }
+  };
+  assert.equal(await ask({ groupCounts: [], groupReasonRow: { rows_read: '0', with_value: '0' } }), 'The table has no rows you can read');
+  assert.equal(await ask({ groupCounts: [], groupReasonRow: { rows_read: '1200', with_value: '0' } }), 'customer_1 is empty in all 1,200 rows');
+  assert.equal(await ask({ groupCounts: [], groupReasonRow: { rows_read: '1200', with_value: '7' } }), '', 'values exist but no group came back: no reason is invented');
+  assert.equal(await ask({ groupCounts: [{ customer_1: 'a', records: '3' }], groupReasonRow: { rows_read: '0', with_value: '0' } }), '', 'when groups come back, no count is run and no reason is sent');
+});
+
+test('the empty-group reason reads only the statement the filters allow, and names the column in plain words (must-keep)', () => {
+  const st = I.groupReasonStatement(TABLE, 'customer_1', { filters: GROUPS });
+  assert.match(st.sql, /^SELECT COUNT\(\*\) AS rows_read, COUNT\(`customer_1`\) AS with_value FROM `main`\.`s`\.`orders`/);
+  assert.match(st.sql, /WHERE CAST\(`brand_name` AS STRING\) IN \(/, 'the same filters as the groups');
+  assert.equal(I.groupEmptyReason({ rows_read: '5', with_value: '0' }, 'customer_1'), 'customer_1 is empty in all 5 rows');
+  assert.equal(I.groupEmptyReason(undefined, 'customer_1'), 'The table has no rows you can read', 'no count row means no rows read');
+});

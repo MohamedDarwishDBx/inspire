@@ -2479,6 +2479,26 @@ function groupCountsStatement(name, columns = [], { filters = [], window = {}, t
   };
 }
 
+// REQ-380: why a group list came back empty. One count of the rows the person can read and of the rows where the column has a value,
+// under the same filters and window as the groups. Only run when the groups are empty.
+function groupReasonStatement(name, column, { filters = [], window = {} } = {}) {
+  const { where, parameters } = scopeWhere(filters, window);
+  return {
+    sql: `SELECT COUNT(*) AS rows_read, COUNT(${quoteColumn(column)}) AS with_value FROM ${quoteTable(name)}`
+      + `${where.length ? ` WHERE ${where.join(' AND ')}` : ''}`,
+    parameters: parameters.length ? parameters : null,
+  };
+}
+
+// The one plain line the App shows for an empty group list, or '' when the counts do not explain it.
+function groupEmptyReason(row, column) {
+  const rowsRead = Number(row && row.rows_read) || 0;
+  const withValue = Number(row && row.with_value) || 0;
+  if (!rowsRead) return 'The table has no rows you can read';
+  if (!withValue) return `${column} is empty in all ${rowsRead.toLocaleString('en-US')} rows`;
+  return '';
+}
+
 function readinessFromRow(row, columns) {
   const rows = Number(row && row.row_count) || 0;
   const counted = row && row.period_count != null ? { period_count: Number(row.period_count) || 0 } : {};
@@ -4228,6 +4248,8 @@ module.exports = {
   columnValuesStatement,
   readinessStatement,
   groupCountsStatement,
+  groupReasonStatement,
+  groupEmptyReason,
   scopeWhere,
   GROUP_COUNT_MAX_COLUMNS,
   GROUP_COUNT_LIMIT,

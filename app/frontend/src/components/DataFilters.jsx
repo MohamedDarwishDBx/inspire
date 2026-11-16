@@ -177,7 +177,9 @@ function RowGroups({ column, picked, loaded, onLoad, onPick }) {
           </ul>
         </>
       )}
-      {loaded?.status === 'done' && values.length === 0 && <p className="text-text-secondary">{column} has no values in the rows in scope.</p>}
+      {loaded?.status === 'done' && values.length === 0 && (
+        <p data-groups-reason={column} className="text-text-secondary">{loaded.reason || `${column} has no values in the rows in scope.`}</p>
+      )}
       {picked.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {picked.map((v, i) => (
@@ -391,6 +393,7 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
         [key]: {
           status: 'done',
           truncated: Boolean(d.truncated),
+          reason: String(d.reason || ''),
           values: (d.groups || []).map((g) => ({ value: String(g[name]), records: Number(g.records) || 0 })),
         },
       })))

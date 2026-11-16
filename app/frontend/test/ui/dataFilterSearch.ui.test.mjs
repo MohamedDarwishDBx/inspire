@@ -299,3 +299,37 @@ test('REQ-379: cust* lists the names that start with cust, *_id lists the names 
     await ui.close();
   }
 });
+
+// REQ-380: when Load groups finds no groups, the one plain line says why: the table has no rows you can read, or the column is empty
+// in every row. Both come from one count the route runs under the same filters.
+test('REQ-380: Load groups on an empty column says why, in one plain line', async () => {
+  const ui = await openUi('launch', { ...STATE, groupCounts: [], groupCountsByColumn: { brand: [] }, groupReasonRow: { rows_read: '1200', with_value: '0' } });
+  const { page } = ui;
+  try {
+    await openSearch(page);
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
+    const row = page.locator(`[data-column-group="brand"] [data-scope-row="${ORDERS}"]`);
+    await row.getByRole('button', { name: 'Load groups on brand in orders' }).click();
+    const line = page.locator('[data-groups-reason="brand"]');
+    await line.waitFor({ timeout: 10000 });
+    assert.equal(await line.innerText(), 'brand is empty in all 1,200 rows', 'the reason names the column and the row count');
+  } finally {
+    await ui.close();
+  }
+});
+
+test('REQ-380: a table with no rows you can read says so, not that the column is empty', async () => {
+  const ui = await openUi('launch', { ...STATE, groupCounts: [], groupCountsByColumn: { brand: [] }, groupReasonRow: { rows_read: '0', with_value: '0' } });
+  const { page } = ui;
+  try {
+    await openSearch(page);
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
+    const row = page.locator(`[data-column-group="brand"] [data-scope-row="${ORDERS}"]`);
+    await row.getByRole('button', { name: 'Load groups on brand in orders' }).click();
+    const line = page.locator('[data-groups-reason="brand"]');
+    await line.waitFor({ timeout: 10000 });
+    assert.equal(await line.innerText(), 'The table has no rows you can read');
+  } finally {
+    await ui.close();
+  }
+});
