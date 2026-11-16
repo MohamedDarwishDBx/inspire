@@ -1926,7 +1926,7 @@ def dashboard_html_problems(page: dict) -> list:
 
 def chart_kind_problems(page: dict, kinds, not_drawn) -> tuple:
     problems, skipped = kind_problems(page, kinds, set(not_drawn))
-    return problems, [f"App: no {CHART_KIND_LABELS[k].lower()} chart, which you picked: {not_drawn[k]}. Pick another kind of chart in "
+    return problems, [f"Agentic App: no {CHART_KIND_LABELS[k].lower()} chart, which you picked: {not_drawn[k]}. Pick another kind of chart in "
                       "App look" for k in skipped]
 
 
