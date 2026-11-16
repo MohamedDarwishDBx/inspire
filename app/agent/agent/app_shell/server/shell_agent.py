@@ -548,13 +548,16 @@ LATEST_RUN = re.compile(rf"\bmax\s*\(\s*[`\"]?(?:{RUN_NAMES})[`\"]?\s*\)|[`\"]?{
                         rf"{shell_sql.RUN_LATEST}'", re.I)
 PICKED_RUN = re.compile(rf"(?<![\w.])[`\"]?(?:\w+\.)?[`\"]?(?:{RUN_NAMES})[`\"]?\s*(?:=|<|>|\bin\b|\bbetween\b)", re.I)
 WHERE = re.compile(r"\bwhere\b(.+?)(?=\bgroup\s+by\b|\border\s+by\b|\bhaving\b|\blimit\b|\bunion\b|\bqualify\b|$)", re.I | re.S)
+# The future rule reads its date column through shell_facts.read_date (COALESCE of TRY_CAST and the text formats). Read as the
+# plain column it is, so a date predicate on a run column still names the runs the page picked (f37c9b144 changed its shape).
+FUTURE_READ = re.compile(r"COALESCE\(\s*TRY_CAST\(\s*([`\"]?\w+[`\"]?)\s+AS\s+DATE\s*\).*?\)(?=\s*(?:<=|<|>=|>|=)\s)", re.I | re.S)
 CURRENT_FLAG = shell_sql.CURRENT_ROWS.split()[0]
 CURRENT_ROW = re.compile(rf"(?<![\w.])[`\"]?(?:\w+\.)?[`\"]?{CURRENT_FLAG}\b[`\"]?(?!\s*(?:=\s*false|is\s+(?:not\s+true|false)))", re.I)
 
 
 def run_scope(sql) -> str:
     """The plain-words scope of a count: which runs and which rows. Never the SQL itself: no predicates, columns or aliases."""
-    wheres = WHERE.findall(str(sql or ""))
+    wheres = [FUTURE_READ.sub(r"\1", where) for where in WHERE.findall(str(sql or ""))]
     run = ("from the latest run" if any(LATEST_RUN.search(w) for w in wheres) else "from the runs the page picked" if any(
         PICKED_RUN.search(w) for w in wheres) else "")
     current = "current rows only" if any(CURRENT_ROW.search(where) for where in wheres) else ""
