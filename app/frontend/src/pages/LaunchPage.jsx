@@ -65,7 +65,7 @@ import { responseError } from '../lib/apiClient';
 import { placeholderWords } from '../lib/placeholderWords';
 import { inspireScoreFromUc, nameOfUseCase } from '../lib/useCaseFields';
 import { counted } from '../lib/plural';
-import { catalogListNote, listedCatalogs, pickedScope, scopeSummary, typedCatalog, wholeCatalogsAfterChildRemoval } from '../lib/catalogList';
+import { catalogListNote, listedCatalogs, pickedScope, scopeSummary, typedCatalog, wholeCatalogsWithoutPicks } from '../lib/catalogList';
 import { SAMPLE_CATALOG, applySampleCopies, isSampleEntry, samplesTarget, scopesAfterSampleCopies, validCopyTarget } from '../lib/samplesCopy';
 import { DISCOVERY_AI_ENHANCED, DISCOVERY_MODE_TEXT, DISCOVERY_BADGE, DISCOVERY_PRIVACY, DISCOVERY_RECOMMENDED, DISCOVERY_STANDARD, discoveryTypeOf } from '../lib/discoveryType';
 import { raisePermissions } from '../lib/permissionBus';
@@ -204,6 +204,7 @@ const PRISTINE_FORM = JSON.stringify(draftFormOf(defaultParams(''), FORM_DEFAULT
 function restoredForm(draft) {
   const spec = draft && draft.step === START_DRAFT_STEP ? draft.spec : null;
   if (!spec || typeof spec !== 'object') return null;
+  const listOf = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
   const checks = (v, fallback) => (v && typeof v === 'object' && !Array.isArray(v)
     ? Object.fromEntries(Object.entries(v).filter(([, on]) => typeof on === 'boolean')) : fallback);
   const saved = spec.params && typeof spec.params === 'object' ? spec.params : {};
@@ -213,9 +214,12 @@ function restoredForm(draft) {
     priorityChecks: checks(spec.priorityChecks, {}),
     strategyBase: typeof spec.strategyBase === 'string' ? spec.strategyBase : '',
     ...Object.fromEntries(LISTS.map((key) => [key, Array.isArray(spec[key]) ? spec[key].filter((x) => typeof x === 'string') : []])),
-    // A draft saved before wholeCatalogs existed took every listed catalog as whole, so it restores that way.
-    wholeCatalogs: (Array.isArray(spec.wholeCatalogs) ? spec.wholeCatalogs : Array.isArray(spec.selectedCatalogs) ? spec.selectedCatalogs : [])
-      .filter((x) => typeof x === 'string'),
+    // A draft saved before wholeCatalogs existed took every listed catalog as whole, so it restores that way. A catalog with a picked
+    // schema or table under it is not whole (REQ-388), so a profile saved before that fix restores without the stale flag.
+    wholeCatalogs: wholeCatalogsWithoutPicks(
+      (Array.isArray(spec.wholeCatalogs) ? spec.wholeCatalogs : Array.isArray(spec.selectedCatalogs) ? spec.selectedCatalogs : [])
+        .filter((x) => typeof x === 'string'),
+      listOf(spec.selectedSchemas), listOf(spec.selectedTables)),
     tableScopes: scopesFromObject(spec.tableScopes).scopes,
     dataFilterLabel: restoredLabel(spec.dataFilterLabel),
     relationships: restoredRelationships(spec.relationships),
@@ -949,7 +953,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       if (Array.isArray(data.permissions) && data.permissions.length) raisePermissions(data.permissions);
       const picks = applySampleCopies({ catalogs: selectedCatalogs, schemas: selectedSchemas, tables: selectedTables }, { destination: data.destination, copies, failed });
       setSelectedCatalogs(picks.catalogs);
-      setWholeCatalogs((p) => p.filter((c) => picks.catalogs.includes(c)));
+      setWholeCatalogs((p) => wholeCatalogsWithoutPicks(p.filter((c) => picks.catalogs.includes(c)), picks.schemas, picks.tables));
       setSelectedSchemas(picks.schemas);
       setSelectedTables(picks.tables);
       setTableScopes(scopesAfterSampleCopies(tableScopes, copies));
@@ -982,10 +986,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     [params['12_documents_languages']],
   );
 
-  // Removing the last schema or table under a whole catalog stops that catalog being read whole (wholeCatalogsAfterChildRemoval).
+  // Every change to the picked schemas or tables goes through here: a catalog with a picked child is not whole (REQ-388).
   const setPickedChildren = (nextSchemas, nextTables) => {
-    const before = [...selectedSchemas, ...selectedTables];
-    setWholeCatalogs((p) => wholeCatalogsAfterChildRemoval(p, before, [...nextSchemas, ...nextTables]));
+    setWholeCatalogs((p) => wholeCatalogsWithoutPicks(p, nextSchemas, nextTables));
     setSelectedSchemas(nextSchemas);
     setSelectedTables(nextTables);
   };
@@ -998,7 +1001,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       setPickedChildren(selectedSchemas, selectedTables.filter((t) => !filteredNames.has(t)));
     } else {
       const newNames = filteredTables.map((t) => t.full_name);
-      setSelectedTables((prev) => [...new Set([...prev, ...newNames])]);
+      setPickedChildren(selectedSchemas, [...new Set([...selectedTables, ...newNames])]);
     }
   };
 
@@ -1391,7 +1394,13 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                     onChange={(e) => pickProfile(e.target.value)}
                     className="min-w-0 w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-primary glow-focus sm:w-80">
                     <option value="">No profile</option>
-                    {profiles.map((p) => <option key={p.profile_id} value={p.profile_id}>{profileLabel(p)}</option>)}
+                    {/* The loaded profile is its own option, so the picker shows its name even when the list below does not carry it (REQ-390). */}
+                    {loadedProfile && (
+                      <option value={loadedProfile.profile_id}>
+                        {sameSettings(draftForm, loadedProfile.spec) ? loadedProfile.name : `${loadedProfile.name} (changed)`}
+                      </option>
+                    )}
+                    {profiles.filter((p) => p.profile_id !== loadedProfile?.profile_id).map((p) => <option key={p.profile_id} value={p.profile_id}>{profileLabel(p)}</option>)}
                   </select>
                 </label>
               </div>
@@ -1508,7 +1517,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                             setSelectedSchemas((p) => p.filter((x) => !x.startsWith(name + '.')));
                           } else {
                             setSelectedCatalogs((p) => [...p, name]);
-                            setWholeCatalogs((p) => [...p, name]);
+                            setWholeCatalogs((p) => wholeCatalogsWithoutPicks([...p, name], selectedSchemas, selectedTables));
                           }
                         }}
                         getKey={(c) => c.name}
@@ -1548,7 +1557,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                           if (selectedSchemas.includes(name)) {
                             setPickedChildren(selectedSchemas.filter((x) => x !== name), selectedTables);
                           } else {
-                            setSelectedSchemas((p) => [...p, name]);
+                            setPickedChildren([...selectedSchemas, name], selectedTables);
                           }
                         }}
                         getKey={(s) => s.full_name}
@@ -1581,7 +1590,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                         selected={selectedTables}
                         onToggle={(name) => {
                           if (selectedTables.includes(name)) setPickedChildren(selectedSchemas, selectedTables.filter((x) => x !== name));
-                          else setSelectedTables((p) => [...p, name]);
+                          else setPickedChildren(selectedSchemas, [...selectedTables, name]);
                         }}
                         getKey={(t) => t.full_name}
                         disabledReasonOf={unusableReasonOf}

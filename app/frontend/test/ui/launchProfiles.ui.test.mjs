@@ -236,3 +236,81 @@ test('a reload keeps the picked profile: the run after it still uses the profile
     await ui.close();
   }
 });
+
+const pickedOption = (page) => picker(page).evaluate((el) => el.selectedOptions[0]?.textContent ?? '');
+
+test('a catalog picked whole stops being whole once a table under it is picked, so the saved profile omits it and restore reads the same two tables (REQ-388, must-fail before)', async () => {
+  let savedSpec = null;
+  const ui = await openUi('launch', STATE);
+  const { page, made } = ui;
+  try {
+    await getStarted(page).waitFor({ timeout: 20000 });
+    await page.getByPlaceholder(BUSINESS).fill('Basket Co');
+    await page.locator('button[title="main"]').click();
+    await page.locator('button[title="s"]').click();
+    await page.locator('button[title="orders"]').click();
+    await page.locator('button[title="customers"]').click();
+    await idle(page);
+    await getStarted(page).click();
+    await dialog(page).waitFor({ timeout: 10000 });
+    await page.locator('[data-launch-save-run]').click();
+    await until(() => made.launches.length === 1, 'the run was sent once');
+    const saved = made.state.profileSaves[0].spec;
+    savedSpec = saved;
+    assert.deepEqual(saved.wholeCatalogs, [], 'the catalog is not whole once tables under it are picked');
+    assert.deepEqual(saved.selectedTables, ['main.s.orders', 'main.s.customers']);
+    assert.equal(made.launches[0].params['01_uc_metadata'], 'main.s.orders,main.s.customers', 'the run reads the two tables only');
+
+  } finally {
+    await ui.close();
+  }
+  // Restore the saved profile on a fresh form: it reads the same two tables, and no catalog comes back as whole.
+  const again = await openUi('launch', { ...STATE, profiles: [{ ...SAVED_PROFILE, profile_id: 'profile-1', name: 'Basket Co', business_name: 'Basket Co', spec: savedSpec }] });
+  try {
+    await getStarted(again.page).waitFor({ timeout: 20000 });
+    await picker(again.page).selectOption('profile-1');
+    await until(async () => /2 tables/.test(await pickedLine(again.page).innerText()), 'the restored profile reads the two tables');
+    assert.doesNotMatch(await pickedLine(again.page).innerText(), /catalog/, 'no catalog is restored as whole');
+    await getStarted(again.page).click();
+    await until(() => again.made.launches.length === 1, 'the run was sent once, with no question');
+    assert.equal(again.made.launches[0].params['01_uc_metadata'], 'main.s.orders,main.s.customers');
+  } finally {
+    await again.close();
+  }
+});
+
+test('after a profile restore the picker shows the profile name, then "(changed)" once a setting changes (REQ-390, must-fail before)', async () => {
+  const ui = await openUi('launch', { ...STATE, profiles: [SAVED_PROFILE] });
+  const { page } = ui;
+  try {
+    await getStarted(page).waitFor({ timeout: 20000 });
+    await picker(page).selectOption('profile-1');
+    await until(async () => (await page.getByPlaceholder(BUSINESS).inputValue()) === 'Acme', 'the business name is restored');
+    assert.equal(await picker(page).inputValue(), 'profile-1');
+    assert.equal(await pickedOption(page), 'Acme retail', 'the restored profile is named, not "No profile"');
+    await page.getByPlaceholder(BUSINESS).fill('Acme Two');
+    await until(async () => (await pickedOption(page)) === 'Acme retail (changed)', 'the picker says the profile changed');
+    await picker(page).selectOption('');
+    await until(async () => (await pickedOption(page)) === 'No profile', 'clearing the picker shows No profile');
+  } finally {
+    await ui.close();
+  }
+});
+
+test('a restored profile keeps its name in the picker even when the profile list does not carry it after a reload (REQ-390, must-fail before)', async () => {
+  const ui = await openUi('launch', { ...STATE, profiles: [SAVED_PROFILE] });
+  const { page, made } = ui;
+  try {
+    await getStarted(page).waitFor({ timeout: 20000 });
+    await picker(page).selectOption('profile-1');
+    await until(async () => (await page.getByPlaceholder(BUSINESS).inputValue()) === 'Acme', 'the business name is restored');
+    made.state.profiles = [];
+    await page.reload();
+    await page.getByPlaceholder(BUSINESS).waitFor({ timeout: 20000 });
+    await idle(page);
+    assert.equal(await picker(page).inputValue(), 'profile-1', 'the picker still points at the restored profile');
+    assert.equal(await pickedOption(page), 'Acme retail', 'the label is the profile name, not "No profile"');
+  } finally {
+    await ui.close();
+  }
+});

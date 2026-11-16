@@ -57,11 +57,11 @@ export function pickedScope(catalogs = [], schemas = [], tables = [], whole = ca
   return scope;
 }
 
-// A catalog picked whole is also the parent that lists its schemas, so picking a schema under it keeps the catalog listed and
-// stops it being whole. When the last schema or table under it is removed, it is no longer whole. It stays listed, so its
-// schemas still show, but nothing under it is read. Only the children that were removed decide this, so a catalog never becomes whole by accident.
-export function wholeCatalogsAfterChildRemoval(whole, before, after) {
-  return whole.filter((c) => !(before.some(under(c)) && !after.some(under(c))));
+// A catalog is whole only while no schema or table under it is picked: a picked child is what the person chose, so the catalog
+// stops being whole (REQ-388). It stays listed, so its schemas still show. Every change to the picked schemas or tables passes
+// through this, so the form, the draft and a saved profile all carry the same wholeCatalogs.
+export function wholeCatalogsWithoutPicks(whole, schemas, tables) {
+  return whole.filter((c) => ![...schemas, ...tables].some(under(c)));
 }
 
 export function scopeSummary(scope) {
