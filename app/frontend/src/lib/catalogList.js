@@ -71,3 +71,12 @@ export function scopeSummary(scope) {
     scope.catalogs.length && counted(scope.catalogs.length, 'catalog'),
   ].filter(Boolean).join(', ');
 }
+
+// The catalogs the Catalogs list shows (REQ-359). With the installer's list and no Load all, only those catalogs, plus every
+// catalog a draft or profile already names (its own pick, or a schema or table under it). Without a list, or after Load all, every
+// catalog the person can see.
+export function listedCatalogs(catalogs, installer, picked, showAll) {
+  if (showAll || !Array.isArray(installer) || installer.length === 0) return catalogs;
+  const keep = new Set([...installer, ...picked.map((name) => String(name).split('.')[0])]);
+  return catalogs.filter((c) => keep.has(nameOf(c)));
+}

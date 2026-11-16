@@ -269,6 +269,15 @@ def assets_root_for(version_root, build) -> str:
     return f"{version_root}/{build}"
 
 
+def installer_data_catalog_env(data_catalogs):
+    """INSPIRE_DATA_CATALOGS: the catalogs the installer picked for the App to read, as a JSON list in pick order (REQ-359).
+
+    Empty when nothing was picked, so the App shows every catalog the person can see, as it did before.
+    """
+    names = [str(name) for name in (data_catalogs or []) if str(name).strip()]
+    return {"INSPIRE_DATA_CATALOGS": json.dumps(names)} if names else {}
+
+
 def write_app_yaml_deploy(path, inspire_db, warehouse_id, notebook_path, sp_resource_name, assets_path=None, test_tag=None, extra_env=None):
     """Emit app.yaml without PyYAML (no extra pip on the cluster)."""
     lines = [
@@ -1214,8 +1223,9 @@ def step_create_app_and_find_sp(ctx):
 
     app_yaml_path = f"{source_folder}/app.yaml"
     release_env = {"INSPIRE_RELEASE_TAG": ctx["RELEASE_TAG"]} if ctx.get("RELEASE_TAG") else {}
+    data_env = installer_data_catalog_env(ctx.get("DATA_CATALOGS"))
     wanted_yaml = write_app_yaml_deploy(app_yaml_path, inspire_db, warehouse_id, notebook_path, sp_name, ctx.get("ASSETS_PATH"),
-                                        ctx.get("TEST_TAG"), {**(ctx.get("APP_EXTRA_ENV") or {}), **release_env} or None)
+                                        ctx.get("TEST_TAG"), {**(ctx.get("APP_EXTRA_ENV") or {}), **release_env, **data_env} or None)
     print("app.yaml: ✅")
 
     app_url = ""
