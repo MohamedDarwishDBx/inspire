@@ -47,6 +47,7 @@ const BROWSER_ALLOWED = [
   ['lib/ucPermissionErrors.js', 'JSON.parse(raw)', 'an error answer of the App, read for its message'],
   ['lib/strategyContext.js', 'JSON.parse(raw)', 'the strategy text the person types in the widget'],
   ['lib/implementControl.js', 'JSON.parse(storage?.getItem(COLLECTED_VIBES_KEY)', 'the vibes this browser stored itself'],
+  ['lib/implementControl.js', 'JSON.parse(raw) : {}', 'the queued builds this browser stored itself (REQ-323); keys are use case ids as text, values hold no id'],
   ['lib/useCaseFields.js', 'JSON.parse(rawFp)', 'the favorites this browser stored itself'],
   ['lib/useCaseFields.js', "JSON.parse(storage.getItem('inspire_favorites')", 'the favorites this browser stored itself'],
   ['lib/dataGrid.js', 'JSON.parse(storage?.getItem(GRID_ORDER_KEY)', 'the column order this browser stored itself, which names no id'],
