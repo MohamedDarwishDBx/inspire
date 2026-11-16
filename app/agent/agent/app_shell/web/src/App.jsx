@@ -83,11 +83,11 @@ function useHub(pages, asked) {
   return { hub, error, summaries, load, summarize };
 }
 
-// D-NOAGENT (Amr 2026-11-16 02:27): the Agent link is hidden. The Agent page code stays; flip this to true to show it again.
-// With it off, an agentic App lands on its first normal page and a deep link to #/<page>/agent falls back to the dashboard.
-const AGENT_PAGE_SHOWN = false;
-// The Agent page is on for every experience but ui; it opens first, so the briefing is one click from any page.
-const agentOn = (app) => AGENT_PAGE_SHOWN && !!app && app.experience !== 'ui';
+// REQ-392 / D-NOAGENT (Amr 2026-11-16): no Agent entry in the left side menu, for any experience. The Agent page itself stays on:
+// an agentic App still opens on it, and a deep link to #/<page>/agent still shows it. Flip this to true to show the menu item again.
+const SHOW_AGENT_NAV = false;
+// The Agent page is on for agentic and both (a classic ui App has none). An agentic App opens on it.
+const agentOn = (app) => app?.experience === 'agentic' || app?.experience === 'both';
 
 function railOf(app, page) {
   const inbox = inboxOn(app, page);
@@ -185,7 +185,7 @@ function Shell({ app, onRefreshSiblings }) {
     || (link.section === 'agent' && !agentOn(app)) ? 'dashboard' : link.section;
   const sectionsHere = page ? railOf(app, page) : [];
   const inboxOff = railCounts.page === page?.id && railCounts.inboxOff;
-  const rail = sectionsHere.filter((s) => !(s === 'alerts' && sectionsHere.includes('runs')) && !(s === 'inbox' && inboxOff));
+  const rail = sectionsHere.filter((s) => !(s === 'alerts' && sectionsHere.includes('runs')) && !(s === 'inbox' && inboxOff) && (SHOW_AGENT_NAV || s !== 'agent'));
   const mode = pageMode(page);
   const working = !admin && section === 'work' && !!page && mode.queue;
   const fullChat = !admin && section === 'work' && !!page && mode.id === 'ask';

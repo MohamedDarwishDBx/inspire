@@ -18,10 +18,6 @@ after(async () => {
   served?.close();
 });
 
-// D-NOAGENT (Amr 2026-11-16 02:27): the Agent link is hidden (AGENT_PAGE_SHOWN = false in src/App.jsx), so every App-level test
-// that reaches the Agent page through its link or deep link is skipped by name. agentHidden.test.mjs covers the hidden state.
-const HIDDEN = { skip: 'D-NOAGENT: the Agent page is hidden (AGENT_PAGE_SHOWN = false in src/App.jsx)' };
-
 const AGENTIC = { options: { modify: false, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' } };
 const TICKETS = [
   { record_key: 'r-100', label: 'Unit A', value_at_stake: '900000', tier: 'High', status: 'Open', why: 'Overdue invoices', due: '' },
@@ -29,7 +25,7 @@ const TICKETS = [
 ];
 const briefing = (page) => ({ page, total: 2, tickets: TICKETS, actions: ['done', 'snooze', 'assign'], chips: ['Tell me what to do', 'What is the value at stake?'] });
 
-test('an agentic App opens on the Agent page, with the briefing, the box and the chips', HIDDEN, async () => {
+test('an agentic App opens on the Agent page, with the briefing, the box and the chips', async () => {
   const info = appInfo(AGENTIC);
   const pageId = info.pages[0].id;
   const routes = { 'agent/briefing': ({ json }) => json(200, briefing(pageId)), 'agent/status': ({ json }) => json(200, { mode: 'agent', note: '', page: pageId, genie: true, model: 'x' }) };
@@ -45,7 +41,7 @@ test('an agentic App opens on the Agent page, with the briefing, the box and the
   }
 });
 
-test('a Mark done on a briefing ticket asks for confirmation first, and writes only after Confirm', HIDDEN, async () => {
+test('a Mark done on a briefing ticket asks for confirmation first, and writes only after Confirm', async () => {
   const info = appInfo(AGENTIC);
   const pageId = info.pages[0].id;
   const calls = { act: 0, prepare: 0 };
@@ -67,7 +63,7 @@ test('a Mark done on a briefing ticket asks for confirmation first, and writes o
   }
 });
 
-test('a question renders its answer as blocks: text, a choice, a multi-select, a KPI and an email draft', HIDDEN, async () => {
+test('a question renders its answer as blocks: text, a choice, a multi-select, a KPI and an email draft', async () => {
   const info = appInfo(AGENTIC);
   const pageId = info.pages[0].id;
   const turn = {
@@ -100,7 +96,7 @@ test('a question renders its answer as blocks: text, a choice, a multi-select, a
   }
 });
 
-test('chart, KPI, table, carousel and feedback blocks render, and the carousel and feedback work', HIDDEN, async () => {
+test('chart, KPI, table, carousel and feedback blocks render, and the carousel and feedback work', async () => {
   const info = appInfo(AGENTIC);
   const pageId = info.pages[0].id;
   const page = info.pages[0];
@@ -147,7 +143,7 @@ test('chart, KPI, table, carousel and feedback blocks render, and the carousel a
   }
 });
 
-test('saved conversations list the person\'s threads, and a thread opens to its answers', HIDDEN, async () => {
+test('saved conversations list the person\'s threads, and a thread opens to its answers', async () => {
   const info = appInfo(AGENTIC);
   const pageId = info.pages[0].id;
   const threads = { threads: [{ thread_id: 'd'.repeat(32), title: 'Which units?', updated_at: '2026-11-14', turns: [
@@ -165,7 +161,7 @@ test('saved conversations list the person\'s threads, and a thread opens to its 
   }
 });
 
-test('an outlier page shows its kind question as the first chip, and clicking it asks that question', HIDDEN, async () => {
+test('an outlier page shows its kind question as the first chip, and clicking it asks that question', async () => {
   const info = appInfo(AGENTIC);
   const pageId = info.pages[0].id;
   const kindQuestion = 'Which values break their expected range, and which ones need someone to look?';
@@ -195,7 +191,7 @@ const SAME_LABEL = [
   { record_key: 'f-1 | 2024-05-21', label: 'Franchise 3000000', value_at_stake: '1700', tier: 'Act now', status: 'New', why: 'forecast gap', due: '' },
 ];
 
-test('three distinct records give three distinct cards on the Agent page, each showing its own key', HIDDEN, async () => {
+test('three distinct records give three distinct cards on the Agent page, each showing its own key', async () => {
   const info = appInfo(AGENTIC);
   const pageId = info.pages[0].id;
   const routes = { 'agent/briefing': ({ json }) => json(200, { ...briefing(pageId), total: 3, tickets: SAME_LABEL }) };
@@ -214,7 +210,7 @@ test('three distinct records give three distinct cards on the Agent page, each s
   }
 });
 
-test('the Agent input takes typing while a question is still running, and Enter sends the next question', HIDDEN, async () => {
+test('the Agent input takes typing while a question is still running, and Enter sends the next question', async () => {
   const info = appInfo(AGENTIC);
   const pageId = info.pages[0].id;
   const asked = [];
@@ -253,7 +249,7 @@ test('the Agent input takes typing while a question is still running, and Enter 
   }
 });
 
-test('the record link on an Agent page card opens that record, with its own key', HIDDEN, async () => {
+test('the record link on an Agent page card opens that record, with its own key', async () => {
   const info = appInfo(AGENTIC);
   const pageId = info.pages[0].id;
   const routes = { 'agent/briefing': ({ json }) => json(200, { ...briefing(pageId), total: 3, tickets: SAME_LABEL }) };

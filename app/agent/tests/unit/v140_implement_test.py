@@ -5334,7 +5334,7 @@ def test_the_app_settings_start_with_decisions_on_and_every_other_option_off_and
     settings = agent_ns["implement_app_settings"]
     off = settings(core.SETTINGS_VERSION, " N01-U01   Predict churn ", [page["id"]], None, "no agent", "2026-10-27T00:00:00Z",
                    {"app_access": "sp"})
-    assert off["options"] == {"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}
+    assert off["options"] == {"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "ui"}
     assert (off["title"], off["style"], off["layout"], off["palette"], off["theme"], off["auth"]) == (
         "N01-U01 Predict churn", "a", "sidebar", "default", "light", "sp")
     assert off["genie"] is None and off["genie_note"] == "no agent"

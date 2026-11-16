@@ -309,7 +309,7 @@ def test_a_version_saved_with_download_builds_and_its_app_never_sees_the_option(
     got = inst._implement_one_locked({"session_id": 5150, "use_case_id": "N01-U01", "spec_version": 3, "spec_json": target},
                                      (5150, "N01-U01", 3), {})
     assert got == "ready"
-    assert built == [{"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}]
+    assert built == [{"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "ui"}]
     assert not any("download" in json.dumps(update) for update in inst.updates)
 
 

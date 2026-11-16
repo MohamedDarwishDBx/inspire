@@ -1,8 +1,9 @@
-// D-NOAGENT (Amr 2026-11-16 02:27): the Agent link is hidden in the left nav for every experience. An agentic App lands on
-// its first normal page, and a deep link to #/<page>/agent falls back to the dashboard instead of a blank page.
+// REQ-392 / D-NOAGENT (Amr 2026-11-16): the Agent entry is hidden from the left side menu for every experience. The Agent page
+// stays on: an agentic App still opens on it, and only a classic (ui) App falls back to the dashboard for a deep link to it.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { mkdirSync } from 'node:fs';
 import { appInfo, openApp, serveDist } from './harness.mjs';
 
 let served;
@@ -40,22 +41,23 @@ for (const experience of EXPERIENCES) {
   });
 }
 
-test('an agentic App lands on its first normal page, not on the Agent page', async () => {
+test('an agentic App opens on the Agent page, with no Agent item in the side menu', async () => {
   const info = appInfo(options('agentic'));
   const pageId = info.pages[0].id;
-  const { page, seen, context } = await openApp(browser, served.base, info, { hash: `#/${pageId}` });
+  const { page, seen, context } = await openApp(browser, served.base, info, { hash: `#/${pageId}`, ready: '[data-agent-page]' });
   try {
-    await page.locator('nav.side [data-rail="dashboard"][aria-current="page"]').waitFor({ timeout: 20000 });
-    assert.equal(await page.locator('[data-agent-page]').count(), 0, 'the Agent page is not shown');
-    assert.match(page.url(), new RegExp(`#/${pageId}/dashboard$`), 'the address lands on the dashboard section');
+    await page.locator('[data-agent-page]').waitFor({ timeout: 20000 });
+    assert.match(page.url(), new RegExp(`#/${pageId}/agent$`), 'the address lands on the Agent section');
+    assert.equal(await page.locator('nav.side [data-rail="agent"]').count(), 0, 'no agent rail item even while the Agent page is open');
+    assert.ok(await page.locator('nav.side [data-rail="dashboard"]').count() > 0, 'the other sections are still in the side menu');
     assert.deepEqual(seen.errors.filter((e) => !/favicon|Failed to load resource/.test(e)), [], 'no page errors');
   } finally {
     await context.close();
   }
 });
 
-test('a deep link to the Agent section falls back to the dashboard, with the page showing and no blank screen', async () => {
-  const info = appInfo(options('agentic'));
+test('a classic (ui) App: a deep link to the Agent section falls back to the dashboard, with the page showing and no blank screen', async () => {
+  const info = appInfo(options('ui'));
   const pageId = info.pages[0].id;
   const { page, seen, context } = await openApp(browser, served.base, info, { hash: `#/${pageId}/agent` });
   try {
@@ -68,3 +70,24 @@ test('a deep link to the Agent section falls back to the dashboard, with the pag
     await context.close();
   }
 });
+
+// REQ-392: the side menu at the two desk sizes, saved for review (the agentic App opens on its Agent page; the classic App has no Agent page).
+const SHOTS = '/private/tmp/inspire_v15/shots/u11';
+for (const experience of ['agentic', 'ui']) {
+  test(`REQ-392: the side menu of a '${experience}' App has no Agent entry at 1440x900 and 1280x800, and the screenshots are saved`, async () => {
+    const info = appInfo(options(experience));
+    const pageId = info.pages[0].id;
+    const { page, context } = await openApp(browser, served.base, info, { hash: `#/${pageId}`, ready: experience === 'agentic' ? '[data-agent-page]' : undefined });
+    try {
+      for (const [width, height] of [[1440, 900], [1280, 800]]) {
+        await page.setViewportSize({ width, height });
+        await page.locator('nav.side [data-rail]').first().waitFor({ timeout: 20000 });
+        assert.equal(await page.locator('nav.side [data-rail="agent"]').count(), 0, `no Agent entry at ${width}x${height}`);
+        mkdirSync(SHOTS, { recursive: true });
+        await page.screenshot({ path: `${SHOTS}/req392-side-menu-${experience}-${width}x${height}.png` });
+      }
+    } finally {
+      await context.close();
+    }
+  });
+}

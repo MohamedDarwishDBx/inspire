@@ -306,16 +306,16 @@ export function withAppBackend(spec, backend) {
 
 export const APP_OPTION_DEFAULTS = { modify: false, replace_edits: false, decisions: true, alerts: false };
 export const APP_OPTION_KEYS = Object.keys(APP_OPTION_DEFAULTS);
-// The experience is a choice, not a switch. An App built before it existed is classic (ui) in the shell; a new build starts agentic.
-export const APP_EXPERIENCE_DEFAULT = 'agentic';
+// The experience is a choice, not a switch. An App built before it existed is classic (ui) in the shell; a new build starts classic too (REQ-391).
+export const APP_EXPERIENCE_DEFAULT = 'ui';
 export const APP_EXPERIENCE_QUESTION = 'How people start in the App';
 export const APP_EXPERIENCE_CHOICES = [
-  { id: 'agentic', label: 'Agentic (default)', blurb: 'The App opens on the Agent page: a briefing of the records that matter most, and a box to ask or act. Every task the classic pages allow can be done there.' },
-  { id: 'ui', label: 'Classic UI', blurb: 'The App opens on the dashboard and the decision list, as before. The Agent page is not shown.' },
-  { id: 'both', label: 'Both', blurb: 'The App keeps its classic pages and adds the Agent page in the side menu. It does not open on it.' },
+  { id: 'agentic', label: 'Agentic', blurb: 'The App opens on the Agent page: a briefing of the records that matter most, and a box to ask or act. Every task the classic pages allow can be done there.' },
+  { id: 'ui', label: 'Classic UI (default)', blurb: 'The App opens on the dashboard and the decision list, as before. The Agent page is not shown.' },
+  { id: 'both', label: 'Both', blurb: 'The App keeps its classic pages and does not open on the Agent page.' },
 ];
 export const experienceOf = (value) => (APP_EXPERIENCE_CHOICES.some((c) => c.id === value) ? value : APP_EXPERIENCE_DEFAULT);
-// A rebuild of an App that never chose an experience keeps it classic; a new build starts agentic (same rule as the backend).
+// A rebuild of an App that never chose an experience keeps it classic; a new build starts classic too (same rule as the backend).
 export const experienceDefault = (spec) => (spec?.based_on_version != null && spec.based_on_version !== '' ? 'ui' : APP_EXPERIENCE_DEFAULT);
 export const PER_USER_OFF = ['alerts'];
 export const APP_OPTIONS = [

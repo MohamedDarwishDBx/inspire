@@ -94,7 +94,7 @@ test('a new spec has the Genie Agent and App on and the dashboard and alert off,
   for (const note of [w.APP_ACCESS_NOTE, w.FRESH_HELP]) assert.ok(note.split(' ').length <= 15, `${note} is over 15 words (must-fail on the long copy)`);
   assert.match(w.APP_ACCESS_CHOICES.find((c) => c.id === 'sp').blurb, /^The App reads with its own access/);
   assert.deepEqual(fresh.outputs.app_look, { style: 'a', layout: 'sidebar', palette: 'default', theme: 'light' });
-  assert.deepEqual(fresh.outputs.app_options, { modify: false, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' }, 'record decisions start on, alerts start off');
+  assert.deepEqual(fresh.outputs.app_options, { modify: false, replace_edits: false, decisions: true, alerts: false, experience: 'ui' }, 'record decisions start on, alerts start off');
   assert.deepEqual(fresh.outputs.merge, { app: '', dashboard: '', genie_space: '' });
   assert.deepEqual(served(spec).errors, []);
   const unchosen = { ...spec, outputs: { ...spec.outputs, app_access: '' } };

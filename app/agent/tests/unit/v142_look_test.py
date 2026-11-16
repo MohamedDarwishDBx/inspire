@@ -30,7 +30,7 @@ def test_choices_default_to_the_c1_look_with_decisions_on_and_every_other_option
     choices, errors = agent_ns["implement_app_choices"]({"app_access": "sp"})
     assert errors == []
     assert choices == {"app_access": "sp", "app_look": {"style": "a", "layout": "sidebar", "palette": "default", "theme": "light"},
-                       "app_options": {"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"},
+                       "app_options": {"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "ui"},
                        "app_backend": "delta", "app_charts": [], "app_pages": {"runs": True, "impact": True}, "app_placement": ""}
     choices, errors = agent_ns["implement_app_choices"]({"app_access": " SP ", "app_look": {"palette": "Berry", "theme": None, "style": ""},
                                                           "app_options": {"modify": True}})
@@ -47,10 +47,10 @@ def test_a_per_user_app_records_decisions_when_asked_but_never_sends_alerts(agen
     asked = {"modify": True, "replace_edits": True, "decisions": True, "alerts": True}
     choices, errors = agent_ns["implement_app_choices"]({"app_access": "user", "app_look": USER_LOOK, "app_options": asked})
     assert errors == []
-    assert choices["app_options"] == {"modify": True, "replace_edits": True, "decisions": True, "alerts": False, "experience": "agentic"}
+    assert choices["app_options"] == {"modify": True, "replace_edits": True, "decisions": True, "alerts": False, "experience": "ui"}
     assert choices["app_look"] == USER_LOOK
     shared, _ = agent_ns["implement_app_choices"]({"app_access": "sp", "app_options": asked})
-    assert shared["app_options"] == dict(asked, experience="agentic"), "a shared-view App keeps every option the user ticked"
+    assert shared["app_options"] == dict(asked, experience="ui"), "a shared-view App keeps every option the user ticked"
 
 
 @pytest.mark.parametrize("outputs,needle", [
@@ -86,7 +86,7 @@ def test_the_spec_carries_the_app_choices_and_refuses_bad_ones_before_anything_b
     spec, errors = _spec(agent_ns, outputs=_outputs(app_access="user", app_look=USER_LOOK, app_options={"modify": True, "decisions": True}))
     assert errors == []
     assert spec["outputs"]["app_access"] == "user" and spec["outputs"]["app_look"] == USER_LOOK
-    assert spec["outputs"]["app_options"] == {"modify": True, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}
+    assert spec["outputs"]["app_options"] == {"modify": True, "replace_edits": False, "decisions": True, "alerts": False, "experience": "ui"}
     no_access = _spec(agent_ns, outputs={k: v for k, v in VALID["outputs"].items() if k != "app_access"})[1]
     assert any("choose who the App reads its data as" in e for e in no_access), no_access
     bad = _spec(agent_ns, outputs=_outputs(app_look={"palette": "rainbow"}))[1]
@@ -105,7 +105,7 @@ def test_settings_follow_the_spec_and_pass_the_shell_check(agent_ns, tmp_path):
     outputs = {"app_access": "user", "app_look": USER_LOOK, "app_options": {"decisions": True, "modify": True}}
     mine = settings(core.SETTINGS_VERSION, "N01-U01 Predict churn", [page["id"]], None, "off", "t", outputs)
     assert (mine["style"], mine["layout"], mine["palette"], mine["theme"], mine["auth"]) == ("c", "tabs", "ocean", "dark", "user")
-    assert mine["options"] == {"modify": True, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}
+    assert mine["options"] == {"modify": True, "replace_edits": False, "decisions": True, "alerts": False, "experience": "ui"}
     assert core.settings_problems(mine, [page]) == []
     shared = settings(core.SETTINGS_VERSION, "N01-U01 Predict churn", [page["id"]], None, "off", "t",
                       {"app_access": "sp", "app_options": {"modify": True, "decisions": True}})
@@ -125,7 +125,7 @@ def test_the_built_app_writes_the_wizard_choices_into_its_settings(agent_ns, tmp
     assert seen["errors"] == []
     settings = json.loads(seen["deployed"][0][1]["inspire_app.json"])
     assert (settings["auth"], settings["style"], settings["layout"], settings["palette"], settings["theme"]) == ("user", "c", "tabs", "ocean", "dark")
-    assert settings["options"] == {"modify": True, "replace_edits": True, "decisions": True, "alerts": False, "experience": "agentic"}
+    assert settings["options"] == {"modify": True, "replace_edits": True, "decisions": True, "alerts": False, "experience": "ui"}
 
 
 def test_a_look_or_access_change_rebuilds_the_app_and_nothing_else(agent_ns):
