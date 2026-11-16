@@ -557,12 +557,10 @@ test('a missing ask reads not done yet with the asset ready with warnings, and T
 
     const genie = await pick(page, 'genie_space');
     await genie.locator('[data-checks]').getByText('You asked for 3 things. Done: 1 of 3.', { exact: true }).waitFor();
-    await page.waitForFunction(() => [...document.querySelectorAll('[data-mvp-panel] [data-checks] button')].some((b) => !b.disabled));
-    await genie.getByRole('button', { name: 'Try again with the 2 missing things', exact: true }).click();
-    await until(() => made.jobs.length === 2, 'the Genie Agent try again');
-    const whole = insertsOf(made)[1];
-    assert.deepEqual([whole.spec.retry_outputs, whole.spec.retry_asks, whole.spec.outputs.genie_space_vibes, whole.classes],
-      [['genie_space'], { genie_space: ['Answer in euros', 'Add a question about returns'] }, V3_OUTPUTS.genie_space_vibes, 'retry']);
+    // The chart build is queued from the moment it was submitted (REQ-323), so this use case is active: every Try again waits, and the
+    // Genie Agent's missing asks are sent only after that build lands. Pinned here so a second Try again cannot slip in beside a queued build.
+    assert.equal(await genie.getByRole('button', { name: 'Try again with the 2 missing things', exact: true }).isDisabled(), true, 'Genie Try again waits while the chart build is queued');
+    assert.equal(made.jobs.length, 1, 'only the chart build was sent');
     assert.deepEqual(ui.pageErrors, []);
   } finally {
     await ui.close();

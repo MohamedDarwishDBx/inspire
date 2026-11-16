@@ -287,8 +287,9 @@ export async function closeBuild(page) {
 export async function openAsset(page, id) {
   const drawer = page.locator(`[data-mvp-panel="${id}"]`);
   if (await drawer.count()) return drawer;
-  await closeBuild(page);
+  // An open asset drawer covers the docked Build progress panel, so it closes first; only then can Close on the progress panel be clicked.
   if (await page.locator('[data-mvp-panel]').count()) await closeAsset(page);
+  await closeBuild(page);
   await page.locator(`[data-asset-tile="${id}"] [data-tile-versions]`).click();
   await drawer.waitFor({ timeout: 15000 });
   return drawer;
@@ -302,8 +303,8 @@ export async function closeAsset(page) {
 export async function openFeatures(page) {
   const dialog = page.locator('[data-vibe-features-dialog]');
   if (await dialog.count()) return dialog;
-  await closeBuild(page);
   if (await page.locator('[data-mvp-panel]').count()) await closeAsset(page);
+  await closeBuild(page);
   await page.locator('[data-vibe-features]').click();
   await dialog.waitFor({ timeout: 15000 });
   return dialog;
