@@ -4,9 +4,11 @@ import { PlainMessage } from './TechnicalDetails';
 import { raisePermissions } from '../lib/permissionBus';
 
 const ANSWER_MS = 20000;
+const FILTER_AT = 12;
 const FIELD = 'h-8 rounded-md border border-border bg-surface px-2 text-xs text-text-primary';
 const BUTTON = 'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle disabled:opacity-50';
-const MANUAL = 'added by you';
+const PERSON = 'person';
+const SOURCE_TEXT = { [PERSON]: 'added by you' };
 
 const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error('Inspire did not get an answer in time.')), ms);
@@ -14,157 +16,213 @@ const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
 });
 const sameLink = (a, b) => a.from.table === b.from.table && a.from.column === b.from.column
   && a.to.table === b.to.table && a.to.column === b.to.column;
-const involves = (link, table) => link.from.table === table || link.to.table === table;
 const shortName = (table) => table.split('.').pop();
 const linkText = (link) => `${shortName(link.from.table)}.${link.from.column} → ${shortName(link.to.table)}.${link.to.column}`;
+const sourceText = (source) => SOURCE_TEXT[source] || source;
 
-function ColumnSelect({ label, value, columns, onChange }) {
+// One list of the picked tables (or of the columns of one table): a filter box once the list is long, then the buttons.
+function PickList({ label, items, picked, disabledItem, onPick, filterLabel }) {
+  const [filter, setFilter] = useState('');
+  const shown = items.filter((item) => !filter.trim() || item.toLowerCase().includes(filter.trim().toLowerCase()));
   return (
-    <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} className={`${FIELD} font-mono`}>
-      {!columns.includes(value) && <option value={value}>{value}</option>}
-      {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-    </select>
+    <div className="flex min-w-0 flex-col gap-2">
+      <p className="font-semibold text-text-primary">{label}</p>
+      {items.length > FILTER_AT && (
+        <input type="search" aria-label={filterLabel} value={filter} dir="auto" onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter" className={`${FIELD} w-full`} />
+      )}
+      <ul aria-label={label} className="grid max-h-56 gap-1 overflow-y-auto">
+        {shown.map((item) => (
+          <li key={item}>
+            <button type="button" aria-pressed={picked === item} disabled={disabledItem === item} title={item}
+              onClick={() => onPick(item)}
+              className={`w-full truncate rounded-md border px-2 py-1 text-start font-mono text-xs disabled:opacity-40 ${picked === item ? 'border-db-red-fg bg-db-red-50 text-text-primary' : 'border-border bg-surface text-text-primary hover:bg-bg-subtle'}`}>
+              {shortName(item)}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
-// One relationship the person keeps: change either column, or remove it. The source says where it came from.
-function LinkRow({ link, columnsOf, onChange, onRemove }) {
+// The Link dialog (REQ-371): the columns of the source table on the left, the target's on the right. The person picks one column on
+// each side and Add link; the pairs wait in the dialog until Done. Suggestions (declared keys, matching names) are listed and added only by a click.
+function LinkDialog({ dialog, onPick, onAdd, onRemove, onAddSuggested, onDone, onCancel, onRetry }) {
+  const { source, target } = dialog;
+  const columnsOf = (table) => dialog.columns?.[table]?.columns || [];
+  const [filter, setFilter] = useState({ source: '', target: '' });
+  const ready = dialog.pickSource && dialog.pickTarget;
+  const sideList = (side, table, picked) => {
+    const names = columnsOf(table);
+    const term = filter[side].trim().toLowerCase();
+    const shown = names.filter((n) => !term || n.toLowerCase().includes(term));
+    return (
+      <div className="flex min-w-0 flex-col gap-2">
+        <p className="font-semibold text-text-primary">{shortName(table)}</p>
+        {names.length > FILTER_AT && (
+          <input type="search" aria-label={`Filter the columns of ${shortName(table)}`} value={filter[side]} dir="auto"
+            onChange={(e) => setFilter({ ...filter, [side]: e.target.value })} placeholder="Filter" className={`${FIELD} w-full`} />
+        )}
+        <ul aria-label={`Columns of ${shortName(table)}`} className="grid max-h-56 gap-1 overflow-y-auto">
+          {shown.map((c) => (
+            <li key={c}>
+              <button type="button" aria-pressed={picked === c} onClick={() => onPick(side, c)}
+                className={`w-full truncate rounded-md border px-2 py-1 text-start font-mono text-xs ${picked === c ? 'border-db-red-fg bg-db-red-50 text-text-primary' : 'border-border bg-surface text-text-primary hover:bg-bg-subtle'}`}>
+                {c}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+  const suggestions = (dialog.suggestions || []).filter((s) => !dialog.staged.some((l) => sameLink(l, s)));
   return (
-    <li data-relationship={linkText(link)} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-      <span className="font-mono text-text-primary">{shortName(link.from.table)}</span>
-      <ColumnSelect label={`Column of ${shortName(link.from.table)} in this relationship`} value={link.from.column}
-        columns={columnsOf(link.from.table)} onChange={(column) => onChange({ ...link, from: { ...link.from, column } })} />
-      <span className="text-text-tertiary">→</span>
-      <span className="font-mono text-text-primary">{shortName(link.to.table)}</span>
-      <ColumnSelect label={`Column of ${shortName(link.to.table)} in this relationship`} value={link.to.column}
-        columns={columnsOf(link.to.table)} onChange={(column) => onChange({ ...link, to: { ...link.to, column } })} />
-      <span data-link-source className="ms-auto text-text-secondary">{link.source}</span>
-      <button type="button" aria-label={`Remove relationship ${linkText(link)}`} onClick={onRemove} className="text-text-tertiary hover:text-db-red-fg">
-        <X size={12} />
-      </button>
-    </li>
+    <div role="dialog" aria-label={`Link ${shortName(source)} to ${shortName(target)}`} data-link-dialog className="space-y-3 rounded-xl border border-border bg-surface p-3">
+      <p className="font-semibold text-text-primary">Link {shortName(source)} to {shortName(target)}</p>
+      {dialog.status === 'loading' && <p data-link-loading className="text-text-tertiary">Reading the columns of both tables</p>}
+      {dialog.status === 'error' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <PlainMessage role="alert" className="text-error-fg" text={dialog.error} />
+          <button type="button" className={BUTTON} onClick={onRetry}>Try again</button>
+        </div>
+      )}
+      {dialog.status === 'done' && (
+        <>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3">
+            {sideList('source', source, dialog.pickSource)}
+            <div className="flex flex-col items-center gap-2 pt-8">
+              <button type="button" aria-label="Add link" className={BUTTON} disabled={!ready} onClick={onAdd}>Add link</button>
+              {!ready && <p data-add-link-reason className="max-w-[10rem] text-center text-text-tertiary">Pick one column in each table, then Add link.</p>}
+            </div>
+            {sideList('target', target, dialog.pickTarget)}
+          </div>
+          {dialog.staged.length > 0 && (
+            <ul aria-label="Links to add" className="grid gap-1">
+              {dialog.staged.map((link) => (
+                <li key={linkText(link)} data-staged-link={linkText(link)} className="flex items-center gap-2 rounded-md border border-border px-2 py-1">
+                  <span className="font-mono text-text-primary">{linkText(link)}</span>
+                  <button type="button" aria-label={`Remove link ${linkText(link)} from this dialog`} onClick={() => onRemove(link)}
+                    className="ms-auto text-text-tertiary hover:text-db-red-fg"><X size={12} /></button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {suggestions.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-text-secondary">Suggested</p>
+              <ul aria-label="Suggested links" className="grid gap-1">
+                {suggestions.map((s) => (
+                  <li key={linkText(s)} data-suggested-link={linkText(s)} className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-border px-2 py-1">
+                    <span className="font-mono text-text-primary">{linkText(s)}</span>
+                    <span className="ms-auto text-text-secondary">{s.source}</span>
+                    <button type="button" className={BUTTON} aria-label={`Add suggested link ${linkText(s)}`} onClick={() => onAddSuggested(s)}>Add</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+      <div className="flex gap-2">
+        <button type="button" className={BUTTON} onClick={onDone} disabled={dialog.status !== 'done'}>Done</button>
+        <button type="button" className={BUTTON} onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
   );
 }
 
-// The Relationships section of Data Management (REQ-362). The person picks a table; its relationships with the other picked tables are
-// listed: the ones kept (editable), and the suggestions Inspire found (declared keys, then matching column names) to add.
-export default function RelationshipsSection({ tables, relationships, onRelationships, apiFetch, warehouseId }) {
-  const [selected, setSelected] = useState('');
-  const [found, setFound] = useState({ status: 'idle' });
-  const [manual, setManual] = useState(null);
-  const tablesKey = tables.join('\n');
+// The Relationships section of Data Management (REQ-362, REQ-370, REQ-371). Two lists of the picked tables sit side by side, Source and
+// Target; one table on each side. Link opens the dialog to pair their columns. The links are listed below and each can be removed.
+export default function RelationshipsSection({ tables, relationships, onRelationships, apiFetch, warehouseId, onMetricViews = () => {} }) {
+  const [source, setSource] = useState('');
+  const [target, setTarget] = useState('');
+  const [dialog, setDialog] = useState(null);
+  const run = dialog?.run ?? 0;
 
+  // The dialog reads the two tables' columns and the suggested pairs once per opening (run), and every read ends: done, or a reason.
   useEffect(() => {
-    if (!tables.length) { setFound({ status: 'idle' }); return undefined; }
+    if (!dialog || dialog.status !== 'loading') return undefined;
     let cancelled = false;
-    setFound({ status: 'loading' });
     withTimeout(apiFetch(`/api/relationships?warehouse_id=${encodeURIComponent(warehouseId || '')}`, {
       method: 'POST',
-      body: JSON.stringify({ tables }),
+      body: JSON.stringify({ table: dialog.source, tables }),
     }), ANSWER_MS)
-      .then((d) => { if (!cancelled) setFound({ status: 'done', tables: d.tables || {}, suggestions: d.suggestions || [], metric_views: d.metric_views || [] }); })
+      .then((d) => {
+        if (cancelled) return;
+        if (Array.isArray(d.metric_views) && d.metric_views.length) {
+          onMetricViews(d.metric_views);
+          setDialog(null);
+          setSource('');
+          return;
+        }
+        const pair = (s) => [s.from.table, s.to.table].sort().join('|') === [dialog.source, dialog.target].sort().join('|');
+        setDialog((prev) => (prev && prev.run === run ? { ...prev, status: 'done', columns: d.tables || {}, suggestions: (d.suggestions || []).filter(pair) } : prev));
+      })
       .catch((e) => {
         if (cancelled) return;
         const permissions = Array.isArray(e.body?.permissions) ? e.body.permissions : [];
-        setFound({ status: 'error', error: e.message || 'The relationships could not be read.', permissions });
-        raisePermissions(permissions, { retry: () => setFound({ status: 'idle' }) });
+        setDialog((prev) => (prev && prev.run === run ? { ...prev, status: 'error', error: e.message || 'The columns could not be read.' } : prev));
+        raisePermissions(permissions, { retry: () => setDialog((prev) => (prev ? { ...prev, run: prev.run + 1, status: 'loading' } : prev)) });
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tablesKey, apiFetch, warehouseId]);
-
-  const columnsOf = (table) => found.tables?.[table]?.columns || [];
-  // A metric view the route named back is not offered: it has no keys and no columns to join on (REQ-362).
-  const metricViews = found.status === 'done' ? (found.metric_views || []) : [];
-  const pickable = tables.filter((t) => !metricViews.includes(t));
-  const current = pickable.includes(selected) ? selected : (pickable[0] || '');
-  const kept = relationships.filter((l) => involves(l, current));
-  const suggested = (found.suggestions || []).filter((s) => involves(s, current) && !relationships.some((l) => sameLink(l, s)));
-  const replaceAt = (index, link) => onRelationships(relationships.map((l, i) => (i === index ? link : l)));
-  const keep = (links) => onRelationships([...relationships, ...links.filter((s) => !relationships.some((l) => sameLink(l, s)))]);
+  }, [run]);
 
   if (!tables.length) {
     return <p data-relationships-empty className="text-text-tertiary">Pick tables under Unity Catalog Metadata to see how they join.</p>;
   }
-  const manualReady = manual && manual.from.table && manual.from.column && manual.to.table && manual.to.column;
+  const openLink = () => setDialog({ run: run + 1, source, target, status: 'loading', columns: {}, suggestions: [], staged: [], pickSource: '', pickTarget: '' });
+  const pickSide = (side, column) => setDialog((prev) => ({ ...prev, [side === 'source' ? 'pickSource' : 'pickTarget']: column }));
+  const addStaged = (link) => setDialog((prev) => (prev.staged.some((l) => sameLink(l, link)) ? prev : { ...prev, staged: [...prev.staged, link] }));
+  const addPicked = () => setDialog((prev) => {
+    const link = { from: { table: prev.source, column: prev.pickSource }, to: { table: prev.target, column: prev.pickTarget }, source: PERSON };
+    return { ...prev, pickSource: '', pickTarget: '', staged: prev.staged.some((l) => sameLink(l, link)) ? prev.staged : [...prev.staged, link] };
+  });
+  const done = () => {
+    const fresh = dialog.staged.filter((s) => !relationships.some((l) => sameLink(l, s)));
+    onRelationships([...relationships, ...fresh]);
+    setDialog(null);
+  };
+  const linkReason = !source || !target ? 'Pick one source table and one target table to link them.' : '';
+
   return (
     <div data-relationships className="space-y-3">
-      {metricViews.map((view) => (
-        <p key={view} data-relationships-metric-view role="status" className="text-warning-fg">
-          {view} is a metric view, so Inspire leaves it out of Data Management; pick its source table instead.
-        </p>
-      ))}
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 text-text-secondary">
-          Table
-          <select aria-label="Table to see relationships for" value={current} onChange={(e) => setSelected(e.target.value)} className={`${FIELD} font-mono`}>
-            {pickable.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </label>
-        {suggested.length > 0 && (
-          <button type="button" className={`${BUTTON} ms-auto`} onClick={() => keep(suggested)}>Add all {suggested.length} suggested</button>
+      <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3">
+        <div data-list="source">
+          <PickList label="Source tables" items={tables} picked={source} disabledItem={target} onPick={setSource} filterLabel="Filter source tables" />
+        </div>
+        <div className="flex flex-col items-center gap-2 pt-8">
+          <button type="button" className={BUTTON} disabled={!source || !target} onClick={openLink}>Link</button>
+          {linkReason && <p data-link-reason className="max-w-[10rem] text-center text-text-tertiary">{linkReason}</p>}
+        </div>
+        <div data-list="target">
+          <PickList label="Target tables" items={tables} picked={target} disabledItem={source} onPick={setTarget} filterLabel="Filter target tables" />
+        </div>
+      </div>
+      {dialog && (
+        <LinkDialog dialog={dialog} onPick={pickSide} onAdd={addPicked}
+          onRemove={(link) => setDialog((prev) => ({ ...prev, staged: prev.staged.filter((l) => l !== link) }))}
+          onAddSuggested={addStaged} onDone={done} onCancel={() => setDialog(null)}
+          onRetry={() => setDialog((prev) => ({ ...prev, run: prev.run + 1, status: 'loading' }))} />
+      )}
+      <div data-links className="space-y-2">
+        <p className="font-semibold text-text-primary">Links</p>
+        {relationships.length === 0 && <p data-links-empty className="text-text-secondary">No links yet. Pick a source and a target table, then Link.</p>}
+        {relationships.length > 0 && (
+          <ul aria-label="Links" className="grid gap-2">
+            {relationships.map((link) => (
+              <li key={linkText(link)} data-relationship={linkText(link)} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+                <span className="font-mono text-text-primary">{linkText(link)}</span>
+                <span data-link-source className="ms-auto text-text-secondary">{sourceText(link.source)}</span>
+                <button type="button" aria-label={`Remove relationship ${linkText(link)}`} onClick={() => onRelationships(relationships.filter((l) => l !== link))}
+                  className="text-text-tertiary hover:text-db-red-fg"><X size={12} /></button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
-      {found.status === 'loading' && <p className="text-text-tertiary">Reading the keys and columns of the picked tables</p>}
-      {found.status === 'error' && <PlainMessage role="alert" className="text-error-fg" text={found.error} />}
-      {kept.length > 0 && (
-        <ul aria-label={`Relationships of ${shortName(current)}`} className="grid gap-2">
-          {kept.map((link) => (
-            <LinkRow key={linkText(link)} link={link} columnsOf={columnsOf}
-              onChange={(next) => replaceAt(relationships.indexOf(link), next)}
-              onRemove={() => onRelationships(relationships.filter((l) => l !== link))} />
-          ))}
-        </ul>
-      )}
-      {suggested.length > 0 && (
-        <ul aria-label={`Suggested relationships of ${shortName(current)}`} className="grid gap-2">
-          {suggested.map((s) => (
-            <li key={linkText(s)} data-suggested-relationship={linkText(s)} className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
-              <span className="font-mono text-text-primary">{linkText(s)}</span>
-              <span className="ms-auto text-text-secondary">{s.source}</span>
-              <button type="button" className={BUTTON} onClick={() => keep([s])} aria-label={`Add suggested relationship ${linkText(s)}`}>Add</button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {found.status === 'done' && kept.length === 0 && suggested.length === 0 && (
-        <p data-relationships-none className="text-text-secondary">No relationship found for {shortName(current)}. Add one by hand, or pick another table.</p>
-      )}
-      {!manual && found.status === 'done' && (
-        <button type="button" className={BUTTON} onClick={() => setManual({ from: { table: current, column: '' }, to: { table: pickable[0], column: '' } })}>
-          Add a relationship
-        </button>
-      )}
-      {manual && (
-        <fieldset aria-label="New relationship" className="rounded-lg border border-border bg-surface p-2 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <select aria-label="Table on the first side" value={manual.from.table} className={`${FIELD} font-mono`}
-              onChange={(e) => setManual({ ...manual, from: { table: e.target.value, column: '' } })}>
-              {pickable.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select aria-label="Column on the first side" value={manual.from.column} className={`${FIELD} font-mono`}
-              onChange={(e) => setManual({ ...manual, from: { ...manual.from, column: e.target.value } })}>
-              <option value="">Pick a column</option>
-              {columnsOf(manual.from.table).map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <span className="text-text-tertiary">→</span>
-            <select aria-label="Table on the second side" value={manual.to.table} className={`${FIELD} font-mono`}
-              onChange={(e) => setManual({ ...manual, to: { table: e.target.value, column: '' } })}>
-              {pickable.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select aria-label="Column on the second side" value={manual.to.column} className={`${FIELD} font-mono`}
-              onChange={(e) => setManual({ ...manual, to: { ...manual.to, column: e.target.value } })}>
-              <option value="">Pick a column</option>
-              {columnsOf(manual.to.table).map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div className="flex gap-2">
-            <button type="button" className={BUTTON} disabled={!manualReady}
-              onClick={() => { keep([{ from: manual.from, to: manual.to, source: MANUAL }]); setManual(null); }}>Add relationship</button>
-            <button type="button" className={BUTTON} onClick={() => setManual(null)}>Cancel</button>
-          </div>
-        </fieldset>
-      )}
     </div>
   );
 }

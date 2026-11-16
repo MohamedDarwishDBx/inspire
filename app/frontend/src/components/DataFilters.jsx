@@ -14,6 +14,8 @@ const COUNT_DEBOUNCE_MS = 350;
 const GROUP_TOP = 500;
 const ANSWER_MS = 20000;
 const HITS_SHOWN = 60;
+const SEARCH_DEBOUNCE_MS = 300;
+const IDLE_SEARCH = { status: 'idle', rows: [], total: 0 };
 const BUTTON = 'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle disabled:opacity-50';
 const FIELD = 'h-8 rounded-md border border-border bg-surface px-2 text-xs text-text-primary';
 const CHIP = 'inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg';
@@ -51,26 +53,18 @@ function conditionText(f) {
 // One row of a table's filter: a condition on a column, or a row group (the values the person picked for a column).
 const rowText = (f) => (isGroupRow(f) ? `groups: ${f.values.join(', ')}` : conditionText(f));
 
-// Columns whose name contains the search text, case-insensitive, grouped by the exact column name. A group lists the tables that have it.
-function hitsOf(query, tables, columnsOf) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
+// The search hits (one row per table and column, from the column search route) grouped by the exact column name. A group lists the tables that have it.
+function hitsOf(rows) {
   const groups = new Map();
-  for (const table of tables) {
-    const meta = columnsOf[table];
-    if (!meta || meta.error || !Array.isArray(meta.columns)) continue;
-    for (const c of meta.columns) {
-      const name = String(c.column_name);
-      if (!name.toLowerCase().includes(q)) continue;
-      const key = name.toLowerCase();
-      if (!groups.has(key)) groups.set(key, { name, hits: [] });
-      groups.get(key).hits.push({ table, type: c.data_type || '' });
-    }
+  for (const row of rows) {
+    const key = row.column.toLowerCase();
+    if (!groups.has(key)) groups.set(key, { name: row.column, hits: [] });
+    groups.get(key).hits.push({ table: row.table, type: row.data_type || '' });
   }
   return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function AddRowFilter({ table, column, who, openLabel = 'Add row filter', commitLabel = 'Add filter', suggestions, loadValues, onCommit }) {
+function AddRowFilter({ table, column, who, openLabel = 'Row filter', commitLabel = 'Add filter', suggestions, loadValues, onCommit }) {
   const [open, setOpen] = useState(false);
   const [op, setOp] = useState('=');
   const [draft, setDraft] = useState([]);
@@ -131,6 +125,7 @@ function AddRowFilter({ table, column, who, openLabel = 'Add row filter', commit
   );
 }
 
+// The groups of one text column. Opening "Load groups" on a row loads them; "Reload groups" appears once they are loaded.
 function RowGroups({ column, picked, loaded, onLoad, onPick }) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState(true);
@@ -141,10 +136,12 @@ function RowGroups({ column, picked, loaded, onLoad, onPick }) {
   return (
     <div className="space-y-2" data-row-groups={column}>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={BUTTON} aria-label={`Load groups for ${column}`} disabled={loaded?.status === 'loading'}
-          onClick={() => { setEditing(true); onLoad(); }}>
-          {loaded ? 'Reload groups' : 'Load groups'}
-        </button>
+        {loaded && (
+          <button type="button" className={BUTTON} aria-label={`Reload groups for ${column}`} disabled={loaded.status === 'loading'}
+            onClick={() => { setEditing(true); onLoad(); }}>
+            Reload groups
+          </button>
+        )}
         {loaded?.status === 'loading' && <span className="text-text-tertiary">Loading the groups of {column}</span>}
         {loaded?.status === 'done' && (
           <span className="text-text-tertiary">
@@ -242,7 +239,12 @@ function HitRow({ hit, name, rows, read, onRead, valuesOf, loadValues, groupOf, 
         <AddRowFilter table={hit.table} column={name} who={`${name} in ${shortName(hit.table)}`} suggestions={valuesOf(hit.table, name)}
           loadValues={loadValues} onCommit={(condition) => onAdd(hit.table, condition)} />
         {categorical && (
-          <button type="button" className={BUTTON} aria-expanded={groupsOpen} onClick={() => setGroupsOpen(!groupsOpen)}>Row groups</button>
+          <button type="button" className={BUTTON} aria-expanded={groupsOpen} aria-label={`Load groups on ${name} in ${shortName(hit.table)}`}
+            onClick={() => {
+              const open = !groupsOpen;
+              setGroupsOpen(open);
+              if (open && !groupState(hit.table, name)) onLoadGroups(hit.table, name);
+            }}>Load groups</button>
         )}
       </div>
       {categorical && groupsOpen && (
@@ -256,42 +258,94 @@ function HitRow({ hit, name, rows, read, onRead, valuesOf, loadValues, groupOf, 
   );
 }
 
-export default function DataFilters({ scope, scopes, tables, listing, onScopes, label, onLabel, apiFetch, warehouseId, onProblems }) {
+export default function DataFilters({ scope, scopes, tables, listing, onScopes, label, onLabel, apiFetch, warehouseId, onProblems, onMetricViews }) {
   const [query, setQuery] = useState('');
   const [columnsOf, setColumnsOf] = useState({});
   const [valuesOf, setValuesOf] = useState({});
   const [counts, setCounts] = useState({});
   const [groupsOf, setGroupsOf] = useState({});
   const [note, setNote] = useState('');
-  const requested = useRef(new Set());
+  const [search, setSearch] = useState(IDLE_SEARCH);
+  const [attempt, setAttempt] = useState(0);
+  // A Read change waits for the column names of a table it has not read yet: the box shows the new state at once, until the write lands.
+  const [pendingReads, setPendingReads] = useState({});
   const fired = useRef({});
-  const tablesJson = JSON.stringify(tables);
-  // The effect reads the current list through a ref; tablesJson only tells it when the list changed.
-  const tablesNow = useRef(tables);
-  tablesNow.current = tables;
-  const rowsOf = (table) => normalizeTableScope(tableScopeOf(scopes, table)).rows;
+  const requested = useRef(new Set());
+  const pending = useRef({});
+  // The columns of a table are read one table at a time, only for a table with a saved filter or when the person reads a column of it
+  // (REQ-370): a whole-catalog pick is not read table by table. The effects below read the current lists through refs.
+  const columnsRef = useRef(columnsOf);
+  const savedTables = tables.filter((t) => tableScopeOf(scopes, t));
+  const savedJson = JSON.stringify(savedTables);
+  const savedNow = useRef(savedTables);
+  useEffect(() => {
+    columnsRef.current = columnsOf;
+    savedNow.current = savedTables;
+  });
+  const scopeJson = JSON.stringify(scope || {});
   const namesOf = (table) => (columnsOf[table]?.columns || []).map((c) => c.column_name);
+  const rowsOf = (table) => normalizeTableScope(tableScopeOf(scopes, table)).rows;
   const jobs = tables
     .map((table) => ({ table, filters: rowsOf(table).filter(filterIsComplete) }))
     .filter((job) => job.filters.length)
     .map((job) => ({ ...job, key: `${warehouseId || ''}|${JSON.stringify(job.filters)}` }));
   const jobsJson = JSON.stringify(jobs);
 
+  // The columns of one table, read once. A failure is kept on the table (a metric view is named as one, see the effect below).
+  const loadColumns = (table) => {
+    if (!pending.current[table]) {
+      pending.current[table] = apiFetch(`/api/inspire/implement/columns?${browseQuery(warehouseId, table)}`)
+        .then((d) => {
+          const columns = d.columns || [];
+          setColumnsOf((prev) => ({ ...prev, [table]: { columns, keys: d.primary_keys || [] } }));
+          return columns.map((c) => c.column_name);
+        }, (e) => {
+          setColumnsOf((prev) => ({ ...prev, [table]: {
+            error: e.message || 'The columns of this table could not be read.',
+            refused: METRIC_VIEW_REFUSAL.test(e.message || '') ? e.message : '',
+            permissions: Array.isArray(e.body?.permissions) ? e.body.permissions : [],
+          } }));
+          throw e;
+        })
+        .finally(() => { delete pending.current[table]; });
+    }
+    return pending.current[table];
+  };
+  const ensureColumns = (table) => {
+    const known = columnsRef.current[table];
+    return known?.columns ? Promise.resolve(known.columns.map((c) => c.column_name)) : loadColumns(table);
+  };
+
   useEffect(() => {
-    tablesNow.current.forEach((table) => {
-      const key = `cols:${warehouseId || ''}:${table}`;
-      if (requested.current.has(key)) return;
-      requested.current.add(key);
-      apiFetch(`/api/inspire/implement/columns?${browseQuery(warehouseId, table)}`)
-        .then((d) => setColumnsOf((prev) => ({ ...prev, [table]: { columns: d.columns || [], keys: d.primary_keys || [] } })))
-        .catch((e) => setColumnsOf((prev) => ({ ...prev, [table]: {
-          error: e.message || 'The columns of this table could not be read.',
-          // A saved pick that is a metric view: the refusal line, acted on by the effect below.
-          refused: METRIC_VIEW_REFUSAL.test(e.message || '') ? e.message : '',
-          permissions: Array.isArray(e.body?.permissions) ? e.body.permissions : [],
-        } })));
+    savedNow.current.forEach((table) => {
+      if (columnsRef.current[table]) return;
+      loadColumns(table).catch(() => {});
     });
-  }, [tablesJson, apiFetch, warehouseId]);
+  }, [savedJson, apiFetch, warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The column search (REQ-370): one request for the whole picked scope, debounced, and empty text searches nothing.
+  const searchText = query.trim();
+  // Empty text shows no search at all: the answer below is derived, so clearing the box needs no state write.
+  const answer = searchText ? search : IDLE_SEARCH;
+  useEffect(() => {
+    if (!searchText) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setSearch((prev) => ({ ...prev, status: 'loading' }));
+      withTimeout(apiFetch(`/api/data-management/columns?warehouse_id=${encodeURIComponent(warehouseId || '')}`, {
+        method: 'POST',
+        body: JSON.stringify({ scope: JSON.parse(scopeJson), q: searchText }),
+      }), ANSWER_MS)
+        .then((d) => { if (!cancelled) setSearch({ status: 'done', rows: d.hits || [], total: Number(d.total) || 0 }); })
+        .catch((e) => {
+          if (cancelled) return;
+          const permissions = Array.isArray(e.body?.permissions) ? e.body.permissions : [];
+          setSearch({ status: 'error', rows: [], total: 0, error: e.message || 'The columns could not be searched. Try again.' });
+          raisePermissions(permissions, { retry: () => setAttempt((n) => n + 1) });
+        });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [searchText, scopeJson, apiFetch, warehouseId, attempt]);
 
   const latestJobs = useRef(jobs);
   useEffect(() => { latestJobs.current = jobs; });
@@ -315,6 +369,8 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
     const key = valueKey(warehouseId, table, column);
     if (!column || requested.current.has(key)) return;
     requested.current.add(key);
+    // The column names of the table are read with its values, so a row filter or a group saved on it can be written at once.
+    ensureColumns(table).catch(() => {});
     apiFetch(`/api/inspire/implement/values?${browseQuery(warehouseId, table)}&column=${encodeURIComponent(column)}&limit=${VALUE_CHIPS}`)
       .then((d) => setValuesOf((prev) => ({ ...prev, [key]: d.values || [] })))
       .catch(() => setValuesOf((prev) => ({ ...prev, [key]: [] })));
@@ -324,6 +380,7 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   const loadGroups = (table, name) => {
     const key = groupKey(table, name);
     setGroupsOf((prev) => ({ ...prev, [key]: { status: 'loading' } }));
+    ensureColumns(table).catch(() => {});
     const filters = rowsOf(table).filter((f) => filterIsComplete(f) && !(isGroupRow(f) && f.column === name));
     withTimeout(apiFetch(`/api/inspire/implement/group-counts?${browseQuery(warehouseId, table)}`, {
       method: 'POST',
@@ -365,12 +422,20 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   useEffect(() => { if (onProblems) onProblems(allProblems); }, [allKey, onProblems]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Every change to one or more tables' filters is one write: the scopes are read once, so a group apply lands on every table.
+  // A table with no saved scope needs its column names to save a row filter on it: those are read first, then the write lands.
   const commitRows = (updates) => {
+    const unread = updates.filter((u) => !u.columns && !tableScopeOf(scopes, u.table) && !columnsRef.current[u.table]?.columns).map((u) => u.table);
+    if (!unread.length) return writeRows(updates, {});
+    Promise.all(unread.map((table) => ensureColumns(table).then((names) => [table, names])))
+      .then((pairs) => writeRows(updates, Object.fromEntries(pairs)), () => setNote('Inspire could not read the columns of this table. Try again.'));
+    return undefined;
+  };
+  const writeRows = (updates, namesFor) => {
     const changed = (name) => updates.some((u) => scopeKeyOf(u.table) === scopeKeyOf(name));
     const next = Object.fromEntries(Object.entries(scopes || {}).filter(([name]) => !changed(name)));
     for (const { table, rows, columns: wanted } of updates) {
       const entry = tableScopeOf(scopes, table);
-      const names = namesOf(table);
+      const names = namesFor[table] || (columnsRef.current[table]?.columns || []).map((c) => c.column_name);
       const columns = wanted || (entry ? normalizeTableScope(entry).columns : names);
       // With no rows left and every column read, the table goes back to a plain read.
       const whole = names.length ? names.every((n) => columns.includes(n)) : !entry;
@@ -381,18 +446,39 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   };
   // Read for one column of one table: the table's columns with the column added or left out, and the row filters on a column
   // that is no longer read are dropped (a column Inspire does not read cannot be filtered), with the note saying which.
-  const readUpdate = (table, name, read) => {
+  const readUpdate = (table, name, read, names) => {
     const entry = tableScopeOf(scopes, table);
-    const current = entry ? normalizeTableScope(entry).columns : namesOf(table);
+    const current = entry ? normalizeTableScope(entry).columns : names;
     const columns = read ? [...new Set([...current, name])] : current.filter((c) => c !== name);
     const kept = rowsOf(table).filter((f) => columns.includes(f.column));
     const dropped = rowsOf(table).filter((f) => !columns.includes(f.column)).map((f) => f.column);
     return { table, columns, rows: kept, dropped };
   };
-  const applyRead = (updates) => {
-    commitRows(updates.map(({ table, columns, rows }) => ({ table, columns, rows })));
+  const applyRead = (updates, namesFor = {}) => {
+    writeRows(updates.map(({ table, columns, rows }) => ({ table, columns, rows })), namesFor);
     const dropped = updates.filter((u) => u.dropped.length);
     setNote(dropped.map((u) => `Removed ${u.dropped.length} row filter${u.dropped.length === 1 ? '' : 's'} on ${[...new Set(u.dropped)].join(', ')} in ${shortName(u.table)}: a column Inspire does not read cannot be filtered.`).join(' '));
+  };
+  // Read or stop reading one column in the tables given. A table read whole already reads the column, so reading it changes nothing
+  // there; the column names of the other tables are read first (one table each, only when the person changes a read).
+  const readKey = (table, name) => `${scopeKeyOf(table)}\u0000${name}`;
+  const readOf = (table, name) => (readKey(table, name) in pendingReads ? pendingReads[readKey(table, name)] : readsColumn(table, name));
+  const readColumn = (tablesToChange, name, read) => {
+    const work = tablesToChange.filter((table) => !read || tableScopeOf(scopes, table));
+    if (!work.length) return;
+    setPendingReads((prev) => ({ ...prev, ...Object.fromEntries(work.map((table) => [readKey(table, name), read])) }));
+    const settle = () => setPendingReads((prev) => {
+      const next = { ...prev };
+      work.forEach((table) => delete next[readKey(table, name)]);
+      return next;
+    });
+    // The names just read are passed on to the write: the state they came from has not re-rendered yet.
+    Promise.all(work.map((table) => ensureColumns(table).then((names) => [table, names])))
+      .then((pairs) => {
+        const namesFor = Object.fromEntries(pairs);
+        applyRead(pairs.map(([table]) => readUpdate(table, name, read, namesFor[table])), namesFor);
+        settle();
+      }, () => { settle(); setNote('Inspire could not read the columns of these tables. Try again.'); });
   };
   const readsColumn = (table, name) => {
     const entry = tableScopeOf(scopes, table);
@@ -408,17 +494,22 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   const groupOf = (table, name) => rowsOf(table).find((f) => isGroupRow(f) && f.column === name)?.values || [];
   const groupState = (table, name) => groupsOf[groupKey(table, name)];
 
-  // A saved pick that is a metric view is dropped from the scope on load, with a note. Idempotent: it acts only while the entry is still in the scope.
+  // A metric view is named once in the Data Management line (REQ-370). A saved pick that is a metric view is also dropped from the
+  // scope, with a note. Idempotent: it acts only while the entry is still in the scope.
   useEffect(() => {
-    for (const [table, info] of Object.entries(columnsOf)) {
-      if (!info.refused || !tableScopeOf(scopes, table)) continue;
-      onScopes(Object.fromEntries(Object.entries(scopes || {}).filter(([name]) => scopeKeyOf(name) !== scopeKeyOf(table))));
-    }
-  }, [columnsOf, scopes, onScopes]);
+    const refused = Object.entries(columnsOf).filter(([, info]) => info.refused).map(([table]) => table);
+    if (!refused.length) return;
+    if (onMetricViews) onMetricViews(refused);
+    const saved = refused.filter((table) => tableScopeOf(scopes, table));
+    if (!saved.length) return;
+    onScopes(Object.fromEntries(Object.entries(scopes || {}).filter(([name]) => !saved.some((t) => scopeKeyOf(t) === scopeKeyOf(name)))));
+    // The note records a drop this effect has just made, so it is written here on purpose.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNote(`Removed the saved filters on ${saved.map(shortName).join(', ')}: a metric view cannot be filtered.`);
+  }, [columnsOf, scopes, onScopes, onMetricViews]);
 
-  const hits = hitsOf(query, tables, columnsOf);
+  const hits = hitsOf(answer.rows);
   const hitTables = hits.reduce((n, g) => n + g.hits.length, 0);
-  const loading = tables.filter((t) => !columnsOf[t]).length;
   // Every picked table that has a saved scope is listed, so a problem with it is shown where the person can fix it.
   const withFilters = tables.filter((t) => tableScopeOf(scopes, t));
   // The columns of a saved table that Inspire does not read, named as table.column (the person can see them without a search).
@@ -436,11 +527,6 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
 
   return (
     <div data-data-filters className="space-y-4 text-xs">
-      {[...new Set(Object.values(columnsOf).map((info) => info.refused).filter(Boolean))].map((note) => (
-        <p key={note} role="status" data-metric-view-note="" className="text-warning-fg">
-          {note} Its scope was dropped from Data Management; the table is left out of the run.
-        </p>
-      ))}
       <p className="text-text-secondary">
         A table with no filter is read whole: every column, every row. Search a column name to add a filter to it.
         Use Apply to all to filter a column that several tables have, in one step.
@@ -488,7 +574,13 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
           <div data-column-search className="space-y-3">
             <input type="search" aria-label="Search column names" value={query} dir="auto" onChange={(e) => setQuery(e.target.value)}
               placeholder="Search a column name, for example brand" className={`${FIELD} h-9 w-full`} />
-            {loading > 0 && <p className="text-text-tertiary">Reading the columns of {plural(loading, 'table')}</p>}
+            {answer.status === 'loading' && <p data-search-loading className="text-text-tertiary">Searching the columns you picked</p>}
+            {answer.status === 'error' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <PlainMessage role="alert" className="text-error-fg" text={answer.error} />
+                <button type="button" className={BUTTON} onClick={() => setAttempt((n) => n + 1)}>Try again</button>
+              </div>
+            )}
             {tables.length === 0 && (
               <p data-search-empty className="text-text-secondary">
                 None of the tables you picked can be searched yet. Check them in the table picker above, then Try again.
@@ -497,11 +589,16 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
             {!query.trim() && tables.length > 0 && (
               <p data-search-hint className="text-text-secondary">Type a column name to find it in the {plural(tables.length, 'table')} you picked.</p>
             )}
-            {query.trim() && loading === 0 && hits.length === 0 && (
+            {query.trim() && answer.status === 'done' && hits.length === 0 && (
               <p data-search-none className="text-text-secondary">No column name contains &quot;{query.trim()}&quot; in the {plural(tables.length, 'table')} you picked.</p>
             )}
             {hits.length > 0 && (
               <p className="text-text-secondary">{plural(hits.length, 'column name')} match, in {plural(hitTables, 'table')}.</p>
+            )}
+            {answer.total > answer.rows.length && (
+              <p data-hits-capped className="text-text-secondary">
+                Showing {answer.rows.length.toLocaleString()} of {answer.total.toLocaleString()} matches. Type more letters to narrow it down.
+              </p>
             )}
             {listing.listErrors.map((message) => <PlainMessage key={message} role="alert" className="text-error-fg" text={message} />)}
             {listing.leftOut.map((l) => <p key={`${l.schema}-${l.count}`} data-left-out="" className="text-text-secondary">{leftOutLine(l)}</p>)}
@@ -513,8 +610,8 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
                   {group.hits.length > 1 && (
                     <label className="ms-auto flex items-center gap-1.5 text-text-secondary">
                       <input type="checkbox" aria-label={`Read ${group.name} in all ${group.hits.length} tables`}
-                        checked={group.hits.every((h) => readsColumn(h.table, group.name))}
-                        onChange={(e) => applyRead(group.hits.map((h) => readUpdate(h.table, group.name, e.target.checked)))} />
+                        checked={group.hits.every((h) => readOf(h.table, group.name))}
+                        onChange={(e) => readColumn(group.hits.map((h) => h.table), group.name, e.target.checked)} />
                       Read in all {group.hits.length} tables
                     </label>
                   )}
@@ -528,8 +625,8 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
                 </div>
                 <ul className="space-y-1">
                   {group.hits.map((hit) => (
-                    <HitRow key={hit.table} hit={hit} name={group.name} rows={rowsOf(hit.table)} read={readsColumn(hit.table, group.name)}
-                      onRead={(next) => applyRead([readUpdate(hit.table, group.name, next)])} valuesOf={valuesFor} loadValues={loadValues}
+                    <HitRow key={hit.table} hit={hit} name={group.name} rows={rowsOf(hit.table)} read={readOf(hit.table, group.name)}
+                      onRead={(next) => readColumn([hit.table], group.name, next)} valuesOf={valuesFor} loadValues={loadValues}
                       groupOf={groupOf} groupState={groupState} onLoadGroups={loadGroups} onPickGroups={pickGroups}
                       onAdd={addRow} />
                   ))}

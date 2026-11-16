@@ -1,0 +1,154 @@
+// REQ-370: Data Management on a large pick. The column search is one information_schema.columns query per catalog (capped, metric views
+// left out, no per-table reads); the relationships are read for one picked table. The routes run against a fake warehouse with 550 tables.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const DM = require('../lib/dataManagement');
+const { makeApp, listen } = require('./support/implementApp');
+
+const VIEW = 'main.s.customer_value_metrics';
+const Q = 'warehouse_id=wh1';
+
+// 550 tables in main.s (plus one metric view), each with an id column and a `brand` column on every fifth table.
+const TABLES = Array.from({ length: 550 }, (_, i) => `main.s.t${i}`);
+const COLUMNS = Object.fromEntries(TABLES.map((t, i) => [t, [
+  { column_name: 'id', data_type: 'BIGINT' }, { column_name: `t${i}_id`, data_type: 'BIGINT' },
+  ...(i % 5 === 0 ? [{ column_name: 'brand', data_type: 'STRING' }] : []),
+]]));
+const OTHER = { catalog: 'other', table: 'other.x.brand_table', columns: [{ column_name: 'brand', data_type: 'STRING' }] };
+
+// A fake warehouse for the search: it answers the ILIKE statement from the fixture, as Databricks would (the scope is read from the
+// statement's own parameters, and a whole-catalog statement is TRUE within its catalog).
+function fakeSearch(sql, parameters) {
+  const pattern = parameters.find((p) => p.name === 'q').value.replace(/\\([\\%_])/g, '$1').replace(/^%|%$/g, '').toLowerCase();
+  const catalog = (/FROM `([^`]+)`\.information_schema\.columns/.exec(sql) || [])[1];
+  const schemas = parameters.filter((p) => /^s\d+$/.test(p.name)).map((p) => p.value);
+  const pairs = parameters.filter((p) => /^ts\d+$/.test(p.name)).map((p, i) => [p.value, parameters.find((x) => x.name === `tt${i}`).value]);
+  const whole = sql.includes('(TRUE)');
+  const inScope = (schema, table) => whole || schemas.includes(schema) || pairs.some(([s, t]) => s === schema && t === table);
+  const rows = [];
+  for (const [name, cols] of Object.entries(COLUMNS).concat([[OTHER.table, OTHER.columns]])) {
+    const [c, schema, table] = name.split('.');
+    if (c !== catalog || !inScope(schema, table)) continue;
+    for (const col of cols) {
+      if (col.column_name.toLowerCase().includes(pattern)) rows.push({ table_schema: schema, table_name: table, column_name: col.column_name, data_type: col.data_type });
+    }
+  }
+  return rows.slice(0, 300).map((r) => ({ ...r, total: rows.length }));
+}
+
+const search = (scope, q) => ({ scope, q });
+
+test('the column search is one statement per catalog: a whole catalog is searched whole, metric views are left out, and q is bound', () => {
+  const got = DM.columnSearchStatements({ catalogs: ['main'], schemas: [], tables: [] }, 'brand');
+  assert.equal(got.length, 1);
+  assert.match(got[0].statement.sql, /c\.column_name ILIKE :q/);
+  assert.match(got[0].statement.sql, /t\.table_type NOT IN \('METRIC_VIEW', 'METRIC VIEW'\)/);
+  assert.match(got[0].statement.sql, /LIMIT 300/);
+  assert.doesNotMatch(got[0].statement.sql, /brand/, 'the search text is bound as a parameter, never written into the SQL');
+  assert.deepEqual(got[0].statement.parameters.map((p) => [p.name, p.value]), [['q', '%brand%']]);
+});
+
+test('a schema or a table pick narrows the search to its tables, and one catalog gives one statement', () => {
+  const got = DM.columnSearchStatements({ catalogs: [], schemas: ['main.s'], tables: ['main.s.t1', 'other.x.brand_table'] }, 'brand');
+  assert.deepEqual(got.map((g) => g.catalog), ['main', 'other']);
+  assert.match(got[0].statement.sql, /c\.table_schema = lower\(:s0\) OR \(c\.table_schema = lower\(:ts0\) AND c\.table_name = lower\(:tt0\)\)/);
+  assert.doesNotMatch(got[0].statement.sql, /TRUE/, 'a narrowed pick is not searched whole');
+});
+
+test('the search text is escaped for ILIKE, so % and _ in a name match themselves', () => {
+  const got = DM.columnSearchStatements({ catalogs: ['main'] }, '50%_off');
+  assert.equal(got[0].statement.parameters[0].value, '%50\\%\\_off%');
+});
+
+test('an empty search reads nothing, and a search text over 200 characters is refused', () => {
+  assert.equal(DM.queryOf('   '), '');
+  assert.throws(() => DM.queryOf('x'.repeat(201)), /Search up to 200 characters/);
+});
+
+test('a bad scope name is refused by name, and a backtick in a name is never written into the SQL', () => {
+  assert.throws(() => DM.columnSearchStatements({ tables: ['main.s'] }, 'a'), /is not a table name/);
+  assert.throws(() => DM.columnSearchStatements({ catalogs: ['ma`in'] }, 'a'), /is not a catalog name/);
+});
+
+test('the merged answer caps the hits at 300 in column-name order and reports every match', () => {
+  const rows = Array.from({ length: 400 }, (_, i) => ({ table_schema: 's', table_name: `t${i}`, column_name: `brand_${String(i).padStart(3, '0')}`, data_type: 'STRING', total: '400' }));
+  const got = DM.mergeColumnHits([{ catalog: 'main', rows }]);
+  assert.equal(got.hits.length, 300);
+  assert.equal(got.total, 400, 'the total is every match, so the person sees 300 of 400');
+  assert.equal(got.hits[0].table, 'main.s.t0');
+  assert.deepEqual(DM.mergeColumnHits([]), { hits: [], total: 0 });
+});
+
+test('POST /api/data-management/columns answers from ONE query over a 550-table catalog, capped at 300 with the total', async () => {
+  const made = makeApp({ statements: { 'ILIKE :q': (sql, parameters) => ({ rows: fakeSearch(sql, parameters) }) } });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/data-management/columns?${Q}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-email': 'owner@example.com' },
+      body: JSON.stringify(search({ catalogs: ['main'], schemas: [], tables: [] }, 'brand')) });
+    const got = await resp.json();
+    assert.equal(resp.status, 200, JSON.stringify(got));
+    const searches = made.sqlCalls.filter((c) => /ILIKE :q/.test(c.sql));
+    assert.equal(searches.length, 1, 'one query for the whole catalog, not one per table');
+    assert.equal(got.total, 110, '110 tables have a brand column');
+    assert.equal(got.hits.length, 110, 'all of them fit under the cap');
+    assert.equal(got.hits[0].table, 'main.s.t0');
+    assert.equal(got.hits[0].column, 'brand');
+  } finally {
+    srv.close?.();
+  }
+});
+
+test('an empty search answers at once with no hits and runs no query', async () => {
+  const made = makeApp({});
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/data-management/columns?${Q}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-email': 'owner@example.com' },
+      body: JSON.stringify(search({ catalogs: ['main'] }, '  ')) });
+    const got = await resp.json();
+    assert.equal(resp.status, 200);
+    assert.deepEqual(got.hits, []);
+    assert.equal(made.sqlCalls.filter((c) => /information_schema/.test(c.sql)).length, 0);
+  } finally {
+    srv.close?.();
+  }
+});
+
+test('POST /api/relationships reads one table: a metric view is named back and nothing else is read', async () => {
+  const made = makeApp({ metricViews: [VIEW] });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/relationships?${Q}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-email': 'owner@example.com' },
+      body: JSON.stringify({ table: VIEW, tables: [VIEW, 'main.s.orders'] }) });
+    const got = await resp.json();
+    assert.equal(resp.status, 200, JSON.stringify(got));
+    assert.deepEqual(got.metric_views, [VIEW]);
+    assert.deepEqual(got.suggestions, []);
+    assert.equal(made.sqlCalls.filter((c) => /key_column_usage|information_schema\.columns/.test(c.sql)).length, 0);
+  } finally {
+    srv.close?.();
+  }
+});
+
+test('POST /api/relationships over a 550-table scope reads the columns in one query per catalog, not per table', async () => {
+  const made = makeApp({ statements: { 'table_schema = lower(:s0)': (sql, parameters) => {
+    const picked = parameters.filter((p) => /^s\d+$/.test(p.name)).map((p, i) => `main.${p.value}.${parameters.find((x) => x.name === `t${i}`).value}`);
+    return { rows: picked.filter((n) => COLUMNS[n]).flatMap((n) => COLUMNS[n].map((c) => ({ table_schema: 's', table_name: n.split('.')[2], column_name: c.column_name }))) };
+  } } });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/relationships?${Q}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-email': 'owner@example.com' },
+      body: JSON.stringify({ table: 'main.s.t3', tables: TABLES }) });
+    const got = await resp.json();
+    assert.equal(resp.status, 200, JSON.stringify(got));
+    const scopeReads = made.sqlCalls.filter((c) => /information_schema\.columns WHERE \(table_schema/.test(c.sql));
+    assert.equal(scopeReads.length, 1, 'one query over the whole picked scope');
+    assert.equal(Object.keys(got.tables).length, 550, 'every picked table comes back with its columns, for the pickers');
+    assert.equal(got.tables['main.s.t3'].columns.length, 2);
+  } finally {
+    srv.close?.();
+  }
+});

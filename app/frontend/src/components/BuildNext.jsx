@@ -7,6 +7,7 @@ import { raisePermissions } from '../lib/permissionBus';
 import { buildItems, buildNextOf, moneyText, nextSharingTables } from '../lib/buildNext';
 import { trackBuildSubmit } from '../lib/implementControl';
 import { appGrantText, moneyRuleColumns, preflightParams, primaryTableOf, specForSibling } from '../lib/implementWizard';
+import { joinSentences } from '../lib/sentences';
 
 const BUILD_NOW_BUTTON = 'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white bg-db-red-solid shadow-sm shadow-db-red/20 hover:bg-db-red-solid-hover disabled:opacity-70';
 const BUILD_CUSTOM_BUTTON = 'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-semibold text-text-primary hover:bg-bg-subtle';
@@ -132,7 +133,7 @@ export function BuildNextStep({ apiFetch, apiPostJson, inspireDatabase, warehous
       const blocked = Object.values(pre.checks || {}).filter((check) => check?.ok === false).map((check) => check.detail).filter(Boolean);
       if (blocked.length) {
         const permissions = Object.values(pre.checks || {}).map((check) => check?.permission).filter(Boolean);
-        patch(row.id, { busy: false, error: blocked.join(' '), permissions });
+        patch(row.id, { busy: false, error: joinSentences(...blocked), permissions });
         if (permissions.length) raisePermissions(permissions);
         return;
       }

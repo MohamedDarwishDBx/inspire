@@ -1,17 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, idle, openUi, until } from './uiSupport.mjs';
-import { START_DRAFT_PREFIX } from '../../src/lib/wizardDraft.js';
+import { closeBrowser, idle, openUi } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
-// REQ-362: Data Management > Relationships. Picked tables are joined by their declared keys, then by matching column names. The person
-// keeps, changes, removes and adds relationships; the list is kept in the Launch draft.
+// REQ-362, REQ-371: Data Management > Relationships. Two lists of the picked tables (Source, Target) sit side by side, with a Link button
+// between them. Link opens a dialog with the columns of the two tables; the person pairs columns, then Done. The links are listed and removable.
 const BUSINESS = 'e.g. Contoso, Acme Corp, Retail Division';
 const ORDERS = 'main.s.orders';
 const CUSTOMERS = 'main.s.customers';
 const DECLARED = 'orders.customer_id → customers.customer_id';
-const DENIED = "[PERMISSION_DENIED] User does not have USE SCHEMA on Schema 'main.s'.";
 const KEY = (_sql, parameters) => {
   const t = parameters.find((p) => p.name === 't').value;
   return { rows: t === 'orders' ? [{ column_name: 'customer_id', ref_catalog: 'main', ref_schema: 's', ref_table: 'customers', ref_column: 'customer_id' }] : [] };
@@ -28,164 +26,101 @@ const STATE = {
   statements: { 'AS ref_table': KEY },
   primaryKeys: [],
 };
-const SHOTS = '/private/tmp/inspire_v15/shots/u2';
+const SHOTS = '/private/tmp/inspire_v15/shots/u4';
 
-async function openRelationships(page, { reload = false } = {}) {
-  if (reload) {
-    await page.reload();
-    await page.getByPlaceholder(BUSINESS).waitFor({ timeout: 20000 });
-    await idle(page);
-  } else {
-    await page.getByPlaceholder(BUSINESS).fill('Acme');
-    await page.locator('button[title="main"]').click();
-    await page.locator('button[title="s"]').click();
-    await page.locator('button[title="orders"]').click();
-    await page.locator('button[title="customers"]').click();
-    await idle(page);
-  }
+async function openRelationships(page) {
+  await page.getByPlaceholder(BUSINESS).fill('Acme');
+  await page.locator('button[title="main"]').click();
+  await page.locator('button[title="s"]').click();
+  await page.locator('button[title="orders"]').click();
+  await page.locator('button[title="customers"]').click();
+  await idle(page);
   await page.getByRole('button', { name: /Advanced Settings/ }).click();
   await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
-  await page.getByLabel('Table to see relationships for').selectOption(ORDERS);
-  await idle(page);
+  await page.locator('[data-relationships]').waitFor({ timeout: 15000 });
 }
 
-test('Relationships lists the declared key of orders as a suggestion, with its source, and Add keeps it', async () => {
+const source = (page, name) => page.locator('[data-list="source"]').getByRole('button', { name, exact: true });
+const target = (page, name) => page.locator('[data-list="target"]').getByRole('button', { name, exact: true });
+
+test('two lists, Source and Target, sit side by side; Link is disabled with a reason until one table is on each side', async () => {
   const ui = await openUi('launch', STATE);
   const { page } = ui;
   try {
     await openRelationships(page);
-    const suggestion = page.locator(`[data-suggested-relationship="${DECLARED}"]`);
-    await suggestion.waitFor({ timeout: 15000 });
-    assert.match(await suggestion.innerText(), /declared key/);
-    await page.getByRole('button', { name: `Add suggested relationship ${DECLARED}` }).click();
-    await page.locator(`[data-relationship="${DECLARED}"]`).waitFor({ timeout: 5000 });
-    assert.equal(await page.locator(`[data-suggested-relationship="${DECLARED}"]`).count(), 0, 'an added relationship is no longer a suggestion');
-  } finally {
-    await ui.close();
-  }
-});
-
-test('a name match is suggested with its source, and a relationship can be removed and is suggested again', async () => {
-  const ui = await openUi('launch', { ...STATE, statements: {} });
-  const { page } = ui;
-  try {
-    await openRelationships(page);
-    const suggestion = page.locator('[data-suggested-relationship="orders.customer_id → customers.customer_id"]');
-    await suggestion.waitFor({ timeout: 15000 });
-    assert.match(await suggestion.innerText(), /matching column name/);
-    await page.getByRole('button', { name: `Add suggested relationship ${DECLARED}` }).click();
-    await page.getByRole('button', { name: `Remove relationship ${DECLARED}` }).click();
-    assert.equal(await page.locator(`[data-relationship="${DECLARED}"]`).count(), 0, 'removed');
-    assert.equal(await page.locator(`[data-suggested-relationship="${DECLARED}"]`).count(), 1, 'suggested again');
-  } finally {
-    await ui.close();
-  }
-});
-
-test('an added relationship can change its column on either side, and a manual relationship picks a table and a column on each side', async () => {
-  const ui = await openUi('launch', STATE);
-  const { page } = ui;
-  try {
-    await openRelationships(page);
-    await page.getByRole('button', { name: `Add suggested relationship ${DECLARED}` }).click();
-    await page.getByLabel('Column of customers in this relationship').selectOption('name');
-    assert.equal(await page.locator('[data-relationship="orders.customer_id → customers.name"]').count(), 1, 'the edited link stays under orders');
-    assert.equal(await page.locator(`[data-relationship="${DECLARED}"]`).count(), 0, 'the old column is gone');
-    await page.getByRole('button', { name: 'Add a relationship' }).click();
-    await page.getByLabel('Column on the first side').selectOption('amount');
-    await page.getByLabel('Table on the second side').selectOption(CUSTOMERS);
-    await page.getByLabel('Column on the second side').selectOption('name');
-    await page.getByRole('button', { name: 'Add relationship' }).click();
-    const manual = page.locator('[data-relationship="orders.amount → customers.name"]');
-    await manual.waitFor({ timeout: 5000 });
-    assert.match(await manual.innerText(), /added by you/);
-  } finally {
-    await ui.close();
-  }
-});
-
-test('the relationships are kept in the Launch draft and are there after a reload', async () => {
-  const ui = await openUi('launch', STATE);
-  const { page } = ui;
-  try {
-    await openRelationships(page);
-    await page.getByRole('button', { name: `Add suggested relationship ${DECLARED}` }).click();
-    await until(async () => (await page.evaluate(([prefix]) => {
-      const key = Object.keys(localStorage).find((k) => k.startsWith(prefix));
-      return key && JSON.parse(localStorage.getItem(key)).spec.relationships?.length === 1;
-    }, [START_DRAFT_PREFIX])), 'the draft holds the kept relationship', 10000);
-    await openRelationships(page, { reload: true });
-    await page.locator(`[data-relationship="${DECLARED}"]`).waitFor({ timeout: 15000 });
-  } finally {
-    await ui.close();
-  }
-});
-
-test('a relationship read refused for the signed-in person opens Permission Required once', async () => {
-  const ui = await openUi('launch', { ...STATE, forwardedEmail: 'harness.person@example.com', statements: { 'AS ref_table': () => { throw new Error(DENIED); } } });
-  const { page } = ui;
-  try {
-    await openRelationships(page);
-    await page.locator('[data-permission-dialog=""]').waitFor({ timeout: 15000 });
-    assert.equal(await page.locator('[data-permission-dialog=""]').count(), 1, 'exactly one Permission Required dialog');
-  } finally {
-    await ui.close();
-  }
-});
-
-test('Relationships fits 1280x800 with a kept relationship, and the picture is saved for review', async () => {
-  const ui = await openUi('launch', STATE);
-  const { page } = ui;
-  try {
-    await openRelationships(page);
-    await page.getByRole('button', { name: `Add suggested relationship ${DECLARED}` }).click();
-    await page.locator('[data-relationships]').waitFor({ timeout: 15000 });
+    assert.equal(await page.getByRole('button', { name: 'Link', exact: true }).isDisabled(), true);
+    assert.match(await page.locator('[data-link-reason]').innerText(), /Pick one source table and one target table/);
+    await source(page, 'orders').click();
+    assert.equal(await page.getByRole('button', { name: 'Link', exact: true }).isDisabled(), true, 'one side alone is not enough');
+    assert.equal(await target(page, 'orders').isDisabled(), true, 'the same table cannot be the target of its own link');
+    await target(page, 'customers').click();
+    assert.equal(await page.getByRole('button', { name: 'Link', exact: true }).isDisabled(), false);
+    const lists = await page.evaluate(() => {
+      const a = document.querySelector('[data-list="source"]').getBoundingClientRect();
+      const b = document.querySelector('[data-list="target"]').getBoundingClientRect();
+      return { sameRow: Math.abs(a.top - b.top) < 40, rightOf: b.left > a.left };
+    });
+    assert.deepEqual(lists, { sameRow: true, rightOf: true }, 'the two lists sit next to each other');
     for (const [width, height] of [[1440, 900], [1280, 800]]) {
       await page.setViewportSize({ width, height });
       const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       assert.ok(sideways <= 0, `no sideways scroll at ${width}x${height} (overflow ${sideways}px)`);
-      await page.locator('[data-data-management]').screenshot({ path: `${SHOTS}/req362-relationships-${width}x${height}.png` });
+      await page.locator('[data-relationships]').screenshot({ path: `${SHOTS}/req371-lists-${width}x${height}.png` });
     }
   } finally {
     await ui.close();
   }
 });
 
-test('a schema picked whole: Relationships works on every table of the schema, the same list the Data filter search reads', async () => {
+test('Link opens the dialog with the columns of both tables; the pair is added, a declared key is added only by its button, Done lists the links, and a link can be removed', async () => {
   const ui = await openUi('launch', STATE);
   const { page } = ui;
   try {
-    await page.getByPlaceholder(BUSINESS).fill('Acme');
-    await page.locator('button[title="main"]').click();
-    await page.locator('button[title="s"]').click();
-    await idle(page);
-    await page.getByRole('button', { name: /Advanced Settings/ }).click();
-    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
-    const options = await page.getByLabel('Table to see relationships for').locator('option').allInnerTexts();
-    assert.deepEqual(options.sort(), [CUSTOMERS, ORDERS].sort(), 'both tables of the picked schema are offered');
-    await page.getByLabel('Table to see relationships for').selectOption(ORDERS);
-    await page.locator(`[data-suggested-relationship="${DECLARED}"]`).waitFor({ timeout: 15000 });
+    await openRelationships(page);
+    await source(page, 'orders').click();
+    await target(page, 'customers').click();
+    await page.getByRole('button', { name: 'Link', exact: true }).click();
+    const dialog = page.locator('[data-link-dialog]');
+    await dialog.getByRole('list', { name: 'Columns of orders' }).waitFor({ timeout: 15000 });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await dialog.screenshot({ path: `${SHOTS}/req371-dialog-1280x800.png` });
+    assert.equal(await dialog.getByRole('button', { name: 'Add link', exact: true }).isDisabled(), true);
+    assert.match(await dialog.locator('[data-add-link-reason]').innerText(), /Pick one column in each table/);
+    await dialog.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'amount', exact: true }).click();
+    await dialog.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'name', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Add link', exact: true }).click();
+    assert.equal(await dialog.locator('[data-staged-link="amount → name"]').count(), 0, 'the staged text uses table.column names');
+    assert.equal(await dialog.locator('[data-staged-link="orders.amount → customers.name"]').count(), 1, 'the pair waits in the dialog');
+    const suggestion = dialog.locator(`[data-suggested-link="${DECLARED}"]`);
+    assert.equal(await suggestion.count(), 1, 'the declared key is suggested in the dialog');
+    assert.equal(await page.locator(`[data-relationship="${DECLARED}"]`).count(), 0, 'a suggestion is not added without a click');
+    await dialog.getByRole('button', { name: `Add suggested link ${DECLARED}` }).click();
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.locator('[data-links]').waitFor({ timeout: 5000 });
+    assert.equal(await page.locator(`[data-relationship="${DECLARED}"]`).count(), 1, 'the declared key is listed after Done');
+    assert.equal(await page.locator('[data-relationship="orders.amount → customers.name"]').count(), 1, 'the person pair is listed after Done');
+    await page.locator('[data-links]').screenshot({ path: `${SHOTS}/req371-links-1280x800.png` }).catch(() => {});
+    await page.getByRole('button', { name: `Remove relationship ${DECLARED}` }).click();
+    assert.equal(await page.locator(`[data-relationship="${DECLARED}"]`).count(), 0, 'a link can be removed');
+    assert.equal(await page.locator('[data-link-dialog]').count(), 0, 'Done closes the dialog');
   } finally {
     await ui.close();
   }
 });
 
-test('a metric view in the picked schema is left out of Relationships, with the Data Management line, and is not offered as a table', async () => {
-  const VIEW = 'main.s.orders_v2';
-  const ui = await openUi('launch', { ...STATE, tables: { 'main.s': ['orders', 'customers', 'orders_v2'] }, metricViews: [VIEW] });
+test('a relationship read that fails ends with the reason and Try again, not an endless read', async () => {
+  const ui = await openUi('launch', { ...STATE, statements: { 'AS ref_table': KEY }, sqlErrors: { 'key_column_usage': '[PERMISSION_DENIED] User does not have USE SCHEMA on Schema main.s.' } });
   const { page } = ui;
   try {
-    await page.getByPlaceholder(BUSINESS).fill('Acme');
-    await page.locator('button[title="main"]').click();
-    await page.locator('button[title="s"]').click();
-    await idle(page);
-    await page.getByRole('button', { name: /Advanced Settings/ }).click();
-    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
-    await page.locator('[data-relationships-metric-view]').waitFor({ timeout: 15000 });
-    assert.match(await page.locator('[data-relationships-metric-view]').innerText(),
-      /main\.s\.orders_v2 is a metric view, so Inspire leaves it out of Data Management; pick its source table instead\./);
-    const options = await page.getByLabel('Table to see relationships for').locator('option').allInnerTexts();
-    assert.deepEqual(options.sort(), [CUSTOMERS, ORDERS].sort(), 'the metric view is not offered');
+    await openRelationships(page);
+    await source(page, 'orders').click();
+    await target(page, 'customers').click();
+    await page.getByRole('button', { name: 'Link', exact: true }).click();
+    const error = page.locator('[data-link-dialog] [role="alert"]');
+    await error.waitFor({ timeout: 15000 });
+    assert.match(await error.innerText(), /main\.s/, 'the reason names the schema');
+    assert.equal(await page.locator('[data-link-loading]').count(), 0, 'the reading line is gone once the read has ended');
+    assert.equal(await page.locator('[data-link-dialog]').getByRole('button', { name: 'Try again', exact: true }).count(), 1, 'Try again is offered');
   } finally {
     await ui.close();
   }

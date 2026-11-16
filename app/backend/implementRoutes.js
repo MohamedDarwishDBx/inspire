@@ -45,6 +45,8 @@ const GC = require('./lib/genieCodeCheck');
 const SA = require('./lib/sourceAccess');
 const D = require('./lib/buildDiagnostics');
 const MV = require('./lib/metricViews');
+const DM = require('./lib/dataManagement');
+const { joinSentences } = require('./lib/sentences');
 const AR = require('./lib/accessRequest');
 
 function sendError(res, err) {
@@ -447,7 +449,7 @@ function registerImplementRoutes(app, deps) {
     const appWarehouse = own ? await appWarehouseCheck(req, options.appWarehouse, access.identity, '', true) : warehouse;
     const warnings = [...I.shareWarnings(table, rows, options.principals, { createsSchema }),
       ...I.shareWarehouseWarnings(warehouse, options.principals, options.viewed, options.warehouseName)];
-    if (warnings.length) access.grant = { ...access.grant, warn: warnings.join(' ') };
+    if (warnings.length) access.grant = { ...access.grant, warn: joinSentences(...warnings) };
     access.app = I.appAccessCheck(access.app, own ? null : warehouse);
     const appGaps = I.accessPlan(table, rows, '', { createsSchema }).gaps;
     if (appGaps.length && builder) {
@@ -810,23 +812,55 @@ function registerImplementRoutes(app, deps) {
     }
   });
 
-  // The relationships between the picked tables (REQ-362): each table's columns and keys, and the declared and name-matched links.
+  // The relationships of one picked table (REQ-362, REQ-370): its declared keys in both directions, and the name matches across the
+  // picked scope (one information_schema.columns query per catalog of the scope). A metric view is named back and read no further.
   app.post('/api/relationships', requireToken, async (req, res) => {
     try {
       const warehouseId = warehouseOf(req);
-      const picked = RL.pickedTablesOf(req.body?.tables);
+      const table = RL.pickedTableOf(req.body?.table);
+      const scope = RL.pickedTablesOf(req.body?.tables || []);
+      if (!scope.some((t) => t.toLowerCase() === table.toLowerCase())) scope.push(table);
       const token = personReadToken(req);
-      // A metric view is not a table: it is named back and left out, the same rule as the Data Management search (REQ-362).
-      const looked = await Promise.all(picked.map((table) => tableTypeOf(req, () => token, warehouseId, table)));
-      const metricViews = picked.filter((_t, i) => looked[i].type && MV.isMetricViewType(looked[i].type));
-      const names = picked.filter((t) => !metricViews.includes(t));
-      const reads = await Promise.all(names.map((table) => I.readPickedTable(table, async () => {
-        const [cols, keys, fks] = await Promise.all([sqlRows(req.dbHost, token, warehouseId, I.columnsStatement(table)),
-          sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table)), sqlRows(req.dbHost, token, warehouseId, RL.declaredKeysStatement(table))]);
-        if (!cols.length) throw I.unreadableTableError(table);
-        return [cols, keys, fks];
+      const looked = await tableTypeOf(req, () => token, warehouseId, table);
+      if (MV.isMetricViewType(looked.type)) return res.json({ tables: {}, suggestions: [], metric_views: [table] });
+      const byCatalog = new Map();
+      for (const name of scope) {
+        const catalog = name.split('.')[0];
+        byCatalog.set(catalog, [...(byCatalog.get(catalog) || []), name]);
+      }
+      const catalogs = [...byCatalog.keys()];
+      const reads = await I.readPickedTable(table, () => Promise.all([
+        Promise.all(catalogs.map((catalog) => sqlRows(req.dbHost, token, warehouseId, RL.scopeColumnsStatement(catalog, byCatalog.get(catalog))))),
+        sqlRows(req.dbHost, token, warehouseId, RL.declaredKeysStatement(table)),
+        sqlRows(req.dbHost, token, warehouseId, RL.declaredIntoStatement(table)),
+        sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table)),
+      ]));
+      const [catalogRows, declared, into, keys] = reads;
+      const columns = catalogRows.flatMap((rows, i) => rows.map((r) => ({
+        table: `${catalogs[i]}.${r.table_schema}.${r.table_name}`, column_name: r.column_name,
       })));
-      res.json({ ...RL.relationshipsOf(names, reads), metric_views: metricViews });
+      if (!columns.some((c) => c.table.toLowerCase() === table.toLowerCase())) throw I.unreadableTableError(table);
+      res.json({ ...RL.relationshipsOfTable(table, { columns, declared, into, primaryKeys: keys.map((r) => String(r.column_name)) }),
+        metric_views: [] });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // The Data Management column search (REQ-370): one information_schema.columns query per catalog of the picked scope, metric views
+  // left out, at most COLUMN_SEARCH_LIMIT hits. An empty search reads nothing.
+  app.post('/api/data-management/columns', requireToken, async (req, res) => {
+    try {
+      const warehouseId = warehouseOf(req);
+      const q = DM.queryOf(req.body?.q);
+      if (!q) return res.json({ hits: [], total: 0, shown: 0, limit: DM.COLUMN_SEARCH_LIMIT });
+      const token = personReadToken(req);
+      const statements = DM.columnSearchStatements(req.body?.scope || {}, q);
+      const parts = await Promise.all(statements.map(async ({ catalog, statement }) => ({
+        catalog, rows: await sqlRows(req.dbHost, token, warehouseId, statement),
+      })));
+      const { hits, total } = DM.mergeColumnHits(parts);
+      res.json({ hits, total, shown: hits.length, limit: DM.COLUMN_SEARCH_LIMIT });
     } catch (err) {
       sendError(res, err);
     }
@@ -2238,7 +2272,7 @@ function registerImplementRoutes(app, deps) {
       });
       if (!got.ok) throw I.badRequest(`the model ${endpoint} did not answer: ${got.data.message || got.data.error || `HTTP ${got.status}`}`, 502);
       const described = MD.parseDescription(got.data, columns);
-      if (described.problems.length) return res.status(422).json({ error: described.problems.join(' '), problems: described.problems, model: endpoint });
+      if (described.problems.length) return res.status(422).json({ error: joinSentences(...described.problems), problems: described.problems, model: endpoint });
       return res.json({ value: described.value, explanation: described.explanation, model: endpoint });
     } catch (err) {
       return sendError(res, err);
@@ -2602,8 +2636,8 @@ function registerImplementRoutes(app, deps) {
       body: jsonWithInt64Ids(update, ['job_id']),
     }).catch(refused);
     if (updated.ok) return '';
-    return [change && inspireJobEnvironmentWarning(jobId, { from: change.from, reason: reason(updated) }),
-      tagged && inspireJobTestTagWarning(jobId, { ...tagged, reason: reason(updated) })].filter(Boolean).join(' ');
+    return joinSentences(change && inspireJobEnvironmentWarning(jobId, { from: change.from, reason: reason(updated) }),
+      tagged && inspireJobTestTagWarning(jobId, { ...tagged, reason: reason(updated) }));
   }
 
   app.post('/api/inspire/implement/rerun', requireToken, async (req, res) => {

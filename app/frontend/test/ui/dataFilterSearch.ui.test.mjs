@@ -88,6 +88,30 @@ test('Apply to all adds one filter to every table that has the column, and each 
   }
 });
 
+// REQ-372: the search lists every column whose name contains the text, one row per table. Each row has Row filter (a row filter on that
+// column of that table) and Load groups (the groups of a text column). The Read box stays on the row.
+test('REQ-372: each search row has Row filter and Load groups, and Load groups lists the groups of a text column', async () => {
+  const ui = await openUi('launch', { ...STATE, groupCounts: [{ brand: 'Acme', records: 3 }, { brand: 'Globex', records: 2 }],
+    groupCountsByColumn: { brand: [{ brand: 'Acme', records: 3 }, { brand: 'Globex', records: 2 }] } });
+  const { page } = ui;
+  try {
+    await openSearch(page);
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand');
+    const row = page.locator(`[data-column-group="brand"] [data-scope-row="${ORDERS}"]`);
+    await row.waitFor({ timeout: 10000 });
+    assert.equal(await row.getByRole('button', { name: 'Row filter on brand in orders' }).count(), 1, 'Row filter is on the row');
+    assert.equal(await row.getByRole('button', { name: 'Load groups on brand in orders' }).count(), 1, 'Load groups is on the row');
+    assert.equal(await row.getByRole('checkbox', { name: 'Read brand in orders' }).count(), 1, 'the Read box stays on the row');
+    await row.getByRole('button', { name: 'Load groups on brand in orders' }).click();
+    await page.locator('[data-row-groups="brand"] [data-group-value="Acme"]').waitFor({ timeout: 10000 });
+    assert.equal(await page.locator('[data-row-groups="brand"] [data-group-value]').count(), 2, 'the groups of the column are listed');
+    await row.getByRole('button', { name: 'Row filter on brand in orders' }).click();
+    assert.equal(await page.getByRole('group', { name: 'New row filter on brand in orders' }).count(), 1, 'Row filter opens the filter on that table');
+  } finally {
+    await ui.close();
+  }
+});
+
 test('a row adds a filter to just that table, and the empty states say what to do', async () => {
   const ui = await openUi('launch', STATE);
   const { page } = ui;
@@ -98,7 +122,7 @@ test('a row adds a filter to just that table, and the empty states say what to d
     assert.match(await page.locator('[data-search-none]').innerText(), /No column name contains "zzz" in the 2 tables you picked/);
     await search.fill('name');
     await page.locator('[data-column-group="name"]').waitFor({ timeout: 10000 });
-    await page.getByRole('button', { name: 'Add row filter on name in customers' }).click();
+    await page.getByRole('button', { name: 'Row filter on name in customers' }).click();
     await page.getByLabel('Value for name in customers').fill('Ada');
     await page.getByRole('button', { name: 'Add value' }).click();
     await page.getByRole('button', { name: 'Add filter' }).click();
@@ -192,10 +216,11 @@ test('Read in all tables: one box reads or leaves out a column in every table th
   }
 });
 
-// The search reads at most 40 tables (the same cap as Relationships). A table past the cap is not searched, and the note says how many.
-test('a schema of more than 40 tables: the search reads 40 and says how many were not searched; a column in a table past the cap is not found', async () => {
-  const names = Array.from({ length: 45 }, (_, i) => `t${String(i + 1).padStart(2, '0')}`);
-  const columnsByTable = Object.fromEntries(names.map((n, i) => [`main.s.${n}`, [COL('id', 'BIGINT', 1), COL(i === 44 ? 'zz_only' : 'name', 'STRING', 2)]]));
+// REQ-370: the column search is one server-side search over the whole picked scope, so a 550-table schema is searched whole. Its answer is
+// capped at 300 hits with the total, and no table is read one at a time for the search.
+test('a schema of 550 tables: the search finds a column in the last table, with no "not searched" note and no table-count cap', async () => {
+  const names = Array.from({ length: 550 }, (_, i) => `t${String(i + 1).padStart(3, '0')}`);
+  const columnsByTable = Object.fromEntries(names.map((n, i) => [`main.s.${n}`, [COL('id', 'BIGINT', 1), COL(i === 549 ? 'zz_only' : 'name', 'STRING', 2)]]));
   const ui = await openUi('launch', { ...STATE, tables: { 'main.s': names }, columnsByTable });
   const { page, made } = ui;
   try {
@@ -205,15 +230,18 @@ test('a schema of more than 40 tables: the search reads 40 and says how many wer
     await idle(page);
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
     await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
-    const note = page.locator('[data-tables-not-searched]');
-    await note.waitFor({ timeout: 15000 });
-    assert.match(await note.innerText(), /5 tables were not searched.*Pick fewer schemas or tables under Unity Catalog Metadata/);
+    await page.getByRole('searchbox', { name: 'Search column names' }).waitFor({ timeout: 15000 });
+    assert.equal(await page.locator('[data-tables-not-searched]').count(), 0, 'no table is left out of the search');
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('zz_only');
-    await page.locator('[data-search-none]').waitFor({ timeout: 15000 });
-    await idle(page);
-    const read = new Set(made.sqlCalls.filter((c) => c.sql.includes('information_schema.columns'))
-      .map((c) => (c.parameters || []).find((p) => p.name === 't')?.value).filter(Boolean));
-    assert.equal(read.size, 40, 'exactly 40 tables have their columns read');
+    await page.locator('[data-column-group="zz_only"]').waitFor({ timeout: 15000 });
+    assert.equal(await page.locator('[data-column-group="zz_only"] [data-scope-row]').count(), 1, 'the one table in the last place is found');
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('name');
+    await page.locator('[data-hits-capped]').waitFor({ timeout: 15000 });
+    assert.match(await page.locator('[data-hits-capped]').innerText(), /Showing 300 of 549 matches\. Type more letters to narrow it down\./);
+    const sizes = made.sqlCalls.filter((c) => /ILIKE :q/.test(c.sql)).length;
+    assert.ok(sizes >= 1, 'the search is answered by the server');
+    const perTable = made.sqlCalls.filter((c) => /implement\/columns|information_schema\.columns WHERE table_schema/.test(c.sql) && !/ILIKE/.test(c.sql)).length;
+    assert.equal(perTable, 0, 'the search reads no table one at a time');
   } finally {
     await ui.close();
   }
