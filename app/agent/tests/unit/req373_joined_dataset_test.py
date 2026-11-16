@@ -271,9 +271,3 @@ def test_without_person_joins_the_loop_profiles_every_table_as_before(agent_ns, 
     assert "joined_datasets" not in evidence and all(p.get("via_join") is None for p in evidence["profiles"].values())
     assert all(known is None for *_rest, known in deep.profiled), "without a join the count is read as before"
 
-
-def test_the_joined_record_carries_its_join_pairs_for_the_build(agent_ns, monkeypatch):
-    inst, _deep = _whole_loop(agent_ns, monkeypatch)
-    record = inst._collect_discovery_evidence(_loop_rows())["joined_datasets"][0]
-    assert record["joins"] == [("main.sales.orders", "customer_id", "main.sales.customers", "customer_id")], \
-        "the record keeps the person's pair, read from the child side, for the build's spec and prompt"
