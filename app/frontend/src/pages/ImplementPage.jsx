@@ -134,7 +134,9 @@ function SummaryBanner({ summary }) {
   let line = 'Pick any use case in the list to start its MVP.';
   if (building.length) {
     mark = { icon: Rocket, tone: 'red', live: true };
-    title = `${plural(building.length, 'MVP')} building now`;
+    // REQ-355: a build the server has only queued (no run yet) reads queued here too, as on its card.
+    const onlyQueued = building.every((item) => item.latest?.status === 'queued');
+    title = `${plural(building.length, 'MVP')} ${onlyQueued ? 'queued' : 'building now'}`;
     line = building.map((item) => `${item.name}${shownStatusMessage(item.latest) ? `: ${shownStatusMessage(item.latest)}` : ''}`).join(' · ');
   } else if (summary.mvps) {
     mark = summary.failed || summary.held || summary.unmet ? { icon: AlertTriangle, tone: 'warning' } : { icon: CheckCircle2, tone: 'success' };
@@ -838,6 +840,9 @@ function PartTabs({ assets, picked, onPick }) {
   return <TabStrip label="Pick a part" idBase={PART_TABS} tabs={tabs} current={picked} onPick={onPick} />;
 }
 
+// REQ-355: the steps a queued build reads: none, so the superseded run's steps never show under the queued row.
+const NO_STEPS = [];
+
 function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson, databricksHost, notebookRunError, refreshKey, collectedKey, valueEstimate = null, onSetRule = null,
   onEdit, onOpenRun = null, onBuildQueued = null, onOpenDemoMvp = null, onProgress = null, readOnly = false }) {
   const useCaseId = item.id;
@@ -908,7 +913,11 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     return () => clearInterval(id);
   }, [hasMvp, loadStatus, refreshKey]);
 
-  const latest = status ? status.latest : item.latest;
+  // REQ-355: a queued build (pending overlay on the card) shows as queued here too. The status read still holds the old failed version until the server answers,
+  // so the detail takes the queued row and no steps of the superseded run.
+  const pending = Boolean(item.latest?.pending);
+  const latest = pending ? item.latest : (status ? status.latest : item.latest);
+  const stepsNow = pending ? NO_STEPS : status?.steps;
   const stalled = (status ? status.stalled : item.latest?.stalled) || null;
   const uninstalled = latest?.status === IMPLEMENT_UNINSTALLED;
   const built = hasMvp && !uninstalled;
@@ -1001,15 +1010,15 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [active]);
-  const stages = useMemo(() => mvpStages(status?.steps, latest, { now, stalled }), [status?.steps, latest, now, stalled]);
+  const stages = useMemo(() => mvpStages(stepsNow, latest, { now, stalled }), [stepsNow, latest, now, stalled]);
   const diagnostics = useBuildDiagnostics({
     apiFetch, query: `${qBase}&use_case_id=${encodeURIComponent(useCaseId)}`, enabled: built && !readOnly,
     refreshKey: `${latest?.spec_version ?? ''}|${latest?.status ?? ''}|${stages.map((s) => s.state).join(',')}`,
   });
-  const repair = useMemo(() => mvpRepairOf(status?.steps, latest), [status?.steps, latest]);
-  const plan = useMemo(() => versionPlan(status?.steps, latest), [status?.steps, latest]);
-  const scope = useMemo(() => mvpScope(status?.steps, latest), [status?.steps, latest]);
-  const sorted = useMemo(() => sortedTo(status?.steps, latest), [status?.steps, latest]);
+  const repair = useMemo(() => mvpRepairOf(stepsNow, latest), [stepsNow, latest]);
+  const plan = useMemo(() => versionPlan(stepsNow, latest), [stepsNow, latest]);
+  const scope = useMemo(() => mvpScope(stepsNow, latest), [stepsNow, latest]);
+  const sorted = useMemo(() => sortedTo(stepsNow, latest), [stepsNow, latest]);
   const progress = mvpProgressSummary(stages, latest, { now, stalled, repair });
   const row = useMemo(() => (item.uc ? catalogRow(item.uc, 0, { statusOf: () => item.state }) : null), [item.uc, item.state]);
   const { percent: shownPercent, step: shownStep } = railProgress(chip, progress);
@@ -1143,7 +1152,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   };
   const history = status?.history || [];
   const kept = keptVersions(history);
-  const checklist = useMemo(() => vibeChecklist(status?.steps, latest), [status?.steps, latest]);
+  const checklist = useMemo(() => vibeChecklist(stepsNow, latest), [stepsNow, latest]);
   const held = heldVersion(latest, status?.history ?? null);
   const progressView = useProgressView(useCaseId, progress.active);
   const alertAsset = latest?.asset_status?.alert || {};
@@ -1178,7 +1187,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     setRebuildError(`Rebuild needs one more thing: ${problems.join('; ')}.`);
     return false;
   };
-  const failure = mvpFailureOf(status?.steps, latest);
+  const failure = mvpFailureOf(stepsNow, latest);
   const terminal = Boolean(failure?.terminal) && latest?.status === 'failed';
   const sendAgain = async () => {
     if (!terminal) return submitChecked(nextSpecFrom(latest, buildAgainChanges(latest)));
@@ -1267,7 +1276,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
 
   const buildRunUrl = stalled?.run_url || status?.build_run_url || '';
   const dataStop = !readOnly && dataStopped(latest);
-  const genieChanges = genieChangesOf(status?.steps, latest);
+  const genieChanges = genieChangesOf(stepsNow, latest);
   const [sourceNow, setSourceNow] = useState({ loaded: false, unreadable: null, canGrant: false });
   useEffect(() => {
     if (readOnly || !latest) return undefined;

@@ -3260,6 +3260,8 @@ export function implementState(latest, notebook = null) {
     if (s === IMPLEMENT_VIBE_NOT_MET) return { group: 'held', label: 'MVP vibes not met', tone: 'warning', kind: 'mvp', hold: 'vibe' };
     if (runStopped(s, latest.stalled)) return { group: 'failed', label: 'MVP stopped', tone: 'error', kind: 'mvp' };
     if (s === 'failed') return { group: 'failed', label: 'MVP failed', tone: 'error', kind: 'mvp' };
+    // REQ-355: a queued build has no run yet; it reads queued until the job starts and the status moves on.
+    if (s === 'queued') return { group: 'in_progress', label: 'MVP queued', tone: 'busy', kind: 'mvp' };
     if (IMPLEMENT_ACTIVE_STATUSES.includes(s)) return { group: 'in_progress', label: 'MVP running', tone: 'busy', kind: 'mvp' };
     return { group: 'in_progress', label: `MVP ${s.replace(/_/g, ' ')}`, tone: 'idle', kind: 'mvp' };
   }
