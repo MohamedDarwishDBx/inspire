@@ -83,11 +83,11 @@ function useHub(pages, asked) {
   return { hub, error, summaries, load, summarize };
 }
 
-// REQ-392 / D-NOAGENT (Amr 2026-11-16): no Agent entry in the left side menu, for any experience. The Agent page itself stays on:
-// an agentic App still opens on it, and a deep link to #/<page>/agent still shows it. Flip this to true to show the menu item again.
-const SHOW_AGENT_NAV = false;
-// The Agent page is on for agentic and both (a classic ui App has none). An agentic App opens on it.
-const agentOn = (app) => app?.experience === 'agentic' || app?.experience === 'both';
+// D-NOAGENT (Amr 2026-11-16, reaffirmed REQ-392): the Agent page is fully off for every experience: no nav item, no landing,
+// and a deep link to #/<page>/agent falls back to the dashboard. The Agent page code stays; flip this to true to show it again.
+const AGENT_PAGE_SHOWN = false;
+// The Agent page is on for agentic and both (a classic ui App has none) when AGENT_PAGE_SHOWN is set.
+const agentOn = (app) => AGENT_PAGE_SHOWN && (app?.experience === 'agentic' || app?.experience === 'both');
 
 function railOf(app, page) {
   const inbox = inboxOn(app, page);
@@ -185,7 +185,7 @@ function Shell({ app, onRefreshSiblings }) {
     || (link.section === 'agent' && !agentOn(app)) ? 'dashboard' : link.section;
   const sectionsHere = page ? railOf(app, page) : [];
   const inboxOff = railCounts.page === page?.id && railCounts.inboxOff;
-  const rail = sectionsHere.filter((s) => !(s === 'alerts' && sectionsHere.includes('runs')) && !(s === 'inbox' && inboxOff) && (SHOW_AGENT_NAV || s !== 'agent'));
+  const rail = sectionsHere.filter((s) => !(s === 'alerts' && sectionsHere.includes('runs')) && !(s === 'inbox' && inboxOff));
   const mode = pageMode(page);
   const working = !admin && section === 'work' && !!page && mode.queue;
   const fullChat = !admin && section === 'work' && !!page && mode.id === 'ask';
