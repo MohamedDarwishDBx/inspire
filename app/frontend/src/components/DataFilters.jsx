@@ -4,10 +4,9 @@ import { PlainMessage } from './TechnicalDetails';
 import { groupLabelOf } from '../lib/implementWizard';
 import { raisePermissions } from '../lib/permissionBus';
 import { METRIC_VIEW_REFUSAL } from '../lib/pickProblem';
-import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
+import { leftOutLine } from '../lib/tableUsability';
 import {
-  SCOPE_OPS, columnKindOf, filterValuesOf, isGroupRow, labelAvailable, normalizeTableScope, pickedTableNames, scopeKeyOf,
-  scopeOpOf, scopeProblems, tableBrowseQuery, tableScopeOf,
+  SCOPE_OPS, columnKindOf, filterValuesOf, isGroupRow, labelAvailable, normalizeTableScope, scopeKeyOf, scopeOpOf, scopeProblems, tableScopeOf,
 } from '../lib/tableScope';
 
 const VALUE_CHIPS = 40;
@@ -253,28 +252,14 @@ function HitRow({ hit, name, rows, valuesOf, loadValues, groupOf, groupState, on
   );
 }
 
-export default function DataFilters({ scope, scopes, onScopes, label, onLabel, apiFetch, warehouseId, onProblems }) {
+export default function DataFilters({ scope, scopes, tables, listing, onScopes, label, onLabel, apiFetch, warehouseId, onProblems }) {
   const [query, setQuery] = useState('');
   const [columnsOf, setColumnsOf] = useState({});
   const [valuesOf, setValuesOf] = useState({});
   const [counts, setCounts] = useState({});
   const [groupsOf, setGroupsOf] = useState({});
-  const [listed, setListed] = useState({});
-  const [catalogSchemas, setCatalogSchemas] = useState({});
   const requested = useRef(new Set());
   const fired = useRef({});
-
-  const picked = pickedTableNames(scopes, scope);
-  // The schemas whose tables are listed: each picked schema, and each schema of a catalog picked whole.
-  const schemaNames = [...new Set([
-    ...scope.schemas,
-    ...scope.catalogs.flatMap((c) => (catalogSchemas[c]?.schemas || []).map((s) => `${c}.${s}`)),
-  ])];
-  const seen = new Set();
-  const tables = [...picked, ...schemaNames.flatMap((s) => listed[s]?.tables || [])]
-    .filter((t) => (seen.has(scopeKeyOf(t)) ? false : seen.add(scopeKeyOf(t))));
-  const catalogsKey = scope.catalogs.join('\n');
-  const schemasKey = schemaNames.join('\n');
   const tablesJson = JSON.stringify(tables);
   const rowsOf = (table) => normalizeTableScope(tableScopeOf(scopes, table)).rows;
   const jobs = tables
@@ -282,33 +267,6 @@ export default function DataFilters({ scope, scopes, onScopes, label, onLabel, a
     .filter((job) => job.filters.length)
     .map((job) => ({ ...job, key: `${warehouseId || ''}|${JSON.stringify(job.filters)}` }));
   const jobsJson = JSON.stringify(jobs);
-
-  useEffect(() => {
-    catalogsKey.split('\n').filter(Boolean).forEach((catalog) => {
-      const key = `catalog:${warehouseId || ''}:${catalog}`;
-      if (requested.current.has(key)) return;
-      requested.current.add(key);
-      apiFetch(`/api/catalogs/${encodeURIComponent(catalog)}/schemas${tableBrowseQuery(warehouseId)}`)
-        .then((d) => setCatalogSchemas((prev) => ({ ...prev, [catalog]: { schemas: (d.schemas || []).map((s) => s.name) } })))
-        .catch((e) => setCatalogSchemas((prev) => ({ ...prev, [catalog]: { error: e.message || `Inspire could not list the schemas of ${catalog}.` } })));
-    });
-  }, [catalogsKey, apiFetch, warehouseId]);
-
-  useEffect(() => {
-    schemasKey.split('\n').filter(Boolean).forEach((schema) => {
-      const key = `schema:${warehouseId || ''}:${schema}`;
-      if (requested.current.has(key)) return;
-      requested.current.add(key);
-      const [catalog, name] = schema.split('.');
-      apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(name)}${tableBrowseQuery(warehouseId)}`)
-        .then((d) => {
-          // A table whose type check is busy or that is not usable is not searched; the Launch picker says why.
-          const rows = (d.tables || []).filter((t) => !typeCheckBusyOf(t) && !unusableReasonOf(t));
-          setListed((prev) => ({ ...prev, [schema]: { tables: rows.map((t) => t.full_name || `${schema}.${t.name}`), leftOut: d.left_out || null } }));
-        })
-        .catch((e) => setListed((prev) => ({ ...prev, [schema]: { tables: [], error: e.message || `Inspire could not list the tables of ${schema}.` } })));
-    });
-  }, [schemasKey, apiFetch, warehouseId]);
 
   useEffect(() => {
     JSON.parse(tablesJson).forEach((table) => {
@@ -435,8 +393,6 @@ export default function DataFilters({ scope, scopes, onScopes, label, onLabel, a
   // Every picked table that has a saved scope is listed, so a problem with it is shown where the person can fix it.
   const withFilters = tables.filter((t) => tableScopeOf(scopes, t));
   const nothingPicked = !scope.entries.length;
-  const leftOut = Object.values(listed).map((l) => l.leftOut).filter(Boolean);
-  const schemaErrors = [...Object.values(listed).map((l) => l.error), ...Object.values(catalogSchemas).map((c) => c.error)].filter(Boolean);
   const countLine = (table) => {
     const job = jobs.find((j) => j.table === table);
     if (!job) return '';
@@ -504,8 +460,8 @@ export default function DataFilters({ scope, scopes, onScopes, label, onLabel, a
             {hits.length > 0 && (
               <p className="text-text-secondary">{plural(hits.length, 'column name')} match, in {plural(hitTables, 'table')}.</p>
             )}
-            {schemaErrors.map((message) => <PlainMessage key={message} role="alert" className="text-error-fg" text={message} />)}
-            {leftOut.map((l) => <p key={`${l.schema}-${l.count}`} data-left-out="" className="text-text-secondary">{leftOutLine(l)}</p>)}
+            {listing.listErrors.map((message) => <PlainMessage key={message} role="alert" className="text-error-fg" text={message} />)}
+            {listing.leftOut.map((l) => <p key={`${l.schema}-${l.count}`} data-left-out="" className="text-text-secondary">{leftOutLine(l)}</p>)}
             {hits.slice(0, HITS_SHOWN).map((group) => (
               <section key={group.name.toLowerCase()} data-column-group={group.name} className="rounded-lg border border-border p-3 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">

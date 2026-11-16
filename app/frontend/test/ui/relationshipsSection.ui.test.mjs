@@ -150,3 +150,22 @@ test('Relationships fits 1280x800 with a kept relationship, and the picture is s
     await ui.close();
   }
 });
+
+test('a schema picked whole: Relationships works on every table of the schema, the same list the Data filter search reads', async () => {
+  const ui = await openUi('launch', STATE);
+  const { page } = ui;
+  try {
+    await page.getByPlaceholder(BUSINESS).fill('Acme');
+    await page.locator('button[title="main"]').click();
+    await page.locator('button[title="s"]').click();
+    await idle(page);
+    await page.getByRole('button', { name: /Advanced Settings/ }).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
+    const options = await page.getByLabel('Table to see relationships for').locator('option').allInnerTexts();
+    assert.deepEqual(options.sort(), [CUSTOMERS, ORDERS].sort(), 'both tables of the picked schema are offered');
+    await page.getByLabel('Table to see relationships for').selectOption(ORDERS);
+    await page.locator(`[data-suggested-relationship="${DECLARED}"]`).waitFor({ timeout: 15000 });
+  } finally {
+    await ui.close();
+  }
+});
