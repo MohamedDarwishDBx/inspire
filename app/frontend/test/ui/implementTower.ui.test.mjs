@@ -557,10 +557,42 @@ test('a missing ask reads not done yet with the asset ready with warnings, and T
 
     const genie = await pick(page, 'genie_space');
     await genie.locator('[data-checks]').getByText('You asked for 3 things. Done: 1 of 3.', { exact: true }).waitFor();
-    // The chart build is queued from the moment it was submitted (REQ-323), so this use case is active: every Try again waits, and the
-    // Genie Agent's missing asks are sent only after that build lands. Pinned here so a second Try again cannot slip in beside a queued build.
+    // The chart build is queued from the moment it was submitted (REQ-323), so this use case is active: every Try again waits (one build per use case).
     assert.equal(await genie.getByRole('button', { name: 'Try again with the 2 missing things', exact: true }).isDisabled(), true, 'Genie Try again waits while the chart build is queued');
     assert.equal(made.jobs.length, 1, 'only the chart build was sent');
+    // The chart build lands as version 4 (the map ask done). The page reloads and reads it, then the Genie Agent's missing asks go out.
+    made.state.history = [versionRow(4, { outputs: V3_OUTPUTS, assets: { ...V3_ASSETS, [CHART]: ready(4, { name: 'Weekly trend', what: 'Bars by week, the last 8 weeks',
+      vibes_checks: checks(['Bars by week', 'done', 'Checked by running the rebuilt chart query'], ['A map by region', 'done', 'The chart has a region column']) }) },
+    status: 'ready', change_classes: 'retry', top: { retry_outputs: [CHART] } }), ...HISTORY];
+    await page.reload();
+    await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
+    await page.locator('[data-asset-tiles]').waitFor({ timeout: 15000 });
+    const genieAgain = await pick(page, 'genie_space');
+    await genieAgain.locator('[data-checks]').getByText('You asked for 3 things. Done: 1 of 3.', { exact: true }).waitFor();
+    await genieAgain.getByRole('button', { name: 'Try again with the 2 missing things', exact: true }).click();
+    await until(() => made.jobs.length === 2, 'the Genie Agent try again');
+    const whole = insertsOf(made)[1];
+    assert.deepEqual([whole.spec.retry_outputs, whole.spec.retry_asks, whole.spec.outputs.genie_space_vibes, whole.classes],
+      [['genie_space'], { genie_space: ['Answer in euros', 'Add a question about returns'] }, V3_OUTPUTS.genie_space_vibes, 'retry']);
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    await ui.close();
+  }
+});
+
+test('a Try again started from an asset drawer closes that drawer, so the Build progress panel it opens is in view and its Close works', async () => {
+  const ui = await openTower();
+  const { page, made } = ui;
+  try {
+    const chart = await pick(page, CHART);
+    await chart.locator('[data-checks]').getByRole('button', { name: 'Try again with the missing thing', exact: true }).click();
+    await until(() => made.jobs.length === 1, 'the chart try again');
+    await until(async () => (await panel(page).count()) === 0, 'the drawer closes once the build is queued');
+    const progress = page.locator('[data-progress-panel]');
+    await progress.waitFor();
+    assert.equal(await progress.getByRole('button', { name: 'Close', exact: true }).isVisible(), true, 'the progress panel Close is in view');
+    await progress.getByRole('button', { name: 'Close', exact: true }).click();
+    await progress.waitFor({ state: 'detached' });
     assert.deepEqual(ui.pageErrors, []);
   } finally {
     await ui.close();

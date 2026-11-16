@@ -1088,6 +1088,9 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     try {
       const data = await trackBuildSubmit(body.spec, () => apiPostJson(path, body), onBuildQueued);
       onBuildQueued?.();
+      // Every build starts here (Try again, roll back, Rebuild, App and notebook changes). A drawer that started it closes, so the docked
+      // Build progress panel that opens is in view and its Close is reachable. A rejected submit keeps the drawer for its error.
+      setDrawer(null);
       setNotice([resultTableMoveNote(data?.summary), ...(Array.isArray(data?.warnings) ? data.warnings : [])].filter(Boolean).join(' '));
       await loadStatus();
       return true;
