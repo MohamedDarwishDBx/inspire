@@ -189,7 +189,7 @@ function previewScopesOf(asked, carried) {
   let value = asked;
   if (typeof asked === 'string') {
     try {
-      value = JSON.parse(asked);
+      value = parseExactJson(asked);
     } catch {
       throw paramError('The table scope is not valid JSON.');
     }
