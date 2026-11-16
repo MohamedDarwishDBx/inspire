@@ -186,7 +186,7 @@ def test_a_rollback_that_must_build_names_why_for_a_new_output_and_a_renamed_app
     assert renamed["build"] == ["app"] and renamed["rollback_built"] == {"app": {"version": 2, "why": "renamed"}}
     warn = agent_ns["implement_rollback_built_warning"]
     assert warn("app", renamed["rollback_built"]["app"]) == ("Agentic App: v2 could not be put back because the Agentic App now has a different name or "
-                                                            "target, so Inspire builds a new App with Genie instead")
+                                                            "target, so Inspire builds a new Agentic App with Genie instead")
     assert warn("dashboard", {"version": 1, "why": "new"}) == ("Dashboard: v1 could not be put back because the version before had no "
                                                               "Dashboard, so Inspire builds a new Dashboard with Genie instead")
 
@@ -334,7 +334,7 @@ def test_vibes_not_done_unit_turns_each_ask_into_a_warning_and_rejects_a_bad_sha
     take = agent_ns["implement_vibes_not_done"]
     data = {"title": "x", "vibes_not_done": NOT_DONE + NOT_DONE + [{"ask": " Page   me ", "reason": "alerts send email"}]}
     assert take(data, {"app_vibes": VIBES}, "app") == (["Agentic App vibe not done: Add a map of the regions: no table holds a location",
-                                                         "App vibe not done: Page me: alerts send email"], [])
+                                                         "Agentic App vibe not done: Page me: alerts send email"], [])
     assert data == {"title": "x"}, "the list is taken out of the artifact"
     stray = {"title": "x", "vibes_not_done": "junk"}
     assert take(stray, {}, "app") == ([], []) and stray == {"title": "x"}, "without vibes a stray list is dropped and says nothing"
