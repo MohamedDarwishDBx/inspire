@@ -20,6 +20,8 @@ import shell_core  # noqa: E402
 import shell_db  # noqa: E402
 from v141_app_shell_test import call  # noqa: E402
 from v149_app_money_test import OWNER, MoneyWorkspace, _shell  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 RESULT = "main.inspire.churn_out"
 ASSUMPTIONS = "main.inspire.churn_out_assumptions"
@@ -156,7 +158,7 @@ def test_an_assumptions_grant_that_fails_is_a_plain_warning_and_the_app_still_sh
     _inst, fields = _deploy(agent_ns, spark)
     assert fields["app_url"] == "https://churn-desk.example"
     assert fields["_warnings"] == [
-        f"App: the owners of this use case cannot change its value at stake assumptions in the App until its service principal sp-1 "
+        f"{APP_LABEL}: the owners of this use case cannot change its value at stake assumptions in the App until its service principal sp-1 "
         f"can read and change the result table. {reason}"]
 
 
@@ -178,7 +180,7 @@ def test_an_assumptions_table_inspire_cannot_manage_names_the_grants_to_ask_for(
                                                       "service_principal_client_id": "sp-1"}] + NEW_APP[2:])
     owners_warning = [w for w in fields["_warnings"] if "value at stake assumptions" in w]
     assert owners_warning == [
-        f"App: the owners of this use case cannot change its value at stake assumptions in the App until its service principal sp-1 "
+        f"{APP_LABEL}: the owners of this use case cannot change its value at stake assumptions in the App until its service principal sp-1 "
         "can read and change the result table. Inspire cannot grant these accesses, because it neither owns nor holds MANAGE on them. "
         "If sp-1 does not have them yet, ask your data owner to grant them: the commands are in Permission Required"]
     # REQ-260: the GRANT statements are not in the warning; the dialog carries them
@@ -196,7 +198,7 @@ def test_an_app_that_writes_its_records_gets_modify_on_the_result_table(agent_ns
                       fail={"GRANT MODIFY ON TABLE `main`.`inspire`.`churn_out`": RuntimeError("PERMISSION_DENIED: no MANAGE")})
     _inst, fields = _deploy(agent_ns, failing, {"app_options": dict({"modify": False, "decisions": False}, **options)})
     assert fields["_warnings"] == [
-        f"App: people cannot {what} in this App until its service principal sp-1 can read and change the result table. Inspire could not "
+        f"{APP_LABEL}: people cannot {what} in this App until its service principal sp-1 can read and change the result table. Inspire could not "
         "grant it: GRANT MODIFY ON TABLE `main`.`inspire`.`churn_out` TO `sp-1` failed: PERMISSION_DENIED: no MANAGE"]
 
 

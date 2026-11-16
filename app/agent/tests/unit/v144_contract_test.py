@@ -13,6 +13,8 @@ from v142_merge_test import OWN_SOURCE, _host_files, _host_page, _merge_flow, _r
 from v142_scd_test import (CORE, FACTS_LINE, HISTORY, LAYOUT_LINE, LOGGED, NOW, OUTCOME_LINE, QUOTED, QUOTED_STAGE, RUN_LOG_LINE, TABLE, VERSION, _describe,
                            _Tables)
 import shell_sql
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 ACTIONS = [("action_owner", "string"), ("action_status", "string"), ("action_choice", "string"), ("action_due", "date"),
            ("action_note", "string"), ("dismiss_reason", "string"), ("action_outcome", "string"), ("realized_value", "double"), ("realized_note", "string"),
@@ -593,7 +595,7 @@ def test_a_job_resource_the_app_cannot_get_is_a_warning_and_the_app_still_deploy
     inst, context, calls = _deploy(agent_ns, [app, RuntimeError("PERMISSION_DENIED: no CAN MANAGE on job 77")] + DEPLOYED)
     fields = inst._implement_deploy_app(context, "churn-desk", SHELL_FILES, READS, poll_s=0)
     assert fields["app_url"] == "https://churn-desk.example"
-    assert fields["_warnings"] == ["App: Refresh now cannot start a run of job 77, because Inspire could not give the App's service "
+    assert fields["_warnings"] == [f"{APP_LABEL}: Refresh now cannot start a run of job 77, because Inspire could not give the App's service "
                                    "principal CAN MANAGE RUN on it: PERMISSION_DENIED: no CAN MANAGE on job 77. Give it CAN MANAGE RUN on "
                                    "the job, or build the App again with Vibe/Add/Remove Features on the Build page"]
 
@@ -773,7 +775,7 @@ def _cluster_inspire(ns, detail, fail=None):
 
 
 CLUSTER_ALTER = f"ALTER TABLE {QUOTED} CLUSTER BY (`as_of_date`, `region`, `segment_or_item`, `channel`)"
-CLUSTER_FAILED = ("App: Inspire could not cluster main.inspire.churn_out on as_of_date, region, segment_or_item, channel, so the App's "
+CLUSTER_FAILED = (f"{APP_LABEL}: Inspire could not cluster main.inspire.churn_out on as_of_date, region, segment_or_item, channel, so the App's "
                   f"queries may be slow on a large table: PERMISSION_DENIED: not the owner of churn_out. Run {CLUSTER_ALTER} to cluster it")
 
 
@@ -784,7 +786,7 @@ CLUSTER_FAILED = ("App: Inspire could not cluster main.inspire.churn_out on as_o
     ({"clusteringColumns": ["Channel", "AS_OF_DATE", "segment_or_item", "region"], "partitionColumns": []}, None, True, "", ""),
     ({"clusteringColumns": ["as_of_date"], "partitionColumns": []}, None, True, "", ""),
     ({"clusteringColumns": [], "partitionColumns": ["as_of_date"]}, None, False, "",
-     "App: main.inspire.churn_out is partitioned by as_of_date, so Inspire did not cluster it on as_of_date, region, segment_or_item, "
+     f"{APP_LABEL}: main.inspire.churn_out is partitioned by as_of_date, so Inspire did not cluster it on as_of_date, region, segment_or_item, "
      "channel for the App's filters; the App's queries may be slow on a large table"),
     ({"clusteringColumns": [], "partitionColumns": []}, "ALTER TABLE", True, CLUSTER_FAILED, ""),
     ({"clusteringColumns": [], "partitionColumns": []}, "DESCRIBE DETAIL", False, CLUSTER_FAILED, ""),
@@ -807,7 +809,7 @@ def test_an_app_build_clusters_the_table_after_it_deploys_and_never_blocks_on_it
     inst.spark = _cluster_inspire(agent_ns, {"clusteringColumns": [], "partitionColumns": []}, "ALTER TABLE").spark
     fields = inst._implement_app(context, None)
     assert len(seen["deployed"]) == 1 and fields["app_name"] == "churn-desk"
-    assert any(w.startswith("App: Inspire could not cluster main.inspire.churn_out on as_of_date") for w in fields["_warnings"])
+    assert any(w.startswith(f"{APP_LABEL}: Inspire could not cluster main.inspire.churn_out on as_of_date") for w in fields["_warnings"])
     clustered = [s for s in inst.spark.statements if "CLUSTER BY" in s]
     assert len(clustered) == 1 and clustered[0].startswith(f"ALTER TABLE {QUOTED} CLUSTER BY (`as_of_date`")
 
@@ -945,11 +947,11 @@ def _written(ns, inst, workspace, use_case=None):
 def test_the_records_people_dismissed_reach_genie_s_notebook_prompt(agent_ns, sdk_stub):
     inst, workspace = _feedback_inspire(agent_ns)
     text = _written(agent_ns, inst, workspace)
-    assert ("- The customer's feedback from the App: people dismissed 9 of the current records, most often because: \"already "
+    assert (f"- The customer's feedback from the {APP_LABEL}: people dismissed 9 of the current records, most often because: \"already "
             "called\" (5); \"wrong customer type\" (3). Treat it as the customer's word on what the decision list gets wrong, and "
             "change the method where the data can tell such records apart. A dismissed record never goes back to Act now: "
             "inspire_write_result keeps it in Monitor on every run, so never work around that.") in text
-    assert text.index("## Implementation Choices") < text.index("The customer's feedback from the App")
+    assert text.index("## Implementation Choices") < text.index(f"The customer's feedback from the {APP_LABEL}")
     [query] = [s for s in inst.spark.statements if s.startswith("SELECT reason, records")]
     assert query == agent_ns["implement_dismissals_sql"](TABLE)
     assert (f"FROM {QUOTED} WHERE use_case_id = :uc AND is_current AND change_source <> 'delete' AND action_status = 'Dismissed' "
@@ -981,7 +983,7 @@ def test_no_feedback_reaches_genie_when_nothing_was_dismissed_or_it_cannot_be_re
 
 def test_a_dismissal_without_a_reason_still_reaches_genie(agent_ns):
     lines = agent_ns["implement_dismissal_lines"]({"dismissed": 2, "reasons": []})
-    assert lines[0].startswith("- The customer's feedback from the App: people dismissed 2 of the current records, without giving a "
+    assert lines[0].startswith(f"- The customer's feedback from the {APP_LABEL}: people dismissed 2 of the current records, without giving a "
                                "reason. ")
     assert agent_ns["implement_dismissal_lines"](None) == [] and agent_ns["implement_dismissal_lines"]({"dismissed": 0}) == []
 

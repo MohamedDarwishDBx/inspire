@@ -1,4 +1,6 @@
 import pytest
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 DENIED = "permission denied for database databricks_postgres"
 BUILDER = "builder@example.com"
@@ -88,7 +90,7 @@ def test_the_grant_quotes_a_role_name_that_holds_a_double_quote(agent_ns):
 def test_the_fallback_asks_the_owner_to_run_the_statement_then_build_again(agent_ns):
     refusal = agent_ns["implement_lakebase_refusal"](RuntimeError(DENIED), BUILDER)
     text = agent_ns["implement_lakebase_fallback"](str(refusal), refusal.statement)
-    assert text.startswith("App: it reads Delta tables, so its pages take a few seconds to load, because Inspire could not set up Lakebase: ")
+    assert text.startswith(f"{APP_LABEL}: it reads Delta tables, so its pages take a few seconds to load, because Inspire could not set up Lakebase: ")
     # REQ-260: the GRANT is listed under Permission Required, not in the person-facing sentence.
     assert text.endswith(". Ask the Lakebase project owner to grant the access listed under Permission Required, then build the App again with Vibe/Add/Remove Features on the Build page to switch it to Lakebase")
     assert refusal.statement not in text

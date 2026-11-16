@@ -15,6 +15,8 @@ from v149_impact_test import Workspace as ImpactWorkspace, shell as impact_shell
 import shell_core
 import shell_db
 import shell_sql
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 NO_PARETO = "the page draws no biggest first chart: add one of type pareto"
@@ -91,7 +93,7 @@ def test_the_kinds_to_draw_are_the_users_pick_or_inspires_and_never_a_trend_with
     assert kinds({"app": True}, shell_sql, False) == (["bars", "pareto"], False, []), "no note for a kind the user never picked"
     picked, user, notes = kinds({"app": True, "app_charts": ["trend", "split", "scatter"]}, shell_sql, False)
     assert (picked, user) == (["split", "scatter"], True)
-    assert notes == ["App: no trend over time chart, which you picked, because the input tables carry no date to draw it over; the App "
+    assert notes == [f"{APP_LABEL}: no trend over time chart, which you picked, because the input tables carry no date to draw it over; the App "
                      "draws the other kinds. Pick another kind of chart in App look"]
 
 
@@ -133,7 +135,7 @@ def test_a_kind_the_user_picked_that_genie_could_not_draw_deploys_with_its_reaso
     inst, context, seen = _app_flow(agent_ns, tmp_path, page=page, outputs=picked, assets={"genie_space": "g1"})
     fields = inst._implement_app(context, None)
     assert seen["errors"] == [] and len(seen["deployed"]) == 1
-    assert fields["_warnings"] == ["App: no share of a whole chart, which you picked: the loss splits into 12 channels, too many parts. "
+    assert fields["_warnings"] == [f"{APP_LABEL}: no share of a whole chart, which you picked: the loss splits into 12 channels, too many parts. "
                                    "Pick another kind of chart in App look"]
     assert "charts_not_drawn" not in json.loads(seen["deployed"][0][1]["pages/n01_u01.json"])
     inst, context, seen = _app_flow(agent_ns, tmp_path / "silent", outputs=picked)

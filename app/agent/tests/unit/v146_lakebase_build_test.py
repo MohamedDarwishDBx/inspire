@@ -6,6 +6,8 @@ from v120_artifacts_support import CapturingLogger, FakeSpark
 from v140_implement_test import (READS, SHELL_FILES, VALID, _app_flow, _app_shell, _churn_page, _deploy_inspire, _inspire,
                                  _output_context, _spec, sdk_stub)
 from v145_lakebase_test import shell_pg, shell_sql
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 VENDORED = {"psycopg/__init__.py": b"psycopg", "psycopg_binary/_psycopg.cpython-311-aarch64-linux-gnu.so": b"\x7fELF",
             "sqlglot/__init__.py": b"sqlglot"}
@@ -20,9 +22,9 @@ LAKEBASE_ENDPOINT = "projects/inspire-apps/branches/production/endpoints/primary
 APPS_POSTGRES_ENV = {"PGAPPNAME", "PGDATABASE", "PGHOST", "PGPORT", "PGSSLMODE", "PGUSER"}
 CHOICE_ERROR = ("choose where the App reads its data: 'lakebase' (its pages load instantly) or 'delta' (Delta tables, its pages take a "
                 "few seconds to load), not {}")
-FALLBACK = ("App: it reads Delta tables, so its pages take a few seconds to load, because Inspire could not set up Lakebase: {}. Build the "
+FALLBACK = (f"{APP_LABEL}: it reads Delta tables, so its pages take a few seconds to load, because Inspire could not set up Lakebase: {{}}. Build the "
             "App again with Vibe/Add/Remove Features on the Build page, or pick Lakebase again in the wizard, to switch it to Lakebase")
-SP_NOTE = ("App: it reads Delta tables, not Lakebase, because each viewer signs in as themselves and Lakebase does not carry Unity "
+SP_NOTE = (f"{APP_LABEL}: it reads Delta tables, not Lakebase, because each viewer signs in as themselves and Lakebase does not carry Unity "
            "Catalog row filters, column masks or grants to each viewer")
 
 
@@ -229,7 +231,7 @@ def test_an_app_whose_service_principal_cannot_read_lakebase_deploys_on_delta_an
     reason = "the App's service principal could not be given access to its Lakebase tables: PERMISSION_DENIED: role is missing"
     assert fields["_asset"] == {"backend": "delta", **SP_READS} and fields["_warnings"] == [FALLBACK.format(reason)]
     assert _uploaded(inst) == DELTA_FILES, "the App never deploys files that read Lakebase it cannot open"
-    assert _lines(inst, "WARNING") and "[IMPLEMENT-LAKEBASE] N01-U01: App: it reads Delta tables" in _lines(inst, "WARNING")[0]
+    assert _lines(inst, "WARNING") and f"[IMPLEMENT-LAKEBASE] N01-U01: {APP_LABEL}: it reads Delta tables" in _lines(inst, "WARNING")[0]
 
 
 def test_an_app_the_workspace_will_not_give_a_database_deploys_on_delta_and_says_why(agent_ns, sdk_stub):
@@ -372,7 +374,7 @@ def test_a_job_that_cannot_take_the_sync_task_and_a_copy_that_cannot_be_removed_
     old["tables"]["x"] = {"pg": "churn_desk.old_t", "columns": []}
     inst, fields, _calls = _after(agent_ns, held=old, answers=[RuntimeError("PERMISSION_DENIED: job 77"),
                                                                 RuntimeError("TEMPORARILY_UNAVAILABLE: busy")])
-    assert fields["_warnings"] == ["App: Lakebase copies the result only when someone saves a change in the App, because Inspire could "
+    assert fields["_warnings"] == [f"{APP_LABEL}: Lakebase copies the result only when someone saves a change in the App, because Inspire could "
                                    "not add the Lakebase sync to job 77: PERMISSION_DENIED: job 77. Build the App again with Vibe/Add/Remove Features on the Build page to add it"]
     assert any("the Lakebase copy churn_desk.old_t, which the App no longer reads, could not be removed: TEMPORARILY_UNAVAILABLE"
                in w for w in _lines(inst, "WARNING"))
@@ -505,7 +507,7 @@ def test_an_app_on_delta_gets_its_delta_files_and_lakebase_is_never_asked(agent_
 def test_a_per_user_app_whose_result_table_cannot_be_read_stays_on_delta_and_says_why(agent_ns, tmp_path):
     inst, out, seen, _reader, _pg = _app_lakebase(agent_ns, tmp_path, outputs={"app_backend": "lakebase", "app_access": "user"})
     assert out["kind"] == "delta" and out["warnings"] == [] and seen["views"] == 0
-    assert out["notes"] and out["notes"][0].startswith("App: main.inspire.churn_out uses Standard pages, not Fast pages, because Inspire could not read main.inspire.churn_out")
+    assert out["notes"] and out["notes"][0].startswith(f"{APP_LABEL}: main.inspire.churn_out uses Standard pages, not Fast pages, because Inspire could not read main.inspire.churn_out")
 
 
 def test_a_lakebase_app_copies_its_data_syncs_it_checks_every_query_on_lakebase_and_returns_the_lakebase_files(agent_ns, tmp_path):
@@ -846,7 +848,7 @@ def test_taking_back_reads_on_a_deleted_project_says_why_at_once(agent_ns):
     inst._require_asset_package = lambda *a: pytest.fail("a deleted project needs no Lakebase driver")
     gone, failed, warnings = inst._implement_lakebase_revoke(None, ["a", "b"], "sp-1")
     assert (gone, failed) == ([], ["a", "b"])
-    assert warnings == [f"App: Inspire could not reach Lakebase, so the App's service principal sp-1 may still read the Lakebase copies "
+    assert warnings == [f"{APP_LABEL}: Inspire could not reach Lakebase, so the App's service principal sp-1 may still read the Lakebase copies "
                         f"a and b: {DELETED_REASON}"]
     assert len(calls) == 1
 
@@ -856,7 +858,7 @@ def test_taking_back_reads_on_a_refused_project_names_the_refused_call(agent_ns)
     inst._implement_builder = lambda: "sp-1"
     gone, failed, warnings = inst._implement_lakebase_revoke(None, ["a"], "sp-1")
     assert (gone, failed) == ([], ["a"])
-    assert warnings == ["App: Inspire could not reach Lakebase, so the App's service principal sp-1 may still read the Lakebase copies a: "
+    assert warnings == [f"{APP_LABEL}: Inspire could not reach Lakebase, so the App's service principal sp-1 may still read the Lakebase copies a: "
                         "Databricks refused to read the Lakebase project inspire-apps, because the identity Inspire runs as (sp-1) has no "
                         f"Can Use or Can Manage on that project; {INSTALLER_AGAIN}"]
     assert _lines(inst, "WARNING") == ["[IMPLEMENT-LAKEBASE] Databricks refused the call to read the Lakebase project inspire-apps: "
@@ -1166,12 +1168,12 @@ def test_lakebase_answers_the_app_in_time_up_to_its_capacity_and_a_larger_table_
     assert size(2 * rows_cap, 2 * bytes_cap, 2 * rows_cap, 2) == ""
     assert size(rows_cap, 2 * bytes_cap, 2 * rows_cap, 1) == "", "only the current records' share of the table's bytes counts"
     assert size(10000000, 2100000000, 10000000, 1) == (
-        "App: it reads Delta tables, not Lakebase: the current records in its result table number 10,000,000 (2.1 GB), and Lakebase at its "
+        f"{APP_LABEL}: it reads Delta tables, not Lakebase: the current records in its result table number 10,000,000 (2.1 GB), and Lakebase at its "
         "1 capacity unit answers the App's first records within 3 s and a filter change within 2 s for at most 1,000,000 records (1.5 GB). "
         "Raise the Lakebase capacity of the inspire-apps project, or keep the App on Delta tables")
     assert "and Lakebase at its 0.5 capacity units answers" in size(rows_cap, bytes_cap, rows_cap, 0.5)
     assert size(rows_cap, 2 * bytes_cap, 0, 1).startswith(
-        "App: it reads Delta tables, not Lakebase: the current records in its result table number 1,000,000 (3.0 GB)"), \
+        f"{APP_LABEL}: it reads Delta tables, not Lakebase: the current records in its result table number 1,000,000 (3.0 GB)"), \
         "a table whose rows were not counted is sized by all its bytes"
 
 
@@ -1180,14 +1182,14 @@ def test_a_page_slower_than_its_target_on_the_real_tables_is_named_with_its_back
     speeds = {"n02_u01": {"first": 3.0, "filter": 2.6, "filter_on": "channel"}, "n01_u01": {"first": 4.24, "filter": 2.0, "filter_on": "region"},
               "n03_u01": {"first": None, "filter": "slow"}, "n04_u01": "not measured"}
     assert problems(speeds, "Delta tables") == [
-        "App: on Delta tables, the decision list's first records took 4.2 s on the real tables at the default filters, over the 3 s target",
-        "App: on Delta tables, a filter change (channel, 2 values) took 2.6 s on the real tables at the default filters, over the 2 s target"]
+        f"{APP_LABEL}: on Delta tables, the decision list's first records took 4.2 s on the real tables at the default filters, over the 3 s target",
+        f"{APP_LABEL}: on Delta tables, a filter change (channel, 2 values) took 2.6 s on the real tables at the default filters, over the 2 s target"]
     assert problems({"n02_u01": {"first": 3.0, "filter": 2.0, "filter_on": "channel"}}, "Lakebase") == []
     assert problems({}, "Lakebase") == [], "an App with no decision list has nothing to time"
-    assert problems({"_error": "timed out"}, "Lakebase") == ["App: on Lakebase, the speed check could not run: timed out"], \
+    assert problems({"_error": "timed out"}, "Lakebase") == [f"{APP_LABEL}: on Lakebase, the speed check could not run: timed out"], \
         "a check that could not run fails the build instead of passing in silence"
     assert problems(None, "Delta tables") == [
-        "App: on Delta tables, the speed check did not run, so Inspire cannot show the App answers within its targets"]
+        f"{APP_LABEL}: on Delta tables, the speed check did not run, so Inspire cannot show the App answers within its targets"]
 
 
 def test_the_speed_line_names_each_time_its_target_and_how_many_uncached_reads_it_is_the_middle_of(agent_ns):
@@ -1215,7 +1217,7 @@ def test_the_build_shows_the_apps_speed_as_its_own_step_and_marks_it_failed_when
     host = _SpeedHost(agent_ns)
     report = agent_ns["DatabricksInspire"]._implement_app_speed_report
     problems = report(host, {"uc_id": "N01-U01", "key": ("N01-U01", "app", 3)}, speeds, "Delta tables")
-    assert bool(problems) is slow and all(p.startswith("App: on Delta tables") for p in problems)
+    assert bool(problems) is slow and all(p.startswith(f"{APP_LABEL}: on Delta tables") for p in problems)
     assert [(e[1], e[3]) for e in host.emitted] == [(agent_ns["IMPLEMENT_APP_SPEED_STEP"], "ended_error" if slow else "ended_success")]
     assert host.emitted[0][4]["backend"] == "Delta tables" and host.emitted[0][4]["spec_version"] == 3
     assert all(p in host.emitted[0][2] for p in problems)
@@ -1226,7 +1228,7 @@ def test_the_build_shows_the_apps_speed_as_its_own_step_and_marks_it_failed_when
 # gets the Postgres refusal mapped to the one GRANT the owner runs, a Permission Required entry, and the fallback sentence.
 LAKEBASE_OWNER_BUILDER = "owner@example.com"
 LAKEBASE_CALLER = "caller@example.com"
-PERMISSION_HEAD = ("App: it reads Delta tables, so its pages take a few seconds to load, because Inspire could not set up Lakebase: "
+PERMISSION_HEAD = (f"{APP_LABEL}: it reads Delta tables, so its pages take a few seconds to load, because Inspire could not set up Lakebase: "
                    "these App queries did not run on Lakebase: ")
 
 

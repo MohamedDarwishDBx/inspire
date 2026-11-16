@@ -15,6 +15,8 @@ for path in (os.path.dirname(HERE), SERVER):
         sys.path.insert(0, path)
 
 from _agentload import agent_source  # noqa: E402
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 DQ_REASON = "Every record has a data quality issue, most often: franchiseID differs across chunks."
 
@@ -39,7 +41,7 @@ def test_a_held_app_leads_the_status_with_a_short_plain_reason(agent_ns):
     assert delivery["delivered"] == ["dashboard"] and delivery["spec_version"] == 3
     assert delivery["not_delivered"] == [{"output": "app", "label": "Agentic App",
                                           "reason": "Every record has a data quality issue, most often: franchiseID differs across chunks"}]
-    assert agent_ns["implement_delivery_lead"](delivery) == ("App not published: Every record has a data quality issue, most often: "
+    assert agent_ns["implement_delivery_lead"](delivery) == (f"{APP_LABEL} not published: Every record has a data quality issue, most often: "
                                                               "franchiseID differs across chunks")
 
 

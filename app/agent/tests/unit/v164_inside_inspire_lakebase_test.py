@@ -10,12 +10,14 @@ from v140_implement_test import _churn_page, _inspire
 from v142_dash_test import _runner as _pages
 from v142_merge_test import _serve_files
 from v164_inside_inspire_deploy_test import _app_calls, _builder
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 RUN_TASK = {"task_key": "inspire_task", "notebook_task": {"notebook_path": "/W/nb"}}
 OURS = {"task_key": "inspire_lakebase_sync", "pipeline_task": {"pipeline_id": "pipe-1"}, "depends_on": [{"task_key": "inspire_task"}]}
 FOREIGN = dict(OURS, pipeline_task={"pipeline_id": "pipe-9"})
 ON_LAKEBASE = {"state": "ready", "spec_version": 2, "backend": "lakebase", "sync_pipeline": "pipe-1"}
-KEPT = ("App: job 77 keeps its task inspire_lakebase_sync, because Inspire cannot tell that it is the Lakebase sync Inspire added for "
+KEPT = (f"{APP_LABEL}: job 77 keeps its task inspire_lakebase_sync, because Inspire cannot tell that it is the Lakebase sync Inspire added for "
         "this use case's App; remove it from the job if nothing needs it")
 REMOVED = {"job_id": 77, "fields_to_remove": ["tasks/inspire_lakebase_sync"]}
 OLD_SOURCE = "/W/acme_implemented/Sales/N01-U01/apps/old-desk"
@@ -148,7 +150,7 @@ def test_a_held_move_into_inspire_leaves_the_job_as_it_is(agent_ns, tmp_path, mo
 def test_a_sync_task_that_cannot_be_removed_is_a_warning_and_stays_on_record_for_the_next_build(agent_ns, tmp_path, monkeypatch):
     inst, context, seen = _hosted_move(agent_ns, tmp_path, monkeypatch, [OURS], fail=RuntimeError("PERMISSION_DENIED: job 77"))
     fields = inst._implement_app(context, _pages(_churn_page(agent_ns)))
-    assert ("App: job 77 still syncs Lakebase after each run, because Inspire could not remove that task: PERMISSION_DENIED: job 77. "
+    assert (f"{APP_LABEL}: job 77 still syncs Lakebase after each run, because Inspire could not remove that task: PERMISSION_DENIED: job 77. "
             f"Remove the task {agent_ns['IMPLEMENT_LAKEBASE_TASK_KEY']} from the job" in fields["_warnings"])
     assert fields["_asset"]["sync_pipeline"] == "pipe-1"
     again, context, seen = _hosted_move(agent_ns, tmp_path / "again", monkeypatch, [OURS],

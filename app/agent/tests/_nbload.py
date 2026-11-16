@@ -9,6 +9,7 @@ The doubles are deliberately thin. They exist to let module-level code REACH the
 class definitions, not to emulate Spark. Anything that actually touches Spark, the SDK or a widget
 at call time is out of scope for the offline suite and must be tested against a live run.
 """
+import ast
 import base64
 import gzip
 import json
@@ -303,3 +304,15 @@ def notebook_assets(path=None):
             out.append((pin["repo"], fh.read()))
     return out
 
+
+
+def implement_output_label(name):
+    """The person-facing label of one output (D-LABEL209), read from the notebook's IMPLEMENT_OUTPUT_LABELS.
+
+    Tests pin wording with this instead of a copied string, so a relabel of the notebook moves the pins with it.
+    """
+    for _kind, src in notebook_cells():
+        m = re.search(r"^IMPLEMENT_OUTPUT_LABELS = (\{[^\n]*?\})\s*(?:#|$)", src, re.M)
+        if m:
+            return ast.literal_eval(m.group(1))[name]
+    raise AssertionError("the notebook defines no IMPLEMENT_OUTPUT_LABELS")

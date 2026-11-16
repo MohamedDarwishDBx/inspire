@@ -5,6 +5,8 @@ import pytest
 
 from v145_lakebase_test import (PG_ENV, PG_SCHEMA, CredentialWorkspace, call, lakebase_shell, postgres,  # noqa: F401
                                 shell_core, shell_db, shell_pg, shell_sql)
+from _nbload import implement_output_label
+APP_LABEL = implement_output_label("app")
 
 BIG = "main.billing.bills_big"
 BIG_ROWS = 120_000
@@ -352,7 +354,7 @@ def test_a_lakebase_app_whose_filter_lists_too_slowly_stays_on_lakebase_and_the_
     from v146_lakebase_build_test import _app_lakebase
     slow = "page n01_u01: filter district reads Delta tables for its values, because Lakebase did not answer within its read limit of 2.5 s"
     inst, out, _seen, _reader, _pg = _app_lakebase(agent_ns, tmp_path, slows=[[slow]])
-    assert out["kind"] == "lakebase" and f"App: {slow}" in out["warnings"]
+    assert out["kind"] == "lakebase" and f"{APP_LABEL}: {slow}" in out["warnings"]
     assert any(level == "WARNING" and "[LAKEBASE-SLOW-FILTER FIRED]" in m and slow in m for level, m in inst.logger.records), \
         "the build log names it"
     _inst, quiet, _seen, _reader, _pg = _app_lakebase(agent_ns, tmp_path / "quiet")
