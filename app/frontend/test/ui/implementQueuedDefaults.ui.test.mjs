@@ -116,3 +116,45 @@ test('the early Build button shows its queued build on the Build page at once (R
     await ui.close();
   }
 });
+
+// REQ-323: the server answers about a minute after the submit. The queued build shows on the Build page during that wait, and after a reload in it.
+// Both wizard buttons (the early Build with these choices and All Good, Build it Now) run the same submit() (ImplementWizard.jsx onClick={submit}).
+test('a submit shows the queued build on the Build page while the server is still answering, and after a reload (REQ-323)', async () => {
+  const log = { submits: 0 };
+  let answer = () => {};
+  const answered = new Promise((resolve) => { answer = resolve; });
+  let answerSent = false;
+  const mount = (app) => {
+    app.get('/api/defaults', (_req, res) => res.json(DEFAULTS));
+    app.get('/api/showcase', (_req, res) => res.json({}));
+    app.post('/api/inspire/implement/preflight', (_req, res) => res.json({ checks: {} }));
+    app.post('/api/inspire/implement/submit', async (req, res) => {
+      log.submits += 1;
+      await answered;
+      res.json({ session_id: '42', use_case_id: req.body.spec.use_case_id, spec_version: 1, summary: {}, warnings: [] });
+    });
+    // The history read lags behind the submit: it never returns the new row while the answer is pending.
+    app.get('/api/inspire/implement/history', (req, res, next) => (log.submits && !answerSent ? res.json({ latest: [], notebook_run: null, notebook_run_error: '' }) : next()));
+  };
+  // The live shape: the wizard opens over the Build page (ImplementPage), which stays mounted behind it while the answer is pending.
+  const ui = await openUi('app', { ...STATE, history: [] }, '', { mount });
+  const { page } = ui;
+  try {
+    await page.goto(`${page.url().split('#')[0]}#/build/42/N01-U01`).catch(() => {});
+    await page.getByRole('heading', { name: 'Build', exact: true }).waitFor({ timeout: 20000 });
+    await page.getByRole('button', { name: /Start Use Case MVP with Genie/ }).filter({ visible: true }).first().click();
+    await goToStep(page, 'Data');
+    await page.locator('[data-build-now]').click();
+    await until(() => log.submits === 1, 'one build submitted');
+    await page.getByText('building now', { exact: false }).first().waitFor({ timeout: 15000 });
+    assert.equal(await page.getByText('No MVP started yet', { exact: false }).count(), 0, 'the queued build is shown while the answer is pending (must-fail: the store is written only after the server answers, about a minute later)');
+    await page.reload();
+    await page.getByText('building now', { exact: false }).first().waitFor({ timeout: 20000 });
+    assert.equal(await page.getByText('No MVP started yet', { exact: false }).count(), 0, 'the queued build survives a reload during the wait (must-fail: no sessionStorage entry until the answer)');
+    assert.deepEqual(ui.pageErrors, []);
+  } finally {
+    answerSent = true;
+    answer();
+    await ui.close();
+  }
+});
