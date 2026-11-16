@@ -255,13 +255,18 @@ def test_a_personal_column_is_read_only_where_its_values_are_counted(agent_ns):
             return [{"n": 1000, "outcome_values": 2, "positives": 200, "sd0": 2.0, "p0": 5.0, "q0": 4.0, "c0": 0.3}]
         if "AS reportable_groups" in statement:
             return [{"n": 1000, "groups": 400, "reportable_groups": 9}]
+        if "COUNT(DISTINCT" in statement:
+            return [{"k": 6}]
         raise AssertionError(statement)
 
     inst, _agent, spark = deep_inspire(agent_ns, answers, respond)
     kept, dropped = inst._check_data_signal(ucs, [])
-    assert dropped == [] and len(kept) == 5 and len(spark.statements) == 2
+    assert dropped == [] and len(kept) == 5 and len(spark.statements) == 4
     assert not any("birth_" in s for s in spark.statements), "a personal value column is never read"
     assert "`customer_email` AS g" in spark.statements[1], "a personal group is only counted"
+    counted = " ".join(spark.statements[2:])
+    assert "COUNT(DISTINCT `is_return`)" in counted and "COUNT(DISTINCT `quantity`)" in counted, \
+        "the distinct-value check counts the outcome and the signal the passing use case names"
     assert [u["data_signal"]["status"] for u in ucs] == ["not_checked", "not_checked", "passed", "passed", "not_checked"]
     assert ucs[0]["data_signal"]["reason"] == ("Not checked: every signal column named for it is personal (birth_year), "
                                                "and Inspire reads only counts of a personal column.")
@@ -289,8 +294,9 @@ def test_a_key_or_a_code_is_never_read_as_a_number_and_is_still_counted_as_a_gro
 
     inst, _agent, spark = deep_inspire(agent_ns, answers, respond)
     kept, dropped = inst._check_data_signal(ucs, [])
-    assert dropped == [] and len(kept) == 5 and len(spark.statements) == 2
+    assert dropped == [] and len(kept) == 5 and len(spark.statements) == 4
     assert "`quantity`" in spark.statements[0] and "`item_sk`" not in spark.statements[0]
+    assert not any("COUNT(DISTINCT `item_sk`)" in s for s in spark.statements), "a key is never counted for its values"
     assert "`pickup_zip` AS g" in spark.statements[1], "a code is still counted as a group"
     assert [u["data_signal"]["status"] for u in ucs] == ["not_checked", "passed", "not_checked", "not_checked", "passed"]
     assert ucs[0]["data_signal"]["reason"] == ("Not checked: every signal column named for it is a key or a code "
