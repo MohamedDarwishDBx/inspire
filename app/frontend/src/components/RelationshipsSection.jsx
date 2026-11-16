@@ -90,6 +90,7 @@ function LinkDialog({ dialog, onPick, onAdd, onRemove, onAddSuggested, onDone, o
       )}
       {dialog.status === 'done' && (
         <>
+          {dialog.note && <p data-link-note role="status" className="text-warning-fg">{dialog.note}</p>}
           <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3">
             {sideList('source', source, dialog.pickSource)}
             <div className="flex flex-col items-center gap-2 pt-8">
@@ -147,7 +148,7 @@ export default function RelationshipsSection({ tables, relationships, onRelation
     let cancelled = false;
     withTimeout(apiFetch(`/api/relationships?warehouse_id=${encodeURIComponent(warehouseId || '')}`, {
       method: 'POST',
-      body: JSON.stringify({ table: dialog.source, tables }),
+      body: JSON.stringify({ table: dialog.source, tables, focus: [dialog.target] }),
     }), ANSWER_MS)
       .then((d) => {
         if (cancelled) return;
@@ -158,7 +159,7 @@ export default function RelationshipsSection({ tables, relationships, onRelation
           return;
         }
         const pair = (s) => [s.from.table, s.to.table].sort().join('|') === [dialog.source, dialog.target].sort().join('|');
-        setDialog((prev) => (prev && prev.run === run ? { ...prev, status: 'done', columns: d.tables || {}, suggestions: (d.suggestions || []).filter(pair) } : prev));
+        setDialog((prev) => (prev && prev.run === run ? { ...prev, status: 'done', columns: d.tables || {}, note: d.columns_note || '', suggestions: (d.suggestions || []).filter(pair) } : prev));
       })
       .catch((e) => {
         if (cancelled) return;

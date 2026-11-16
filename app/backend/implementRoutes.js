@@ -831,17 +831,21 @@ function registerImplementRoutes(app, deps) {
       const catalogs = [...byCatalog.keys()];
       const reads = await I.readPickedTable(table, () => Promise.all([
         Promise.all(catalogs.map((catalog) => sqlRows(req.dbHost, token, warehouseId, RL.scopeColumnsStatement(catalog, byCatalog.get(catalog))))),
+        Promise.all(catalogs.map((catalog) => sqlRows(req.dbHost, token, warehouseId, RL.scopeKeysStatement(catalog, byCatalog.get(catalog))))),
         sqlRows(req.dbHost, token, warehouseId, RL.declaredKeysStatement(table)),
         sqlRows(req.dbHost, token, warehouseId, RL.declaredIntoStatement(table)),
-        sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table)),
       ]));
-      const [catalogRows, declared, into, keys] = reads;
+      const [catalogRows, keyRows, declared, into] = reads;
       const columns = catalogRows.flatMap((rows, i) => rows.map((r) => ({
         table: `${catalogs[i]}.${r.table_schema}.${r.table_name}`, column_name: r.column_name,
       })));
+      const keys = keyRows.flatMap((rows, i) => rows.filter((r) => r.table_schema).map((r) => ({
+        table: `${catalogs[i]}.${r.table_schema}.${r.table_name}`, column_name: r.column_name,
+      })));
       if (!columns.some((c) => c.table.toLowerCase() === table.toLowerCase())) throw I.unreadableTableError(table);
-      res.json({ ...RL.relationshipsOfTable(table, { columns, declared, into, primaryKeys: keys.map((r) => String(r.column_name)) }),
-        metric_views: [] });
+      // The other table of a link the dialog is making: its columns are sent first, so the answer can always pair them.
+      const focus = Array.isArray(req.body?.focus) ? RL.pickedTablesOf(req.body.focus) : [];
+      res.json({ ...RL.relationshipsOfTable(table, { columns, keys, declared, into, focus }), metric_views: [] });
     } catch (err) {
       sendError(res, err);
     }

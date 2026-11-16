@@ -133,7 +133,7 @@ test('POST /api/relationships reads one table: a metric view is named back and n
 });
 
 test('POST /api/relationships over a 550-table scope reads the columns in one query per catalog, not per table', async () => {
-  const made = makeApp({ statements: { 'table_schema = lower(:s0)': (sql, parameters) => {
+  const made = makeApp({ statements: { "constraint_type = 'PRIMARY KEY'": () => ({ rows: [] }), 'table_schema = lower(:s0)': (sql, parameters) => {
     const picked = parameters.filter((p) => /^s\d+$/.test(p.name)).map((p, i) => `main.${p.value}.${parameters.find((x) => x.name === `t${i}`).value}`);
     return { rows: picked.filter((n) => COLUMNS[n]).flatMap((n) => COLUMNS[n].map((c) => ({ table_schema: 's', table_name: n.split('.')[2], column_name: c.column_name }))) };
   } } });
@@ -152,3 +152,53 @@ test('POST /api/relationships over a 550-table scope reads the columns in one qu
     srv.close?.();
   }
 });
+
+// The primary-key fallback reaches the route (REQ-370): orders.customer_id links to customers.customer_no, the customers primary key.
+test('POST /api/relationships links a child column to a target primary key with another name, through the scope queries', async () => {
+  const fixture = { 'main.s.orders': ['order_id', 'customer_id'], 'main.s.customers': ['customer_no', 'name'] };
+  const keys = { 'main.s.customers': ['customer_no'] };
+  const pairs = (parameters) => parameters.filter((p) => /^s\d+$/.test(p.name)).map((p, i) => `main.${p.value}.${parameters.find((x) => x.name === `t${i}`).value}`);
+  const made = makeApp({ statements: {
+    "constraint_type = 'PRIMARY KEY'": (sql, parameters) => ({ rows: pairs(parameters).filter((n) => keys[n])
+      .flatMap((n) => keys[n].map((c) => ({ table_schema: 's', table_name: n.split('.')[2], column_name: c }))) }),
+    'table_schema = lower(:s0)': (sql, parameters) => ({ rows: pairs(parameters).filter((n) => fixture[n])
+      .flatMap((n) => fixture[n].map((c) => ({ table_schema: 's', table_name: n.split('.')[2], column_name: c }))) }),
+  } });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/relationships?${Q}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-email': 'owner@example.com' },
+      body: JSON.stringify({ table: 'main.s.orders', tables: ['main.s.orders', 'main.s.customers'] }) });
+    const got = await resp.json();
+    assert.equal(resp.status, 200, JSON.stringify(got));
+    assert.deepEqual(got.suggestions, [{ from: { table: 'main.s.orders', column: 'customer_id' }, to: { table: 'main.s.customers', column: 'customer_no' }, source: 'matching column name' }]);
+    assert.deepEqual(got.tables['main.s.customers'].primary_keys, ['customer_no'], 'the other table carries its own primary key');
+  } finally {
+    srv.close?.();
+  }
+});
+
+// Measurement (REQ-370, the payload of one relationships answer): 550 tables of 30 columns, names of typical length.
+test('the relationships answer for a 550-table pick of 30 columns each is measured, and stays under the 2 MB cap', async () => {
+  const names = Array.from({ length: 550 }, (_, i) => `main.s.table_${String(i).padStart(3, '0')}`);
+  const cols = Array.from({ length: 30 }, (_, c) => `column_attribute_${String(c).padStart(2, '0')}`);
+  const rows = names.flatMap((n) => cols.map((c) => ({ table_schema: 's', table_name: n.split('.')[2], column_name: c })));
+  const made = makeApp({ statements: {
+    "constraint_type = 'PRIMARY KEY'": () => ({ rows: [] }),
+    'table_schema = lower(:s0)': () => ({ rows }),
+  } });
+  const srv = await listen(made.app);
+  try {
+    const body = JSON.stringify({ table: names[3], tables: names });
+    const resp = await fetch(`${srv.url}/api/relationships?${Q}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-email': 'owner@example.com' }, body });
+    const text = await resp.text();
+    const got = JSON.parse(text);
+    console.log(`[measure] scope rows=${rows.length} scope query bytes(JSON)=${Buffer.byteLength(JSON.stringify(rows))} response bytes=${Buffer.byteLength(text)} tables sent=${Object.keys(got.tables).length}/${names.length} columns_note=${got.columns_note ? 'yes' : 'no'}`);
+    assert.ok(Buffer.byteLength(text) <= R2_LIMIT, 'the answer is under the cap');
+    assert.equal(Object.keys(got.tables).length, 550, 'every table fits in this shape, so no note');
+  } finally {
+    srv.close?.();
+  }
+});
+const R2_LIMIT = 2 * 1024 * 1024;
