@@ -113,6 +113,11 @@ function scopeKeysStatement(catalog, names) {
 }
 
 const findName = (list, name) => list.find((x) => low(x) === low(name));
+
+// Key names that many tables use for unrelated keys (id, code, name...). A shared name of this kind is not a link by itself: it links
+// only through the <table>_id rule or a declared key (REQ-370).
+const GENERIC_KEY_NAMES = new Set(['id', 'key', 'code', 'name', 'uuid', 'guid', 'pk', 'row_id', 'rowid', 'row_key', 'idx', 'index']);
+const isGenericKey = (column) => GENERIC_KEY_NAMES.has(low(column));
 const fullName = (catalog, schema, table) => `${catalog}.${schema}.${table}`;
 
 // The payload cap for one answer (REQ-370): above it, the columns of the tables the picked table does not link to are left out, with a note.
@@ -172,6 +177,7 @@ function relationshipsOfTable(table, { columns = [], keys = [], declared = [], i
     }
     // A shared column that is a single-column primary key of one table: the other table's column points at it (the child is the "from" side).
     for (const column of pCols) {
+      if (isGenericKey(column)) continue;
       if (findName(keysOf(other.name), column) && findName(other.columns, column)) add({ table, column }, { table: other.name, column: findName(other.columns, column) }, SOURCE_NAME);
       else if (findName(keysOf(table), column) && findName(other.columns, column)) add({ table: other.name, column: findName(other.columns, column) }, { table, column }, SOURCE_NAME);
     }

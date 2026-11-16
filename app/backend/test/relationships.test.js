@@ -140,3 +140,26 @@ test('an answer under the cap carries no note', () => {
   const got = R.relationshipsOfTable(ORDERS, { columns: [col(ORDERS, 'a'), col(CUSTOMERS, 'b')], keys: [] });
   assert.equal(got.columns_note, undefined);
 });
+
+test('two tables that both key on a generic name (id) are not linked by that name alone (REQ-370)', () => {
+  const got = R.relationshipsOfTable(ORDERS, {
+    columns: [col(ORDERS, 'id'), col(CUSTOMERS, 'id')], keys: [key(ORDERS, 'id'), key(CUSTOMERS, 'id')],
+  });
+  assert.deepEqual(got.suggestions, [], 'id on both sides is not a relationship');
+});
+
+test('a generic key name is not matched across tables, whatever its case (code, Key, UUID)', () => {
+  for (const name of ['code', 'Key', 'UUID', 'name', 'row_id']) {
+    const got = R.relationshipsOfTable(ORDERS, {
+      columns: [col(ORDERS, name), col(CUSTOMERS, name)], keys: [key(ORDERS, name), key(CUSTOMERS, name)],
+    });
+    assert.deepEqual(got.suggestions, [], `${name} on both sides is not a relationship`);
+  }
+});
+
+test('a specific key name on both tables (customer_no) is suggested', () => {
+  const got = R.relationshipsOfTable(ORDERS, {
+    columns: [col(ORDERS, 'customer_no'), col(CUSTOMERS, 'customer_no')], keys: [key(CUSTOMERS, 'customer_no')],
+  });
+  assert.deepEqual(got.suggestions, [{ from: { table: ORDERS, column: 'customer_no' }, to: { table: CUSTOMERS, column: 'customer_no' }, source: 'matching column name' }]);
+});
