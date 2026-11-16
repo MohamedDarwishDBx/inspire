@@ -74,7 +74,7 @@ function columnSearchStatements(scope, q) {
         sql: 'SELECT c.table_schema, c.table_name, c.column_name, c.data_type, COUNT(*) OVER () AS total '
           + `FROM \`${catalog}\`.information_schema.columns c `
           + `JOIN \`${catalog}\`.information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name `
-          + `WHERE c.column_name ILIKE :q AND t.table_type NOT IN (${METRIC_VIEW_TYPES}) AND (${scopeSql}) AND ${notInspireOwnSql('c.table_name')} `
+          + `WHERE c.column_name ILIKE :q AND t.table_type NOT IN (${METRIC_VIEW_TYPES}) AND (${scopeSql}) AND ${notInspireOwnSql('c.table_name', 'c.table_schema')} `
           + `ORDER BY c.column_name, c.table_schema, c.table_name LIMIT ${COLUMN_SEARCH_LIMIT}`,
         parameters,
       },
