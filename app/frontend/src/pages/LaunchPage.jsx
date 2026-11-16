@@ -47,7 +47,7 @@ import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
 import ModalDialog from '../components/ModalDialog';
 import { sameSettings } from '../lib/businessProfiles';
 import { scopesFromObject, launchTableScopeText, filterValuesOf, labelAvailable, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
-import { launchRelationshipsText } from '../lib/tableRelationships';
+import { launchRelationshipsText, restoredRelationshipList } from '../lib/tableRelationships';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
 import { runBusiness } from '../lib/reviewFigures';
@@ -222,19 +222,11 @@ function restoredForm(draft) {
       listOf(spec.selectedSchemas), listOf(spec.selectedTables)),
     tableScopes: scopesFromObject(spec.tableScopes).scopes,
     dataFilterLabel: restoredLabel(spec.dataFilterLabel),
-    relationships: restoredRelationships(spec.relationships),
+    relationships: restoredRelationshipList(spec.relationships),
     ...Object.fromEntries(FLAGS.map((key) => [key, spec[key] === true])),
     // The profile the draft was loaded from (REQ-364): a reload keeps the link, so an unchanged profile still runs without the question.
     profile: draft && draft.profile ? draft.profile : null,
   };
-}
-
-// A relationship the person kept in Data Management (REQ-362): both sides name a table and a column, and the source says where it came from.
-function restoredRelationships(value) {
-  const side = (v) => (v && typeof v === 'object' && typeof v.table === 'string' && typeof v.column === 'string' ? { table: v.table, column: v.column } : null);
-  return Array.isArray(value)
-    ? value.map((l) => (l && typeof l === 'object' && side(l.from) && side(l.to) && typeof l.source === 'string' ? { from: side(l.from), to: side(l.to), source: l.source } : null)).filter(Boolean)
-    : [];
 }
 
 function restoredLabel(value) {

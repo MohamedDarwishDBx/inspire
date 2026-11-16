@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { PlainMessage } from './TechnicalDetails';
 import { raisePermissions } from '../lib/permissionBus';
+import { sameLink } from '../lib/tableRelationships';
 
 const ANSWER_MS = 20000;
 const FILTER_AT = 12;
@@ -14,8 +15,6 @@ const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error('Inspire did not get an answer in time.')), ms);
   promise.then((value) => { clearTimeout(timer); resolve(value); }, (err) => { clearTimeout(timer); reject(err); });
 });
-const sameLink = (a, b) => a.from.table === b.from.table && a.from.column === b.from.column
-  && a.to.table === b.to.table && a.to.column === b.to.column;
 const shortName = (table) => table.split('.').pop();
 // The name a table shows: its table name, or schema.table when another picked table has the same table name.
 const nameOfIn = (tables) => {
@@ -110,6 +109,7 @@ function LinkDialog({ dialog, links, suggestions, onPick, onLink, onRemove, onAd
       {dialog.status === 'done' && (
         <>
           {dialog.note && <p data-link-note role="status" className="text-warning-fg">{dialog.note}</p>}
+          {dialog.refusal && <p data-link-refused role="status" className="text-warning-fg">{dialog.refusal}</p>}
           <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-3">
             {sideList('source', source, dialog.pickSource)}
             <div className="flex flex-col items-center gap-2 pt-8">
@@ -195,17 +195,23 @@ export default function RelationshipsSection({ tables, relationships, onRelation
   }
   const openLink = () => setDialog({ run: run + 1, source, target, status: 'loading', columns: {}, suggestions: [], pickSource: '', pickTarget: '' });
   const closeDialog = () => setDialog(null);
-  const pickSide = (side, column) => setDialog((prev) => ({ ...prev, [side === 'source' ? 'pickSource' : 'pickTarget']: column }));
-  // Every link is written at once: a link already listed is not added twice.
+  const pickSide = (side, column) => setDialog((prev) => ({ ...prev, [side === 'source' ? 'pickSource' : 'pickTarget']: column, refusal: '' }));
+  // Every link is written at once: a link already listed is not added twice, in either direction (REQ-394).
   const commitLinks = (added) => {
     const fresh = added.filter((s, i) => !relationships.some((l) => sameLink(l, s)) && added.findIndex((x) => sameLink(x, s)) === i);
     if (fresh.length) onRelationships([...relationships, ...fresh]);
   };
-  const linkPicked = () => {
-    commitLinks([{ from: { table: dialog.source, column: dialog.pickSource }, to: { table: dialog.target, column: dialog.pickTarget }, source: PERSON }]);
-    setDialog((prev) => ({ ...prev, pickSource: '', pickTarget: '' }));
-  };
   const nameOf = nameOfIn(tables);
+  // REQ-394: a pair already linked, or linked the other way round, is refused with one plain line and nothing is added.
+  const linkPicked = () => {
+    const pair = { from: { table: dialog.source, column: dialog.pickSource }, to: { table: dialog.target, column: dialog.pickTarget }, source: PERSON };
+    if (relationships.some((l) => sameLink(l, pair))) {
+      setDialog((prev) => ({ ...prev, refusal: `${nameOf(dialog.source)}.${dialog.pickSource} and ${nameOf(dialog.target)}.${dialog.pickTarget} are already linked.` }));
+      return;
+    }
+    commitLinks([pair]);
+    setDialog((prev) => ({ ...prev, pickSource: '', pickTarget: '', refusal: '' }));
+  };
   const linkReason = !source || !target ? 'Pick one source table and one target table to link them.' : '';
   const betweenDialog = dialog ? relationships.filter((l) => [l.from.table, l.to.table].sort().join('|') === [dialog.source, dialog.target].sort().join('|')) : [];
   const suggestions = dialog ? (dialog.suggestions || []).filter((s) => !relationships.some((l) => sameLink(l, s))) : [];
