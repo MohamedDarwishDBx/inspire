@@ -6,6 +6,7 @@ import pytest
 
 from v120_artifacts_support import CapturingLogger, FakeSpark
 from v120_genie_support import build_inspire, make_uc
+from money_currency_split_test import sqlite_text_formats
 from v142_scd_test import QUOTED_SUMMARY, SUMMARY, _describe
 
 TABLE = "main.inspire.churn_out"
@@ -35,6 +36,7 @@ def _sqlite(sql, rows):
         table.set("db", None)
     db = sqlite3.connect(":memory:")
     db.create_aggregate("MODE", 1, _Mode)
+    sqlite_text_formats(db)  # the future rule reads dates with TRY_TO_DATE too (f37c9b144); these fixtures hold ISO dates
     names = list(rows[0]) if rows else COLUMNS + ["is_current", "change_source"]
     for name in {t.name for t in tree.find_all(sqlglot.exp.Table)}:
         db.execute(f'CREATE TABLE "{name}" ({", ".join(chr(34) + n + chr(34) for n in names)})')
