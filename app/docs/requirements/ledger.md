@@ -15,7 +15,7 @@ Single source of truth for every Inspire ask. The coordinator keeps the working 
 
 Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed here are in scope and not DONE yet. Grouped by area, using the ask text and lane (keyword match, so a row can sit in a neighbouring area).
 
-### Build wizard and first-run flow (45)
+### Build wizard and first-run flow (46)
 
 - REQ-001 | RC2 | LIVE-PASS f80540dd9 (FW2: Measure one open decision per screen) | Wizard: no jammed settings in one page, first page does not help (paraphrased), easy to choose and navigate, one decision per step
 - REQ-002 | RC2 | LIVE-PASS 1dc9051e1 (W2-B 21:02, segmentation walk rc7) final-build sample; was: LIVE-PASS c38000ab0 (T1: Where it lives fits 1280x800) final-build sample | Merge Data and Results in one page; What to deliver is the first step; merge App pages with Where it lives
@@ -62,6 +62,7 @@ Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed
 - REQ-293 | HANDOFF | INT2 | (WG, rc7 c38000ab0, N01-U01 session <id>, run <id>) a money-measure vibe rebuild failed: "App not published: Every record has a data quality issue, most often: 
 - REQ-301 | RC2 | INT2 | (Amr) "very confused by missing grant on an app I created, on my data ... I AM THE APP OWNER, AND DATA OWNER, how did I end up not having permission!!"
 - REQ-316 | RC2 | LIVE-PASS | (W2-A, rc7 1dc9051e1) REQ-126 root cause: the Use case label box is ticked and usable with no row filter; the label is sent only with a row filter, so the run g
+- REQ-353 | HANDOFF | HANDOFF | (coordinator, W7 live on rc7 ff315d574) grouped build N03-U01 (Grouping: paymentMethod) failed after the preview run with "Grouping: the Grouping is 'a data val
 
 ### Data filters and labels (29)
 
@@ -152,7 +153,7 @@ Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed
 - REQ-311 | RC2 | INT2 | (Amr) "check Request for Access databricks feature if you can invoke it on behalf of the user ... show the dialog telling him Request for permission (if the API
 - REQ-315 | RC2 | INT2 | (W2-J) Request access is hidden on a table refusal because the table owner is an id, not an email destination; catalog and schema owners are email destinations
 
-### Apps, pages and layout (81)
+### Apps, pages and layout (84)
 
 - REQ-008 | HANDOFF | REOPENED (WF2: bulk done merged 22) -> REQ-285 P83 | Work page: row-level and bulk actions (clear my queue, mark all as done)
 - REQ-014 | RC2 | DEV (dev 87546a08; was LOCAL (v15/rc7-A1 fe5acd7d)) | Tour explains everything on the page (actions, side panel, choices); user knows exactly what to do
@@ -235,6 +236,9 @@ Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed
 - REQ-341 | HANDOFF | INT2 | (W3, Agentic App on rc7 fbdb909e1) the Agent page's three "What to do first" cards are identical ("Franchise 3000000 / 2 / New / Act now", same evidence): a dup
 - REQ-342 | HANDOFF | INT2 | (W3) the Agent page input "Ask about this use case, or tell me what to do" did not take typed text; questions only worked from the side panel
 - REQ-343 | HANDOFF | INT2 | (W3) the record panel did not open from the franchise link on an Agent page card
+- REQ-354 | HANDOFF | HANDOFF | (coordinator, W8 live on rehearsal 2c590ad1f) Uninstall all on N02-U01 (session <id>, built under an earlier install) ended TERMINATED SUCCESS, removed the App 
+- REQ-355 | HANDOFF | HANDOFF | (coordinator, W8) after "Try again" on a failed build the card goes straight to "building now" / "MVP RUNNING"; the word "queued" never shows when the run start
+- REQ-356 | HANDOFF | HANDOFF | (coordinator, W8) after a reload, the build progress side panel shows the superseded failed v1 while the card shows the new v2
 
 ### Build runs and Genie agent (35)
 
@@ -314,7 +318,7 @@ Rows to pick up. HANDOFF rows were not in the v1.5.3-rc.2 scope. RC2 rows listed
 - REQ-298 | RC2 | INT2 | (coordinator) notebook is 5,979,808 bytes on int2 eb6c9e708, 20 KB under the 6,000,000 cap; the next lanes can push it over
 - REQ-314 | RC2 | INT2 | (W2-J, rc7 1dc9051e1) Load groups on a denied table: /api/inspire/implement/group-counts returns 500 (the dialog opens, but the route fails)
 
-Hand-off totals: 275 rows (60 HANDOFF, 215 RC2 not DONE).
+Hand-off totals: 279 rows (64 HANDOFF, 215 RC2 not DONE).
 
 ## Ledger
 
@@ -700,7 +704,7 @@ Rows from the working copy, in the order they were recorded. The second block is
 | D-OPTREAD | 11-15 19:50 | (coordinator, for REQ-320) optional metadata reads (column tags, shared registry, removal-plan sharing) degrade with the fallback and a note; only required data reads raise the Permission Required dialog | DECISION |  | coordinator | a refused optional read never blocks the journey; a refused required read always opens the dialog | not in RC2 scope |
 | REQ-321 | 11-15 20:07 | (coordinator) backend suite on int2 0c7bca5b7: 8 failures (Genie Agents off reason, Build card run/kind x2, MVP PlainNote raw error, MVP Summary, repo root layout (D1 docs/scripts/CLAUDE.md), step list stable, white-on-bright contrast); frontend 6afddb9f5: Where results live GRANT fallback | INT2 | a383742cf (R24 r1-r3) | coordinator, bug | 4 suites green on the final head | not in RC2 scope |
 | REQ-322 | 11-15 20:20 | (W3 journey, rehearsal 0c7bca5b7) Build wizard step 1 pre-ticks Genie Agent next to Agentic App without saying why; the person who picked only Agentic App gets a Genie Agent too | LIVE-PASS | 21f71e7f9 (W5 rc7: Genie Agent ticked with the one-line reason) final-build sample; was: LIVE-PASS 8f3320d5e (W4 00:00 rehearsal: real click ticks ca | coordinator (W3 walk), friction | either the Agentic App needs the Genie Agent and the card says so in one line, or it is not pre-ticked | not in RC2 scope |
-| REQ-323 | 11-15 20:20 | (W3) after "All Good, Build it Now" the Build page still reads "No MVP started yet / 0 BUILDING" while the build is queued | INT2 | 300328dfc (F19 fade8269a: queued at the click at 4 submit sites; root cause: the store was written only after the about 70 s submit answer) live pending | coordinator (W3 walk), bug | the Build page shows the new build as queued/building at once after submit | not in RC2 scope |
+| REQ-323 | 11-15 20:20 | (W3) after "All Good, Build it Now" the Build page still reads "No MVP started yet / 0 BUILDING" while the build is queued | LIVE-PASS | ff315d574 (W7 03:31 rc7: "queued" at +10 s and after a reload) final-build sample; was: INT2 300328dfc (F19) | coordinator (W3 walk), bug | the Build page shows the new build as queued/building at once after submit | not in RC2 scope |
 | REQ-324 | 11-15 20:20 | (W3) Review step shows "Checking access…" for up to about 60 s with no progress text before the Build button appears | LIVE-PASS | 21f71e7f9 (W5 rc7: Review wait line names the checks and counts seconds) final-build sample; was: BUILDING F9 | coordinator (W3 walk), friction | the check says what it is checking and how far it is; it is as fast as the checks allow (parallel) | not in RC2 scope |
 | REQ-325 | 11-15 20:20 | (W3) a real mouse click on the Agentic App card did not tick it (a forced click did); possible hit-area bug | LIVE-PASS | 21f71e7f9 (W5 rc7: real clicks tick and untick the Agentic App card) final-build sample; was: LIVE-PASS 8f3320d5e (W4 00:00 rehearsal: real click ticks ca | coordinator (W3 walk), bug | a click anywhere on the card ticks it, at 1440x900 and 1280x800 | not in RC2 scope |
 | REQ-326 | 11-15 20:30 | (W2-A, rc7) an MVP build failed after 42 min when Genie's last build round exited 1 with a transient busy error ("Databricks is busy right now, so wait a minute and try again": 429/503/REQUEST_LIMIT_EXCEEDED/TEMPORARILY_UNAVAILABLE) | INT2 | 479aa9917 (F10 7d811c892) | coordinator (W2-A walk), bug | a transient busy or rate-limit error in any build step (Genie round, SQL, App deploy) is retried with backoff and never fails the build on its own | not in RC2 scope |
@@ -734,3 +738,8 @@ Rows from the working copy, in the order they were recorded. The second block is
 | D-NOAGENT | 11-16 02:27 | (Amr) Agentic App work stops as it is; only the Agent link in the generated App's left nav is hidden; all remaining effort goes to stability of the customer install | DECISION |  | Amr / |  | not in RC2 scope |
 | REQ-351 | 11-16 02:52 | (Amr) "everything going to miss, add it to the ledger, ensure anyone using this to start work that you remind them of the ledger first, I intend to hand over the code to other teams to continue from there, what I want now is 100% stable version, E2E working, including uninstall all, ready to deploy to customer environment tomorrow at 7AM, am going to sleep now so no more questions for me" | BUILDING | (coordinator) | Amr | every miss is a HANDOFF ledger row; the repo CLAUDE.md and README tell any newcomer to read the ledger first; the RC is stable end to end incl. Uninstall all on the final install; no questions to Amr | not in RC2 scope |
 | D-AUTO3 | 11-16 02:52 | (Amr asleep) no questions; recommended option on every choice; REQ-347's remaining 8 v140 pins stay as known test-only failures (the safety check refused the edit, Amr's second command not run), recorded in the release notes | DECISION |  | coordinator / |  | not in RC2 scope |
+| REQ-352 | 11-16 03:55 | (coordinator) frontend suite on final ff315d574: 1192 pass / 28 fail in implement.ui, implementTower, implementMvp, implementTables, implementVibes, implementTrustNow, implementNotDecided, optionalGrantDialog: "timed out waiting for the Try again / retry implement / rebuild implement run" (a74c1a992 had 0 fails); suspect F19 fade8269a trackBuildSubmit in the ImplementPage submit paths | BUILDING | F22 (critical: Rebuild, Try again, Change choices may not submit) | coordinator, bug | the frontend suite is green and every submit path sends its build | not in RC2 scope |
+| REQ-353 | 11-16 04:26 | (coordinator, W7 live on rc7 ff315d574) grouped build N03-U01 (Grouping: paymentMethod) failed after the preview run with "Grouping: the Grouping is 'a data value': paymentMethod has one value in this data, so it makes one group; choose all, the whole data". Two defects: (1) the message still says 'a data value' (REQ-263 class); (2) the wizard showed paymentMethod with 3 groups, but the preview run saw one value (the preview sample or scope loses the other groups), so the build ran 40+ min before refusing. Agentic App work frozen by REQ-350 | HANDOFF |  | coordinator, bug | the wizard never offers a column with one value as Grouping, and no build message contains 'a data value' | HANDOFF |
+| REQ-354 | 11-16 05:00 | (coordinator, W8 live on rehearsal 2c590ad1f) Uninstall all on N02-U01 (session <id>, built under an earlier install) ended TERMINATED SUCCESS, removed the App and set the card to MVP UNINSTALLED, with no InspireAssetError (REQ-339 holds). The per-version build launcher jobs ("Inspire AI - MVP - <use case> - v1..v4", run_type implement) stay, like Discover launcher jobs; they hold the run history. Decide whether Uninstall all, or a separate "Clean up run history" action, deletes them, and say so in the Uninstall dialog | HANDOFF |  | coordinator, feature | the Uninstall dialog names what happens to the build launcher jobs, and the behaviour matches it | HANDOFF |
+| REQ-355 | 11-16 05:00 | (coordinator, W8) after "Try again" on a failed build the card goes straight to "building now" / "MVP RUNNING"; the word "queued" never shows when the run starts within seconds | HANDOFF |  | coordinator, bug | the card shows queued until the run starts, then running | HANDOFF |
+| REQ-356 | 11-16 05:00 | (coordinator, W8) after a reload, the build progress side panel shows the superseded failed v1 while the card shows the new v2 | HANDOFF |  | coordinator, bug | the progress panel follows the latest spec_version after a reload | HANDOFF |
