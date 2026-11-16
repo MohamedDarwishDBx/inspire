@@ -64,7 +64,7 @@ Wizard (frontend and backend)
 - `frontend/src/lib/implementWizard.js:303` `APP_OPTION_DEFAULTS` and `:308` the decisions option definition: add `experience` with its three choices (not a boolean, so its own shape).
 - `frontend/src/lib/implementWizard.js:479` the delivery list: `{ id: 'app', label: 'App', ... }` becomes `label: 'Agentic App'`. Only this label changes. The internal id `app` and the other `App` labels (`implementControl.js:14`, `:191`, `:392`, `:586`, `:791`; `ImplementPage.jsx:77`) stay, because they are asset names used by tests and by the Work page. Amr asked for the delivery step only.
 - `frontend/src/pages/ImplementWizard.jsx:3021-3040`: the "What people can do in the App" radio group. The `replace_edits` radio (`:3037`) is the pattern to copy for the three experience choices.
-- `backend/lib/inspireImplement.js:88` `IMPLEMENT_APP_OPTION_DEFAULTS` and `:1200`: add `experience: 'agentic'` for new builds.
+- `backend/lib/inspireImplement.js:88` `IMPLEMENT_APP_OPTION_DEFAULTS` and `:1200`: new builds default to `experience: 'ui'` (Classic UI, REQ-391); Agentic is an explicit choice.
 
 Notebook
 - `agent/dbx_inspire_ai_agent.ipynb` is 5,910,348 bytes. The limit is 6,000,000. The shell code is embedded by `app_shell/embed.py` (`write`, `check --build`). We do not add code to the notebook by hand.

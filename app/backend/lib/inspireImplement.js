@@ -90,9 +90,9 @@ const IMPLEMENT_OUTPUT_OPTIONS = {
 const IMPLEMENT_APP_LOOK_DEFAULT = { style: 'a', layout: 'sidebar', palette: 'default', theme: 'light' };
 const IMPLEMENT_APP_LOOK_LISTS = { style: 'styles', layout: 'layouts', palette: 'palettes', theme: 'themes' };
 const IMPLEMENT_APP_OPTION_DEFAULTS = { modify: false, replace_edits: false, decisions: true, alerts: false };
-// The experience is a choice, not a switch: the App lands on its Agent page (agentic), its classic pages (ui) or both.
+// The experience is a choice, not a switch: the App lands on its Agent page (agentic), its classic pages (ui) or both. A new build is classic (REQ-391).
 const IMPLEMENT_APP_EXPERIENCES = ['agentic', 'ui', 'both'];
-const IMPLEMENT_APP_EXPERIENCE_DEFAULT = 'agentic';
+const IMPLEMENT_APP_EXPERIENCE_DEFAULT = 'ui';
 // An App built before the experience choice has no key; that App is the classic one.
 const IMPLEMENT_APP_EXPERIENCE_CLASSIC = 'ui';
 const IMPLEMENT_APP_OPTION_KEYS = Object.keys(IMPLEMENT_APP_OPTION_DEFAULTS);
@@ -552,7 +552,7 @@ function validateImplementSpec(input, { shell = null, legacyAccess = '', impact 
   const chosen = {};
   for (const name of IMPLEMENT_OUTPUTS) chosen[name] = flagField(outputs[name], `outputs.${name}`, errors);
   if (!ownKey(spec, 'outputs')) chosen.dashboard = true;
-  // A rebuild keeps the experience the App already has (appExperience, read from its live build); a new build starts agentic.
+  // A rebuild keeps the experience the App already has (appExperience, read from its live build); a new build starts classic.
   const experience = appExperience || (spec.based_on_version != null && spec.based_on_version !== '' ? IMPLEMENT_APP_EXPERIENCE_CLASSIC : IMPLEMENT_APP_EXPERIENCE_DEFAULT);
   const app = appSettings(outputs, chosen.app, shell, errors, legacyAccess, experience);
   const merge = mergeChoices(outputs, chosen, errors);

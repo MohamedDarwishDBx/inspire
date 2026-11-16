@@ -7,14 +7,15 @@ test('the delivery step labels the App "Agentic App" (REQ-209)', () => {
   assert.equal(app.label, 'Agentic App');
 });
 
-test('the experience decision offers Agentic (default), Classic UI and Both, and Agentic is the default', () => {
+test('the experience decision offers Classic UI (default), Agentic and Both, and Classic UI is the default', () => {
   assert.deepEqual(APP_EXPERIENCE_CHOICES.map((c) => c.id), ['agentic', 'ui', 'both']);
-  assert.equal(APP_EXPERIENCE_DEFAULT, 'agentic');
-  assert.equal(APP_EXPERIENCE_CHOICES[0].label, 'Agentic (default)');
+  assert.equal(APP_EXPERIENCE_DEFAULT, 'ui');
+  assert.equal(APP_EXPERIENCE_CHOICES.find((c) => c.id === 'ui').label, 'Classic UI (default)');
+  assert.equal(APP_EXPERIENCE_CHOICES.find((c) => c.id === 'agentic').label, 'Agentic', 'only the default carries the word default');
 });
 
 test('an unknown experience falls back to the default, and a chosen one is kept', () => {
-  assert.equal(experienceOf('bogus'), 'agentic');
+  assert.equal(experienceOf('bogus'), 'ui');
   assert.equal(experienceOf('ui'), 'ui');
 });
 
@@ -25,7 +26,7 @@ test('choosing an experience keeps the string; the other options stay booleans',
   assert.equal(withAppOption(next, 'decisions', false).outputs.app_options.decisions, false);
 });
 
-test('a rebuild pre-selects classic (ui) when the App never chose; a new build pre-selects agentic', () => {
+test('a rebuild pre-selects classic (ui) when the App never chose; a new build pre-selects classic (ui) too', () => {
   assert.equal(experienceDefault({ based_on_version: 3 }), 'ui');
-  assert.equal(experienceDefault({}), 'agentic');
+  assert.equal(experienceDefault({}), 'ui', 'a new build the wizard has not touched starts classic');
 });

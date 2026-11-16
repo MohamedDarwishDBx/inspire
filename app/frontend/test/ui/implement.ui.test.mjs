@@ -148,7 +148,7 @@ test('the wizard opens on Use case with no MVP or notebook choice, Deliver ticks
     assert.equal(spec.outputs.app_name, 'inspire-hub-acme');
     assert.equal(spec.outputs.app_access, 'sp');
     assert.deepEqual(spec.outputs.app_look, { style: 'a', layout: 'sidebar', palette: 'default', theme: 'light' });
-    assert.deepEqual(spec.outputs.app_options, { modify: false, replace_edits: false, decisions: true, alerts: false, experience: 'agentic' });
+    assert.deepEqual(spec.outputs.app_options, { modify: false, replace_edits: false, decisions: true, alerts: false, experience: 'ui' });
     assert.deepEqual(spec.outputs.merge, { app: '', dashboard: '', genie_space: '' });
     assert.deepEqual(spec.outputs.alert_recipients, [OWNER]);
     assert.deepEqual([spec.schedule.enabled, spec.schedule.cron], [true, '0 0 6 ? * MON']);

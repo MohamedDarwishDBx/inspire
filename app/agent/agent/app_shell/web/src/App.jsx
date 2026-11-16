@@ -83,11 +83,11 @@ function useHub(pages, asked) {
   return { hub, error, summaries, load, summarize };
 }
 
-// D-NOAGENT (Amr 2026-11-16 02:27): the Agent link is hidden. The Agent page code stays; flip this to true to show it again.
-// With it off, an agentic App lands on its first normal page and a deep link to #/<page>/agent falls back to the dashboard.
+// D-NOAGENT (Amr 2026-11-16, reaffirmed REQ-392): the Agent page is fully off for every experience: no nav item, no landing,
+// and a deep link to #/<page>/agent falls back to the dashboard. The Agent page code stays; flip this to true to show it again.
 const AGENT_PAGE_SHOWN = false;
-// The Agent page is on for every experience but ui; it opens first, so the briefing is one click from any page.
-const agentOn = (app) => AGENT_PAGE_SHOWN && !!app && app.experience !== 'ui';
+// The Agent page is on for agentic and both (a classic ui App has none) when AGENT_PAGE_SHOWN is set.
+const agentOn = (app) => AGENT_PAGE_SHOWN && (app?.experience === 'agentic' || app?.experience === 'both');
 
 function railOf(app, page) {
   const inbox = inboxOn(app, page);
