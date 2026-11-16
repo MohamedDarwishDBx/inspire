@@ -282,7 +282,7 @@ def test_the_build_refuses_code_that_reads_a_source_table_without_the_helper(age
 def test_every_instruction_tells_genie_to_read_sources_through_the_helper(agent_ns):
     source = agent_source()
     assert "rules = ([GENIE_RUN_CONTROLS_RULE, GENIE_SOURCE_READ_RULE," in source
-    assert "+ implement_source_read_problems(cells, sources))" in source
+    assert "+ implement_source_read_problems(cells, sources) + implement_join_key_problems(cells, joins)" in source
     assert "sources=implement_source_tables(spec, self._genie_involved_tables(use_case))," in source
 
 
