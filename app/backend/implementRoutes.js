@@ -1022,11 +1022,21 @@ function registerImplementRoutes(app, deps) {
         top,
       });
       if (!statement) return res.status(400).json({ error: top ? 'name one group column to list its values' : `name between 1 and ${I.GROUP_COUNT_MAX_COLUMNS} group columns to count` });
-      const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
+      const token = personReadToken(req);
+      const rows = await sqlRows(req.dbHost, token, warehouseId, statement);
       const cap = top || I.GROUP_COUNT_LIMIT;
       const truncated = rows.length > cap;
       const kept = truncated ? rows.slice(0, cap) : rows;
-      res.json({ truncated, groups: kept.map((r) => ({ ...r, records: Number(r.records) || 0 })) });
+      // REQ-380: an empty list says why, from one count under the same filters (only when the list is empty).
+      let reason = '';
+      if (!rows.length) {
+        const column = String((req.body?.columns || [])[0] ?? '').trim();
+        const counted = await sqlRows(req.dbHost, token, warehouseId, I.groupReasonStatement(q(req, 'table'), column, {
+          filters: req.body?.filters || [], window: req.body?.window || {},
+        }));
+        reason = I.groupEmptyReason(counted[0], column);
+      }
+      res.json({ truncated, reason, groups: kept.map((r) => ({ ...r, records: Number(r.records) || 0 })) });
     } catch (err) {
       sendError(res, err);
     }

@@ -212,6 +212,8 @@ function makeApp(overrides = {}, { mount } = {}) {
         const steps = state.steps || [];
         return { rows: since ? steps.filter((s) => Date.parse(s.last_updated) > Date.parse(since.value)) : steps };
       }
+      // REQ-380: the reason an empty group list gets (rows read and rows with a value under the same filters).
+      if (sql.startsWith('SELECT COUNT(*) AS rows_read')) return { rows: [state.groupReasonRow || { rows_read: '1200', with_value: '1200' }] };
       if (sql.includes(' GROUP BY ') && sql.includes(' AS records FROM ')) {
         const grouped = (/CAST\(`([^`]+)` AS STRING\) AS/.exec(sql) || [])[1] || '';
         return { rows: (state.groupCountsByColumn || {})[grouped] || state.groupCounts || [] };
