@@ -231,9 +231,26 @@ function savePendingBuilds() {
   try { sessionStore()?.setItem(PENDING_KEY, JSON.stringify(Object.fromEntries(PENDING_BUILDS))); } catch { /* no storage: the store stays in memory for this page */ }
 }
 
-// version is null until the server answers with the version it queued. Until then no history row can count as landed.
-export function markBuildPending(useCaseId, { name = '', version = null } = {}, now = Date.now()) {
-  PENDING_BUILDS.set(String(useCaseId), { at: now, name: String(name || ''), version: version == null ? null : Number(version) || 0 });
+// F22 / REQ-352: what the use case's row looked like at the click. `baseline` is the row's spec_version when the build was clicked; 0 when history
+// was read and had no row for the use case; null when no history read has happened yet (then only the version rule can clear the entry).
+// version is null until the server answers with the version it queued.
+const SEEN_VERSIONS = new Map();
+let SEEN_READ = false;
+export function baselineVersionOf(useCaseId) {
+  const id = String(useCaseId);
+  if (SEEN_VERSIONS.has(id)) return SEEN_VERSIONS.get(id);
+  return SEEN_READ ? 0 : null;
+}
+
+export function markBuildPending(useCaseId, { name = '', version = null, baseline = null } = {}, now = Date.now()) {
+  const id = String(useCaseId);
+  const prev = PENDING_BUILDS.get(id);
+  PENDING_BUILDS.set(id, {
+    at: now,
+    name: String(name || ''),
+    version: version == null ? null : Number(version) || 0,
+    baseline: baseline ?? prev?.baseline ?? null,
+  });
   savePendingBuilds();
   noteBuildStarted(useCaseId, now);
 }
@@ -248,16 +265,31 @@ export function forgetBuildPending(useCaseId) {
 export async function trackBuildSubmit(spec, send, onQueued = null, now = Date.now()) {
   const id = String(spec?.use_case_id ?? '').trim();
   const name = spec?.use_case_name;
-  if (id) markBuildPending(id, { name, version: null }, now);
+  if (id) markBuildPending(id, { name, version: null, baseline: baselineVersionOf(id) }, now);
   onQueued?.();
   try {
     const data = await send();
-    if (data?.use_case_id) markBuildPending(data.use_case_id, { name, version: data.spec_version }, now);
+    // The answer may omit use_case_id or spec_version. The use case is then the one submitted, and the baseline rule clears the entry.
+    const answered = String(data?.use_case_id ?? '').trim() || id;
+    if (answered) markBuildPending(answered, { name, version: data?.spec_version ?? null, baseline: baselineVersionOf(answered) }, now);
     return data;
   } catch (e) {
     if (id) forgetBuildPending(id);
     throw e;
   }
+}
+
+// REQ-352: the run for a use case that started at or after the click, or a version above the baseline, is the build the person queued.
+function runStartedSince(row, at) {
+  const started = Date.parse(row?.created_at || '');
+  return Number.isFinite(started) && started >= at;
+}
+
+function landed(row, entry) {
+  if (!row) return false;
+  if (runStartedSince(row, entry.at)) return true;
+  if (entry.baseline != null && Number(row.spec_version) > entry.baseline) return true;
+  return entry.version != null && Number(row.spec_version) >= entry.version;
 }
 
 export function withPendingBuilds(latest, now = Date.now()) {
@@ -266,10 +298,12 @@ export function withPendingBuilds(latest, now = Date.now()) {
   const overlay = new Map();
   const placeholders = [];
   let changed = false;
+  for (const row of rows) if (row?.use_case_id != null) SEEN_VERSIONS.set(String(row.use_case_id), Number(row.spec_version) || 0);
+  // An empty list is also the mount-time placeholder read, so only a list with rows counts as a history read.
+  if (rows.length) SEEN_READ = true;
   for (const [id, entry] of [...PENDING_BUILDS]) {
     const row = byId.get(id);
-    const landed = Boolean(row) && entry.version != null && Number(row.spec_version) >= entry.version;
-    if (landed || now - entry.at > PENDING_BUILD_TTL_MS) { PENDING_BUILDS.delete(id); changed = true; continue; }
+    if (landed(row, entry) || now - entry.at > PENDING_BUILD_TTL_MS) { PENDING_BUILDS.delete(id); changed = true; continue; }
     // A row from an older version still reads as the build in progress until the new version lands.
     if (row) overlay.set(id, { ...row, status: 'queued', pending: true });
     else placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, pending: true });

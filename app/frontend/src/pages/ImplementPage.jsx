@@ -1077,7 +1077,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     setError('');
     setNotice('');
     try {
-      const data = await trackBuildSubmit(body.spec, () => apiPostJson(path, body), showQueuedBuild);
+      const data = await trackBuildSubmit(body.spec, () => apiPostJson(path, body), onBuildQueued);
       onBuildQueued?.();
       setNotice([resultTableMoveNote(data?.summary), ...(Array.isArray(data?.warnings) ? data.warnings : [])].filter(Boolean).join(' '));
       await loadStatus();
