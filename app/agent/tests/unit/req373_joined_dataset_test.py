@@ -50,9 +50,9 @@ class _FakeDeep:
         self.reads.append(("joined_guard", label))
         return self.counts[0]["a"], self.counts[0]["j"]
 
-    def profile_table(self, table_sql, table_label, columns, column_tags=None):
-        self.profiled.append((table_sql, table_label, columns, column_tags))
-        return {"profile_of": table_label}
+    def profile_table(self, table_sql, table_label, columns, column_tags=None, known_rows=None):
+        self.profiled.append((table_sql, table_label, columns, column_tags, known_rows))
+        return {"rows": known_rows, "sampled": False, "columns": {name: {"null_share": 0.0} for name, _dtype in columns}}
 
 
 def _inst(ns):
@@ -141,8 +141,12 @@ def test_a_group_that_fits_is_joined_and_profiled_once_and_its_members_share_the
     assert covered == {CHILD, PARENT}, "the tables in the group are covered; the table outside it is not"
     assert len(deep.profiled) == 1, "the group is profiled once, not once per table"
     assert deep.profiled[0][0].startswith("(SELECT ") and deep.profiled[0][0].endswith(") AS joined_dataset")
-    shared = evidence["profiles"]["main.sales.orders"]
-    assert shared is evidence["profiles"]["main.sales.customers"], "the members share one profile"
+    orders, customers = evidence["profiles"]["main.sales.orders"], evidence["profiles"]["main.sales.customers"]
+    assert set(orders["columns"]) == {"order_id", "customer_id"}, "each member keeps its own columns, under their real names"
+    assert set(customers["columns"]) == {"customer_id", "region_note"}
+    assert orders["via_join"] == customers["via_join"] == "main.sales.customers + main.sales.orders"
+    assert orders["rows"] == customers["rows"] == 120, "the members carry the join's row count"
+    assert deep.profiled[0][4] == 120, "the join's row count from the guard is passed on, not counted a second time"
     assert "main.sales.returns" not in evidence["profiles"]
     assert evidence["joined_datasets"][0]["status"] == "joined"
     assert inst.logger.matching("JOINED-DATASET FIRED")
@@ -195,3 +199,74 @@ def test_an_oversize_group_is_split_before_packing_so_no_batch_exceeds_the_cap(a
     weights = {("main", "sales", i.table): i.memory_weight for i in infos}
     assert all(sum(weights[t] for t in batch) <= 10 for batch in batches)
     assert log.matching("JOINED-GROUP SPLIT FIRED")
+
+
+def _loop_rows():
+    return [("main", "sales", "orders", "order_id", "BIGINT", ""), ("main", "sales", "orders", "customer_id", "BIGINT", ""),
+            ("main", "sales", "customers", "customer_id", "BIGINT", ""), ("main", "sales", "customers", "region_note", "STRING", ""),
+            ("main", "sales", "returns", "return_id", "BIGINT", "")]
+
+
+class _LoopDeep(_FakeDeep):
+    max_tables = 10
+    max_joins = 5
+    pii_excluded = ()
+    sample_rows = 10
+
+    def summary(self):
+        return {"tables_read": [], "tables_read_count": 0, "statements": 0}
+
+
+def _whole_loop(ns, monkeypatch, joins=True):
+    monkeypatch.setitem(ns, "collect_metric_views", lambda spark, schemas, logger: [])
+    monkeypatch.setitem(ns, "collect_usage_signals", lambda spark, fqns, logger, days: {})
+    deep = _LoopDeep(anchor_rows=100, joined_rows=120)
+    monkeypatch.setitem(ns, "DeepEvidence", lambda *args, **kwargs: deep)
+    inst = _inst(ns)
+    inst.spark = None
+    inst.data_loader = _loader(ns, [_join(CHILD, "customer_id", PARENT, "customer_id")] if joins else [])
+    inst.discovery_type = None
+    inst._implement_builder = lambda: None
+    inst._implement_builder_label = lambda: ""
+    inst._plan_progress_batches = lambda *args: None
+    inst._evidence_progress = lambda *args: None
+    inst._evidence_join_candidates = lambda tables: []
+    return inst, deep
+
+
+def test_the_whole_discovery_loop_profiles_a_group_once_and_names_it_once_in_the_evidence(agent_ns, monkeypatch):
+    ns = agent_ns
+    inst, deep = _whole_loop(ns, monkeypatch)
+    evidence = inst._collect_discovery_evidence(_loop_rows())
+    labels = [label for _sql, label, _cols, _tags, _rows in deep.profiled]
+    assert sorted(labels) == ["main.sales.customers + main.sales.orders", "main.sales.returns"], \
+        "the group is one profile read; the table in no group is profiled on its own; no member is profiled again"
+    record = evidence["joined_datasets"][0]
+    assert record["status"] == "joined" and record["sql"].startswith("SELECT ") and " LEFT JOIN " in record["sql"]
+    assert evidence["profiles"]["main.sales.orders"]["via_join"] == record["label"]
+    assert "main.sales.returns" in evidence["profiles"] and "via_join" not in evidence["profiles"]["main.sales.returns"]
+
+
+def test_the_evidence_line_names_a_group_once_and_names_each_column_by_its_table(agent_ns, monkeypatch):
+    ns = agent_ns
+    inst, _deep = _whole_loop(ns, monkeypatch)
+    inst.discovery_type = ns["DISCOVERY_AI_ENHANCED"]  # the gate shares profiles only when measures are shared (AI-enhanced)
+    inst.discovery_evidence = inst._collect_discovery_evidence(_loop_rows())
+    inst.discovery_evidence["metric_views"] = []
+    lines, _joins = inst._evidence_lines(["main.sales.orders", "main.sales.customers", "main.sales.returns"])
+    joined = [line for line in lines if "joined dataset" in line]
+    assert len(joined) == 1, lines
+    assert joined[0].startswith("- joined dataset `main.sales.customers + main.sales.orders`")
+    assert not any(line.startswith("- `main.sales.orders`") or line.startswith("- `main.sales.customers`") for line in lines), \
+        "the members get no line of their own"
+    assert any(line.startswith("- `main.sales.returns`") for line in lines)
+
+
+def test_without_person_joins_the_loop_profiles_every_table_as_before(agent_ns, monkeypatch):
+    ns = agent_ns
+    inst, deep = _whole_loop(ns, monkeypatch, joins=False)
+    evidence = inst._collect_discovery_evidence(_loop_rows())
+    assert sorted(label for _s, label, _c, _t, _r in deep.profiled) == [
+        "main.sales.customers", "main.sales.orders", "main.sales.returns"]
+    assert "joined_datasets" not in evidence and all(p.get("via_join") is None for p in evidence["profiles"].values())
+    assert all(known is None for *_rest, known in deep.profiled), "without a join the count is read as before"
