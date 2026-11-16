@@ -1172,6 +1172,24 @@ def explain_entry(value) -> str:
     return explain_cell(value)
 
 
+def population_summary(stake, stats: dict) -> dict:
+    """REQ-400: the deterministic 'Compared to the rest' sentence. Every number comes from the aggregate read, never from the model."""
+    n = int(float(stats.get("n") or 0))
+    if not n:
+        return {"count": 0, "text": ""}
+    if stake is None:
+        return {"count": n, "text": f"Compared to the rest: this record has no value at stake, so it cannot be placed against the {shell_sql.shown_number(n)} records on this list."}
+    x, mean, sd = float(stake), float(stats.get("mean") or 0), float(stats.get("sd") or 0)
+    above, below, flagged = (int(float(stats.get(k) or 0)) for k in ("above", "below", "flagged"))
+    shown = shell_sql.shown_number
+    spread = (f"with a spread (standard deviation) of {shown(sd)}, so this record sits {shown(abs((x - mean) / sd))} sigma "
+              f"{'above' if x >= mean else 'below'} the average (z-score {(x - mean) / sd:+.2f})") if sd > 0 else "with no spread, so no sigma is shown"
+    rank = above + 1
+    higher = f"ranks {shown(rank)} of {shown(n)}, above {shown(round(100 * below / n, 1))}% of them" if n > 1 else "is the only record"
+    return {"count": n, "text": (f"Compared to the rest: this record has {shown(x)} at stake. The {shown(n)} records on this list average "
+                                 f"{shown(mean)}, {spread}. It {higher}. {shown(flagged)} of {shown(n)} records are flagged.")}
+
+
 def record_explain_parts(title: str, context: dict) -> tuple:
     fields, history = explain_fields(context), context.get("history") or []
     if not isinstance(history, list):
@@ -1183,6 +1201,9 @@ def record_explain_parts(title: str, context: dict) -> tuple:
     if action:
         head.append(f"Recommended action: {action}.")
     head += level_lines(context.get("confidence"), context.get("facts"))
+    compared = explain_context_line(context.get("population"))
+    if compared:
+        head.append(compared)
     shown = list(fields.items())[:EXPLAIN_FIELDS]
     describe_fields = lambda n, total: (None if not total else "Its fields:" if n == total else f"Its fields (first {shell_sql.shown_number(n)} of {shell_sql.shown_number(total)}):")
     describe_history = lambda n, total: (None if not total else f"Its history ({shell_sql.plural(total, 'version')}):" if n == total
@@ -2695,6 +2716,8 @@ class Shell:
                 return 200, self.genie_feedback(headers, data)
             if route == ("GET", "records/history"):
                 return 200, self.record_history(headers, query)
+            if route == ("GET", "records/population"):
+                return 200, self.record_population(headers, query)
             if route == ("GET", "records/fields"):
                 return 200, self.record_fields(headers, query.get("page"))
             if method == "POST" and route[1] in WRITE_SOURCES:
@@ -4633,6 +4656,9 @@ class Shell:
         if own is not None and (not isinstance(own, str) or len(own) > ASK_CHARS):
             raise HttpError(400, f"ask a question of at most {shell_sql.shown_number(ASK_CHARS)} characters")
         page = self.page(data.get("page"))
+        if kind == "record" and isinstance(context.get("key"), str) and context.get("key"):
+            ws, _who = self.workspace(headers)
+            context = dict(context, population=self.population_of(ws, page, context["key"])["text"])
         question = explain_question(hub_title(self.settings), page, kind, title, context, question=own or "")
         self.genie_space(page)
         genie_conversation(data.get("conversation_id"))
@@ -4716,6 +4742,29 @@ class Shell:
             raise HttpError(400, "name the record by its record_key, or by its key on the decision list")
         ws, who = self.workspace(headers)
         return self.history_of(ws, who, page, self.change_table(ws, who, page), value, bool(record_key))
+
+    def record_population(self, headers: dict, query: dict) -> dict:
+        page = self.page(query.get("page"))
+        record_key = str(query.get("record_key") or query.get("key") or "")
+        if not record_key or len(record_key) > RECORD_KEY_CHARS:
+            raise HttpError(400, "name the record by its record_key, or by its key on the decision list")
+        ws, who = self.workspace(headers)
+        return self.population_of(ws, page, record_key)
+
+    def population_of(self, ws, page: dict, record_key: str) -> dict:
+        """REQ-400: one read of the App's own results table. Returns {count, text}; text is '' when the App keeps no value at stake."""
+        if not page.get("result_table") or not page.get("records"):
+            return {"count": 0, "text": ""}
+        sql, params = shell_sql.current_query(page["result_table"], [record_key])
+        rows = self.execute(ws, sql, params, 1, delta=True)["rows"]
+        if not rows:
+            raise HttpError(404, "no current record has this key")
+        if RECORD_STAKE not in rows[0]:
+            return {"count": 0, "text": ""}
+        sql, params = shell_sql.population_query(page["result_table"], RECORD_STAKE, (page.get("records") or {}).get("tier") or "",
+                                                 rows[0].get(RECORD_STAKE))
+        stats = self.execute(ws, sql, params, 1, delta=True)["rows"][0]
+        return population_summary(rows[0].get(RECORD_STAKE), stats)
 
     def record_fields(self, headers: dict, ident) -> dict:
         page = self.page(ident)

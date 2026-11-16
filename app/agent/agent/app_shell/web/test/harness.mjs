@@ -245,6 +245,7 @@ export function tracked(overrides = {}) {
     records: lister(ROWS, { actions: true, changes: true, summary: SUMMARY }),
     'records/fields': ({ json }) => { calls.fields += 1; return json(200, { fields: FIELDS, key_field: 'entity_id', actions: true }); },
     'records/history': ({ json }) => { calls.history += 1; return json(200, HISTORY); },
+    'records/population': ({ json }) => json(200, { count: 0, text: '' }),
     'records/act': ({ route, json }) => {
       const body = actBody(route);
       calls.acts.push(body);
@@ -352,6 +353,7 @@ export async function openApp(browser, base, info, { width = 1440, height = 900,
     const json = (status, data) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
     if (path === '__fence') return route.fulfill({ status: 204 });
     if (routes[path]) return routes[path]({ route, json, url, seen });
+    if (path === 'records/population') return json(200, { count: 0, text: '' }); // REQ-400: a use case without a population line
     if (path === 'app') return json(200, info);
     if (path === 'filters') return json(200, FILTERS);
     if (path === 'defaults') return json(200, { range: null, errors: {} });
