@@ -25,6 +25,8 @@ const SHOTS = '/private/tmp/inspire_v15/shots/u2';
 const launchOf = async (page, made) => {
   await idle(page);
   await page.getByRole('button', { name: 'Get Started' }).click();
+  // Get Started on a new form asks whether to save a business profile (REQ-364); these tests run without saving.
+  await page.getByRole('button', { name: 'Run without saving' }).click();
   await until(() => made.launches.length === 1, 'the launch was sent once');
   return made.launches[0].params;
 };

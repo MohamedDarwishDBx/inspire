@@ -266,6 +266,9 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   const requested = useRef(new Set());
   const fired = useRef({});
   const tablesJson = JSON.stringify(tables);
+  // The effect reads the current list through a ref; tablesJson only tells it when the list changed.
+  const tablesNow = useRef(tables);
+  tablesNow.current = tables;
   const rowsOf = (table) => normalizeTableScope(tableScopeOf(scopes, table)).rows;
   const namesOf = (table) => (columnsOf[table]?.columns || []).map((c) => c.column_name);
   const jobs = tables
@@ -275,7 +278,7 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   const jobsJson = JSON.stringify(jobs);
 
   useEffect(() => {
-    JSON.parse(tablesJson).forEach((table) => {
+    tablesNow.current.forEach((table) => {
       const key = `cols:${warehouseId || ''}:${table}`;
       if (requested.current.has(key)) return;
       requested.current.add(key);
