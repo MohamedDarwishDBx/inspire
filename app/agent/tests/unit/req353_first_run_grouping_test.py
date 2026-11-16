@@ -65,3 +65,42 @@ def test_a_launch_count_that_fails_twice_stops_the_run_instead_of_reading_the_fi
                                           spark_session=FakeSpark(responder=broken))
     shown = agent_ns["inspire_error_line"](stopped.value)
     assert "could not be checked for one value in this data" in shown and ONE_VALUE_TEXT not in shown, shown
+
+
+JOIN = {"table": "main.sales.customers", "key": "customer_id", "ref_column": "customer_id"}
+JOINED_RECORDS = pd.DataFrame({"customer_id": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
+
+
+def _joined_first_run(agent_ns, monkeypatch, segments):
+    _restricted_first_run(agent_ns)
+    agent_ns["INSPIRE_RUN"] = {"grouping": {"joins": {"customers.segment": JOIN}}}
+
+    def join(frame, wanted, out=print, spark_session=None, run=None):
+        return frame.assign(segment=segments[: len(frame)])
+
+    monkeypatch.setitem(agent_ns, "inspire_group_joined", join)
+
+
+def _joined_launch(distinct):
+    def answer(statement):
+        if "COUNT(DISTINCT" in statement and "LEFT JOIN" in statement and "customers" in statement:
+            return [{"inspire_values": distinct}]
+        return []
+    return FakeSpark(responder=answer)
+
+
+def test_a_joined_grouping_column_is_counted_in_the_launch_scope_under_a_first_run(agent_ns, monkeypatch):
+    _joined_first_run(agent_ns, monkeypatch, ["gold", "silver", "bronze", "gold"])
+    spark = _joined_launch(3)
+    agent_ns["inspire_group_records"](JOINED_RECORDS.copy(), group_by="customers.segment", out=lambda *_a: None, spark_session=spark)
+    assert agent_ns["INSPIRE_RUN_GROUPING"]["group_by"] == ["segment"], agent_ns["INSPIRE_RUN_GROUPING"]
+    assert any("LEFT JOIN" in s and "customers" in s for s in spark.statements), spark.statements
+
+
+def test_a_joined_grouping_with_one_value_in_the_launch_scope_is_still_refused(agent_ns, monkeypatch):
+    _joined_first_run(agent_ns, monkeypatch, ["gold"] * 4)
+    with pytest.raises(agent_ns["InspireRunStop"]) as stopped:
+        agent_ns["inspire_group_records"](JOINED_RECORDS.copy(), group_by="customers.segment", out=lambda *_a: None,
+                                          spark_session=_joined_launch(1))
+    shown = agent_ns["inspire_error_line"](stopped.value)
+    assert "segment has one value in this data, so it makes one group" in shown and PLACEHOLDER not in shown, shown
