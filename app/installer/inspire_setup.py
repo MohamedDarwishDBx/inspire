@@ -177,9 +177,18 @@ def _place_data_picker(choices):
     return True
 
 
+def _pick_tokens(value):
+    return [token.strip() for token in str(value or "").split(",") if token.strip()]
+
+
+def data_pick_is_all(value):
+    """True when the data-catalog pick holds the All token: the App then reads every catalog, including ones created later (REQ-359)."""
+    return DATA_ALL in _pick_tokens(value)
+
+
 def resolve_data_catalogs(value, choices):
     """The catalogs picked in the multi-select, in the order picked, or (None, why) when a name is not offered (REQ-132)."""
-    tokens = [token.strip() for token in str(value or "").split(",") if token.strip()]
+    tokens = _pick_tokens(value)
     if DATA_ALL in tokens:
         return list(choices), None
     names = list(dict.fromkeys(tokens))
@@ -204,7 +213,7 @@ def ensure_parameter_widgets(warehouses, catalogs, own_catalogs, data_choices):
     data, data_problem = (None, f"Pick the catalogs the Inspire App may read in {W_DATA}.") if picked is None else resolve_data_catalogs(picked, data_choices)
     print("Notebook parameters are ready above: pick a value from each list or type it.")
     return {"warehouse": warehouse, "catalog": catalog, "warehouse_problem": warehouse_problem, "catalog_problem": catalog_problem,
-            "data": data, "data_problem": data_problem, "replaced": not all(placed) or created}
+            "data": data, "data_problem": data_problem, "data_all": data_pick_is_all(picked), "replaced": not all(placed) or created}
 
 
 def inspire_schema_setting(value):
@@ -267,6 +276,18 @@ def assets_build_id(files) -> str:
 def assets_root_for(version_root, build) -> str:
     """The one folder a build's assets live in: <assets parent>/<version>/<build id>, with version_root the first two parts."""
     return f"{version_root}/{build}"
+
+
+def installer_data_catalog_env(data_catalogs, all_picked=False):
+    """INSPIRE_DATA_CATALOGS: the catalogs the installer picked for the App to read, as a JSON list in pick order (REQ-359).
+
+    No line when nothing was picked or when the All token was picked, so the App shows every catalog the person can see, including
+    ones created after the install.
+    """
+    if all_picked:
+        return {}
+    names = [str(name) for name in (data_catalogs or []) if str(name).strip()]
+    return {"INSPIRE_DATA_CATALOGS": json.dumps(names)} if names else {}
 
 
 def write_app_yaml_deploy(path, inspire_db, warehouse_id, notebook_path, sp_resource_name, assets_path=None, test_tag=None, extra_env=None):
@@ -778,6 +799,7 @@ def build_runtime_context(env):
 
     pickers = ensure_parameter_widgets(all_warehouses, available_catalogs, own_catalogs, data_catalog_choices(typed_catalogs))
     picked_wh, picked_cat, picked_data = pickers["warehouse"], pickers["catalog"], pickers["data"]
+    picked_data_all = pickers["data_all"]
     missing_messages = []
     if picked_data is None:
         missing_messages.append(pickers["data_problem"])
@@ -899,6 +921,7 @@ def build_runtime_context(env):
         "APP_FOLDER": folders["APP_FOLDER"],
         "BUNDLE_ROOT": f"{folders['APPS_PARENT']}/{app_name}",
         "DATA_CATALOGS": picked_data or [],
+        "DATA_ALL_PICKED": picked_data_all,
         "NEW_APPS_CATALOG_ACCESS": _new_apps_setting(env.get("new_apps_catalog_access", NEW_APPS_ACCOUNT_USERS)),
         "ASSETS_TAR": assets_tar,
         "TEST_TAG": str(settings.get("test_tag") or "").strip(),
@@ -1214,8 +1237,9 @@ def step_create_app_and_find_sp(ctx):
 
     app_yaml_path = f"{source_folder}/app.yaml"
     release_env = {"INSPIRE_RELEASE_TAG": ctx["RELEASE_TAG"]} if ctx.get("RELEASE_TAG") else {}
+    data_env = installer_data_catalog_env(ctx.get("DATA_CATALOGS"), ctx.get("DATA_ALL_PICKED", False))
     wanted_yaml = write_app_yaml_deploy(app_yaml_path, inspire_db, warehouse_id, notebook_path, sp_name, ctx.get("ASSETS_PATH"),
-                                        ctx.get("TEST_TAG"), {**(ctx.get("APP_EXTRA_ENV") or {}), **release_env} or None)
+                                        ctx.get("TEST_TAG"), {**(ctx.get("APP_EXTRA_ENV") or {}), **release_env, **data_env} or None)
     print("app.yaml: ✅")
 
     app_url = ""

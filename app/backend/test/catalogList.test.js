@@ -30,7 +30,7 @@ test('the catalog pickers list system and hive_metastore with every other catalo
   const picker = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'src', 'components', 'CatalogPicker.jsx'), 'utf8');
   const launch = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'src', 'pages', 'LaunchPage.jsx'), 'utf8');
   assert.match(picker, /const names = catalogNames\(catalogs\);/);
-  assert.match(launch, /\.\.\.catalogs\.filter\(\(c\) => !catalogSearch/);
+  assert.match(launch, /\.\.\.shownCatalogs\.filter\(\(c\) => !catalogSearch/);
 });
 
 test('the picked scope keeps every branch at its most specific level, so a whole catalog or schema next to a narrower pick is never dropped (must-exclude)', async () => {
@@ -45,4 +45,17 @@ test('the picked scope keeps every branch at its most specific level, so a whole
   assert.deepEqual(C.pickedScope(['ma', 'main'], ['main.s'], []).entries, ['ma', 'main.s'], 'a catalog whose name starts another is not taken as its parent');
   assert.deepEqual(C.pickedScope([], [], []).entries, []);
   assert.equal(C.scopeSummary(C.pickedScope([], [], [])), '');
+});
+
+test('the Catalogs list shows only the installer catalogs until Load all, and still shows a catalog a draft or profile already names (REQ-359)', async () => {
+  const C = await lib();
+  const all = ['finance', 'hr', 'main', 'sales'];
+  assert.deepEqual(C.listedCatalogs(all, ['sales', 'hr'], [], false), ['hr', 'sales'], 'the install list only, in the list order (must-exclude: main and finance are hidden)');
+  assert.deepEqual(C.listedCatalogs(all, ['sales', 'hr'], [], true), all, 'Load all shows every catalog');
+  for (const installer of [undefined, null, []]) {
+    assert.deepEqual(C.listedCatalogs(all, installer, [], false), all, `no install list (${JSON.stringify(installer)}) shows every catalog as before`);
+  }
+  assert.deepEqual(C.listedCatalogs(all, ['sales'], ['finance'], false), ['finance', 'sales'], 'a picked catalog outside the install list still shows');
+  assert.deepEqual(C.listedCatalogs(all, ['sales'], ['main.s', 'hr.people.t1'], false), ['hr', 'main', 'sales'], 'a picked schema or table names its catalog, which still shows');
+  assert.deepEqual(C.listedCatalogs(all, ['sales'], ['main'], false), ['main', 'sales'], 'a pick only keeps the catalog it names (must-exclude: hr and finance stay hidden)');
 });

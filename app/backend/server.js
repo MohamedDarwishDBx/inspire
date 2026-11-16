@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { APP_DIR, BACKEND_DIR } = require('./lib/appPaths');
 const { redactConsole, redactCrashes } = require('./lib/redact');
+const { installerDataCatalogs } = require('./lib/installerDataCatalogs');
 
 redactConsole();
 // Load backend/.env then app/ then repo root — later files only fill keys not already set.
@@ -123,6 +124,8 @@ const DEFAULT_NOTEBOOK_PATH = process.env.NOTEBOOK_PATH || '';
 // Installer-injected defaults — pre-fill the Setup Wizard so users skip manual config.
 const DEFAULT_WAREHOUSE_ID = process.env.INSPIRE_WAREHOUSE_ID || '';
 const DEFAULT_INSPIRE_DB = process.env.INSPIRE_DATABASE || '';
+// The catalogs the installer picked for the App to read (REQ-359). Null means every catalog the person can see.
+const INSTALLER_DATA_CATALOGS = installerDataCatalogs(process.env.INSPIRE_DATA_CATALOGS);
 
 // Static token (legacy / manual config) — trim so pasted PATs with trailing newlines are accepted
 let SERVICE_TOKEN = (process.env.DATABRICKS_TOKEN || '').trim();
@@ -1633,6 +1636,7 @@ app.get('/api/defaults', (req, res) => {
     databricksHost: fullHost || '',
     warehouseId: DEFAULT_WAREHOUSE_ID,
     inspireDatabase: DEFAULT_INSPIRE_DB,
+    installerDataCatalogs: INSTALLER_DATA_CATALOGS,
     notebookPath: DEFAULT_NOTEBOOK_PATH,
     isDatabricksApp:
       !!DATABRICKS_HOST && platformAuth && process.env.NODE_ENV === 'production',

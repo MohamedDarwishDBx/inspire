@@ -62,7 +62,7 @@ import { responseError } from '../lib/apiClient';
 import { placeholderWords } from '../lib/placeholderWords';
 import { inspireScoreFromUc, nameOfUseCase } from '../lib/useCaseFields';
 import { counted } from '../lib/plural';
-import { catalogListNote, pickedScope, scopeSummary, typedCatalog, wholeCatalogsAfterChildRemoval } from '../lib/catalogList';
+import { catalogListNote, listedCatalogs, pickedScope, scopeSummary, typedCatalog, wholeCatalogsAfterChildRemoval } from '../lib/catalogList';
 import { SAMPLE_CATALOG, applySampleCopies, isSampleEntry, samplesTarget, scopesAfterSampleCopies, validCopyTarget } from '../lib/samplesCopy';
 import { DISCOVERY_AI_ENHANCED, DISCOVERY_MODE_TEXT, DISCOVERY_BADGE, DISCOVERY_PRIVACY, DISCOVERY_RECOMMENDED, DISCOVERY_STANDARD, discoveryTypeOf } from '../lib/discoveryType';
 import { raisePermissions } from '../lib/permissionBus';
@@ -225,8 +225,10 @@ function restoredLabel(value) {
   return { on, text };
 }
 
-export default function LaunchPage({ settings, update, onLaunched, onOpenResults, onNoData }) {
+export default function LaunchPage({ settings, update, onLaunched, onOpenResults }) {
   const { databricksHost, token, notebookPath, warehouseId, inspireDatabase, serverEnvHasPat } = settings;
+  // The catalogs the installer picked for the App to read. Empty when the install gave none, so every catalog is listed (REQ-359).
+  const installerCatalogs = Array.isArray(settings.installerDataCatalogs) ? settings.installerDataCatalogs : [];
   const canUseUcApi = !!(databricksHost && (token || serverEnvHasPat));
 
   const draftKey = useMemo(() => startDraftKey({ host: databricksHost }), [databricksHost]);
@@ -248,6 +250,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
+  const [showAllCatalogs, setShowAllCatalogs] = useState(false);
   const [schemaSearch, setSchemaSearch] = useState('');
 
   // ── Table state ──
@@ -848,8 +851,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
 
   // Derived
   const typedCatalogItem = typedCatalog(catalogs, catalogsCut, catalogSearch);
+  const shownCatalogs = listedCatalogs(catalogs, installerCatalogs, [...selectedCatalogs, ...selectedSchemas, ...selectedTables], showAllCatalogs);
   const filteredCatalogs = [
-    ...catalogs.filter((c) => !catalogSearch || c.name.toLowerCase().includes(catalogSearch.toLowerCase())),
+    ...shownCatalogs.filter((c) => !catalogSearch || c.name.toLowerCase().includes(catalogSearch.toLowerCase())),
     ...(typedCatalogItem ? [typedCatalogItem] : []),
   ];
   const filteredSchemas = schemas.filter(
@@ -1271,16 +1275,6 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 {catalogBrowseGuidance && <UcPermissionErrorHelp guidance={catalogBrowseGuidance} />}
                 {pickerReadGuidance && <UcPermissionErrorHelp guidance={pickerReadGuidance} />}
                 {catalogsWhy && <PlainMessage text={catalogsWhy} role="note" data-uc-why="" className="mb-3 text-xs text-text-secondary" />}
-                {onNoData && (
-                  <button
-                    type="button"
-                    onClick={onNoData}
-                    className="mb-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-border text-sm text-text-secondary hover:border-db-red/40 hover:text-db-red-fg hover:bg-db-red-50/30 transition-smooth"
-                  >
-                    <Sparkles size={16} />
-                    I don&apos;t have data. Generate demo tables instead
-                  </button>
-                )}
                 {/* Selected Metadata Basket — always visible */}
                 {scope.entries.length === 0 && (
                   <p data-scope-empty="" className="mb-3 text-[11px] text-text-tertiary">Nothing picked yet</p>
@@ -1356,6 +1350,19 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                         <span className="text-[11px] font-semibold text-text-secondary">Catalogs</span>
                         {loadingCatalogs && <Loader2 size={10} className="animate-spin text-text-tertiary" />}
                       </div>
+                      {installerCatalogs.length > 0 && (
+                        <div className="mb-2 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            data-load-all-catalogs=""
+                            onClick={() => setShowAllCatalogs(!showAllCatalogs)}
+                            className="text-[11px] font-semibold text-db-red-fg hover:underline"
+                          >
+                            {showAllCatalogs ? 'Installer catalogs only' : 'Load all catalogs'}
+                          </button>
+                          {!showAllCatalogs && <span className="text-[10px] text-text-tertiary">Showing the catalogs picked at install.</span>}
+                        </div>
+                      )}
                       <PickerList
                         items={filteredCatalogs}
                         selected={selectedCatalogs}
@@ -1383,7 +1390,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                                 ? 'Loading...'
                                 : catalogBrowseError || catalogsWhy
                                   ? 'Inspire could not list the catalogs. The message above says why.'
-                                  : 'No catalogs found'
+                                  : shownCatalogs.length === 0 && catalogs.length > 0
+                                    ? 'None of the catalogs picked at install is listed. Use Load all catalogs.'
+                                    : 'No catalogs found'
                         }
                       />
                       {catalogsCut && (
