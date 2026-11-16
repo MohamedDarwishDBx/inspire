@@ -28,7 +28,7 @@ def test_choices_default_to_the_c1_look_with_decisions_on_and_every_other_option
     choices, errors = agent_ns["implement_app_choices"]({"app_access": "sp"})
     assert errors == []
     assert choices == {"app_access": "sp", "app_look": {"style": "a", "layout": "sidebar", "palette": "default", "theme": "light"},
-                       "app_options": {"modify": False, "replace_edits": False, "decisions": True, "alerts": False},
+                       "app_options": {"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"},
                        "app_backend": "delta", "app_charts": [], "app_pages": {"runs": True, "impact": True}, "app_placement": ""}
     choices, errors = agent_ns["implement_app_choices"]({"app_access": " SP ", "app_look": {"palette": "Berry", "theme": None, "style": ""},
                                                           "app_options": {"modify": True}})
@@ -45,10 +45,10 @@ def test_a_per_user_app_records_decisions_when_asked_but_never_sends_alerts(agen
     asked = {"modify": True, "replace_edits": True, "decisions": True, "alerts": True}
     choices, errors = agent_ns["implement_app_choices"]({"app_access": "user", "app_look": USER_LOOK, "app_options": asked})
     assert errors == []
-    assert choices["app_options"] == {"modify": True, "replace_edits": True, "decisions": True, "alerts": False}
+    assert choices["app_options"] == {"modify": True, "replace_edits": True, "decisions": True, "alerts": False, "experience": "agentic"}
     assert choices["app_look"] == USER_LOOK
     shared, _ = agent_ns["implement_app_choices"]({"app_access": "sp", "app_options": asked})
-    assert shared["app_options"] == asked, "a shared-view App keeps every option the user ticked"
+    assert shared["app_options"] == dict(asked, experience="agentic"), "a shared-view App keeps every option the user ticked"
 
 
 @pytest.mark.parametrize("outputs,needle", [
@@ -84,7 +84,7 @@ def test_the_spec_carries_the_app_choices_and_refuses_bad_ones_before_anything_b
     spec, errors = _spec(agent_ns, outputs=_outputs(app_access="user", app_look=USER_LOOK, app_options={"modify": True, "decisions": True}))
     assert errors == []
     assert spec["outputs"]["app_access"] == "user" and spec["outputs"]["app_look"] == USER_LOOK
-    assert spec["outputs"]["app_options"] == {"modify": True, "replace_edits": False, "decisions": True, "alerts": False}
+    assert spec["outputs"]["app_options"] == {"modify": True, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}
     no_access = _spec(agent_ns, outputs={k: v for k, v in VALID["outputs"].items() if k != "app_access"})[1]
     assert any("choose who the App reads its data as" in e for e in no_access), no_access
     bad = _spec(agent_ns, outputs=_outputs(app_look={"palette": "rainbow"}))[1]
@@ -103,7 +103,7 @@ def test_settings_follow_the_spec_and_pass_the_shell_check(agent_ns, tmp_path):
     outputs = {"app_access": "user", "app_look": USER_LOOK, "app_options": {"decisions": True, "modify": True}}
     mine = settings(core.SETTINGS_VERSION, "N01-U01 Predict churn", [page["id"]], None, "off", "t", outputs)
     assert (mine["style"], mine["layout"], mine["palette"], mine["theme"], mine["auth"]) == ("c", "tabs", "ocean", "dark", "user")
-    assert mine["options"] == {"modify": True, "replace_edits": False, "decisions": True, "alerts": False}
+    assert mine["options"] == {"modify": True, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}
     assert core.settings_problems(mine, [page]) == []
     shared = settings(core.SETTINGS_VERSION, "N01-U01 Predict churn", [page["id"]], None, "off", "t",
                       {"app_access": "sp", "app_options": {"modify": True, "decisions": True}})
@@ -123,7 +123,7 @@ def test_the_built_app_writes_the_wizard_choices_into_its_settings(agent_ns, tmp
     assert seen["errors"] == []
     settings = json.loads(seen["deployed"][0][1]["inspire_app.json"])
     assert (settings["auth"], settings["style"], settings["layout"], settings["palette"], settings["theme"]) == ("user", "c", "tabs", "ocean", "dark")
-    assert settings["options"] == {"modify": True, "replace_edits": True, "decisions": True, "alerts": False}
+    assert settings["options"] == {"modify": True, "replace_edits": True, "decisions": True, "alerts": False, "experience": "agentic"}
 
 
 def test_a_look_or_access_change_rebuilds_the_app_and_nothing_else(agent_ns):
@@ -230,7 +230,7 @@ def test_an_existing_app_switched_back_to_a_shared_view_drops_its_scopes(agent_n
     left = dict(existing)
     inst, context, calls, _imported = _deploy_inspire(agent_ns, [existing, left] + DEPLOYED)
     fields = inst._implement_deploy_app(context, "churn-desk", SHELL_FILES, READS, poll_s=0)
-    assert fields["_warnings"][0].startswith("App: churn-desk reads data as its service principal now, but Inspire could not remove the "
+    assert fields["_warnings"][0].startswith("Agentic App: churn-desk reads data as its service principal now, but Inspire could not remove the "
                                              "user authorization scopes genie, sql:restricted-query it held before")
 
 
@@ -255,7 +255,7 @@ def test_scopes_the_workspace_will_not_give_block_a_per_user_app(agent_ns, sdk_s
     undone = [m for lvl, m in inst.logger.records if m.startswith("[IMPLEMENT-UNDO]")]
     if undo:
         assert calls[-1][2]["user_api_scopes"] == []
-        assert undone == ["[IMPLEMENT-UNDO] N01-U01: the Agentic App build failed after Inspire had saved changes, so Inspire gave the Agentic App "
+        assert undone == ["[IMPLEMENT-UNDO] N01-U01: the Agentic App build failed after Inspire had saved changes, so Inspire gave the App "
                           f"churn-desk back its user authorization scopes (none): {str(raised.value)[:300]}"]
     else:
         assert undone == [], "a refused scope change leaves nothing to undo"
@@ -267,7 +267,7 @@ def test_scopes_that_cannot_be_given_back_stop_the_build_and_say_so(agent_ns, sd
     inst, context, calls, imported = _deploy_inspire(agent_ns, [existing, held, held, RuntimeError("PERMISSION_DENIED: no CAN MANAGE")])
     with pytest.raises(agent_ns["ImplementBlocked"]) as raised:
         inst._implement_deploy_app(_user_context(agent_ns, context), "churn-desk", SHELL_FILES, READS, poll_s=0)
-    assert str(raised.value).startswith("the Agentic App build failed after Inspire had saved changes (the Agentic App churn-desk shows each person only")
+    assert str(raised.value).startswith("the Agentic App build failed after Inspire had saved changes (the App churn-desk shows each person only")
     assert str(raised.value).endswith("and Inspire could not undo them: the App churn-desk still holds the user authorization scopes "
                                       "genie; before this build it held none: PERMISSION_DENIED: no CAN MANAGE")
     assert imported == [] and not any(c[1].endswith("/deployments") for c in calls)
@@ -358,7 +358,7 @@ def test_a_new_app_that_fails_while_it_starts_is_stopped_once_its_compute_settle
     assert "could not undo" not in str(raised.value)
     assert fake.calls[-1][:3] == ("POST", "/api/2.0/apps/churn-desk/stop", "ACTIVE") and fake.state() == "STOPPED"
     assert [m for _lvl, m in inst.logger.records if m.startswith("[IMPLEMENT-UNDO]")][0].startswith(
-        "[IMPLEMENT-UNDO] N01-U01: the App build failed after Inspire had saved changes, so Inspire stopped the new App churn-desk")
+        "[IMPLEMENT-UNDO] N01-U01: the Agentic App build failed after Inspire had saved changes, so Inspire stopped the new App churn-desk")
 
 
 def test_an_app_that_stays_starting_past_the_wait_blocks_with_the_reason_and_no_scope_advice(agent_ns, sdk_stub):
