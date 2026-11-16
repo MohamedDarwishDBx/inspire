@@ -18,7 +18,7 @@ const { specVibeAsks } = require('../frontend/src/lib/vibeLimits.js');
 const { chosenTableScopes } = require('../frontend/src/lib/tableScope.js');
 const { HOSTED_NO_TOKEN } = require('./lib/hostedRun');
 const { ownServicePrincipalId } = require('./lib/inspireSpGrants');
-const { inspireJobEnvironmentChange, inspireJobEnvironmentWarning, inspireJobTestTagChange, inspireJobTestTagWarning, parseTableScopeText, runAsPerson, launchPlanFor, withChosenTableScope } = require('./lib/inspireJobParams');
+const { inspireJobEnvironmentChange, inspireJobEnvironmentWarning, inspireJobTestTagChange, inspireJobTestTagWarning, parseTableScopeText, runAsPerson, launchPlanFor, withChosenTableScope, previewScopesOf } = require('./lib/inspireJobParams');
 const R = require('./lib/reviewFigures');
 const A = require('./lib/useCaseAlerts');
 const P = require('./lib/requestPerson');
@@ -1674,7 +1674,7 @@ function registerImplementRoutes(app, deps) {
       return sqlResultToObjects(await executeSql(req.dbHost, token, warehouseOf(req), sql, parameters,
         { rowLimit: 500, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' }));
     };
-    const scopes = await launchScopesOf(req, warehouseId);
+    const scopes = await launchScopesOf(req, warehouseId, spec.data?.table_scope);
     Object.assign(params, await JC.implementCurrencyParams(spec?.money, { runSql, scopes }));
     if (!params['02_inspire_database']) params['02_inspire_database'] = inspire_database;
     if (!sessionParams['01_uc_metadata']) {
@@ -2163,12 +2163,13 @@ function registerImplementRoutes(app, deps) {
   });
 
   // The Data Filters of the session the preview names: the money previews and the profile read their tables through them.
-  async function launchScopesOf(req, warehouseId) {
+  // REQ-389: the Table Scope a wizard preview reads through. The Data step names its choice (asked); with none, the Discover run's scope.
+  async function launchScopesOf(req, warehouseId, asked) {
     const sid = sessionIdOf(req);
     const { catalog, schema } = dbOf(req, splitInspireDatabase);
     const session = await fetchInspireSessionWidgetRow(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid);
     if (!session) throw I.badRequest(`No Inspire session ${sid} is in this Inspire database, so Inspire cannot read its Data Filters.`, 404);
-    return parseTableScopeText(session.table_scope).scopes;
+    return previewScopesOf(asked, parseTableScopeText(session.table_scope).scopes);
   }
 
   function builtData(history) {
@@ -2216,7 +2217,7 @@ function registerImplementRoutes(app, deps) {
     if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
     try {
       const warehouseId = warehouseOf(req);
-      const scopes = await launchScopesOf(req, warehouseId);
+      const scopes = await launchScopesOf(req, warehouseId, req.body?.table_scope);
       const column = req.body?.rate_column;
       const made = column ? GP.rateColumnSampleSql(req.body?.table, req.body?.currency_column, column, scopes)
         : GP.rateSampleSql(req.body?.rate_table, req.body?.base, scopes);
@@ -2241,7 +2242,7 @@ function registerImplementRoutes(app, deps) {
       const warehouseId = byColumn ? warehouseOf(req) : '';
       let currencies = codes.map((code) => ({ code, records: null }));
       if (byColumn) {
-        const scopes = await launchScopesOf(req, warehouseId);
+        const scopes = await launchScopesOf(req, warehouseId, req.body?.table_scope);
         const made = GP.currencySpreadSql(req.body?.table, req.body?.currency_column, scopes);
         if (!made) throw I.badRequest('Name the use case table and its currency column, and the reporting currency as a three-letter code such as USD.');
         const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.CURRENCY_SPREAD_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
@@ -2261,7 +2262,7 @@ function registerImplementRoutes(app, deps) {
     if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
     try {
       const warehouseId = warehouseOf(req);
-      const scopes = await launchScopesOf(req, warehouseId);
+      const scopes = await launchScopesOf(req, warehouseId, req.body?.table_scope);
       const made = GP.moneyValueSampleSql(req.body?.table, req.body?.value, scopes, req.body?.lost_filter ?? null);
       if (!made) throw I.badRequest('Name the use case table, and the value: a fixed amount, one column, or an equation over its columns, with one currency.');
       const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.MONEY_VALUE_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
@@ -2322,7 +2323,8 @@ function registerImplementRoutes(app, deps) {
         throw I.badRequest(`${String(useCase.use_case ?? '').trim() || 'This use case'} names no main table as catalog.schema.table, so Inspire cannot read it for Data groups.`);
       }
       await refuseTableTypes(req, warehouseId, [table], { unknownType: true });
-      const launchScopes = parseTableScopeText(session?.table_scope).scopes;
+      // REQ-389: the profile reads through the Data step's choice when the wizard names one, else the Discover run's scope.
+      const launchScopes = previewScopesOf(req.body?.table_scope ?? req.query.table_scope, parseTableScopeText(session?.table_scope).scopes);
       const options = (rowLimit) => ({ rowLimit, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s', signal: stop.signal });
       const rows = async (sql, parameters, rowLimit) => sqlResultToObjects(await executeSql(req.dbHost, token, warehouseId, sql, parameters, options(rowLimit)));
       let refusals = [];

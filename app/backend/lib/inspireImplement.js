@@ -2111,6 +2111,14 @@ function previousBuilt(history) {
   return row && row.status !== IMPLEMENT_UNINSTALLED ? row : null;
 }
 
+// REQ-389 (Results list): the Table Scope the latest built version of a use case read, when its build chose one on the Data step.
+// undefined when no build chose a scope, so the caller keeps the Discover run's scope.
+function builtTableScopeOf(history) {
+  const built = previousBuilt(history);
+  const data = built && built.spec_json && built.spec_json.data;
+  return data && data.table_scope && typeof data.table_scope === 'object' ? data.table_scope : undefined;
+}
+
 function withVibePreviousDefault(history, spec) {
   return spec.vibes && !spec.vibe_previous && previousBuilt(history) ? { ...spec, vibe_previous: IMPLEMENT_VIBE_PREVIOUS[0] } : spec;
 }
@@ -4064,6 +4072,7 @@ module.exports = {
   mvpActionProblems,
   withVibePreviousDefault,
   previousBuilt,
+  builtTableScopeOf,
   appExperienceOf,
   IMPLEMENT_OUTPUTS,
   IMPLEMENT_OUTPUT_LABELS,

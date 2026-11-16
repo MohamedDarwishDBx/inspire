@@ -6,12 +6,13 @@ export const PROFILE_READING = `Inspire is reading the table to suggest Data gro
 export const PROFILE_WAITING = 'Reading the table';
 export const noMainTableText = (name) => `${String(name ?? '').trim() || 'This use case'} names no main table as catalog.schema.table, so Inspire cannot read it for Data groups.`;
 
-export function profileKey({ inspireDatabase, sessionId, useCaseId, warehouseId, enabled = true, groupBy = '', table = '' }) {
+// tableScope is the Data step's chosen Table Scope as text ('' when there is none): a change of it is a new profile to read (REQ-389).
+export function profileKey({ inspireDatabase, sessionId, useCaseId, warehouseId, enabled = true, groupBy = '', table = '', tableScope = '' }) {
   const [db, sid, uc, wh, main] = [inspireDatabase, sessionId, useCaseId, warehouseId, table].map((part) => String(part ?? '').trim());
   if (!enabled || !db || !sid || !uc) return '';
   const columns = groupByColumns(groupBy).filter((c) => c.toLowerCase() !== GROUP_ALL);
   return new URLSearchParams({ inspire_database: db, session_id: sid, use_case_id: uc, warehouse_id: wh, ...(main ? { table: main } : {}),
-    ...(columns.length ? { [GROUP_BY]: columns.join(', ') } : {}) }).toString();
+    ...(columns.length ? { [GROUP_BY]: columns.join(', ') } : {}), ...(tableScope ? { table_scope: tableScope } : {}) }).toString();
 }
 
 export function profileBody(key) {
@@ -25,8 +26,8 @@ export function profileState(key, got) {
   return { state: got.status === 404 ? 'none' : 'error', profile: null, error: got.error };
 }
 
-export function useGroupingProfile({ apiPostJson, inspireDatabase, sessionId, useCaseId, warehouseId, enabled = true, groupBy = '', table = '', noMainTable = '' }) {
-  const key = profileKey({ inspireDatabase, sessionId, useCaseId, warehouseId, enabled: enabled && !noMainTable, groupBy, table });
+export function useGroupingProfile({ apiPostJson, inspireDatabase, sessionId, useCaseId, warehouseId, enabled = true, groupBy = '', table = '', noMainTable = '', tableScope = '' }) {
+  const key = profileKey({ inspireDatabase, sessionId, useCaseId, warehouseId, enabled: enabled && !noMainTable, groupBy, table, tableScope });
   const [got, setGot] = useState(null);
   const post = useRef(apiPostJson);
   const pending = useRef({ key: '', promise: null });

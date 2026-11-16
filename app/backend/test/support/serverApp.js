@@ -195,6 +195,18 @@ function answerSql(body) {
     const cols = (state.tableColumns || {})[name] || [];
     return sqlResult(['column_name', 'data_type', 'ordinal_position'], cols.map((c, i) => [c, 'string', String(i + 1)]));
   }
+  // REQ-389: the Results list reads a session's use cases whole, and the Table Scope of each session it lists.
+  if (/^\s*SELECT \* FROM\b/i.test(sql) && sql.includes('__inspire_usecases')) {
+    const asked = String((/WHERE session_id = (\d+)/.exec(sql) || [])[1] || '');
+    const rows = (state.listedUseCases || []).filter((u) => String(u.session_id) === asked);
+    const columns = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+    return sqlResult(columns, rows.map((r) => columns.map((c) => (r[c] == null ? null : String(r[c])))));
+  }
+  if (/^\s*SELECT CAST\(session_id AS STRING\) AS session_id, table_scope FROM\b/.test(sql) && sql.includes('__inspire_session')) {
+    const ids = ((/session_id IN \(([^)]*)\)/.exec(sql) || [])[1] || '').split(',').map((t) => t.trim()).filter(Boolean);
+    return sqlResult(['session_id', 'table_scope'], ids.filter((id) => (state.sessionTableScopes || {})[id] !== undefined)
+      .map((id) => [id, state.sessionTableScopes[id]]));
+  }
   if (/^\s*SELECT session_id,/.test(sql) && sql.includes('__inspire_usecases')) {
     const lacking = (state.usecaseColumns ? USECASE_RULE_COLUMNS.filter((c) => !state.usecaseColumns.includes(c) && new RegExp(`\\b${c}\\b`).test(sql)) : []);
     if (lacking.length) return { statement_id: 's1', status: { state: 'FAILED', error: { message: `[UNRESOLVED_COLUMN] A column with name \`${lacking[0]}\` cannot be resolved.` } } };
