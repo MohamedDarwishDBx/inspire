@@ -105,7 +105,7 @@ import ImplementWizard from './ImplementWizard';
 import { kindFilterLabel, kindFilterOptions, matchesKindFilter } from '../lib/useCaseKind';
 import { MVP_FILTERS, START_MVP_LABEL, implementState, mvpCounts, mvpFilterMatches, notebookRunEnded, notebookStatus, versionActive } from '../lib/implementWizard';
 import { buildUseCaseList } from '../lib/useCaseList';
-import { cardAssetLinks, liveAppRenameStale, renameRestyleSpec } from '../lib/implementControl';
+import { cardAssetLinks, liveAppRenameStale, noteBuildSubmitted, renameRestyleSpec } from '../lib/implementControl';
 import { ARCHIVE_VIEWS, archiveKeyOf, inArchiveView, loadArchiveMap, toggledArchive } from '../lib/useCaseArchive';
 import QualityGateDrops from '../components/QualityGateDrops';
 import { makeApiFetch, makeApiPostJson, requestHeaders, responseError } from '../lib/apiClient';
@@ -354,7 +354,7 @@ export default function ResultsPage({
       const data = await apiFetch(`/api/inspire/implement/history?${q}`);
       const spec = renameRestyleSpec(data.history, id, nameOfUseCase(uc));
       if (!spec) throw new Error('This use case has no built App to update.');
-      await apiPostJson('/api/inspire/implement/submit', { spec });
+      noteBuildSubmitted(await apiPostJson('/api/inspire/implement/submit', { spec }), spec);
       setImplementRefresh((n) => n + 1);
     },
     [apiFetch, apiPostJson, inspireDb, warehouseId, selectedSessionId]

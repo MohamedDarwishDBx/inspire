@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STUDIO_STATE, built } from './implementFixtures.js';
-import { closeBrowser, expandBuild, openUi } from './uiSupport.mjs';
+import { closeBrowser, expandBuild, openUi, sqlStatementsOf } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -71,7 +71,7 @@ function userWorkspace() {
 
 const viewerRowTexts = (page) => page.locator('[data-viewer-row]').allInnerTexts();
 // REQ-300: each grantee has its own statement block, so the statements of every block are read.
-const listed = async (page) => (await page.locator('[data-permission-statements=""]').allInnerTexts()).join('\n').split('\n').map((s) => s.replace(/;$/, '').trim()).filter(Boolean);
+const listed = async (page) => sqlStatementsOf((await page.locator('[data-permission-statements=""]').allTextContents()).join(';'));
 const dialogOpen = (page) => page.locator('[data-permission-dialog=""]').count().then((n) => n > 0);
 
 test('a user-authorization Build lists the viewer the scope view refuses, with its exact SQL, and a repeat check opens nothing new (REQ-150)', async () => {
