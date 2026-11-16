@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { APP_READS_LABEL } from '../../src/lib/implementWizard.js';
 import { STUDIO_STATE, built } from './implementFixtures.js';
-import { BUILD_IT, closeBrowser, closeOnLoadPermission, expandBuild, openUi, toSharedAccess, toSummary } from './uiSupport.mjs';
+import { BUILD_IT, closeBrowser, closeOnLoadPermission, expandBuild, openUi, sqlStatementsOf, toSharedAccess, toSummary } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -87,7 +87,7 @@ test('a build whose App cannot read its data ends as action needed; a person who
     await card.locator('[data-app-reads-primary="copy"]').click();
     const copy = page.locator('[data-permission-dialog] [data-permission-statements]');
     await copy.waitFor({ timeout: 15000 });
-    assert.equal((await copy.innerText()).split('\n').map((l) => l.replace(/;$/, '')).sort().join('\n'),
+    assert.equal(sqlStatementsOf(await copy.textContent()).sort().join('\n'),
       [CATALOG, SCHEMA, SELECT, METADATA, SELECT_RETURNS, METADATA_RETURNS].sort().join('\n'));
     await page.keyboard.press('Escape'); // the dialog is modal: close it before the card's own buttons
 

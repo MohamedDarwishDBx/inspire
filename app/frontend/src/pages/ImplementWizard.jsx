@@ -15,7 +15,7 @@ import TabStrip, { tabPanel } from '../components/TabStrip';
 import AppSample, { paletteVars, pv } from '../components/AppSample';
 import { generationFolder, sharedFolderWarning } from '../lib/workspaceLinks';
 import { catalogRow } from '../lib/useCaseFacets';
-import { insideMoveNote, markBuildPending } from '../lib/implementControl';
+import { insideMoveNote, noteBuildSubmitted } from '../lib/implementControl';
 import {
   GENIE_CODE_OFF_TITLE,
   genieCodeOff,
@@ -94,7 +94,7 @@ import {
   SOURCE_REFUSED_REASON,
   SOURCE_BUILT_IN_REFUSED_REASON,
   ACCESS_CHECKING,
-  accessCheckingText,
+  accessCheckingText, buildNowDefaultsText, dataCheckingText,
   ACCESS_UNKNOWN,
   accessVerdictOf,
   NEW_APPS_ACCESS_ACTION,
@@ -491,6 +491,14 @@ export default function ImplementWizard({
     const timer = setInterval(() => setCheckSeconds(Math.round((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(timer);
   }, [checksBusy]);
+  // REQ-345: when the data check started (0 when none runs), and the seconds it has run.
+  const [dataCheckAt, setDataCheckAt] = useState(0);
+  const [dataCheckSeconds, setDataCheckSeconds] = useState(0);
+  useEffect(() => {
+    if (!dataCheckAt) { setDataCheckSeconds(0); return undefined; }
+    const timer = setInterval(() => setDataCheckSeconds(Math.round((Date.now() - dataCheckAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [dataCheckAt]);
   const [outputCheck, setOutputCheck] = useState(null);
   // True once Next has run the write check: from then on the check re-runs when its inputs change (see writeCheckKey).
   const writeCheckRun = useRef(false);
@@ -638,6 +646,8 @@ export default function ImplementWizard({
     setSpec((prev) => withProfileDefaults(prev, scopeProfile.profile, withGroupingDefault));
   }, [scopeSteps.grouping, context, scopeProfile.profile]);
   const lastStep = stepIndex === steps.length - 1;
+  // REQ-344: the steps between this one and Review & build, which the early Build button submits with their defaults.
+  const defaultsLine = buildNowDefaultsText(steps.slice(stepIndex + 1, steps.length - 1).map((x) => x.label));
   const scopeReady = scopeProfile.state !== 'loading';
   const scopeNow = readinessScope(spec, ucRow, context?.table_scope);
   const scopeKey = JSON.stringify(scopeNow);
@@ -916,17 +926,19 @@ export default function ImplementWizard({
       return uncountedReadiness(scope);
     });
     setCheckNotes((prev) => ({ ...prev, data: counted.unchecked || '' }));
-    let warning = '';
-    if (!counted.skipped && Number(counted.row_count) === 0) {
-      warning = await emptyScopeWarningOf(scope, sourceTables, (table) => apiPostJson(`/api/inspire/implement/readiness?${q}`, {
-        table, discovery_type: discoveryType, columns: [], filters: [], window: {},
-      }, { raise: false }));
-    }
     const groupColumns = scopeNarrowing(scope).length ? groupPartColumns(scopeProfile.profile) : [];
-    const groups = groupColumns.length && !counted.skipped
-      ? await apiPostJson(`/api/inspire/implement/group-counts?${q}`, { table: scope.table, columns: groupColumns, filters: scope.filters, window: scope.window })
-        .then(scopedGroupRows).catch(() => null)
-      : null;
+    // REQ-345: the empty-scope probe and the group counts read the table with no dependency on each other, so they run together.
+    const [warning, groups] = await Promise.all([
+      !counted.skipped && Number(counted.row_count) === 0
+        ? emptyScopeWarningOf(scope, sourceTables, (table) => apiPostJson(`/api/inspire/implement/readiness?${q}`, {
+          table, discovery_type: discoveryType, columns: [], filters: [], window: {},
+        }, { raise: false }))
+        : '',
+      groupColumns.length && !counted.skipped
+        ? apiPostJson(`/api/inspire/implement/group-counts?${q}`, { table: scope.table, columns: groupColumns, filters: scope.filters, window: scope.window })
+          .then(scopedGroupRows).catch(() => null)
+        : null,
+    ]);
     return { ...counted, scope, warning, groups };
   };
 
@@ -941,7 +953,8 @@ export default function ImplementWizard({
     const scope = readinessScope(spec, ucRow, context?.table_scope);
     if (scope.table) {
       setChecking('Checking the data');
-      setReadiness(await countScope(scope));
+      setDataCheckAt(Date.now());
+      try { setReadiness(await countScope(scope)); } finally { setDataCheckAt(0); }
     }
   };
 
@@ -1278,7 +1291,7 @@ export default function ImplementWizard({
         rebuild_as_is: rebuildAsIs,
       }, { signal }), { label: 'The build' });
       clearWizardDraft(draftKey);
-      if (data?.use_case_id) markBuildPending(data.use_case_id, { name: sent.use_case_name, version: data.spec_version });
+      noteBuildSubmitted(data, sent);
       onImplemented(data);
     } catch (e) {
       setErrors([e.message]);
@@ -2376,6 +2389,9 @@ export default function ImplementWizard({
           </button>
           <div className="relative flex items-center gap-2">
             {/* The Build button already reads Checking access while the check runs, so the status is announced, not shown. Absolute, so it takes no room and the footer keeps its height. */}
+            {dataCheckAt > 0 && (
+              <p data-data-progress="" className="absolute bottom-full end-0 mb-1 whitespace-nowrap text-[11px] text-text-secondary">{dataCheckingText(dataCheckSeconds)}</p>
+            )}
             {lastStep && checksBusy && (
               <p data-access-progress="" className="absolute bottom-full end-0 mb-1 whitespace-nowrap text-[11px] text-text-secondary">{accessCheckingText(checkSeconds)}</p>
             )}
@@ -2386,6 +2402,9 @@ export default function ImplementWizard({
             )}
             {mode === 'mvp' && stepIndex > 0 && !lastStep && sourceAccessRefused && (
               <p data-source-refused="" className="text-[11px] text-warning-fg">{refusedFooterText}</p>
+            )}
+            {mode === 'mvp' && stepIndex > 0 && !lastStep && !sourceAccessRefused && defaultsLine && (
+              <p data-build-defaults="" className="text-[11px] text-text-secondary">{defaultsLine}</p>
             )}
             {mode === 'mvp' && stepIndex > 0 && !lastStep && !sourceAccessRefused && (
               <button type="button" data-build-now="" disabled={implementBlocked || steps.some((x) => stepErrors(x.id, spec, extras, mode).length > 0)} onClick={submit}

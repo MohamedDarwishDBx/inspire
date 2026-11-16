@@ -45,7 +45,7 @@ import {
   keptVersions, loadAssetFilters, saveAssetFilters,
   loadCollectedVibes, missingAsks, notDoneLines, rebuildSpec, rebuildingText, rephrasedAsk, removeChanges, removeKeptChanges, rollbackChanges, rollingBackText,
   saveCollectedVibes, statusWarnings, tryAgainChanges, uninstallChanges, vibeCards, vibeFeaturesLabel,
-  withPendingBuilds,
+  noteBuildSubmitted, withPendingBuilds,
 } from '../lib/implementControl';
 import {
   buildingAssets, mvpScope, mvpStages, mvpProgressSummary, mvpRepairOf, feedArrivals, railProgress, sortedTo, statusProgress, steadyFeed, versionPlan, vibeChecklist,
@@ -504,6 +504,11 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     if (item?.uc) setWizard({ uc: item.uc, focus: { step: 'measure' }, live: false });
   };
 
+  // REQ-323: a build submitted from a use case's detail (Rebuild, Try again, Change choices) shows as queued at once.
+  const showQueuedBuild = () => {
+    setRail((prev) => ({ ...prev, latest: withPendingBuilds(prev.latest || []) }));
+    loadRail().catch((e) => setRailError(e.message));
+  };
   const onImplemented = (data) => {
     setBuildNotes(Array.isArray(data?.warnings) ? data.warnings : []);
     setBuildDetails(Array.isArray(data?.warning_details) ? data.warning_details : []);
@@ -567,6 +572,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
               onProgress={reportProgress}
               onEdit={readOnly ? undefined : (focus, live) => setWizard({ uc: selected.uc, focus, live })}
               onOpenRun={onOpenRun}
+              onBuildQueued={showQueuedBuild}
               onOpenDemoMvp={readOnly && demoMvps?.ids.includes(selected.id) ? () => demoMvps.open(selected.id) : null}
               readOnly={readOnly}
             />
@@ -832,7 +838,7 @@ function PartTabs({ assets, picked, onPick }) {
 }
 
 function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson, databricksHost, notebookRunError, refreshKey, collectedKey, valueEstimate = null, onSetRule = null,
-  onEdit, onOpenRun = null, onOpenDemoMvp = null, onProgress = null, readOnly = false }) {
+  onEdit, onOpenRun = null, onBuildQueued = null, onOpenDemoMvp = null, onProgress = null, readOnly = false }) {
   const useCaseId = item.id;
   const hasMvp = Boolean(item.latest);
   const viewId = useId();
@@ -1071,6 +1077,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     setNotice('');
     try {
       const data = await apiPostJson(path, body);
+      noteBuildSubmitted(data, body.spec);
+      onBuildQueued?.();
       setNotice([resultTableMoveNote(data?.summary), ...(Array.isArray(data?.warnings) ? data.warnings : [])].filter(Boolean).join(' '));
       await loadStatus();
       return true;

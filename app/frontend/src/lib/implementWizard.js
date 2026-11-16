@@ -3039,6 +3039,17 @@ export function accessCheckingText(seconds = 0) {
   return `Checking the source tables, where results go and the App's access, ${seconds} s so far`;
 }
 
+// REQ-345: the data check says what it reads and how long it has run. Its counts run together, see countScope.
+export function dataCheckingText(seconds = 0) {
+  return `Counting the rows the use case reads and checking its columns and filters, ${seconds} s so far`;
+}
+
+// REQ-344: the early Build button submits at once, so it names the steps it keeps as defaults before the person presses it.
+export function buildNowDefaultsText(labels) {
+  const names = (Array.isArray(labels) ? labels : []).filter(Boolean);
+  return names.length ? `Uses the defaults for ${joinWords(names)}` : '';
+}
+
 export function accessVerdictOf({ preflight = null, error = '', busy = false, unread = null } = {}) {
   if (preflight && !busy) {
     const sources = preflight.checks?.sources;

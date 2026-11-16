@@ -215,23 +215,46 @@ export function cardAssetLinks(latest) {
 // REQ-323: a build submitted from this app, until the history read shows that version or newer. The store is module level, so it
 // outlives a remount of the Build page (the wizard hands over to a fresh page after submit). A build that never lands is dropped after 15 minutes.
 export const PENDING_BUILD_TTL_MS = 15 * 60 * 1000;
-const PENDING_BUILDS = new Map();
+// The store also lives in sessionStorage, so a reload of the tab (a full page load, a bookmarked #/build) keeps the queued build on screen.
+const PENDING_KEY = 'inspire.pendingBuilds';
+function sessionStore() {
+  try { return globalThis.sessionStorage || null; } catch { return null; }
+}
+function loadPendingBuilds() {
+  try {
+    const raw = sessionStore()?.getItem(PENDING_KEY);
+    return new Map(Object.entries(raw ? JSON.parse(raw) : {}));
+  } catch { return new Map(); }
+}
+const PENDING_BUILDS = loadPendingBuilds();
+function savePendingBuilds() {
+  try { sessionStore()?.setItem(PENDING_KEY, JSON.stringify(Object.fromEntries(PENDING_BUILDS))); } catch { /* no storage: the store stays in memory for this page */ }
+}
 
 export function markBuildPending(useCaseId, { name = '', version = 0 } = {}, now = Date.now()) {
   PENDING_BUILDS.set(String(useCaseId), { at: now, name: String(name || ''), version: Number(version) || 0 });
+  savePendingBuilds();
   noteBuildStarted(useCaseId, now);
+}
+
+// REQ-323: the one call every build submit makes with the server's answer (wizard, Build next, Rebuild, Try again, Change choices, Results). A path that skips it shows no queued build.
+export function noteBuildSubmitted(data, spec, now = Date.now()) {
+  if (data?.use_case_id) markBuildPending(data.use_case_id, { name: spec?.use_case_name, version: data.spec_version }, now);
+  return data;
 }
 
 export function withPendingBuilds(latest, now = Date.now()) {
   const rows = Array.isArray(latest) ? latest : [];
   const byId = new Map(rows.map((row) => [String(row?.use_case_id ?? ''), row]));
   const placeholders = [];
+  let changed = false;
   for (const [id, entry] of [...PENDING_BUILDS]) {
     const row = byId.get(id);
     const landed = Boolean(row) && Number(row.spec_version) >= entry.version;
-    if (landed || now - entry.at > PENDING_BUILD_TTL_MS) { PENDING_BUILDS.delete(id); continue; }
+    if (landed || now - entry.at > PENDING_BUILD_TTL_MS) { PENDING_BUILDS.delete(id); changed = true; continue; }
     if (!row) placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, pending: true });
   }
+  if (changed) savePendingBuilds();
   return placeholders.length ? [...rows, ...placeholders] : rows;
 }
 

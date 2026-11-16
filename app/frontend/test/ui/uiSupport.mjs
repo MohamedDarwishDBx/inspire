@@ -124,6 +124,9 @@ function sharedServers() {
   return servers;
 }
 
+// REQ-150 / R27: innerText of a closed disclosure is '', and the SQL sits under Advanced, so a dialog's statements are read with textContent and split on the ';' that ends each one.
+export const sqlStatementsOf = (text) => String(text ?? '').split(';').map((s) => s.trim()).filter(Boolean);
+
 export async function closeBrowser() {
   const started = servers;
   servers = null;
