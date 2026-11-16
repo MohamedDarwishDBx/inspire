@@ -91,7 +91,8 @@ test('a drawer action shows Saving… with a spinner at once, locks the other wr
   assert.ok(ms < 100, `the spinner showed after ${ms} ms`);
   assert.equal(await drawer.locator('[data-saving]').innerText(), 'Saving…');
   assert.equal(await drawer.locator('[data-act="done"]').getAttribute('aria-busy'), 'true');
-  for (const name of ['Could not fix', 'Snooze…', 'Save action', 'Add note']) {
+  await footerActions(drawer);
+  for (const name of ['Could not fix', 'Snooze…', 'Save action']) {
     assert.equal(await drawer.getByRole('button', { name, exact: true }).isDisabled(), true, `${name} waits for the save`);
   }
   assert.equal(await drawer.getByRole('combobox', { name: 'Give to someone' }).isDisabled(), true);
@@ -106,7 +107,7 @@ test('a drawer action shows Saving… with a spinner at once, locks the other wr
   hold.open();
   await page.waitForFunction(() => document.querySelector('.toast .toast-t')?.textContent === 'Marked done. The next run checks whether it worked.');
   await page.waitForFunction(() => !document.querySelector('[data-saving]'));
-  assert.equal(await drawer.getByRole('button', { name: 'Could not fix' }).isDisabled(), false);
+  await page.waitForFunction(() => !document.querySelector('dialog.drawer[open]'), null, { timeout: 5000 }); // REQ-398: Mark done closes the panel
   assert.equal(writes.writes.length, 1);
   assert.deepEqual(seen.errors, []);
   await context.close();

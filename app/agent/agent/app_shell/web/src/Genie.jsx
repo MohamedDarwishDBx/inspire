@@ -93,18 +93,20 @@ export function useGenie(app, current, onOpen, view = null) {
   const update = (k, n, patch) => edit(k, (t) => t.map((m) => (m.n === n ? { ...m, ...(typeof patch === 'function' ? patch(m) : patch) } : m)));
   const find = (k, n) => (all.current[k] || []).find((m) => m.n === n);
 
-  const send = useCallback(async (k, you, start) => {
+  // REQ-399: a quiet send (an in-place Explain) keeps the answer for its caller only; it never writes into the Genie thread.
+  const send = useCallback(async (k, you, start, quiet = false) => {
     if (!k || !genieOn(shown.current, k)) return;
     const n = Date.now();
-    edit(k, (t) => [...t, { n: n - 1, who: 'you', ...you }, { n, who: 'genie', state: 'running', step: 'Reading your question' }]);
+    if (!quiet) edit(k, (t) => [...t, { n: n - 1, who: 'you', ...you }, { n, who: 'genie', state: 'running', step: 'Reading your question' }]);
     try {
       const started = await start(conversations.current[k] || '');
       conversations.current[k] = started.conversation_id;
-      if (started.question) update(k, n - 1, { sent: started.question });
-      const msg = await genieAnswer(k, started, { onStep: (step) => update(k, n, { step }), alive: () => alive.current });
-      if (msg) update(k, n, { state: 'done', answer: msg, ids: started, shown: reducedMotion() ? Infinity : 0 });
+      if (!quiet && started.question) update(k, n - 1, { sent: started.question });
+      const msg = await genieAnswer(k, started, { onStep: (step) => { if (!quiet) update(k, n, { step }); }, alive: () => alive.current });
+      if (msg && !quiet) update(k, n, { state: 'done', answer: msg, ids: started, shown: reducedMotion() ? Infinity : 0 });
       return msg || null;
     } catch (error) {
+      if (quiet) return null;
       if (retryable(error)) retries.current[`${k}:${n}`] = () => send(k, you, start);
       update(k, n, { state: 'failed', error: error.message, calm: !!error.calm, waiting: waitingOf(error) });
       return null;
@@ -163,10 +165,11 @@ export function useGenie(app, current, onOpen, view = null) {
   const choose = useCallback((next) => { subject.current = next; setAbout(next); setPinned(''); }, []);
   const clearAbout = useCallback(() => choose(null), [choose]);
 
-  const explain = useCallback(({ kind, page, title, context, question }) => {
+  const explain = useCallback(({ kind, page, title, context, question, inPlace = false }) => {
     const body = explainBody(kind, page, title, context, question);
     const you = body.question ? { text: body.question, about: { label: body.title } } : { text: `Explain “${body.title}”`, explain: true };
     const k = genieKey(shown.current, page);
+    if (inPlace) return send(k, you, (id) => explainGenie({ ...body, conversation_id: id }), true);
     setPinned(k);
     return agentOn(k) ? sendAgent(k, you, { element: elementView(body) }) : send(k, you, (id) => explainGenie({ ...body, conversation_id: id }));
   }, [send, sendAgent]);
