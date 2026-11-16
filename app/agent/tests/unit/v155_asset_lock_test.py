@@ -11,9 +11,9 @@ from v140_implement_test import _delete_app_inspire, _inspire, _output_context
 from v142_merge_test import DASH, _dashboard_inspire, _merge_flow, _page_runner
 
 KEY = "implement-asset::app::inspire-hub-acme"
-WAIT = ("waiting for use case N01-U01 of session 5150 to finish changing the App inspire-hub-acme, so neither build overwrites the "
+WAIT = ("waiting for use case N01-U01 of session 5150 to finish changing the Agentic App inspire-hub-acme, so neither build overwrites the "
         "other's changes")
-FREE = "the App inspire-hub-acme is free, so this build changes it now"
+FREE = "the Agentic App inspire-hub-acme is free, so this build changes it now"
 
 
 class LockTable:
@@ -92,7 +92,7 @@ def test_a_build_that_waits_an_hour_stops_without_changing_the_app_and_leaves_no
     _clock(monkeypatch, lambda n: None)
     assert agent_ns["IMPLEMENT_LOCK_WAIT_S"] == 3600
     with first._implement_asset_lock("app", "inspire-hub-acme", "N01-U01", 6):
-        with pytest.raises(agent_ns["ImplementBlocked"], match="the App inspire-hub-acme stayed busy with use case N01-U01 of session 5150 "
+        with pytest.raises(agent_ns["ImplementBlocked"], match="the Agentic App inspire-hub-acme stayed busy with use case N01-U01 of session 5150 "
                                                                "for 60 minutes, so Inspire did not change it; build again once that build ends"):
             with second._implement_asset_lock("app", "inspire-hub-acme", "N02-U01", 3):
                 pytest.fail("the App is never changed while another build holds it")

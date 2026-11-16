@@ -7,6 +7,7 @@ const { fsApiPath } = require('./workspacePaths');
 const { redactSecrets } = require('./redact');
 const { splitMetricViews, metricViewSkipLine } = require('./metricViews');
 const PM = require('./permissions');
+const IMPLEMENT_OUTPUT_LABELS = require('./implementOutputLabels.json');
 
 const RUN_NO_SIGN_IN = "Inspire needs your sign-in to check what you can read. Reload the App and try again.";
 const UNREADABLE_SHOWN = 10;
@@ -528,7 +529,7 @@ async function ownFolderPlan(dbFetch, req, home, { manager, appToken, appId }) {
   if (first.refused || !first.app.verdict) return { plan: first, details: [], scope: false };
   const shared = await shareOwnFolder(dbFetch, req, home, appId);
   if (!shared.ok) {
-    console.warn(`output write check: Inspire could not share ${home} with the App: ${shared.details.join('; ')}`);
+    console.warn(`output write check: Inspire could not share ${home} with the ${IMPLEMENT_OUTPUT_LABELS.app}: ${shared.details.join('; ')}`);
     return { plan: first, details: shared.details, scope: shared.scope };
   }
   const after = await folderPlan(dbFetch, req, home, { manager, appToken });

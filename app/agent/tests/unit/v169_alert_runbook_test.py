@@ -35,7 +35,7 @@ def test_the_build_time_alert_and_the_app_alert_both_carry_the_runbook_from_the_
     assert "Retention lead decides: Call at-risk customers before renewal." in built and "How the use case acts on it: Score every account weekly." \
         in built
     assert built.splitlines()[built.splitlines().index("Where to look:") + 1:][:3] == [
-        "Dashboard: https://h/d", "Genie Agent: https://h/genie/rooms/g1", "App: https://a.example.com"]
+        "Dashboard: https://h/d", "Genie Agent: https://h/genie/rooms/g1", "Agentic App: https://a.example.com"]
     s, ws = alerts_shell(tmp_path)
     s.by_id["n01_u05"]["runbook"] = shell_alerts.use_case_guide(use_case, "https://h/d", "https://h/genie/rooms/g1")
     assert save(s)[0] == 200

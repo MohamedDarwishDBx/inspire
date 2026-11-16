@@ -328,7 +328,7 @@ def test_an_app_the_builder_cannot_manage_stops_before_the_build_naming_the_gran
                              "Can manage on it, or delete it so Inspire builds a new one, then build again")
     assert ("GET", "/api/2.0/permissions/dashboards/d1") in calls and ("GET", "/api/2.0/permissions/genie/g1") in calls
     assert not [c for c in calls if "alertsv2" in c[1]], "an output with no asset has nothing to check"
-    assert len(emitted) == 1 and emitted[0][1] == "App" and emitted[0][3] == "ended_warning"
+    assert len(emitted) == 1 and emitted[0][1] == "Agentic App" and emitted[0][3] == "ended_warning"
 
 
 def test_every_output_kind_is_checked_and_only_a_denial_stops_it(agent_ns):

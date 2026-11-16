@@ -14,8 +14,6 @@ export const ACTION_FIELDS = {
   done: [], snooze: ['until'], assign: ['owner'], skip: [], not_an_issue: ['reason'], reopen: [],
   override: ['status', 'reason'], add_note: ['note'], set_target: ['value'], run_again: [],
 };
-export const OVERRIDE_STATUSES = ['New', 'In progress', 'Done', 'Dismissed', 'Could not fix'];
-
 export const actionLabel = (id) => AGENT_ACTIONS[id] || id;
 
 // Values the action needs before the confirm card can be prepared. Each field has its own message.

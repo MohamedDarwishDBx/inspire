@@ -104,7 +104,7 @@ def test_an_app_made_again_by_someone_else_is_an_info_note_at_delete(agent_ns):
     outcome, emitted, logger = _remade(agent_ns)
     assert (outcome["state"], outcome["warnings"]) == ("released", [])
     assert emitted == [("Agentic App", f"Agentic App: {fact}, and Inspire left it as it is", "ended_success")]
-    assert logger.matching(f"[IMPLEMENT-NOTE] N01-U01: App: {fact}", "INFO")
+    assert logger.matching(f"[IMPLEMENT-NOTE] N01-U01: Agentic App: {fact}", "INFO")
     assert not [r for r in logger.records if r[0] == "WARNING" and fact in r[1]]
 
 
@@ -114,5 +114,5 @@ def test_a_sync_warning_beside_the_app_made_again_is_the_warning_and_the_fact_st
     outcome, emitted, logger = _remade(agent_ns, synced=synced)
     assert outcome["warnings"] == [synced]
     assert emitted == [("Agentic App", synced, "ended_warning")]
-    assert logger.matching(f"[IMPLEMENT-NOTE] N01-U01: App: {fact}", "INFO")
+    assert logger.matching(f"[IMPLEMENT-NOTE] N01-U01: Agentic App: {fact}", "INFO")
     assert not [r for r in logger.records if r[0] == "WARNING" and fact in r[1]]

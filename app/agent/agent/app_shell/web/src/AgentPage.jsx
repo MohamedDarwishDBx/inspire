@@ -109,7 +109,7 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
   };
 
   const ctxFor = (item) => ({
-    page, app, charts, themeKey, ticketActions,
+    page, app, charts, themeKey, ticketActions, statuses: briefing?.statuses || [],
     turnId: item?.turn?.turn_id || '',
     openRecord: (key) => onRecord?.(page.id, key),
     ask,

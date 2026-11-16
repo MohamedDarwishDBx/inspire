@@ -4,7 +4,7 @@ import Markdown from './Markdown.jsx';
 import { Icon } from './icons.jsx';
 import { ConfirmCard, Rate } from './AgentParts.jsx';
 import { PlainNote } from './ui.jsx';
-import { ACTION_FIELDS, OVERRIDE_STATUSES, askText, actionLabel, chartOf, columnHeads, copyText, kpiName, multiAsk, multiValid, stakeText, ticketKey, valuesFor } from './agentBlocks.js';
+import { ACTION_FIELDS, askText, actionLabel, chartOf, columnHeads, copyText, kpiName, multiAsk, multiValid, stakeText, ticketKey, valuesFor } from './agentBlocks.js';
 
 // Renders the typed blocks the server validated. ctx: { page, charts, ask(text), prepare(action, keys, values), confirm(c),
 // cancel(c), undo(c), openRecord(key), rate(r), turnId }. Nothing here builds HTML from model text: every value is a React child.
@@ -37,7 +37,7 @@ export function Ticket({ ticket, ctx, actions = [] }) {
 const FIELD_INPUT = {
   until: { label: 'Snooze until', type: 'date' }, owner: { label: 'Assign to', type: 'text' }, reason: { label: 'Reason', type: 'text' },
   note: { label: 'Note', type: 'text' }, value: { label: 'Target', type: 'number' },
-  status: { label: 'Status', type: 'select', options: OVERRIDE_STATUSES },
+  status: { label: 'Status', type: 'select' },
 };
 export function ActionRow({ keys, actions, ctx }) {
   const [open, setOpen] = useState('');
@@ -73,7 +73,8 @@ export function ActionRow({ keys, actions, ctx }) {
       {open && (ACTION_FIELDS[open] || []).length > 0 && (
         <div className="agp-field" role="group" aria-label={actionLabel(open)}>
           {ACTION_FIELDS[open].map((f) => {
-            const spec = FIELD_INPUT[f];
+            // The status choices are the server's one list (shell_facts.ACTION_STATUSES), sent with the briefing.
+            const spec = f === 'status' ? { ...FIELD_INPUT.status, options: ctx.statuses || [] } : FIELD_INPUT[f];
             return (
               <label key={f} className="agp-field">{spec.label}{spec.type === 'select' ? (
                 <select value={input[f] || ''} onChange={(e) => setInput({ ...input, [f]: e.target.value })}>

@@ -1,4 +1,5 @@
 const express = require('express');
+const IMPLEMENT_OUTPUT_LABELS = require('./lib/implementOutputLabels.json');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const fs = require('fs');
@@ -1535,7 +1536,7 @@ app.get('/api/workspace/export', rejectUnsafeQueryPath, requireToken, async (req
 // ═══════════════════════════════════════════════════
 
 app.get('/api/health', async (req, res) => {
-  const managerCheckNow = await currentManagerCheck(req).catch((err) => ({ check: `Inspire could not check who manages its App: ${err.message}`, manager: null }));
+  const managerCheckNow = await currentManagerCheck(req).catch((err) => ({ check: `Inspire could not check who manages its ${IMPLEMENT_OUTPUT_LABELS.app}: ${err.message}`, manager: null }));
   const hasBundledNotebook = fs.existsSync(BUNDLED_NOTEBOOK_PATH);
   const host = resolveHost(req);
   const forwardedToken = forwardedTokenOf(req);
