@@ -958,6 +958,13 @@ export function groupPartColumns(profile) {
   return [...new Set(cols.filter(Boolean))];
 }
 
+// The Data step's choice of table scope (REQ-389). A null scopes takes the choice off, so the Discover run's scope is read again.
+export function withChosenScope(spec, scopes) {
+  const data = { ...(spec.data || {}) };
+  delete data.table_scope;
+  return { ...spec, data: scopes ? { ...data, table_scope: scopes } : data };
+}
+
 export function withoutTableFilters(spec, table) {
   const kept = (spec.data.filters || []).filter((f) => !sameTableName(f.table, table));
   return { ...spec, data: { ...spec.data, filters: kept } };

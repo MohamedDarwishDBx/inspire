@@ -186,16 +186,40 @@ export function filteredTablesOf(scopes, pickedTables = []) {
     .map(([table]) => table);
 }
 
+// One row filter as the person reads it: its column, its operator and its values.
+export function rowFilterText(row) {
+  const def = scopeOpOf(row.op);
+  const label = def ? def.label : row.op;
+  const value = def && def.values === 0 ? '' : ` ${row.values.join(' and ')}`;
+  return `${row.column} ${label}${value}`;
+}
+
 export function tableScopeSummary(entry) {
   const scope = normalizeTableScope(entry);
   const cols = scope.columns.length;
   const parts = [`${cols} column${cols === 1 ? '' : 's'}`];
   if (!scope.rows.length) return `${parts[0]}, all rows`;
-  const filters = scope.rows.map((row) => {
-    const def = scopeOpOf(row.op);
-    const label = def ? def.label : row.op;
-    const value = def && def.values === 0 ? '' : ` ${row.values.join(' and ')}`;
-    return `${row.column} ${label}${value}`;
-  });
-  return `${parts[0]}, rows where ${filters.join(' and ')}`;
+  return `${parts[0]}, rows where ${scope.rows.map(rowFilterText).join(' and ')}`;
+}
+
+// The Table Scope the build reads (REQ-389). With no choice on the Data step (dataSpec.table_scope absent) it reads the scope the
+// Discover run read; a choice replaces it, and an empty choice is whole data.
+export function chosenTableScopes(dataSpec, carried) {
+  return dataSpec && dataSpec.table_scope && typeof dataSpec.table_scope === 'object' ? dataSpec.table_scope : (carried || {});
+}
+
+// The same scope with every row filter taken off: the columns the person kept stay, and a table with nothing left is not read.
+export function wholeTableScopes(scopes) {
+  return Object.fromEntries(Object.entries(scopes || {}).map(([table, entry]) => [table, { ...normalizeTableScope(entry), rows: [] }])
+    .filter(([, entry]) => entry.columns.length > 0));
+}
+
+// The same scope with one row filter (by its index in the table's rows) taken off.
+export function withoutTableRow(scopes, table, index) {
+  const key = scopeKeyOf(table);
+  return Object.fromEntries(Object.entries(scopes || {}).map(([name, entry]) => {
+    if (scopeKeyOf(name) !== key) return [name, entry];
+    const scope = normalizeTableScope(entry);
+    return [name, { ...scope, rows: scope.rows.filter((_, i) => i !== index) }];
+  }));
 }
