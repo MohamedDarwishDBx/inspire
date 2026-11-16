@@ -193,7 +193,7 @@ function LaunchHarness() {
   const blankDb = new URLSearchParams(window.location.search).get('db') === 'blank';
   return (
     <ThemeProvider>
-      <LaunchPage settings={{ ...SETTINGS, serverEnvHasPat: true, ...(blankDb ? { inspireDatabase: '' } : {}) }} update={() => {}} onOpenResults={() => {}} onNoData={() => {}}
+      <LaunchPage settings={{ ...SETTINGS, serverEnvHasPat: true, ...(blankDb ? { inspireDatabase: '' } : {}) }} update={() => {}} onOpenResults={() => {}}
         onLaunched={(sid, runId, warnings, details) => { setLaunched(`${sid}:${runId}`); setNotes({ warnings, details }); }} />
       <output aria-label="Launched">{launched}</output>
       {notes?.warnings?.length > 0 && <MonitorPage settings={SETTINGS} update={() => {}} sessionId={HARNESS_SESSION_ID} runId={null} launchNotes={notes.warnings}

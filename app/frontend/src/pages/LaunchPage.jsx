@@ -225,7 +225,7 @@ function restoredLabel(value) {
   return { on, text };
 }
 
-export default function LaunchPage({ settings, update, onLaunched, onOpenResults, onNoData }) {
+export default function LaunchPage({ settings, update, onLaunched, onOpenResults }) {
   const { databricksHost, token, notebookPath, warehouseId, inspireDatabase, serverEnvHasPat } = settings;
   const canUseUcApi = !!(databricksHost && (token || serverEnvHasPat));
 
@@ -1271,16 +1271,6 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 {catalogBrowseGuidance && <UcPermissionErrorHelp guidance={catalogBrowseGuidance} />}
                 {pickerReadGuidance && <UcPermissionErrorHelp guidance={pickerReadGuidance} />}
                 {catalogsWhy && <PlainMessage text={catalogsWhy} role="note" data-uc-why="" className="mb-3 text-xs text-text-secondary" />}
-                {onNoData && (
-                  <button
-                    type="button"
-                    onClick={onNoData}
-                    className="mb-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-border text-sm text-text-secondary hover:border-db-red/40 hover:text-db-red-fg hover:bg-db-red-50/30 transition-smooth"
-                  >
-                    <Sparkles size={16} />
-                    I don&apos;t have data. Generate demo tables instead
-                  </button>
-                )}
                 {/* Selected Metadata Basket — always visible */}
                 {scope.entries.length === 0 && (
                   <p data-scope-empty="" className="mb-3 text-[11px] text-text-tertiary">Nothing picked yet</p>

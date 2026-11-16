@@ -581,7 +581,6 @@ export default function App() {
           <LaunchPage
             settings={settings}
             update={update}
-            onNoData={() => nav('generate-data')}
             onOpenResults={(sid) => {
               if (sid) setSessionId(sid);
               nav('results');
