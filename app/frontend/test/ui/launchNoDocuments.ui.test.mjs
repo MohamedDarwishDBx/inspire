@@ -35,6 +35,7 @@ test('the Launch page starts with the strategy PDF ticked, so the default launch
     await readyToLaunch(page);
     assert.equal(await page.locator('[data-no-documents]').count(), 0, 'no no-documents note while the PDF is ticked');
     await launchButton(page).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => calls.runs.length === 1, 'the default launch');
     assert.equal(calls.runs[0].params['09_generation_options'], 'PDF Catalog,Excel', 'the default launch builds the strategy PDF and the Excel workbook');
     assert.equal(ui.pageErrors.length, 0);
@@ -53,6 +54,7 @@ test('unticking the PDF and the Excel workbook in the Launch page shows the no-d
     await page.getByRole('button', { name: /^Excel/ }).click();
     await page.locator('[data-no-documents]').waitFor();
     await launchButton(page).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => calls.runs.length === 1, 'the launch with no documents');
     assert.equal(calls.runs[0].params['09_generation_options'], '', 'the person unticked every document');
   } finally {
