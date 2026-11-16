@@ -305,7 +305,8 @@ export function withPendingBuilds(latest, now = Date.now()) {
     const row = byId.get(id);
     if (landed(row, entry) || now - entry.at > PENDING_BUILD_TTL_MS) { PENDING_BUILDS.delete(id); changed = true; continue; }
     // A row from an older version still reads as the build in progress until the new version lands.
-    if (row) overlay.set(id, { ...row, status: 'queued', pending: true });
+    // REQ-355: the queued row carries no failure of the superseded version (its status message and stall).
+    if (row) overlay.set(id, { ...row, status: 'queued', status_message: '', stalled: null, pending: true });
     else placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, pending: true });
   }
   if (changed) savePendingBuilds();

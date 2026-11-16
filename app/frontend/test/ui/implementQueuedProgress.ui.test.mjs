@@ -35,6 +35,10 @@ test('Try again shows its build as MVP queued on the card, not MVP running (REQ-
     assert.equal(await page.getByRole('region', { name: 'Build summary' }).getByText('building now', { exact: false }).count(), 0, 'the summary does not say building now for a queued build');
     assert.equal(await BUILDING(USE_CASES(page)).getByText('MVP running', { exact: true }).count(), 0,
       'a queued build never reads running (must-fail: the card label collapsed queued into running)');
+    // The side panel shows the queued build, not the failed block of the superseded run, until the server answers.
+    assert.equal(await page.getByRole('region', { name: 'Build failed' }).count(), 0, 'no failed block while the queued build is pending (must-fail: the detail read the old failed status)');
+    assert.doesNotMatch(await page.locator('[data-progress-card]').innerText(), /Failed/, 'the progress card does not read Failed while queued');
+    assert.doesNotMatch(await page.getByRole('region', { name: 'Build summary' }).innerText(), /stopped on a step/, 'the summary does not quote the superseded failure (must-fail: the overlay kept its status message)');
     assert.deepEqual(ui.pageErrors, []);
   } finally {
     release();
