@@ -125,3 +125,32 @@ test('a relationship read that fails ends with the reason and Try again, not an 
     await ui.close();
   }
 });
+
+// REQ-370: an answer over the 2 MB cap is not silent. The Link dialog says how many tables have their columns sent, and the two tables
+// being linked are always among them.
+test('a wide 550-table pick: the Link dialog says how many tables have their columns sent, and still lists both linked tables', async () => {
+  const names = Array.from({ length: 550 }, (_, i) => `t${String(i + 1).padStart(3, '0')}`);
+  const wide = 'attribute_'.padEnd(90, 'x');
+  const columnsByTable = Object.fromEntries(names.map((n) => [`main.s.${n}`,
+    Array.from({ length: 60 }, (_, c) => ({ column_name: `${wide}${c}`, data_type: 'STRING', ordinal_position: c + 1 }))]));
+  const ui = await openUi('launch', { ...STATE, tables: { 'main.s': names }, columnsByTable });
+  const { page } = ui;
+  try {
+    await page.getByPlaceholder(BUSINESS).fill('Acme');
+    await page.locator('button[title="main"]').click();
+    await page.locator('button[title="s"]').click();
+    await idle(page);
+    await page.getByRole('button', { name: /Advanced Settings/ }).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
+    await source(page, 't001').click();
+    await target(page, 't002').click();
+    await page.getByRole('button', { name: 'Link', exact: true }).click();
+    const dialog = page.locator('[data-link-dialog]');
+    await dialog.locator('[data-link-note]').waitFor({ timeout: 30000 });
+    assert.match(await dialog.locator('[data-link-note]').innerText(), /Columns are sent for \d+ of 550 tables/);
+    assert.equal(await dialog.getByRole('list', { name: 'Columns of t001' }).getByRole('button').count(), 60, 'the source table is complete');
+    assert.equal(await dialog.getByRole('list', { name: 'Columns of t002' }).getByRole('button').count(), 60, 'the target table is complete');
+  } finally {
+    await ui.close();
+  }
+});

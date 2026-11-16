@@ -77,17 +77,37 @@ function declaredIntoStatement(name) {
   };
 }
 
-/** The columns of every table in one catalog's part of the picked scope: ONE information_schema.columns query for the catalog. */
-function scopeColumnsStatement(catalog, names) {
+/** The bound predicate that picks the tables named (catalog.schema.table) in one catalog: one clause per table, values as parameters. */
+function scopePredicate(names) {
   const parameters = [];
   const clauses = names.map((name, i) => {
     const [, s, t] = splitTable(name);
     parameters.push({ name: `s${i}`, value: s, type: 'STRING' }, { name: `t${i}`, value: t, type: 'STRING' });
     return `(table_schema = lower(:s${i}) AND table_name = lower(:t${i}))`;
   });
+  return { clause: clauses.join(' OR '), parameters };
+}
+
+/** The columns of every table in one catalog's part of the picked scope: ONE information_schema.columns query for the catalog. */
+function scopeColumnsStatement(catalog, names) {
+  const { clause, parameters } = scopePredicate(names);
   return {
     sql: `SELECT table_schema, table_name, column_name FROM \`${catalog}\`.information_schema.columns `
-      + `WHERE ${clauses.join(' OR ')} ORDER BY table_schema, table_name, ordinal_position`,
+      + `WHERE ${clause} ORDER BY table_schema, table_name, ordinal_position`,
+    parameters,
+  };
+}
+
+/** The primary key columns of every table in one catalog's part of the picked scope: ONE query for the catalog (REQ-370). */
+function scopeKeysStatement(catalog, names) {
+  const { clause, parameters } = scopePredicate(names);
+  return {
+    sql: `SELECT kcu.table_schema, kcu.table_name, kcu.column_name FROM \`${catalog}\`.information_schema.key_column_usage kcu `
+      + `JOIN \`${catalog}\`.information_schema.table_constraints tc ON kcu.constraint_catalog = tc.constraint_catalog `
+      + 'AND kcu.constraint_schema = tc.constraint_schema AND kcu.constraint_name = tc.constraint_name '
+      + "WHERE tc.constraint_type = 'PRIMARY KEY' "
+      + `AND (${clause.replace(/table_schema/g, 'kcu.table_schema').replace(/table_name/g, 'kcu.table_name')}) `
+      + 'ORDER BY kcu.table_schema, kcu.table_name, kcu.ordinal_position',
     parameters,
   };
 }
@@ -95,27 +115,32 @@ function scopeColumnsStatement(catalog, names) {
 const findName = (list, name) => list.find((x) => low(x) === low(name));
 const fullName = (catalog, schema, table) => `${catalog}.${schema}.${table}`;
 
+// The payload cap for one answer (REQ-370): above it, the columns of the tables the picked table does not link to are left out, with a note.
+const PAYLOAD_LIMIT_BYTES = 2 * 1024 * 1024;
+
 /**
  * The relationships of one picked table. `columns` are rows { table, column_name } over the whole picked scope (table = full name);
- * `declared` are the table's own foreign keys (declaredKeysStatement rows); `into` are the foreign keys that point at it
- * (declaredIntoStatement rows, child_* fields); `primaryKeys` are its primary key column names.
- * Returns { tables, suggestions }: every picked table's columns (the pickers), and the relationships that involve this table.
+ * `keys` are the primary key rows { table, column_name } over the same scope; `declared` are the table's own foreign keys
+ * (declaredKeysStatement rows); `into` are the foreign keys that point at it (declaredIntoStatement rows, child_* fields).
+ * Returns { tables, suggestions }: every picked table's columns and keys (the pickers), and the relationships that involve this table.
  */
-function relationshipsOfTable(table, { columns = [], declared = [], into = [], primaryKeys = [] }) {
+function relationshipsOfTable(table, { columns = [], keys = [], declared = [], into = [], focus = [] }) {
   const byTable = new Map();
   for (const row of columns) {
     const key = low(row.table);
-    if (!byTable.has(key)) byTable.set(key, { name: row.table, columns: [] });
+    if (!byTable.has(key)) byTable.set(key, { name: row.table, columns: [], keys: [] });
     byTable.get(key).columns.push(String(row.column_name));
   }
+  for (const row of keys) byTable.get(low(row.table))?.keys.push(String(row.column_name));
   const pCols = byTable.get(low(table))?.columns || [];
-  const pKeys = primaryKeys.map(String);
+  const pKeys = byTable.get(low(table))?.keys || [];
   const byKey = new Map();
   const add = (from, to, source) => {
     const id = low(`${from.table}.${from.column}>${to.table}.${to.column}`);
     if (!byKey.has(id)) byKey.set(id, { from, to, source });
   };
   const colsOf = (name) => byTable.get(low(name))?.columns || [];
+  const keysOf = (name) => byTable.get(low(name))?.keys || [];
   // Declared keys first: a declared key is never repeated as a name match.
   for (const fk of declared.filter((r) => r.ref_table)) {
     const refName = fullName(fk.ref_catalog, fk.ref_schema, fk.ref_table);
@@ -131,32 +156,57 @@ function relationshipsOfTable(table, { columns = [], declared = [], into = [], p
     add({ table: byTable.get(low(childName)).name, column: String(fk.child_column) },
       { table, column: findName(pCols, String(fk.ref_column)) || String(fk.ref_column) }, SOURCE_DECLARED);
   }
-  // Name matches: this table's <other>_id column names another picked table; another table's <this>_id column names this one.
+  // Name matches, both directions. A <other>_id column names the other table's key: its same-name column, its id, or its single primary key.
+  const singleKey = (name) => (keysOf(name).length === 1 ? keysOf(name)[0] : null);
   for (const other of byTable.values()) {
     if (low(other.name) === low(table)) continue;
     const otherShort = shortOf(other.name);
     for (const column of pCols.filter((c) => low(c) === `${singularOf(otherShort)}_id`)) {
-      const target = findName(other.columns, column) || findName(other.columns, 'id');
-      if (target) add({ table, column }, { table: other.name, column: target }, SOURCE_NAME);
+      const target = findName(other.columns, column) || singleKey(other.name) || findName(other.columns, 'id');
+      if (target) add({ table, column }, { table: other.name, column: findName(other.columns, target) || target }, SOURCE_NAME);
     }
     const thisShort = shortOf(table);
     for (const column of other.columns.filter((c) => low(c) === `${singularOf(thisShort)}_id`)) {
-      const target = findName(pCols, column) || (pKeys.length === 1 ? pKeys[0] : null) || findName(pCols, 'id');
-      if (target) add({ table: other.name, column }, { table, column: target }, SOURCE_NAME);
+      const target = findName(pCols, column) || singleKey(table) || findName(pCols, 'id');
+      if (target) add({ table: other.name, column }, { table, column: findName(pCols, target) || target }, SOURCE_NAME);
     }
-    for (const column of other.columns.filter((c) => low(c).endsWith('_id'))) {
-      if (findName(pKeys, column) && findName(pCols, column)) add({ table: other.name, column }, { table, column: findName(pCols, column) }, SOURCE_NAME);
+    // A shared column that is a single-column primary key of one table: the other table's column points at it (the child is the "from" side).
+    for (const column of pCols) {
+      if (findName(keysOf(other.name), column) && findName(other.columns, column)) add({ table, column }, { table: other.name, column: findName(other.columns, column) }, SOURCE_NAME);
+      else if (findName(keysOf(table), column) && findName(other.columns, column)) add({ table: other.name, column: findName(other.columns, column) }, { table, column }, SOURCE_NAME);
     }
   }
   const suggestions = [...byKey.values()].sort((x, y) => (low(`${x.from.table}.${x.from.column}`) < low(`${y.from.table}.${y.from.column}`) ? -1 : 1));
-  const tables = Object.fromEntries([...byTable.values()].map((t) => [t.name, {
-    columns: t.columns,
-    primary_keys: low(t.name) === low(table) ? pKeys : [],
-  }]));
-  return { tables, suggestions };
+  const tables = Object.fromEntries([...byTable.values()].map((t) => [t.name, { columns: t.columns, primary_keys: t.keys }]));
+  return fitPayload({ tables, suggestions }, [table, ...focus]);
+}
+
+/** The answer fits PAYLOAD_LIMIT_BYTES: the picked table, the focus tables and the tables the suggestions name come first, the rest follow while they fit. */
+function fitPayload(result, focus) {
+  const size = (value) => Buffer.byteLength(JSON.stringify(value));
+  if (size(result) <= PAYLOAD_LIMIT_BYTES) return result;
+  const first = new Set([...focus, ...result.suggestions.flatMap((s) => [s.from.table, s.to.table])].map(low));
+  const names = Object.keys(result.tables).sort((a, b) => (first.has(low(b)) - first.has(low(a))) || a.localeCompare(b));
+  let budget = PAYLOAD_LIMIT_BYTES - size({ ...result, tables: {} });
+  const tables = {};
+  for (const name of names) {
+    const cost = size([name, result.tables[name]]);
+    if (cost > budget) break;
+    budget -= cost;
+    tables[name] = result.tables[name];
+  }
+  const shown = Object.keys(tables).length;
+  return {
+    ...result,
+    tables,
+    columns_note: `Columns are sent for ${shown} of ${names.length} tables: the picked table and the ones its suggestions name come first. `
+      + 'Pick a smaller scope to see the columns of the rest.',
+    columns_shown: shown,
+    columns_total: names.length,
+  };
 }
 
 module.exports = {
   SOURCE_DECLARED, SOURCE_NAME, pickedTableOf, pickedTablesOf, singularOf, declaredKeysStatement, declaredIntoStatement,
-  scopeColumnsStatement, relationshipsOfTable,
+  scopeColumnsStatement, scopeKeysStatement, relationshipsOfTable, fitPayload, PAYLOAD_LIMIT_BYTES,
 };

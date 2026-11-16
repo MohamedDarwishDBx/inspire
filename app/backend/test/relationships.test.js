@@ -17,6 +17,7 @@ test('a singular table name ends in the key the other table uses: customers -> c
 });
 
 const col = (table, column_name) => ({ table, column_name });
+const key = (table, column_name) => ({ table, column_name });
 
 test('orders.customer_id is matched to customers.customer_id by name, with the matching column name as the source', () => {
   const got = R.relationshipsOfTable(ORDERS, {
@@ -57,7 +58,7 @@ test('must not match: a shared _id that is a key on neither side, and columns wi
 
 test('a shared key column is matched when this table declares it as its primary key', () => {
   const got = R.relationshipsOfTable(ORDERS, {
-    columns: [col(ORDERS, 'order_id'), col(ITEMS, 'order_id'), col(ITEMS, 'sku')], primaryKeys: ['order_id'],
+    columns: [col(ORDERS, 'order_id'), col(ITEMS, 'order_id'), col(ITEMS, 'sku')], keys: [key(ORDERS, 'order_id')],
   });
   assert.deepEqual(got.suggestions, [{ from: { table: ITEMS, column: 'order_id' }, to: { table: ORDERS, column: 'order_id' }, source: 'matching column name' }]);
 });
@@ -65,10 +66,10 @@ test('a shared key column is matched when this table declares it as its primary 
 test('only the relationships of the one table are returned, and its primary keys are its own', () => {
   const got = R.relationshipsOfTable(ORDERS, {
     columns: [col(ORDERS, 'customer_id'), col(CUSTOMERS, 'customer_id'), col(ITEMS, 'order_id'), col(ORDERS, 'order_id')],
-    primaryKeys: ['order_id'],
+    keys: [key(ORDERS, 'order_id'), key(CUSTOMERS, 'customer_id')],
   });
   assert.deepEqual(got.tables[ORDERS].primary_keys, ['order_id']);
-  assert.deepEqual(got.tables[CUSTOMERS].primary_keys, []);
+  assert.deepEqual(got.tables[CUSTOMERS].primary_keys, ['customer_id'], 'every picked table carries its own primary key');
   assert.ok(got.suggestions.every((s) => s.from.table === ORDERS || s.to.table === ORDERS), 'nothing that does not involve orders');
 });
 
@@ -97,4 +98,45 @@ test('the scope statement is one information_schema.columns query per catalog, w
   assert.equal((st.sql.match(/information_schema\.columns/g) || []).length, 1);
   assert.equal(st.parameters.length, 4);
   assert.doesNotMatch(st.sql, /orders|customers/, 'table names are bound, not written into the SQL');
+});
+
+test('a child column names the target primary key when the target has no column of that name (the primary-key fallback, REQ-370)', () => {
+  const got = R.relationshipsOfTable(ORDERS, {
+    columns: [col(ORDERS, 'customer_id'), col(CUSTOMERS, 'customer_no'), col(CUSTOMERS, 'name')],
+    keys: [key(CUSTOMERS, 'customer_no')],
+  });
+  assert.deepEqual(got.suggestions, [{ from: { table: ORDERS, column: 'customer_id' }, to: { table: CUSTOMERS, column: 'customer_no' }, source: 'matching column name' }]);
+});
+
+test('a shared primary-key name is matched from the child side and from the key side: the same pair either way', () => {
+  const childSide = R.relationshipsOfTable(ORDERS, {
+    columns: [col(ORDERS, 'customer_no'), col(CUSTOMERS, 'customer_no')], keys: [key(CUSTOMERS, 'customer_no')],
+  });
+  const keySide = R.relationshipsOfTable(CUSTOMERS, {
+    columns: [col(ORDERS, 'customer_no'), col(CUSTOMERS, 'customer_no')], keys: [key(CUSTOMERS, 'customer_no')],
+  });
+  const pair = [{ from: { table: ORDERS, column: 'customer_no' }, to: { table: CUSTOMERS, column: 'customer_no' }, source: 'matching column name' }];
+  assert.deepEqual(childSide.suggestions, pair, 'picked from the child table');
+  assert.deepEqual(keySide.suggestions, pair, 'picked from the key table: the same link');
+});
+
+test('a key column that the picked table has but the other table does not is not matched', () => {
+  const got = R.relationshipsOfTable(CUSTOMERS, { columns: [col(CUSTOMERS, 'customer_no'), col(ORDERS, 'order_id')], keys: [key(CUSTOMERS, 'customer_no')] });
+  assert.deepEqual(got.suggestions, []);
+});
+
+test('an answer above the 2 MB cap keeps the picked table first, and says how many tables have their columns sent', () => {
+  const wide = 'c'.repeat(90);
+  const tables = Array.from({ length: 550 }, (_, i) => `main.s.t${i}`);
+  const columns = tables.flatMap((t) => Array.from({ length: 60 }, (_, c) => col(t, `${wide}${c}`)));
+  const got = R.relationshipsOfTable('main.s.t7', { columns, keys: [], declared: [], into: [] });
+  assert.ok(Buffer.byteLength(JSON.stringify(got)) <= R.PAYLOAD_LIMIT_BYTES, 'the answer is under the cap');
+  assert.ok(got.tables['main.s.t7'], 'the picked table is kept');
+  assert.ok(got.columns_total === 550 && got.columns_shown < 550, 'some tables are left out');
+  assert.match(got.columns_note, /Columns are sent for \d+ of 550 tables/);
+});
+
+test('an answer under the cap carries no note', () => {
+  const got = R.relationshipsOfTable(ORDERS, { columns: [col(ORDERS, 'a'), col(CUSTOMERS, 'b')], keys: [] });
+  assert.equal(got.columns_note, undefined);
 });

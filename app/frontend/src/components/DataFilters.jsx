@@ -421,8 +421,8 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
   const allKey = allProblems.join('\n');
   useEffect(() => { if (onProblems) onProblems(allProblems); }, [allKey, onProblems]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Every change to one or more tables' filters is one write: the scopes are read once, so a group apply lands on every table.
-  // A table with no saved scope needs its column names to save a row filter on it: those are read first, then the write lands.
+  // Every change to one or more tables' filters is one write. The write is a functional update: it is applied to the scopes as they are
+  // when it lands, so a change made while a column read was in flight is kept (REQ-370).
   const commitRows = (updates) => {
     const unread = updates.filter((u) => !u.columns && !tableScopeOf(scopes, u.table) && !columnsRef.current[u.table]?.columns).map((u) => u.table);
     if (!unread.length) return writeRows(updates, {});
@@ -430,11 +430,12 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
       .then((pairs) => writeRows(updates, Object.fromEntries(pairs)), () => setNote('Inspire could not read the columns of this table. Try again.'));
     return undefined;
   };
-  const writeRows = (updates, namesFor) => {
+  // The scopes after one write: the tables in updates replaced, the others kept as they are in `current`.
+  const mergeScopes = (current, updates, namesFor) => {
     const changed = (name) => updates.some((u) => scopeKeyOf(u.table) === scopeKeyOf(name));
-    const next = Object.fromEntries(Object.entries(scopes || {}).filter(([name]) => !changed(name)));
+    const next = Object.fromEntries(Object.entries(current).filter(([name]) => !changed(name)));
     for (const { table, rows, columns: wanted } of updates) {
-      const entry = tableScopeOf(scopes, table);
+      const entry = tableScopeOf(current, table);
       const names = namesFor[table] || (columnsRef.current[table]?.columns || []).map((c) => c.column_name);
       const columns = wanted || (entry ? normalizeTableScope(entry).columns : names);
       // With no rows left and every column read, the table goes back to a plain read.
@@ -442,22 +443,24 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
       if (!rows.length && whole) continue;
       next[table] = { columns: names.length ? names.filter((n) => columns.includes(n)) : columns, rows };
     }
-    onScopes(next);
+    return next;
   };
-  // Read for one column of one table: the table's columns with the column added or left out, and the row filters on a column
-  // that is no longer read are dropped (a column Inspire does not read cannot be filtered), with the note saying which.
-  const readUpdate = (table, name, read, names) => {
-    const entry = tableScopeOf(scopes, table);
-    const current = entry ? normalizeTableScope(entry).columns : names;
-    const columns = read ? [...new Set([...current, name])] : current.filter((c) => c !== name);
-    const kept = rowsOf(table).filter((f) => columns.includes(f.column));
-    const dropped = rowsOf(table).filter((f) => !columns.includes(f.column)).map((f) => f.column);
+  const writeRows = (updates, namesFor) => onScopes((prev) => mergeScopes(prev || {}, updates, namesFor));
+  // Read for one column of one table, against the scopes given: the table's columns with the column added or left out, and the row
+  // filters on a column that is no longer read are dropped (a column Inspire does not read cannot be filtered).
+  const rowsIn = (current, table) => normalizeTableScope(tableScopeOf(current, table)).rows;
+  const readUpdateIn = (current, table, name, read, names) => {
+    const entry = tableScopeOf(current, table);
+    const known = entry ? normalizeTableScope(entry).columns : names;
+    const columns = read ? [...new Set([...known, name])] : known.filter((c) => c !== name);
+    const rows = rowsIn(current, table);
+    const kept = rows.filter((f) => columns.includes(f.column));
+    const dropped = rows.filter((f) => !columns.includes(f.column)).map((f) => f.column);
     return { table, columns, rows: kept, dropped };
   };
-  const applyRead = (updates, namesFor = {}) => {
-    writeRows(updates.map(({ table, columns, rows }) => ({ table, columns, rows })), namesFor);
+  const droppedNote = (updates) => {
     const dropped = updates.filter((u) => u.dropped.length);
-    setNote(dropped.map((u) => `Removed ${u.dropped.length} row filter${u.dropped.length === 1 ? '' : 's'} on ${[...new Set(u.dropped)].join(', ')} in ${shortName(u.table)}: a column Inspire does not read cannot be filtered.`).join(' '));
+    return dropped.map((u) => `Removed ${u.dropped.length} row filter${u.dropped.length === 1 ? '' : 's'} on ${[...new Set(u.dropped)].join(', ')} in ${shortName(u.table)}: a column Inspire does not read cannot be filtered.`).join(' ');
   };
   // Read or stop reading one column in the tables given. A table read whole already reads the column, so reading it changes nothing
   // there; the column names of the other tables are read first (one table each, only when the person changes a read).
@@ -472,11 +475,16 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
       work.forEach((table) => delete next[readKey(table, name)]);
       return next;
     });
-    // The names just read are passed on to the write: the state they came from has not re-rendered yet.
     Promise.all(work.map((table) => ensureColumns(table).then((names) => [table, names])))
       .then((pairs) => {
         const namesFor = Object.fromEntries(pairs);
-        applyRead(pairs.map(([table]) => readUpdate(table, name, read, namesFor[table])), namesFor);
+        // The write is applied to the latest scopes; the note reads the scopes as the person last saw them.
+        onScopes((prev) => {
+          const current = prev || {};
+          return mergeScopes(current, pairs.map(([table]) => readUpdateIn(current, table, name, read, namesFor[table])), namesFor);
+        });
+        const note = droppedNote(pairs.map(([table]) => readUpdateIn(scopes, table, name, read, namesFor[table])));
+        if (note) setNote(note);
         settle();
       }, () => { settle(); setNote('Inspire could not read the columns of these tables. Try again.'); });
   };

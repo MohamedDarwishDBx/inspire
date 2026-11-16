@@ -88,6 +88,37 @@ test('Apply to all adds one filter to every table that has the column, and each 
   }
 });
 
+// REQ-370: a column read that lands late is applied to the scopes as they are when it lands. A change made to another table while the
+// read is in flight is kept (the write used to replace the scopes it was given at the click).
+test('a column read that lands late keeps a change made to another table while it was in flight', async () => {
+  const hold = {};
+  const ui = await openUi('launch', { ...STATE, hold });
+  const { page } = ui;
+  try {
+    await openSearch(page);
+    const search = page.getByRole('searchbox', { name: 'Search column names' });
+    // orders is saved first, with amount left out, so its columns are already read when the late read starts.
+    await search.fill('amount');
+    await page.getByRole('checkbox', { name: 'Read amount in orders' }).uncheck();
+    await page.locator('[data-left-out-column="orders.amount"]').waitFor({ timeout: 5000 });
+    // Hold the next column read, then read brand in customers: its column names are not read yet, so its write waits for the hold.
+    let release;
+    hold['/columns'] = new Promise((resolve) => { release = resolve; });
+    await search.fill('brand');
+    await page.getByRole('checkbox', { name: 'Read brand in customers' }).uncheck();
+    // While it is in flight, another change lands on orders: amount is read again.
+    await search.fill('amount');
+    await page.getByRole('checkbox', { name: 'Read amount in orders' }).check();
+    await page.locator('[data-left-out-column="orders.amount"]').waitFor({ state: 'detached', timeout: 5000 });
+    release();
+    delete hold['/columns'];
+    await page.locator('[data-left-out-column="customers.brand"]').waitFor({ timeout: 10000 });
+    assert.equal(await page.locator('[data-left-out-column="orders.amount"]').count(), 0, 'the later change to orders is kept');
+  } finally {
+    await ui.close();
+  }
+});
+
 // REQ-372: the search lists every column whose name contains the text, one row per table. Each row has Row filter (a row filter on that
 // column of that table) and Load groups (the groups of a text column). The Read box stays on the row.
 test('REQ-372: each search row has Row filter and Load groups, and Load groups lists the groups of a text column', async () => {
