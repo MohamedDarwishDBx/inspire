@@ -45,7 +45,7 @@ import {
   keptVersions, loadAssetFilters, saveAssetFilters,
   loadCollectedVibes, missingAsks, notDoneLines, rebuildSpec, rebuildingText, rephrasedAsk, removeChanges, removeKeptChanges, rollbackChanges, rollingBackText,
   saveCollectedVibes, statusWarnings, tryAgainChanges, uninstallChanges, vibeCards, vibeFeaturesLabel,
-  trackBuildSubmit, withPendingBuilds,
+  carriedStart, trackBuildSubmit, withPendingBuilds,
 } from '../lib/implementControl';
 import {
   buildingAssets, mvpScope, mvpStages, mvpProgressSummary, mvpRepairOf, feedArrivals, railProgress, sortedTo, statusProgress, steadyFeed, versionPlan, vibeChecklist,
@@ -922,7 +922,8 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   // REQ-355: a queued build (pending overlay on the card) shows as queued here too. The status read still holds the old failed version until the server answers,
   // so the detail takes the queued row and no steps of the superseded run.
   const pending = Boolean(item.latest?.pending);
-  const latest = pending ? item.latest : (status ? status.latest : item.latest);
+  // REQ-395: the status read's row times from the click of its queued build, so the timer does not move back when the server answers.
+  const latest = useMemo(() => (pending ? item.latest : carriedStart(status ? status.latest : item.latest, useCaseId)), [pending, item.latest, status, useCaseId]);
   const stepsNow = pending ? NO_STEPS : status?.steps;
   const stalled = (status ? status.stalled : item.latest?.stalled) || null;
   const uninstalled = latest?.status === IMPLEMENT_UNINSTALLED;
