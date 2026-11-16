@@ -2,7 +2,7 @@ const { parseExactJson } = require('./exactJson');
 const { parseStrategicContext, validateStrategy } = require('../../frontend/src/lib/strategyContext.js');
 const { scopesFromObject, serializeTableScopes, scopeKeyOf } = require('../../frontend/src/lib/tableScope.js');
 
-const INSPIRE_AGENT_VERSION = 'v1.5.3';
+const INSPIRE_AGENT_VERSION = 'v1.5.4';
 /** The release a person sees: the installer stamps INSPIRE_RELEASE_TAG (e.g. v1.5.3-rc.2) into app.yaml; the package version is the fallback. */
 const INSPIRE_RELEASE_TAG_PATTERN = /^v\d\.\d\.\d(-rc\.\d)?$/;
 function inspireReleaseLabel(env = process.env) {

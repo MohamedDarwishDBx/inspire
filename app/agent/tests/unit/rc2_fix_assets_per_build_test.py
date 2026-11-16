@@ -9,8 +9,11 @@ import sys
 
 import pytest
 
+from _agentload import agent_version
+
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 INSTALLER = ROOT / "installer" / "inspire_setup.py"
+VERSION = agent_version()  # the notebook's own version, so the fixtures follow each release
 
 
 def _installer():
@@ -21,7 +24,7 @@ def _installer():
 
 
 def _manifest_notebook_files(pins):
-    return [{"kind": "notebook", "name": name, "version": "v1.5.3", "file": pin["file"], "sha256": pin["sha256"],
+    return [{"kind": "notebook", "name": name, "version": VERSION, "file": pin["file"], "sha256": pin["sha256"],
              "size": pin["size"], "license": "license/inspire.txt"} for name, pin in sorted(pins.items())]
 
 
@@ -59,10 +62,10 @@ def test_two_builds_of_one_version_get_two_folders(agent_ns):
     pins = agent_ns["INSPIRE_NOTEBOOK_ASSETS"]
     other = json.loads(json.dumps(pins))
     other["app_shell"]["sha256"] = "f" * 64
-    first = setup.assets_root_for(f"{setup.ASSETS_PARENT}/v1.5.3", setup.assets_build_id(_manifest_notebook_files(pins)))
-    second = setup.assets_root_for(f"{setup.ASSETS_PARENT}/v1.5.3", setup.assets_build_id(_manifest_notebook_files(other)))
+    first = setup.assets_root_for(f"{setup.ASSETS_PARENT}/{VERSION}", setup.assets_build_id(_manifest_notebook_files(pins)))
+    second = setup.assets_root_for(f"{setup.ASSETS_PARENT}/{VERSION}", setup.assets_build_id(_manifest_notebook_files(other)))
     assert first != second
-    assert first.startswith(f"{setup.ASSETS_PARENT}/v1.5.3/") and second.startswith(f"{setup.ASSETS_PARENT}/v1.5.3/")
+    assert first.startswith(f"{setup.ASSETS_PARENT}/{VERSION}/") and second.startswith(f"{setup.ASSETS_PARENT}/{VERSION}/")
 
 
 def test_the_notebook_reads_the_folder_its_own_build_names_by_default(fresh_ns, monkeypatch):
@@ -77,10 +80,10 @@ def test_the_first_builds_notebook_still_loads_its_assets_after_a_second_build_l
     setup = _installer()
     shell = (ROOT / "agent" / "agent" / "app_shell" / "app_shell.b64").read_bytes()
     first_pins = dict(pins, app_shell=dict(pins["app_shell"], sha256=agent_ns["INSPIRE_NOTEBOOK_ASSETS"]["app_shell"]["sha256"]))
-    first = setup.assets_root_for(f"{tmp_path}/v1.5.3", setup.assets_build_id(_manifest_notebook_files(first_pins)))
-    second = setup.assets_root_for(f"{tmp_path}/v1.5.3", setup.assets_build_id(_manifest_notebook_files(dict(pins, app_shell=dict(pins["app_shell"], sha256="e" * 64)))))
-    _write_folder(first, "v1.5.3", first_pins, {"app_shell": shell})
-    _write_folder(second, "v1.5.3", dict(pins, app_shell=dict(pins["app_shell"], sha256="e" * 64)), {"app_shell": b"second build"})
+    first = setup.assets_root_for(f"{tmp_path}/{VERSION}", setup.assets_build_id(_manifest_notebook_files(first_pins)))
+    second = setup.assets_root_for(f"{tmp_path}/{VERSION}", setup.assets_build_id(_manifest_notebook_files(dict(pins, app_shell=dict(pins["app_shell"], sha256="e" * 64)))))
+    _write_folder(first, VERSION, first_pins, {"app_shell": shell})
+    _write_folder(second, VERSION, dict(pins, app_shell=dict(pins["app_shell"], sha256="e" * 64)), {"app_shell": b"second build"})
     assert first != second
     loaded = agent_ns["InspireAssets"](first, local=str(tmp_path / "local_a")).notebook_file("app_shell")
     assert loaded == shell
@@ -90,6 +93,6 @@ def test_a_notebook_still_refuses_another_builds_folder(agent_ns, tmp_path):
     """Must-fail: pointing a notebook at another build's folder keeps the refusal."""
     pins = agent_ns["INSPIRE_NOTEBOOK_ASSETS"]
     other = dict(pins, app_shell=dict(pins["app_shell"], sha256="e" * 64, size=pins["app_shell"]["size"]))
-    folder = _write_folder(tmp_path / "other", "v1.5.3", other, {"app_shell": b"y" * pins["app_shell"]["size"]})
+    folder = _write_folder(tmp_path / "other", VERSION, other, {"app_shell": b"y" * pins["app_shell"]["size"]})
     with pytest.raises(agent_ns["InspireAssetError"], match="is from another Inspire build than this notebook"):
         agent_ns["InspireAssets"](str(folder), local=str(tmp_path / "local_b")).notebook_file("app_shell")
