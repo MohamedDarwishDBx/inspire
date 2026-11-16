@@ -2,6 +2,10 @@
 
 These rules apply to every session in this repository. This file is public. It holds process and engineering rules only: no secrets, no workspace names, no customer names, no personal paths. Put anything sensitive in your own local notes, not here.
 
+## Start here: the requirements ledger
+
+Before any work in this repo, read `app/docs/requirements/ledger.md`. It is the single list of what was asked, what shipped, and what is still open. Its hand-off section at the top lists every open row by area, so pick your work from there. Every change you make names the REQ row it serves, and every new ask becomes a REQ row before you start on it.
+
 ## 0. What this repo is
 
 - Root: `inspire_installer.py`, `README.md`, `LICENSE`, and the dot files git reads at the root. Nothing else lives at the root.
