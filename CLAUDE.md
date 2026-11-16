@@ -105,6 +105,7 @@ Record the build, the URL, the viewports, and the result per row in the ledger's
 3. Install the pre-release on a scratch workspace through the installer. Run the live walks for every in-scope REQ on that install.
 4. Mark the release latest and move `main` only after the owner accepts it. Until then, `main` and the latest-release link are untouched, and `dev` is never reset or rewritten.
 5. The release check downloads every release file through the pre-release links, verifies each sha256 against `manifest.json`, and runs the installer from a fresh folder.
+6. Release notes are very brief: a two-sentence summary, one line per user-facing change, the known issues, and how to install. No per-change essays, metrics tables, suite counts, lane lists or walk logs; those stay in the ledger. Do not mention billing tags or usage tags in release notes.
 
 ## 5. Deploy and install
 
