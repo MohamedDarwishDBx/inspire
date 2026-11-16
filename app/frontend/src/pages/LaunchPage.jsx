@@ -47,6 +47,7 @@ import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
 import ModalDialog from '../components/ModalDialog';
 import { sameSettings } from '../lib/businessProfiles';
 import { scopesFromObject, launchTableScopeText, filterValuesOf, labelAvailable, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
+import { launchRelationshipsText } from '../lib/tableRelationships';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
 import { runBusiness } from '../lib/reviewFigures';
@@ -878,6 +879,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     const tableScopeText = launchTableScopeText(tableScopes, scope,
       dataFilterLabel.on ? (dataFilterLabel.text ?? groupLabelOf(filterValuesOf(tableScopes, scopeTables))) : '');
     if (tableScopeText) finalParams['17_table_scope'] = tableScopeText;
+    // REQ-373: the joins the person drew between the tables the run reads; sent only when one applies.
+    const relationshipText = launchRelationshipsText(relationships, scopeTables);
+    if (relationshipText) finalParams['18_table_relationships'] = relationshipText;
 
     const startRun = async () => {
       try {
