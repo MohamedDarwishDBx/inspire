@@ -16,7 +16,16 @@ function scopeRowsOf(columnsByTable, sql, parameters) {
   const named = (re) => parameters.filter((p) => re.test(p.name));
   const whole = sql.includes('(TRUE)');
   const searching = sql.includes('ILIKE :q');
-  const text = searching ? String(named(/^q$/)[0].value).replace(/^%|%$/g, '').replace(/\\([\\%_])/g, '$1').toLowerCase() : '';
+  // The pattern decides the match as ILIKE does: a leading % is ends-with, a trailing % is starts-with, both is contains (REQ-379).
+  const raw = searching ? String(named(/^q$/)[0].value) : '';
+  const leading = raw.startsWith('%');
+  const trailing = raw.endsWith('%') && !raw.endsWith('\\%');
+  const text = raw.slice(leading ? 1 : 0, trailing ? -1 : undefined).replace(/\\([\\%_])/g, '$1').toLowerCase();
+  const textMatches = (name) => {
+    if (leading && !trailing) return name.endsWith(text);
+    if (trailing && !leading) return name.startsWith(text);
+    return name.includes(text);
+  };
   const schemas = searching ? named(/^s\d+$/).map((p) => p.value) : [];
   const pairs = searching
     ? named(/^ts\d+$/).map((p, i) => [p.value, (named(/^tt\d+$/).find((x) => x.name === `tt${i}`) || {}).value])
@@ -27,7 +36,7 @@ function scopeRowsOf(columnsByTable, sql, parameters) {
     const [c, schema, table] = name.split('.');
     if (c.toLowerCase() !== catalog || !inScope(schema, table)) continue;
     for (const col of cols) {
-      if (searching && !col.column_name.toLowerCase().includes(text)) continue;
+      if (searching && !textMatches(col.column_name.toLowerCase())) continue;
       rows.push({ table_schema: schema, table_name: table, column_name: col.column_name, data_type: col.data_type });
     }
   }

@@ -277,3 +277,25 @@ test('a schema of 550 tables: the search finds a column in the last table, with 
     await ui.close();
   }
 });
+
+// REQ-379: a star at the start or the end of the search text is a wildcard. cust* finds the names that start with cust, *_id finds the
+// names that end with a literal _id, and the hint under the box says so.
+test('REQ-379: cust* lists the names that start with cust, *_id lists the names that end in _id, and the hint names the star', async () => {
+  const ui = await openUi('launch', STATE);
+  const { page } = ui;
+  try {
+    await openSearch(page);
+    const box = page.getByRole('searchbox', { name: 'Search column names' });
+    assert.match(await page.locator('[data-search-syntax]').innerText(), /Use \* at the start or end/, 'the hint says how to use the star');
+    await box.fill('cust*');
+    await page.locator('[data-column-group="customer_id"]').waitFor({ timeout: 10000 });
+    assert.deepEqual(await page.locator('[data-column-group]').allInnerTexts().then((t) => t.map((x) => x.split('\n')[0])), ['customer_id'],
+      'cust* lists customer_id only');
+    await box.fill('*_id');
+    await page.locator('[data-column-group="order_id"]').waitFor({ timeout: 10000 });
+    const names = await page.locator('[data-column-group]').allInnerTexts().then((t) => t.map((x) => x.split('\n')[0]).sort());
+    assert.deepEqual(names, ['customer_id', 'order_id'], '*_id lists the two _id columns and not amount, brand or name');
+  } finally {
+    await ui.close();
+  }
+});
