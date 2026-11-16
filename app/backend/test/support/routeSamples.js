@@ -62,6 +62,7 @@ const SAMPLES = [
   { key: 'POST /api/inspire/feedback', rule: 'any', method: 'POST', path: '/api/inspire/feedback', body: {} },
   { key: 'POST /api/auth/sp-token', rule: 'any', method: 'POST', path: '/api/auth/sp-token', body: {} },
   { key: 'POST /api/setup/verify', rule: 'managers', method: 'POST', path: '/api/setup/verify', body: {} },
+  { key: 'POST /api/relationships', rule: 'any', method: 'POST', path: '/api/relationships?warehouse_id=wh1', body: { tables: ['main.sales.orders', 'main.sales.customers'] } },
   { key: 'POST /api/inspire/implement/swaps', rule: 'any', method: 'POST', path: '/api/inspire/implement/swaps', body: {} },
   { key: 'POST /api/inspire/implement/readiness', rule: 'any', method: 'POST', path: '/api/inspire/implement/readiness', body: {} },
   { key: 'POST /api/inspire/implement/group-counts', rule: 'any', method: 'POST', path: '/api/inspire/implement/group-counts', body: { table: 'main.sales.orders', columns: ['region'] } },

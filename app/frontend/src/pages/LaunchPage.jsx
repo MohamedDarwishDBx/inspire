@@ -185,7 +185,7 @@ const DRAFT_PARAMS = ['00_business_name', '03_discovery_type', '04_table_electio
   '11_generation_path', '12_documents_languages', '13_generate_genie_code_for', '15_operation', '16_best_of_best_count'];
 const FORM_DEFAULTS = {
   genChecks: { 'PDF Catalog': true, Presentation: false, Excel: true }, priorityChecks: {}, customPriorities: [], strategyBase: '',
-  selectedCatalogs: [], wholeCatalogs: [], selectedSchemas: [], selectedTables: [], tableScopes: {}, dataFilterLabel: { on: false, text: null },
+  selectedCatalogs: [], wholeCatalogs: [], selectedSchemas: [], selectedTables: [], tableScopes: {}, dataFilterLabel: { on: false, text: null }, relationships: [],
   electionTouched: false, discoveryTouched: false, strategyTouched: false, prioritiesTouched: false,
 };
 const FLAGS = ['electionTouched', 'discoveryTouched', 'strategyTouched', 'prioritiesTouched'];
@@ -215,8 +215,17 @@ function restoredForm(draft) {
       .filter((x) => typeof x === 'string'),
     tableScopes: scopesFromObject(spec.tableScopes).scopes,
     dataFilterLabel: restoredLabel(spec.dataFilterLabel),
+    relationships: restoredRelationships(spec.relationships),
     ...Object.fromEntries(FLAGS.map((key) => [key, spec[key] === true])),
   };
+}
+
+// A relationship the person kept in Data Management (REQ-362): both sides name a table and a column, and the source says where it came from.
+function restoredRelationships(value) {
+  const side = (v) => (v && typeof v === 'object' && typeof v.table === 'string' && typeof v.column === 'string' ? { table: v.table, column: v.column } : null);
+  return Array.isArray(value)
+    ? value.map((l) => (l && typeof l === 'object' && side(l.from) && side(l.to) && typeof l.source === 'string' ? { from: side(l.from), to: side(l.to), source: l.source } : null)).filter(Boolean)
+    : [];
 }
 
 function restoredLabel(value) {
@@ -258,6 +267,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [selectedTables, setSelectedTables] = useState(start.selectedTables);
   const [tableScopes, setTableScopes] = useState(start.tableScopes);
   const [dataFilterLabel, setDataFilterLabel] = useState(start.dataFilterLabel);
+  const [relationships, setRelationships] = useState(start.relationships);
   const [showDataFilters, setShowDataFilters] = useState(false);
   const [dataFilterProblems, setDataFilterProblems] = useState([]);
   const [loadingTables, setLoadingTables] = useState(false);
@@ -643,9 +653,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [prioritiesTouched, setPrioritiesTouched] = useState(start.prioritiesTouched);
 
   const draftForm = useMemo(() => draftFormOf(params, {
-    genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
+    genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel, relationships,
     electionTouched, discoveryTouched, strategyTouched, prioritiesTouched,
-  }), [params, genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
+  }), [params, genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel, relationships,
     electionTouched, discoveryTouched, strategyTouched, prioritiesTouched]);
   useEffect(() => {
     if (JSON.stringify(draftForm) === PRISTINE_FORM) clearWizardDraft(draftKey);
@@ -666,6 +676,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     setSelectedTables(FORM_DEFAULTS.selectedTables);
     setTableScopes(FORM_DEFAULTS.tableScopes);
     setDataFilterLabel(FORM_DEFAULTS.dataFilterLabel);
+    setRelationships(FORM_DEFAULTS.relationships);
     setElectionTouched(false);
     setDiscoveryTouched(false);
     setStrategyTouched(false);
@@ -1738,6 +1749,8 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                       onScopes={setTableScopes}
                       label={dataFilterLabel}
                       onLabel={setDataFilterLabel}
+                      relationships={relationships}
+                      onRelationships={setRelationships}
                       apiFetch={apiFetch}
                       warehouseId={warehouseId}
                       onProblems={setDataFilterProblems}
