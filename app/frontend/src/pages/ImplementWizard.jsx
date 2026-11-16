@@ -297,7 +297,7 @@ import Advanced from '../components/Advanced';
 import CatalogPicker from '../components/CatalogPicker';
 import { PROFILE_WAITING, noMainTableText, useScopeProfiles } from '../lib/groupingProfile';
 import { fieldOf } from '../lib/useCaseFields.js';
-import { chosenTableScopes, normalizeTableScope, rowFilterText, scopeEntryOf, tableScopeSummary, wholeTableScopes, withoutTableRow } from '../lib/tableScope';
+import { chosenScopeParam, chosenTableScopes, normalizeTableScope, rowFilterText, scopeEntryOf, tableScopeSummary, wholeTableScopes, withoutTableRow } from '../lib/tableScope';
 import SamplesCopyOffer from '../components/SamplesCopyOffer';
 import { samplesTarget, validCopyTarget } from '../lib/samplesCopy';
 import { useModal } from '../components/useModal';
@@ -582,7 +582,7 @@ export default function ImplementWizard({
   const primaryOriginal = primaryTableOf(ucRow);
   const primaryChosen = spec.data.tables[primaryOriginal] || primaryOriginal;
   const scopeProfile = useScopeProfiles({ apiPostJson, inspireDatabase, sessionId, useCaseId: spec.use_case_id, warehouseId, enabled: mode === 'mvp',
-    groupBy: spec.config.widgets?.[GROUP_BY], defaultGrouping: true, table: primaryChosen,
+    groupBy: spec.config.widgets?.[GROUP_BY], defaultGrouping: true, table: primaryChosen, tableScope: chosenScopeParam(spec.data),
     noMainTable: tablesOf(ucRow).length ? '' : noMainTableText(nameOfUseCase(ucRow)) });
   const builtFirstRun = builtFirstRunOf(settingsModel);
   const firstRunUnrecorded = useMemo(() => latestRunScope(context?.latest).unrecorded, [context?.latest]);
@@ -614,7 +614,9 @@ export default function ImplementWizard({
   };
   const moneyApi = useRef(null);
   // The money previews read their tables through the Data Filters of this use case's session, so they name the session like the profile does.
-  const withSession = (body) => ({ ...body, inspire_database: inspireDatabase, warehouse_id: warehouseId, session_id: String(sessionId), use_case_id: spec.use_case_id });
+  // The previews read the Table Scope the Data step shows (REQ-389), so a preview matches the build.
+  const withSession = (body) => ({ ...body, inspire_database: inspireDatabase, warehouse_id: warehouseId, session_id: String(sessionId), use_case_id: spec.use_case_id,
+    table_scope: chosenScopeParam(spec.data) });
   moneyApi.current = { currencies: (body) => moneyRead('/api/money/currency-rates')(withSession(body)), preview: (body) => moneyRead('/api/money/value-preview')(withSession(body)), describe: (body) => postRef.current('/api/money/describe-value', body) };
   // Folding sections: a step with several panels shows one open section at a time, in panel order.
   const [openFold, setOpenFold] = useState(null);

@@ -64,7 +64,7 @@ const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('.
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
 const PM_ERROR = require('./lib/permissionError');
 const { apiRefusalText, logApiBody } = require('./lib/apiRefusal');
-const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
+const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, parseImplementRow, builtTableScopeOf, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
 const { keepLongInteger, parseExactJson } = require('./lib/exactJson');
 const { int64Id, isInt64Id, jsonWithInt64Ids } = require('./lib/int64Id');
 const { dataFiltersOf, scopesOfSessions } = require('./lib/dataFilters');
@@ -2990,6 +2990,31 @@ async function tableScopesOfRows(req, warehouseId, catalog, schema, rows) {
   }
 }
 
+// REQ-389: the Table Scope each use case's latest built version read, keyed by session and use case. A build that chose its own scope on
+// the Data step has it in its spec; a use case no build chose for has no entry, so its Discover run's scope is shown. A build record that
+// cannot be read gives no entries, so those use cases fall back to the Discover run's scope and the reason is logged.
+async function builtScopesOfRows(req, warehouseId, catalog, schema, rows) {
+  const sids = [...new Set(rows.map((r) => int64Id(r.session_id)).filter(Boolean))];
+  const built = new Map();
+  if (!sids.length) return built;
+  const sql = `SELECT CAST(session_id AS STRING) AS session_id, use_case_id, spec_version, status, to_json(spec_json) AS spec_json `
+    + `FROM ${implementTableName(catalog, schema)} WHERE session_id IN (${sids.join(', ')})`;
+  try {
+    const history = new Map();
+    for (const row of sqlResultToObjects(await executeSql(req.dbHost, req.dbToken, warehouseId, sql)).map(parseImplementRow)) {
+      const key = `${row.session_id}|${row.use_case_id}`;
+      history.set(key, [...(history.get(key) || []), row]);
+    }
+    for (const [key, versions] of history) {
+      const scope = builtTableScopeOf(versions);
+      if (scope !== undefined) built.set(key, scope);
+    }
+  } catch (err) {
+    console.warn(`usecases: the scope the latest build read could not be read, so the Discover run's Data Filters are shown: ${err.message}`);
+  }
+  return built;
+}
+
 // Get use cases from __inspire_usecases table (final polished data)
 app.get('/api/inspire/usecases', requireToken, async (req, res) => {
   try {
@@ -3071,8 +3096,10 @@ app.get('/api/inspire/usecases', requireToken, async (req, res) => {
     );
     // REQ-171: each use case carries the Data Filters of its session's Table Scope, so the App shows them on the use case.
     const sessionScopes = await tableScopesOfRows(req, warehouse_id, catalog, schema, rows);
+    const builtScopes = await builtScopesOfRows(req, warehouse_id, catalog, schema, rows);
     for (const row of rows) {
-      const scopes = sessionScopes.get(String(row.session_id));
+      const chosen = builtScopes.get(`${row.session_id}|${row.id}`);
+      const scopes = chosen !== undefined ? chosen : sessionScopes.get(String(row.session_id));
       row.data_filters = scopes === undefined ? null : dataFiltersOf(row, scopes);
     }
     res.json({ usecases: rows, count: rows.length, all_sessions: listAll });

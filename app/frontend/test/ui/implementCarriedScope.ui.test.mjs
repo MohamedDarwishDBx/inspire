@@ -2,7 +2,7 @@
 // exactly the scope the person chose (the job's 17_table_scope), so a whole-data build is reachable from that step.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeBrowser, goToStep, openUi, startMvp, toSummary } from './uiSupport.mjs';
+import { closeBrowser, goToStep, openUi, startMvp, toSummary, until } from './uiSupport.mjs';
 
 test.after(closeBrowser);
 
@@ -89,6 +89,35 @@ test('the Discover filters come back on the Data step after Whole data, and a bu
     await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
     assert.equal(made.jobs.length, 1);
     assert.equal(JSON.parse(made.jobs[0].params['17_table_scope'])[TABLE].rows.length, 2, 'both Discover filters are read');
+  } finally {
+    await ui.close();
+  }
+});
+
+// REQ-389 follow-up (risk 2): the wizard's Data groups read names the Table Scope the Data step shows, so a removed chip is no longer read.
+test('the Data groups read names the Table Scope the Data step shows, so a removed filter is no longer read (REQ-389, must-fail before)', async () => {
+  const profileScopes = [];
+  const init = async (page) => {
+    await page.route('**/api/grouping/profile', (route) => {
+      const body = JSON.parse(route.request().postData() || '{}');
+      profileScopes.push(body.table_scope ?? null);
+      route.continue();
+    });
+  };
+  const ui = await openUi('wizard&discovery=Deep', { session: SESSION }, '', { init });
+  const { page } = ui;
+  try {
+    await goToStep(page, 'Data');
+    await page.locator('[data-discover-filters]').waitFor({ timeout: 15000 });
+    assert.equal(profileScopes.at(-1), null, 'with no choice the profile names no scope, so the Discover run scope is read');
+    await page.getByRole('button', { name: 'Remove row filter paymentMethod is visa on main.s.orders', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-scope-chip]').length === 1);
+    await until(() => profileScopes.at(-1) != null, 'the profile was asked again for the chosen scope');
+    const sent = JSON.parse(profileScopes.at(-1));
+    assert.deepEqual(sent[TABLE].rows, [{ column: 'status', op: '=', values: ['gold'] }], 'the profile reads the filter that stayed, not the one removed');
+    await page.getByRole('button', { name: 'Whole data', exact: true }).click();
+    await until(() => profileScopes.at(-1) != null && JSON.parse(profileScopes.at(-1))[TABLE].rows.length === 0, 'whole data is asked with no row filter');
+    assert.deepEqual(JSON.parse(profileScopes.at(-1))[TABLE].columns, ['order_id', 'paymentMethod', 'status'], 'the columns Discover kept stay');
   } finally {
     await ui.close();
   }

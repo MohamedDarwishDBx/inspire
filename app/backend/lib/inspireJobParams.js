@@ -182,6 +182,23 @@ function withChosenTableScope(params, dataSpec) {
   return next;
 }
 
+/** REQ-389: the Table Scope a wizard preview reads through. Absent or empty keeps the Discover run's scope; a scope (text or object)
+ * replaces it, and {} reads whole tables. */
+function previewScopesOf(asked, carried) {
+  if (asked === undefined || asked === null || asked === '') return carried;
+  let value = asked;
+  if (typeof asked === 'string') {
+    try {
+      value = JSON.parse(asked);
+    } catch {
+      throw paramError('The table scope is not valid JSON.');
+    }
+  }
+  const { scopes, problems } = scopesFromObject(value);
+  if (problems.length) throw paramError(`Table scope: ${joinSentences(...problems)}`);
+  return scopes;
+}
+
 function validateTableScopeParams(params, picks = params['01_uc_metadata']) {
   const { scopes, problems, label } = parseTableScopeText(params['17_table_scope']);
   if (problems.length) throw paramError(`Table scope: ${joinSentences(...problems)}`);
@@ -624,6 +641,7 @@ module.exports = {
   validateBestOfBestCountParams,
   validateTableScopeParams,
   withChosenTableScope,
+  previewScopesOf,
   validateRelationshipParams,
   parseMaybeJson,
   belowBarLabelFromUseCase,

@@ -617,3 +617,22 @@ test('the profile may group and sample only the Launch scope columns, matched wi
   assert.deepEqual(GP.scopedColumns(columns, SCOPED, 'main.s.orders').map((c) => c.column_name), ['Order_Id', 'status']);
   assert.equal(GP.scopedColumns(columns, {}, 'main.s.orders'), columns, 'an unscoped table keeps every column');
 });
+
+// REQ-389 follow-up (risk 2): the profile reads through the Data step's choice when the wizard names one. Every column is kept in both
+// scopes, so the only difference between the two reads is the row filter.
+test('the profile reads the Data step choice: the Discover row filter with no choice, and no row filter for whole data (REQ-389, must-fail before)', async () => {
+  const ALL = COLUMNS.map((c) => c.column_name);
+  const discover = { 'main.sales.orders': { columns: ALL, rows: [{ column: 'region', op: '=', values: ['EMEA'] }] } };
+  const made = profiled({ session: { business_name: 'Acme', tables_str: 'main.sales.orders', catalogs: 'main', schemas_str: 'sales',
+    inspire_database_name: 'main.inspire', generation_path: '/tmp/out', table_scope: JSON.stringify(discover) } });
+  await withApp(made, async (srv) => {
+    const kept = await post(srv, ASK);
+    assert.equal(kept.status, 200, JSON.stringify(kept.data));
+    assert.ok(made.sqlCalls.some((c) => (c.parameters || []).some((p) => p.value === 'EMEA')), 'with no choice the Discover filter is read');
+    made.sqlCalls.length = 0;
+    const whole = await post(srv, { ...ASK, table_scope: '{}' });
+    assert.equal(whole.status, 200, JSON.stringify(whole.data));
+    assert.ok(made.sqlCalls.length > 0, 'the profile ran its reads');
+    assert.ok(!made.sqlCalls.some((c) => (c.parameters || []).some((p) => p.value === 'EMEA')), 'whole data reads no Discover row filter');
+  });
+});

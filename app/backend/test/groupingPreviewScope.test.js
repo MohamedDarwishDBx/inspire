@@ -163,3 +163,24 @@ test('a profile whose join key is outside the Data Filters returns every other p
   assert.ok(made.sqlCalls.some((c) => c.sql.includes(`\`main\`.\`s\`.\`orders\``)), 'the main table is read for the rest of the profile');
   assert.ok(!made.sqlCalls.some((c) => /FROM `main`\.`s`\.`stores`( GROUP| WHERE| LIMIT|\)|$)/.test(c.sql)), 'the joined table is not read whole');
 });
+
+// REQ-389 follow-up (risk 2): the wizard's previews read the Table Scope the Data step names, so a preview matches the build. A scope the
+// step names replaces the Discover run's scope (whole data is an empty scope); a request that names none keeps the Discover run's scope.
+test('the value preview reads whole data when the Data step names no row filter (REQ-389, must-fail before)', async () => {
+  const made = makeApp({ forwardedToken: 'person-tok', session: SESSION(ORDERS_SCOPE) });
+  const got = await post(made, '/api/money/value-preview', { ...BODY, table: ORDERS, table_scope: '{}', value: { method: 'column', column: 'amount', currency: 'AED' } });
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  const read = made.sqlCalls.find((c) => c.sql.includes('AS stake'));
+  assert.ok(read, 'the preview ran a statement');
+  assert.deepEqual(read.parameters || [], [], 'the Discover row filter is not bound');
+  assert.ok(!read.sql.includes('`region`'), 'the Discover row filter is not in the read');
+});
+
+test('the value preview reads the filter the Data step chose in place of the Discover filter (REQ-389, must-fail before)', async () => {
+  const chosen = { [ORDERS]: { columns: ['amount', 'region'], rows: [{ column: 'region', op: '=', values: ['south'] }] } };
+  const made = makeApp({ forwardedToken: 'person-tok', session: SESSION(ORDERS_SCOPE) });
+  const got = await post(made, '/api/money/value-preview', { ...BODY, table: ORDERS, table_scope: JSON.stringify(chosen), value: { method: 'column', column: 'amount', currency: 'AED' } });
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  const read = made.sqlCalls.find((c) => c.sql.includes('AS stake'));
+  assert.deepEqual(read.parameters, [{ name: 's1_f0_0', value: 'south', type: 'STRING' }]);
+});

@@ -208,6 +208,12 @@ export function chosenTableScopes(dataSpec, carried) {
   return dataSpec && dataSpec.table_scope && typeof dataSpec.table_scope === 'object' ? dataSpec.table_scope : (carried || {});
 }
 
+// The Table Scope a wizard preview or readiness read names (REQ-389): the Data step's choice as text, or '' when there is no choice,
+// so the read keeps the Discover run's scope.
+export function chosenScopeParam(dataSpec) {
+  return dataSpec && dataSpec.table_scope !== undefined ? JSON.stringify(dataSpec.table_scope) : '';
+}
+
 // The same scope with every row filter taken off: the columns the person kept stay, and a table with nothing left is not read.
 export function wholeTableScopes(scopes) {
   return Object.fromEntries(Object.entries(scopes || {}).map(([table, entry]) => [table, { ...normalizeTableScope(entry), rows: [] }])
