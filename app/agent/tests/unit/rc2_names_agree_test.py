@@ -39,7 +39,7 @@ def test_a_use_case_without_a_typed_name_keeps_its_generated_name(agent_ns):
     assert row["Name"] == row["name_with_technique"] == GENERATED
 
 
-# REQ-182 class (rc7 live walk, filtered Discover 317339574539724): N04-U03 "Align Staffing with Peak Hours" reached the tracking
+# REQ-182 class (rc7 live walk, filtered Discover 900000000000010): N04-U03 "Align Staffing with Peak Hours" reached the tracking
 # row as name_with_technique "Align Staffing with Peak Hours" while its use_case column read "Align Staffing". The use_case column
 # came from _normalize_usecase, which cut every name at " with ". Both columns must be the same name, and no pass may shorten it
 # to a vaguer head.

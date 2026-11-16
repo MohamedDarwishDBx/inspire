@@ -41,7 +41,7 @@ test('a narrowed scope sizes the First run from its own count and drops whole-ta
     records: 3333,
     recent: { days: 30, records: 900 },
     first_run: { all: 3333, recent: 900, records: 1000 },
-    suggested_groups: [{ value: 'Starbucks', records: 500, kind: 'biggest', parts: [{ column: 'brand', value: 'Starbucks' }] }],
+    suggested_groups: [{ value: 'Northwind', records: 500, kind: 'biggest', parts: [{ column: 'brand', value: 'Northwind' }] }],
   };
   const scoped = withScopedRows(profile, 120);
   assert.equal(scoped.records, 120);
@@ -49,7 +49,7 @@ test('a narrowed scope sizes the First run from its own count and drops whole-ta
   assert.equal(scoped.first_run.recent, null);
   assert.equal('recent' in scoped, false);
   assert.equal(scoped.suggested_groups[0].records, null);
-  assert.equal(scoped.suggested_groups[0].value, 'Starbucks');
+  assert.equal(scoped.suggested_groups[0].value, 'Northwind');
   assert.equal(profile.records, 3333, 'the whole-table profile is not changed');
   assert.equal(withScopedRows(null, 120), null);
   assert.equal(withScopedRows(profile, NaN).records, null, 'a count that was not taken shows no number');
@@ -83,16 +83,16 @@ test('a scope under the forecast minimum warns, one over it does not', () => {
 
 test('group counts for a narrowed scope come from the scoped count per group, and a group missing from the result is unknown', () => {
   const profile = { records: 3333, suggested_groups: [
-    { value: 'Starbucks', records: 900, parts: [{ column: 'brand', value: 'Starbucks' }] },
+    { value: 'Northwind', records: 900, parts: [{ column: 'brand', value: 'Northwind' }] },
     { value: 'Costa', records: 400, parts: [{ column: 'brand', value: 'Costa' }] },
   ] };
-  const scoped = withScopedRows(profile, 2, [{ brand: 'Starbucks', records: '2' }]);
+  const scoped = withScopedRows(profile, 2, [{ brand: 'Northwind', records: '2' }]);
   assert.deepEqual(scoped.suggested_groups.map((g) => g.records), [2, null]);
   assert.deepEqual(groupPartColumns(profile), ['brand']);
 });
 
 test('a group-count query groups by the named columns under the same scope as the readiness count', () => {
-  const statement = groupCountsStatement('main.s.orders', ['brand'], { filters: [{ table: 'main.s.orders', column: 'brand', op: 'in', values: ['Starbucks'] }] });
+  const statement = groupCountsStatement('main.s.orders', ['brand'], { filters: [{ table: 'main.s.orders', column: 'brand', op: 'in', values: ['Northwind'] }] });
   assert.match(statement.sql, /GROUP BY `brand`/);
   assert.match(statement.sql, /COUNT\(\*\) AS records FROM `main`\.`s`\.`orders` WHERE /);
   assert.equal(groupCountsStatement('main.s.orders', [], {}), null, 'no group columns, no query');
@@ -133,11 +133,11 @@ test('a group-count query carries every column the wizard sends, up to eight, an
 
 test('a group sums every row of the scoped result that matches its values, and a group with no matching row is unknown, never zero', () => {
   const profile = { suggested_groups: [
-    { value: 'Starbucks', parts: [{ column: 'brand', value: 'Starbucks' }] },
+    { value: 'Northwind', parts: [{ column: 'brand', value: 'Northwind' }] },
     { value: 'Costa', parts: [{ column: 'brand', value: 'Costa' }] },
     { value: 'Nero', parts: [{ column: 'brand', value: 'Nero' }] },
   ] };
-  const rows = [{ brand: 'Starbucks', size: 'S', records: 2 }, { brand: 'Starbucks', size: 'L', records: 3 }];
+  const rows = [{ brand: 'Northwind', size: 'S', records: 2 }, { brand: 'Northwind', size: 'L', records: 3 }];
   assert.deepEqual(withScopedRows(profile, 5, rows).suggested_groups.map((g) => g.records), [5, null, null]);
 });
 

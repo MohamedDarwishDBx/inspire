@@ -532,7 +532,7 @@ def test_the_tag_cap_keeps_every_id_and_drops_the_kind_tags_first_when_every_tag
 
 def test_app_builds_carry_the_launcher_tag_the_run_controls_rule_spares(agent_ns):
     # The rule tells Genie Code never to cancel a run the App launched. That only holds if the App's launch really tags it.
-    tags = agent_ns["inspire_identity_tags"]("biz", "1794495363431701867", "Inspire App")
+    tags = agent_ns["inspire_identity_tags"]("biz", "9000000000000000004", "Inspire App")
     assert tags["dbx_inspire_ai_launcher_source"] == "Inspire App"
     assert "`dbx_inspire_ai_launcher_source` = `Inspire App`" in agent_ns["GENIE_RUN_CONTROLS_RULE"]
     backend = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "backend", "lib", "inspireJobParams.js")

@@ -14,10 +14,10 @@ const STATE = {
   schemas: { main: ['s'] },
   tables: { 'main.s': ['orders'] },
   columnsByTable: { [ORDERS]: ORDER_COLUMNS },
-  valuesByColumn: { brand_name: ['Starbucks', 'Costa'] },
-  readinessByFilter: { Starbucks: '120', Nobody: '0' },
+  valuesByColumn: { brand_name: ['Northwind', 'Costa'] },
+  readinessByFilter: { Northwind: '120', Nobody: '0' },
   groupCountsByColumn: {
-    brand_name: [{ brand_name: 'Starbucks', records: '120' }, { brand_name: 'Costa', records: '80' },
+    brand_name: [{ brand_name: 'Northwind', records: '120' }, { brand_name: 'Costa', records: '80' },
       { brand_name: 'Tokyo Tidbits', records: '60' }, { brand_name: 'Golden Gate Ginger', records: '40' }],
     location: [{ location: 'Store 1', records: '40' }, { location: 'Store 2', records: '30' }],
   },
@@ -191,14 +191,14 @@ test('unticking a column drops it from the scope, and a row filter adds {column,
     await openGrid(page);
     await boxOf(page, 'location').uncheck();
     await until(async () => (await summaryOf(page)).startsWith('3 of 4 columns'), 'the summary counts the ticked columns');
-    await addFilter(page, 'brand_name', 'Starbucks');
+    await addFilter(page, 'brand_name', 'Northwind');
     await until(async () => (await summaryOf(page)).includes('120 rows match'), 'the live row count shows the rows the filter keeps');
-    assert.equal(await gridOf(page).locator('[data-scope-condition="brand_name"]').innerText(), 'is Starbucks', 'the condition shows as a chip');
+    assert.equal(await gridOf(page).locator('[data-scope-condition="brand_name"]').innerText(), 'is Northwind', 'the condition shows as a chip');
     const params = await launchOf(page, made);
     assert.deepEqual(JSON.parse(params['17_table_scope']), {
       [ORDERS]: {
         columns: ['brand_name', 'total_sales', 'store_id'],
-        rows: [{ column: 'brand_name', op: '=', values: ['Starbucks'] }],
+        rows: [{ column: 'brand_name', op: '=', values: ['Northwind'] }],
       },
     }, 'the run carries the ticked columns and the row filter, and no label because the box is not ticked');
   } finally {
@@ -217,13 +217,13 @@ test('a column can carry more than one row filter, and each is removable as a ch
     await page.locator('[data-scope-value="Costa"]').waitFor({ timeout: 15000 });
     await page.locator('[data-scope-value="Costa"]').click();
     await page.getByRole('button', { name: 'Add filter' }).click();
-    await addFilter(page, 'brand_name', 'Starbucks');
+    await addFilter(page, 'brand_name', 'Northwind');
     assert.equal(await gridOf(page).locator('[data-scope-condition="brand_name"]').count(), 2, 'two chips on one column');
     assert.match(await summaryOf(page), /2 row filters/);
     await page.getByRole('button', { name: 'Remove row filter on brand_name: is not Costa' }).click();
     assert.equal(await gridOf(page).locator('[data-scope-condition="brand_name"]').count(), 1, 'Remove drops one chip');
     const params = await launchOf(page, made);
-    assert.deepEqual(JSON.parse(params['17_table_scope'])[ORDERS].rows, [{ column: 'brand_name', op: '=', values: ['Starbucks'] }]);
+    assert.deepEqual(JSON.parse(params['17_table_scope'])[ORDERS].rows, [{ column: 'brand_name', op: '=', values: ['Northwind'] }]);
   } finally {
     await ui.close();
   }
@@ -242,7 +242,7 @@ test('an unticked column cannot get a row filter, and unticking a column drops i
     await boxOf(page, 'location').check();
     assert.equal(await add.isDisabled(), false, 'ticking the column enables its Add button');
 
-    await addFilter(page, 'brand_name', 'Starbucks');
+    await addFilter(page, 'brand_name', 'Northwind');
     await until(async () => (await summaryOf(page)).includes('120 rows match'), 'the brand filter counts its rows');
     await boxOf(page, 'brand_name').uncheck();
     await until(async () => (await gridOf(page).locator('[data-scope-condition]').count()) === 0, 'unticking the column drops its filter');
@@ -268,21 +268,21 @@ test('the label is filled in from the picked Row Groups only: a row filter alone
     const text = page.getByRole('textbox', { name: 'Use case label', exact: true });
     assert.equal(await text.isDisabled(), true, 'the label box is disabled while the tick box is unticked');
     await openGrid(page);
-    await addFilter(page, 'brand_name', 'Starbucks');
+    await addFilter(page, 'brand_name', 'Northwind');
     await until(async () => (await summaryOf(page)).includes('120 rows match'), 'the brand filter counts its rows');
     assert.equal(await text.inputValue(), '', 'a row filter alone names nothing: the label stays empty');
     await loadGroups(page, 'brand_name');
-    await page.locator('[data-group-value="Starbucks"]').check();
-    await until(async () => (await text.inputValue()) === 'Starbucks', 'the picked group prefills the label, the row filter does not add to it');
+    await page.locator('[data-group-value="Northwind"]').check();
+    await until(async () => (await text.inputValue()) === 'Northwind', 'the picked group prefills the label, the row filter does not add to it');
     await page.getByRole('checkbox', { name: 'Use case labeling enhanced using filters' }).check();
     assert.equal(await text.isDisabled(), false, 'ticking the box enables the label');
-    await text.fill('Starbucks Cafe');
+    await text.fill('Northwind Cafe');
     const params = await launchOf(page, made);
     const scope = JSON.parse(params['17_table_scope']);
-    assert.equal(scope.use_case_label, 'Starbucks Cafe', 'the typed label is the label the run carries, verbatim');
+    assert.equal(scope.use_case_label, 'Northwind Cafe', 'the typed label is the label the run carries, verbatim');
     assert.deepEqual(scope[ORDERS].rows, [
-      { column: 'brand_name', op: '=', values: ['Starbucks'] },
-      { column: 'brand_name', op: 'in', values: ['Starbucks'], group: true },
+      { column: 'brand_name', op: '=', values: ['Northwind'] },
+      { column: 'brand_name', op: 'in', values: ['Northwind'], group: true },
     ]);
   } finally {
     await ui.close();
@@ -336,11 +336,11 @@ test('a picked schema is a collapsed group that lists its tables when opened, an
     await leafOf(page).click();
     await boxOf(page, 'brand_name').waitFor({ timeout: 15000 });
     await boxOf(page, 'location').uncheck();
-    await addFilter(page, 'brand_name', 'Starbucks');
+    await addFilter(page, 'brand_name', 'Northwind');
     await until(async () => (await summaryOf(page)).includes('120 rows match'), 'the filter on the table of the picked schema counts its rows');
     const params = await launchOf(page, made);
     assert.deepEqual(JSON.parse(params['17_table_scope']), {
-      [ORDERS]: { columns: ['brand_name', 'total_sales', 'store_id'], rows: [{ column: 'brand_name', op: '=', values: ['Starbucks'] }] },
+      [ORDERS]: { columns: ['brand_name', 'total_sales', 'store_id'], rows: [{ column: 'brand_name', op: '=', values: ['Northwind'] }] },
     }, 'the scope holds the table of the schema pick under its catalog.schema.table key');
     assert.equal(params['01_uc_metadata'].includes('main.s'), true, 'the run reads the picked schema');
   } finally {
@@ -479,13 +479,13 @@ test('picking groups writes {column, op: in} to the scope, and shows each picked
     await pickOrdersAndOpenDataFilters(page);
     await openGrid(page);
     await loadGroups(page, 'brand_name');
-    await page.locator('[data-group-value="Starbucks"]').check();
+    await page.locator('[data-group-value="Northwind"]').check();
     await page.locator('[data-group-value="Costa"]').check();
     await until(async () => (await gridOf(page).locator('[data-scope-group="brand_name"]').count()) === 2, 'each picked group is a chip');
     await until(async () => (await summaryOf(page)).includes('rows match'), 'the picked groups settle to a row count, not counting');
     const params = await launchOf(page, made);
     assert.deepEqual(JSON.parse(params['17_table_scope'])[ORDERS].rows, [
-      { column: 'brand_name', op: 'in', values: ['Starbucks', 'Costa'], group: true },
+      { column: 'brand_name', op: 'in', values: ['Northwind', 'Costa'], group: true },
     ], 'the picked groups are one in row, the agent reads it as is-one-of');
   } finally {
     await ui.close();
@@ -515,12 +515,12 @@ test('Load groups on a second column reads only the rows inside the groups alrea
     await pickOrdersAndOpenDataFilters(page);
     await openGrid(page);
     await loadGroups(page, 'brand_name');
-    await page.locator('[data-group-value="Starbucks"]').check();
+    await page.locator('[data-group-value="Northwind"]').check();
     await loadGroups(page, 'location');
     const last = [...made.sqlCalls].reverse().find((c) => c.sql.includes('ORDER BY records DESC'));
     assert.ok(last, 'the location groups were listed');
     assert.ok(last.sql.includes('IN ('), 'the statement narrows the location groups to the picked brand');
-    assert.ok(last.parameters.some((p) => p.value === 'Starbucks'), 'the picked brand group is the filter');
+    assert.ok(last.parameters.some((p) => p.value === 'Northwind'), 'the picked brand group is the filter');
     assert.ok(last.sql.includes('`location` IS NOT NULL'), 'the list leaves the empty location out');
   } finally {
     await ui.close();
@@ -535,10 +535,10 @@ test('the label names more than three picked groups as the first two and the res
     await openGrid(page);
     await loadGroups(page, 'brand_name');
     const text = page.getByRole('textbox', { name: 'Use case label', exact: true });
-    for (const value of ['Starbucks', 'Costa', 'Tokyo Tidbits']) await page.locator(`[data-group-value="${value}"]`).check();
-    await until(async () => (await text.inputValue()) === 'Starbucks, Costa and Tokyo Tidbits', 'three groups join with commas and and');
+    for (const value of ['Northwind', 'Costa', 'Tokyo Tidbits']) await page.locator(`[data-group-value="${value}"]`).check();
+    await until(async () => (await text.inputValue()) === 'Northwind, Costa and Tokyo Tidbits', 'three groups join with commas and and');
     await page.locator('[data-group-value="Golden Gate Ginger"]').check();
-    await until(async () => (await text.inputValue()) === 'Starbucks and Costa and 2 more', 'four groups name two and count the rest');
+    await until(async () => (await text.inputValue()) === 'Northwind and Costa and 2 more', 'four groups name two and count the rest');
   } finally {
     await ui.close();
   }
@@ -694,7 +694,7 @@ test('with no Row Group the label box is disabled and says why, and a plain row 
     assert.equal(await page.getByRole('textbox', { name: 'Use case label', exact: true }).isDisabled(), true, 'the label text is disabled too');
     assert.equal(await page.locator('[data-use-case-label-reason]').innerText(), LABEL_REASON, 'the reason is shown in one line');
     await openGrid(page);
-    await addFilter(page, 'brand_name', 'Starbucks');
+    await addFilter(page, 'brand_name', 'Northwind');
     await until(async () => (await summaryOf(page)).includes('120 rows match'), 'the brand filter counts its rows');
     assert.equal(await box.isDisabled(), true, 'a row filter is not a Row Group: the box stays disabled');
   } finally {
@@ -710,15 +710,15 @@ test('a Row Group enables the label box, and the launch text carries use_case_la
     await openGrid(page);
     await loadGroups(page, 'brand_name');
     const text = page.getByRole('textbox', { name: 'Use case label', exact: true });
-    await page.locator('[data-group-value="Starbucks"]').check();
-    await until(async () => (await text.inputValue()) === 'Starbucks', 'the picked group prefills the label');
+    await page.locator('[data-group-value="Northwind"]').check();
+    await until(async () => (await text.inputValue()) === 'Northwind', 'the picked group prefills the label');
     const box = page.getByRole('checkbox', { name: LABEL_BOX });
     assert.equal(await box.isDisabled(), false, 'a Row Group makes the box usable');
     assert.equal(await page.locator('[data-use-case-label-reason]').count(), 0, 'no reason is shown once the label is available');
     await box.check();
-    await text.fill('Starbucks Cafe');
+    await text.fill('Northwind Cafe');
     const params = await launchOf(page, made);
-    assert.equal(JSON.parse(params['17_table_scope']).use_case_label, 'Starbucks Cafe', 'the label reaches the table scope');
+    assert.equal(JSON.parse(params['17_table_scope']).use_case_label, 'Northwind Cafe', 'the label reaches the table scope');
   } finally {
     await ui.close();
   }
@@ -733,20 +733,20 @@ test('a label ticked before its Row Group went away is not on and is not sent, a
     await loadGroups(page, 'brand_name');
     const text = page.getByRole('textbox', { name: 'Use case label', exact: true });
     const box = page.getByRole('checkbox', { name: LABEL_BOX });
-    await page.locator('[data-group-value="Starbucks"]').check();
+    await page.locator('[data-group-value="Northwind"]').check();
     await box.check();
-    await text.fill('Starbucks Cafe');
-    await page.locator('[data-group-value="Starbucks"]').uncheck();
+    await text.fill('Northwind Cafe');
+    await page.locator('[data-group-value="Northwind"]').uncheck();
     await until(async () => box.isDisabled(), 'the group went away: the box is disabled');
     assert.equal(await box.isChecked(), false, 'the box does not look on without a Row Group');
     assert.equal(await page.locator('[data-use-case-label-reason]').innerText(), LABEL_REASON);
-    assert.equal(await text.inputValue(), 'Starbucks Cafe', 'the typed label is kept while the box is off');
+    assert.equal(await text.inputValue(), 'Northwind Cafe', 'the typed label is kept while the box is off');
     await page.locator('[data-group-value]').first().waitFor({ timeout: 15000 });
-    await page.locator('[data-group-value="Starbucks"]').check();
+    await page.locator('[data-group-value="Northwind"]').check();
     await until(async () => box.isDisabled().then((d) => !d), 'the group is back: the box is usable again');
     assert.equal(await box.isChecked(), false, 'it comes back unticked, not on by itself');
-    assert.equal(await text.inputValue(), 'Starbucks Cafe', 'the typed label comes back with the group');
-    await page.locator('[data-group-value="Starbucks"]').uncheck();
+    assert.equal(await text.inputValue(), 'Northwind Cafe', 'the typed label comes back with the group');
+    await page.locator('[data-group-value="Northwind"]').uncheck();
     await until(async () => box.isDisabled(), 'the group went away again before the launch');
     const params = await launchOf(page, made);
     const sent = params['17_table_scope'] ? JSON.parse(params['17_table_scope']) : {};

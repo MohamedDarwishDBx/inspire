@@ -1,6 +1,6 @@
 """P87 (REQ-290): an all-zero ranked chart whose rule finds no exception in the whole scope is a plain note, never a publish failure.
 
-The live N01-U01 rebuild (run 771503495550945, session 1794527946426377872) failed with 'chart exceptions_by_rule gives every group the
+The live N01-U01 rebuild (run 900000000000011, session 9000000000000000005) failed with 'chart exceptions_by_rule gives every group the
 same Exceptions (0) at the default filters, so it ranks nothing'. Its latest run wrote 0 business rows and its preview tested 569 rows with
 no exception. rule_finds_nothing fell back to the stake measures only when no run summary could be read, so a count labelled Exceptions
 was never checked against the whole scope and the flat chart was sent back. The fallback must read exception counts too."""

@@ -2,7 +2,7 @@
 
 The App-owned scope views of a use case are named by the use case number (N04-U01) in one schema per catalog. Two sessions that each
 have a use case N04-U01 in the same catalog therefore wrote the same view: the second build's CREATE OR REPLACE VIEW rewrote the view
-the first App reads, and the rewrite dropped the grants the App's readers held. On walker T2's first build (session 1794649528905225587)
+the first App reads, and the rewrite dropped the grants the App's readers held. On walker T2's first build (session 9000000000000000006)
 the audience grants ran at 13:05 to 13:08 UTC, and the shared sales view was replaced at 13:35 UTC by another session's N04-U01 build.
 
 The view tag now carries the session (implement_scope_tag), so one session's build never names another session's view. A rebuild in the
@@ -15,8 +15,8 @@ SOURCE = "inspire_kinds_rc7._inspire.sales_transactions"
 DATABASE = "inspire_kinds_rc7._inspire"
 APP = "inspire-walk-rc2-planning"
 AMR = "amr.ali@example.com"
-FIRST_SESSION = "1794649528905225587"
-OTHER_SESSION = "1794654914621667415"
+FIRST_SESSION = "9000000000000000006"
+OTHER_SESSION = "9000000000000000007"
 ACL = {"access_control_list": [{"user_name": AMR, "all_permissions": [{"permission_level": "CAN_USE"}]}]}
 
 

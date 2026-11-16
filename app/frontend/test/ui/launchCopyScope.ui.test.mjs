@@ -18,10 +18,10 @@ const STATE = {
   schemas: { main: ['s'], samples: ['bakehouse'] },
   tables: { 'main.s': ['orders'], 'samples.bakehouse': ['sales_franchises'] },
   columnsByTable: { [SOURCE]: COLUMNS },
-  valuesByColumn: { brand_name: ['Starbucks', 'Costa'] },
-  readinessByFilter: { Starbucks: '120', Nobody: '0' },
+  valuesByColumn: { brand_name: ['Northwind', 'Costa'] },
+  readinessByFilter: { Northwind: '120', Nobody: '0' },
   groupCountsByColumn: {
-    brand_name: [{ brand_name: 'Starbucks', records: '120' }, { brand_name: 'Costa', records: '80' }],
+    brand_name: [{ brand_name: 'Northwind', records: '120' }, { brand_name: 'Costa', records: '80' }],
   },
   // The copy answers with the name the server gives it (sampleCopyName: destination + source schema + table).
   sampleCopyAnswer: [200, { destination: DESTINATION, copies: [{ source: SOURCE, copy: COPY }], failed: [] }],
@@ -56,8 +56,8 @@ test('Copy into carries the Data Filter to the copy, and Get Started sends the s
   try {
     await pickSampleAndOpenDataFilters(page);
     await page.getByRole('button', { name: 'Add row filter on brand_name' }).click();
-    await page.locator('[data-scope-value="Starbucks"]').waitFor({ timeout: 15000 });
-    await page.locator('[data-scope-value="Starbucks"]').click();
+    await page.locator('[data-scope-value="Northwind"]').waitFor({ timeout: 15000 });
+    await page.locator('[data-scope-value="Northwind"]').click();
     await page.getByRole('button', { name: 'Add filter' }).click();
 
     await page.locator('[data-samples-offer]').waitFor({ timeout: 15000 });
@@ -70,7 +70,7 @@ test('Copy into carries the Data Filter to the copy, and Get Started sends the s
     assert.ok(sent['17_table_scope'], 'the copy path sends a Table Scope');
     const scope = JSON.parse(sent['17_table_scope']);
     assert.deepEqual(Object.keys(scope), [COPY], 'the scope is keyed by the copy the run reads, not by the samples table');
-    assert.deepEqual(scope[COPY].rows, [{ column: 'brand_name', op: '=', values: ['Starbucks'] }]);
+    assert.deepEqual(scope[COPY].rows, [{ column: 'brand_name', op: '=', values: ['Northwind'] }]);
     assert.ok(sent['01_uc_metadata'].includes(DESTINATION), 'the run reads the copy, under the destination schema');
     assert.deepEqual(ui.pageErrors, []);
   } finally {

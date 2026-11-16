@@ -1,4 +1,4 @@
-"""REQ-263 (reopened, live rc7 N04-U01, run 1096523786619267): the Grouping the person chose (Data groups = product) reached
+"""REQ-263 (reopened, live rc7 N04-U01, run 9000000000000002): the Grouping the person chose (Data groups = product) reached
 inspire_group_records without a product column, and the error that reached Genie hid the column name as "a data value".
 
 (a) A Grouping column must reach inspire_group_records: the grouping rule names each Grouping column as one Genie must keep on

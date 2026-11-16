@@ -1,7 +1,9 @@
 """v1.3.0 recall benchmark: the tpcds_sf1 gold set cites real tables and columns, the table pre-filter
 excludes use cases missing a required table, the judge's answers are parsed strictly and cached, and
 recall is reported overall and within the top 25 by Inspire Score."""
+import hashlib
 import json
+import re
 import os
 import sys
 
@@ -51,8 +53,10 @@ def test_the_gold_set_cites_only_real_tables_and_columns():
             table, column = ref.split(".")
             assert table in allowed and column in schema[table], (entry["id"], ref)
     text = json.dumps(gold).lower()
-    for customer in ("alshaya", "asabe", "shahid"):
-        assert customer not in text
+    # Names that must never appear in a gold set, kept as hashes so the names stay out of the repository (REQ-336).
+    banned = {"a8c05092f80a979f", "cea322699451e503", "9d998215870ac377"}
+    words = {hashlib.sha256(w.encode()).hexdigest()[:16] for w in re.findall(r"[a-z]+", text)}
+    assert not banned & words
 
 
 def test_normalize_reads_tracking_rows_and_catalog_use_cases():

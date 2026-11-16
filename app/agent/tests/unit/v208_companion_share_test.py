@@ -4,7 +4,7 @@ import types
 
 from v140_implement_test import _inspire
 
-RESULT = "inspire_kinds._inspire.n02_u01_s1793835077878779514_out"
+RESULT = "inspire_kinds._inspire.n02_u01_s9000000000000000012_out"
 SERIES = f"{RESULT}__series"
 OWNER = "1f0e-owner-sp"
 VIEWER = "viewer@example.com"

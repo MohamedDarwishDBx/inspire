@@ -13,56 +13,56 @@ const WEB = 'main.sales.web';
 const SCOPE = {
   [ORDERS]: {
     columns: ['brand_name', 'location', 'total_sales'],
-    rows: [{ column: 'brand_name', op: '=', values: ['Starbucks'] }],
+    rows: [{ column: 'brand_name', op: '=', values: ['Northwind'] }],
   },
 };
 const GROUPED = {
   [ORDERS]: {
     columns: ['brand_name', 'location', 'total_sales'],
-    rows: [{ column: 'brand_name', op: 'in', values: ['Starbucks'], group: true }],
+    rows: [{ column: 'brand_name', op: 'in', values: ['Northwind'], group: true }],
   },
 };
 
 test('the label rides in the scope object under its reserved key, and is never read as a table', async () => {
   const T = await lib('tableScope.js');
-  const labelled = T.scopesFromObject({ ...SCOPE, use_case_label: '  Starbucks  ' });
+  const labelled = T.scopesFromObject({ ...SCOPE, use_case_label: '  Northwind  ' });
   assert.deepEqual(labelled.problems, [], 'the label key is not flagged as a bad table name');
   assert.deepEqual(Object.keys(labelled.scopes), [ORDERS]);
-  assert.equal(labelled.label, 'Starbucks');
+  assert.equal(labelled.label, 'Northwind');
   assert.equal(T.scopesFromObject(SCOPE).label, undefined, 'no label key means no label');
 });
 
 test('the label is written only when a picked table has a picked row group to name; a row filter alone names nothing', async () => {
   const T = await lib('tableScope.js');
-  const text = T.serializeTableScopes(GROUPED, [ORDERS], 'Starbucks');
-  assert.deepEqual(JSON.parse(text), { ...GROUPED, use_case_label: 'Starbucks' });
-  assert.equal(T.serializeTableScopes(SCOPE, [ORDERS], 'Starbucks'), JSON.stringify(SCOPE), 'a row filter alone writes no label');
+  const text = T.serializeTableScopes(GROUPED, [ORDERS], 'Northwind');
+  assert.deepEqual(JSON.parse(text), { ...GROUPED, use_case_label: 'Northwind' });
+  assert.equal(T.serializeTableScopes(SCOPE, [ORDERS], 'Northwind'), JSON.stringify(SCOPE), 'a row filter alone writes no label');
   const columnsOnly = { [ORDERS]: { columns: ['brand_name'], rows: [] } };
-  assert.equal(T.serializeTableScopes(columnsOnly, [ORDERS], 'Starbucks'), JSON.stringify(columnsOnly), 'no row filter, no label written');
+  assert.equal(T.serializeTableScopes(columnsOnly, [ORDERS], 'Northwind'), JSON.stringify(columnsOnly), 'no row filter, no label written');
   assert.equal(T.serializeTableScopes(GROUPED, [ORDERS], '   '), JSON.stringify(GROUPED), 'a blank label is not written');
-  assert.equal(T.serializeTableScopes(GROUPED, [WEB], 'Starbucks'), '', 'a table no longer picked drops its scope and the label');
+  assert.equal(T.serializeTableScopes(GROUPED, [WEB], 'Northwind'), '', 'a table no longer picked drops its scope and the label');
 });
 
 test('the label prefill is the picked row groups only, joined naturally, for picked tables only', async () => {
   const T = await lib('tableScope.js');
   const W = await lib('implementWizard.js');
   const labelOf = (scopes, tables) => W.groupLabelOf(T.filterValuesOf(scopes, tables));
-  assert.equal(labelOf(GROUPED, [ORDERS]), 'Starbucks');
+  assert.equal(labelOf(GROUPED, [ORDERS]), 'Northwind');
   assert.equal(labelOf(SCOPE, [ORDERS]), '', 'a row filter alone prefills nothing');
   const several = {
-    [ORDERS]: { columns: ['a'], rows: [{ column: 'brand_name', op: 'in', values: ['Starbucks', 'Costa'], group: true }] },
+    [ORDERS]: { columns: ['a'], rows: [{ column: 'brand_name', op: 'in', values: ['Northwind', 'Costa'], group: true }] },
     [WEB]: { columns: ['b'], rows: [{ column: 'region', op: '=', values: ['EMEA'] }, { column: 'region', op: 'in', values: ['EMEA', 'APAC'], group: true }] },
   };
-  assert.equal(labelOf(several, [ORDERS, WEB]), 'Starbucks and Costa and 2 more', 'the groups of every picked table, more than three as two and the rest counted; the row filter names nothing');
-  assert.equal(labelOf(several, [ORDERS]), 'Starbucks and Costa');
+  assert.equal(labelOf(several, [ORDERS, WEB]), 'Northwind and Costa and 2 more', 'the groups of every picked table, more than three as two and the rest counted; the row filter names nothing');
+  assert.equal(labelOf(several, [ORDERS]), 'Northwind and Costa');
   assert.equal(labelOf({ [ORDERS]: { columns: ['a'], rows: [] } }, [ORDERS]), '', 'no row filter, nothing to prefill');
   assert.deepEqual(T.filteredTablesOf(several, [ORDERS, WEB]), [ORDERS, WEB]);
 });
 
 test('the job validation keeps the label, so the notebook receives it', () => {
-  const params = { '01_uc_metadata': `${ORDERS}`, '17_table_scope': JSON.stringify({ ...GROUPED, use_case_label: 'Starbucks' }) };
+  const params = { '01_uc_metadata': `${ORDERS}`, '17_table_scope': JSON.stringify({ ...GROUPED, use_case_label: 'Northwind' }) };
   const kept = jobParams.validateTableScopeParams(params);
-  assert.equal(JSON.parse(kept['17_table_scope']).use_case_label, 'Starbucks');
+  assert.equal(JSON.parse(kept['17_table_scope']).use_case_label, 'Northwind');
   assert.deepEqual(Object.keys(JSON.parse(kept['17_table_scope'])), [ORDERS, 'use_case_label']);
 });
 
@@ -79,7 +79,7 @@ test('the Implement readiness count applies the Launch row filters and is bounde
   const row = { primary_table: ORDERS, tables: [ORDERS] };
   const got = w.readinessScope(spec, row, { [ORDERS]: SCOPE[ORDERS] });
   assert.deepEqual(got.filters, [
-    { table: ORDERS, column: 'brand_name', op: '=', values: ['Starbucks'] },
+    { table: ORDERS, column: 'brand_name', op: '=', values: ['Northwind'] },
     { table: ORDERS, column: 'location', op: 'in', values: ['Berlin'] },
   ], 'the Launch row filter is counted, next to the wizard filter');
   assert.deepEqual(got.columns, ['total_sales'], 'order_id is outside the Launch columns, so only total_sales is read');

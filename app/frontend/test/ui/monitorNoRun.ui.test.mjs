@@ -14,7 +14,7 @@ test('Monitor with no run open shows the no-run state and does not read or show 
   const mount = (app) => {
     app.get('/api/inspire/session', (req, res) => {
       calls.session.push({ ...req.query });
-      res.json({ session: { session_id: '1794714407111445340', business_name: 'E2E Walk', create_at: ago(30 * MINUTE),
+      res.json({ session: { session_id: '9000000000000000008', business_name: 'E2E Walk', create_at: ago(30 * MINUTE),
         processing_status: 'done', completed_percent: 100, completed_on: ago(MINUTE), last_updated: ago(MINUTE) } });
     });
     app.get('/api/inspire/steps', (_req, res) => res.json({ steps: [] }));

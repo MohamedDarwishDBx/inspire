@@ -5,7 +5,9 @@ of its technique, and gates a release on kind recall (80%), families (6, or fewe
 must-reject entries (T7) and the kind-floor Best-of-Best gap (D7). Each gate has a case it must pass and one it must
 fail (CLAUDE.md 8.3).
 """
+import hashlib
 import json
+import re
 import os
 import sys
 
@@ -77,8 +79,10 @@ def test_every_gold_set_cites_real_tables_and_registry_kinds(corpus):
     families = {LABEL_FAMILY[e["kind"]] for e in gold["entries"]}
     assert len(families) >= 6, (corpus, sorted(families))
     text = json.dumps(gold).lower()
-    for customer in ("alshaya", "asabe", "shahid"):
-        assert customer not in text
+    # Names that must never appear in a gold set, kept as hashes so the names stay out of the repository (REQ-336).
+    banned = {"a8c05092f80a979f", "cea322699451e503", "9d998215870ac377"}
+    words = {hashlib.sha256(w.encode()).hexdigest()[:16] for w in re.findall(r"[a-z]+", text)}
+    assert not banned & words
 
 
 def test_the_new_gold_sets_cover_the_columns_the_plan_names():

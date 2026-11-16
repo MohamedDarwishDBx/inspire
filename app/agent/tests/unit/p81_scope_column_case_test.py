@@ -1,7 +1,7 @@
 """P81 (REQ-284): a KPI or alignment that names a scoped column in another letter case is inside the Table Scope.
 
 Unity Catalog and Spark resolve column names without regard to case, so `totalprice` is the scoped `totalPrice`.
-The Discover run of 2026-11-15 (session 1794744601846819814) refused 8 of 14 use cases with
+The Discover run of 2026-11-15 (session 9000000000000000009) refused 8 of 14 use cases with
 "the read uses totalprice, transactionid, which is outside the Table Scope", and the use cases kept placeholder KPIs.
 A column that is really outside the scope must still be refused."""
 import json

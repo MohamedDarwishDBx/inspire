@@ -1,4 +1,4 @@
-"""REQ-293 (rc7 N01-U01, session 1794442960851591050, money rebuild run 43755420113876): a money vibe rebuild planned the peer
+"""REQ-293 (rc7 N01-U01, session 9000000000000000003, money rebuild run 43755420113876): a money vibe rebuild planned the peer
 comparison by franchiseID, the entity itself, so no franchise had peers ("no peers"), and Genie labelled the value at stake
 "Peer revenue gap".
 
