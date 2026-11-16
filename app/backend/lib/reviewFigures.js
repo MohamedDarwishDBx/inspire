@@ -72,8 +72,9 @@ function sessionOverviewStatement(table, sessionIds, existing = null) {
 const BUSINESS_KEY = "LOWER(TRIM(COALESCE(business_name, '')))";
 const RUN_BUSINESS_KEY = `CASE WHEN ${BUSINESS_KEY} = '' THEN CONCAT('#', CAST(session_id AS STRING)) ELSE ${BUSINESS_KEY} END`;
 
-// The bar a run was judged against, read from the one field the run's results name it in. Only this short string leaves SQL.
-const BAR_MODE_SQL = "get_json_object(results_json, '$.quality_bar.mode') AS bar_mode";
+// The bar a run was judged against, read from the one field the run's results name it in. results_json is a VARIANT column, and
+// get_json_object takes only a STRING, so the field is read with the VARIANT path. Only this short string leaves SQL.
+const BAR_MODE_SQL = 'CAST(results_json:quality_bar.mode AS STRING) AS bar_mode';
 
 function sessionListStatement(table, { lastUpdated = true, barMode = true, cap = SESSION_LIST_CAP } = {}) {
   const named = SESSION_LIST_COLUMNS.map((name) => (name === 'last_updated' && !lastUpdated ? 'NULL AS last_updated' : name));

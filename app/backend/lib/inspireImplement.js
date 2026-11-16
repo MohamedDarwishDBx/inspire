@@ -1642,8 +1642,11 @@ function implementMissingColumns(existing) {
   return IMPLEMENT_COLUMNS.filter(([name]) => !existing.has(name.toLowerCase()));
 }
 
+// A missing column, by its error class. A type mismatch says "Cannot resolve" too, so it is named out first: it is a bug in the query, never a
+// column that is not there, and a fallback must not drop the field it failed on.
 function isMissingColumnError(err) {
-  return /UNRESOLVED_COLUMN|42703|FIELD_NOT_FOUND|cannot be resolved|cannot resolve/i.test(str(err && err.message ? err.message : err));
+  const text = str(err && err.message ? err.message : err);
+  return !/DATATYPE_MISMATCH/i.test(text) && /UNRESOLVED_COLUMN|42703|FIELD_NOT_FOUND|cannot be resolved|cannot resolve/i.test(text);
 }
 
 function implementInsertStatement(table, { sessionId, useCaseId, specVersion, basedOnVersion, spec, createdBy, statusMessage, changeClasses, useCaseName = '', warehouseId = '' }) {
