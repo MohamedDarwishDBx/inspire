@@ -1,27 +1,36 @@
 // The one rule for Inspire's own tables and views in a person's schema (REQ-387). Every list that offers the person's data asks this
-// module: Data Management column search and relationships, the Launch table lists (/api/tables), and the App reads naming.
-// Each pattern is seeded from a name the agent notebook (dbx_inspire_ai_agent.ipynb) or the backend really creates:
-//  - '__inspire_' prefix: __inspire_session, __inspire_step, __inspire_lock, __inspire_usecases, __inspire_feedback (notebook),
-//    __inspire_implement (notebook IMPLEMENT_TABLE), __inspire_control_log (backend/lib/implementControl.js),
-//    __inspire_profile (backend/lib/businessProfiles.js), __inspire_launch (backend/lib/launchLedger.js).
-//  - '_ailogs' exact name: notebook AILOGS_TABLE = "_ailogs".
-//  - '__implement_scope' suffix: notebook implement scope views named {base}__{tag}__implement_scope.
-//  - '__signal' suffix: notebook companion view of a result table (INSPIRE_COMPANION_DATA_NEEDS "__signal").
-// Suffixes are matched exactly, with both underscores, so a person's table named `scope` or `customer_scope` is never hidden.
-export const OWN_PREFIX = '__inspire_';
-export const OWN_NAMES = new Set(['_ailogs']);
-export const OWN_SUFFIXES = ['__implement_scope', '__signal'];
+// module: Data Management column search and relationships, the Launch table lists (/api/tables), the App reads naming, the backend
+// catalog list. Each pattern is the naming the agent notebook (dbx_inspire_ai_agent.ipynb) really gives an object:
+//  - table prefix '__inspire_': the tracking and control tables (__inspire_session, __inspire_step, __inspire_lock, __inspire_usecases,
+//    __inspire_feedback, __inspire_implement = IMPLEMENT_TABLE, __inspire_control_log, __inspire_profile, __inspire_launch) and the app
+//    feedback tables (INSPIRE_APP_FEEDBACK_PREFIX '__inspire_app_feedback_').
+//  - table prefix '_inspire_': a result table of the Inspire database (compute_result_table_name: `_inspire_<id>_<name>[_s<session>]`),
+//    and the temp views and queues Inspire makes (_tracking_unique_view `_inspire_<prefix>_<session>_<n>`, `_inspire_ai_<hex>`).
+//  - exact '_ailogs' (AILOGS_TABLE).
+//  - suffix '__implement_scope', then optionally '__candidate' (CANDIDATE_VIEW_SUFFIX) and '__v<N>' (_implement_view_suffix): the Table
+//    Scope view of a use case, named `<catalog>_<schema>_<table>__<tag>__implement_scope` (implement_table_scopes, scope_named).
+//  - schema prefix '_inspire_': a use case's own result schema (inspire_use_case_schema_name: `_inspire_<business>_<use case>`). Its
+//    result tables and companions (`<id>_results`, `<id>_results__signal`, `..__lb_changes`, ...) are all Inspire's.
+// The schema `_inspire` itself is the Inspire database, not a prefix: a plain table in it is the person's data (REQ-387).
+// A sample copy the App makes (`<schema>.bakehouse__sales_transactions`) and any table named by the person stay listed.
+// The regex is written without a backslash or a quote, so the same text is a Databricks RLIKE pattern in notebookless SQL.
+export const OWN_TABLE_PATTERN = '^__?inspire_|^_ailogs$|__implement_scope(__candidate)?(__v[0-9]+)?$';
+export const OWN_SCHEMA_PATTERN = '^_inspire_';
+const OWN_TABLE_RE = new RegExp(OWN_TABLE_PATTERN);
+const OWN_SCHEMA_RE = new RegExp(OWN_SCHEMA_PATTERN);
 
-/** True when a table or view name (plain or catalog.schema.table) is one Inspire creates for itself. */
+/** True when a table or view name (plain, schema.table or catalog.schema.table) is one Inspire creates for itself. */
 export function isInspireOwnName(name) {
-  const plain = String(name ?? '').replace(/`/g, '').split('.').pop().trim().toLowerCase();
-  if (!plain) return false;
-  return plain.startsWith(OWN_PREFIX) || OWN_NAMES.has(plain) || OWN_SUFFIXES.some((suffix) => plain.endsWith(suffix));
+  const parts = String(name ?? '').replace(/`/g, '').split('.').map((p) => p.trim().toLowerCase());
+  const table = parts[parts.length - 1];
+  if (!table) return false;
+  const schema = parts.length >= 2 ? parts[parts.length - 2] : '';
+  return OWN_TABLE_RE.test(table) || OWN_SCHEMA_RE.test(schema);
 }
 
-/** The same rule as a SQL predicate on one column (false for Inspire's own names). `!` is the LIKE escape, so no backslash reaches SQL. */
-export function notInspireOwnSql(column) {
-  const lower = `lower(${column})`;
-  return `NOT (${lower} LIKE '!_!_inspire!_%' ESCAPE '!' OR ${lower} = '_ailogs' OR ${lower} LIKE '%!_!_implement!_scope' ESCAPE '!' `
-    + `OR ${lower} LIKE '%!_!_signal' ESCAPE '!')`;
+/** The same rule as a SQL predicate: NOT (...) over the table column and, when given, the schema column. Case-insensitive via lower(). */
+export function notInspireOwnSql(tableColumn, schemaColumn) {
+  const clauses = [`lower(${tableColumn}) RLIKE '${OWN_TABLE_PATTERN}'`];
+  if (schemaColumn) clauses.push(`lower(${schemaColumn}) RLIKE '${OWN_SCHEMA_PATTERN}'`);
+  return `NOT (${clauses.join(' OR ')})`;
 }
