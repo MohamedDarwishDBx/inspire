@@ -19,6 +19,7 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
   const [text, setText] = useState('');
   const [thread, setThread] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [hold, setHold] = useState(false);
   const [charts, setCharts] = useState(null);
   const alive = useRef(true);
   const [saved, setSaved] = useState({ threads: [], note: '' });
@@ -76,7 +77,9 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
 
   const ask = async (question) => {
     const q = String(question || '').trim();
-    if (!q || busy) return;
+    if (!q) return;
+    if (busy) { setHold(true); return; }
+    setHold(false);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const history = thread.filter((x) => x.turn).map((x) => ({ question: x.question, answer: x.turn.answer || '' }));
     setBusy(true);
@@ -141,10 +144,11 @@ export default function AgentPage({ app, page, onRecord, themeKey }) {
       </section>
 
       <form className="agp-ask" role="search" aria-label="Ask the agent" onSubmit={(e) => { e.preventDefault(); ask(text); }}>
-        <input type="text" dir="auto" value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask about this use case, or tell me what to do"
+        <input type="text" dir="auto" value={text} onChange={(e) => { setText(e.target.value); setHold(false); }} placeholder="Ask about this use case, or tell me what to do"
           aria-label="Ask the agent" />
-        <button type="submit" className="btn btn--pri" disabled={busy || !text.trim()}>Ask</button>
+        <button type="submit" className="btn btn--pri" disabled={!text.trim()}>Ask</button>
       </form>
+      {hold && <p className="agp-meta" role="status">Wait for the current answer, then ask again</p>}
 
       <div className="agp-chips" role="group" aria-label="Suggested questions">
         {(briefing?.chips || []).map((c, i) => (

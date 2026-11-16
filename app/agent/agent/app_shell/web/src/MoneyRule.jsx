@@ -70,7 +70,7 @@ export function MoneyRule({ pageId }) {
           <div data-money-preview>
             <p>Totals: {lines.totals.join(' · ') || 'no rows'}</p>
             {example.length > 0 && <p className="muted" data-money-example-title>Worked example, top rows</p>}
-            {example.length > 0 && <ol data-money-example>{example.map((t) => <li key={t}>{t}</li>)}</ol>}
+            {example.length > 0 && <ol data-money-example>{example.map((t, i) => <li key={`${i}-${t}`}>{t}</li>)}</ol>}
             {lines.leftOut && <p className="muted">{lines.leftOut}</p>}
           </div>
         );

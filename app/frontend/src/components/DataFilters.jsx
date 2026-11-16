@@ -254,8 +254,8 @@ function AddRowFilter({ table, column, suggestions, loadValues, onCommit }) {
       </div>
       {needsValues && draft.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {draft.map((v) => (
-            <span key={v} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
+          {draft.map((v, i) => (
+            <span key={`${i}-${v}`} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
               {v}
               <button type="button" aria-label={`Remove value ${v}`} onClick={() => setDraft(draft.filter((x) => x !== v))}><X size={10} /></button>
             </span>
@@ -264,8 +264,8 @@ function AddRowFilter({ table, column, suggestions, loadValues, onCommit }) {
       )}
       {needsValues && suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1" aria-label={`Values in ${column}`}>
-          {suggestions.map((v) => (
-            <button key={v} type="button" data-scope-value={v} onClick={() => addValue(v)}
+          {suggestions.map((v, i) => (
+            <button key={`${i}-${v}`} type="button" data-scope-value={v} onClick={() => addValue(v)}
               className="rounded-md border border-border bg-bg-subtle px-2 py-0.5 text-text-secondary hover:text-text-primary">
               {v}
             </button>
@@ -334,8 +334,8 @@ function RowGroups({ column, ticked, picked, loaded, onLoad, onPick }) {
       {loaded?.status === 'done' && values.length === 0 && <p className="text-text-secondary">{column} has no values in the rows in scope.</p>}
       {picked.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {picked.map((v) => (
-            <span key={v} data-scope-group={column} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
+          {picked.map((v, i) => (
+            <span key={`${i}-${v}`} data-scope-group={column} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
               <span dir="auto">{v}</span>
               <button type="button" aria-label={`Remove group ${v}`} onClick={() => onPick(picked.filter((x) => x !== v))}><X size={10} /></button>
             </span>

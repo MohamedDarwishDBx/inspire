@@ -154,8 +154,8 @@ export function DataAccessBadge({ results }) {
       <div className="px-4 pb-3 space-y-2">
         {access.tablesRead.length > 0 && (
           <ul className="grid gap-0.5 sm:grid-cols-2">
-            {access.tablesRead.map((t) => (
-              <li key={t} className="truncate font-mono text-[10px] text-text-secondary" title={t}>{t}</li>
+            {access.tablesRead.map((t, i) => (
+              <li key={`${i}-${t}`} className="truncate font-mono text-[10px] text-text-secondary" title={t}>{t}</li>
             ))}
           </ul>
         )}

@@ -221,7 +221,7 @@ test('the Agent input takes typing while a question is still running, and Enter 
   const routes = {
     'agent/briefing': ({ json }) => json(200, briefing(pageId)),
     'agent/ask': ({ json, route }) => { asked.push(JSON.parse(route.request().postData()).question); return json(200, running); },
-    'agent/turn': ({ json }) => { polls += 1; return json(200, polls < 3 ? running : done); },
+    'agent/turn': ({ json }) => { polls += 1; return json(200, polls < 8 ? running : done); },
   };
   const { page, seen, context } = await openApp(browser, served.base, info, { routes, hash: `#/${pageId}/agent`, ready: '[data-agent-page]' });
   try {
@@ -235,7 +235,11 @@ test('the Agent input takes typing while a question is still running, and Enter 
     await box.click();
     await box.pressSequentially('Then which one is largest?');
     assert.equal(await box.inputValue(), 'Then which one is largest?', 'typing lands in the box while a question is running');
-    await until(() => polls >= 3, 10000);
+    await box.press('Enter');
+    await page.getByRole('status').filter({ hasText: 'Wait for the current answer, then ask again' }).waitFor({ timeout: 5000 });
+    assert.equal(asked.length, 1, 'Enter during a running question does not send a second question');
+    assert.equal(await box.inputValue(), 'Then which one is largest?', 'the typed question is kept, not dropped');
+    await until(() => polls >= 8, 15000);
     await box.press('Enter');
     await until(() => asked.length === 2, 5000);
     assert.equal(asked[1], 'Then which one is largest?');

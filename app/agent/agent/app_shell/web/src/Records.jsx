@@ -275,7 +275,7 @@ function Why({ view, row, meta, explain, title, genieBusy, explained }) {
       <h3><GenieMark size={13} />Why it is flagged</h3>
       {view.explanation ? <p>{view.explanation}</p> : <div className="unexplained"><p>{view.held ? `${HELD}: ${view.held}.` : UNEXPLAINED}</p>{button}</div>}
       {view.evidence.length > 0 && <ul className="ev">{view.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>}
-      {reasons.length > 0 && <div className="reasons">{reasons.map((t) => <span key={t} className="chip chip--static">{t}</span>)}</div>}
+      {reasons.length > 0 && <div className="reasons">{reasons.map((t, i) => <span key={`${i}-${t}`} className="chip chip--static">{t}</span>)}</div>}
       {view.explanation && button && <div className="why-x">{button}</div>}
       <ExplainedAnswer explained={explained} />
     </section>
