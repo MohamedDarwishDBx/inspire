@@ -16,10 +16,11 @@ PLACEHOLDER = "a data value"
 FIRST_RUN = pd.DataFrame({"paymentMethod": ["visa"] * 4, "amount": [1, 2, 3, 4]})
 
 
+# The Launch count is the reviewed one-value read (REQ-263), which names its count distinct_values.
 def _launch(distinct):
     def answer(statement):
         if "COUNT(DISTINCT" in statement and "paymentMethod" in statement:
-            return [{"inspire_values": distinct}]
+            return [{"distinct_values": distinct}]
         return []
     return FakeSpark(responder=answer)
 
@@ -84,7 +85,7 @@ def _joined_first_run(agent_ns, monkeypatch, segments):
 def _joined_launch(distinct):
     def answer(statement):
         if "COUNT(DISTINCT" in statement and "LEFT JOIN" in statement and "customers" in statement:
-            return [{"inspire_values": distinct}]
+            return [{"distinct_values": distinct}]
         return []
     return FakeSpark(responder=answer)
 

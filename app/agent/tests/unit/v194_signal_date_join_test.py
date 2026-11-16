@@ -88,7 +88,8 @@ def test_a_date_that_sits_in_the_date_table_is_read_through_its_key_and_the_use_
     assert record["status"] == "passed", record
     assert kept == ucs and dropped == []
     assert record["columns"]["time"] == "ws_sold_date_sk -> main.s.date_dim.d_date"
-    unique, series = spark.statements
+    # REQ-357: a Deep check also counts the distinct values of the measure, after the date series it already reads.
+    unique, series, measure = spark.statements
     assert unique == "SELECT COUNT(`d_date_sk`) AS n, COUNT(DISTINCT `d_date_sk`) AS k FROM `main`.`s`.`date_dim`"
     assert ("FROM (SELECT f.*, j0.`d_date` AS `inspire_time_date` FROM (SELECT * FROM `main`.`s`.`web_sales`) AS f LEFT JOIN "
             "`main`.`s`.`date_dim` AS j0 ON f.`ws_sold_date_sk` = j0.`d_date_sk`) AS joined") in series
@@ -183,4 +184,5 @@ def test_the_date_table_key_is_counted_once_for_every_use_case_that_joins_it(age
     inst, _agent, spark = deep_inspire(agent_ns, answers)
     inst._check_data_signal(ucs, [])
     assert [u["data_signal"]["status"] for u in ucs] == ["passed", "passed"]
-    assert sum("COUNT(DISTINCT `d_date_sk`)" in s for s in spark.statements) == 1 and len(spark.statements) == 3
+    # REQ-357: each use case also counts the distinct values of its measure, so 1 date-key count + 2 series + 2 measure counts.
+    assert sum("COUNT(DISTINCT `d_date_sk`)" in s for s in spark.statements) == 1 and len(spark.statements) == 5
