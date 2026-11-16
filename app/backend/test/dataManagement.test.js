@@ -154,7 +154,8 @@ test('POST /api/relationships over a 550-table scope reads the columns in one qu
       body: JSON.stringify({ table: 'main.s.t3', tables: TABLES }) });
     const got = await resp.json();
     assert.equal(resp.status, 200, JSON.stringify(got));
-    const scopeReads = made.sqlCalls.filter((c) => /information_schema\.columns WHERE \(table_schema/.test(c.sql));
+    // The scope read: the picked-scope OR clause, then the Inspire-own-name predicate (REQ-387).
+    const scopeReads = made.sqlCalls.filter((c) => /information_schema\.columns WHERE \(\(table_schema/.test(c.sql));
     assert.equal(scopeReads.length, 1, 'one query over the whole picked scope');
     assert.equal(Object.keys(got.tables).length, 550, 'every picked table comes back with its columns, for the pickers');
     assert.equal(got.tables['main.s.t3'].columns.length, 2);

@@ -3,6 +3,7 @@
 // catalog, so a whole-catalog pick is not capped at a table count. The run does not read these yet: the person's list is kept in the
 // Launch draft, and the agent notebook's own key discovery should later read that list (one source).
 const I = require('./inspireImplement');
+const { notInspireOwnSql } = require('../../frontend/src/lib/inspireOwnObjects.js');
 
 const SOURCE_DECLARED = 'declared key';
 const SOURCE_NAME = 'matching column name';
@@ -93,7 +94,7 @@ function scopeColumnsStatement(catalog, names) {
   const { clause, parameters } = scopePredicate(names);
   return {
     sql: `SELECT table_schema, table_name, column_name FROM \`${catalog}\`.information_schema.columns `
-      + `WHERE ${clause} ORDER BY table_schema, table_name, ordinal_position`,
+      + `WHERE (${clause}) AND ${notInspireOwnSql('table_name')} ORDER BY table_schema, table_name, ordinal_position`,
     parameters,
   };
 }
@@ -107,6 +108,7 @@ function scopeKeysStatement(catalog, names) {
       + 'AND kcu.constraint_schema = tc.constraint_schema AND kcu.constraint_name = tc.constraint_name '
       + "WHERE tc.constraint_type = 'PRIMARY KEY' "
       + `AND (${clause.replace(/table_schema/g, 'kcu.table_schema').replace(/table_name/g, 'kcu.table_name')}) `
+      + `AND ${notInspireOwnSql('kcu.table_name')} `
       + 'ORDER BY kcu.table_schema, kcu.table_name, kcu.ordinal_position',
     parameters,
   };

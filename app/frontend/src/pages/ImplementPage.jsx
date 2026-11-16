@@ -511,6 +511,12 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     setRail((prev) => ({ ...prev, latest: withPendingBuilds(prev.latest || []) }));
     loadRail().catch((e) => setRailError(e.message));
   };
+  // REQ-386: a build queued from a card or the detail (Try again, Rebuild, Build next) closes the Start Use Case MVP dialog open over it, so the
+  // progress panel is in view. The wizard's own submit keeps the dialog until the server answers (its onImplemented closes it), so its errors show.
+  const buildQueued = () => {
+    setWizard(null);
+    showQueuedBuild();
+  };
   const onImplemented = (data) => {
     setBuildNotes(Array.isArray(data?.warnings) ? data.warnings : []);
     setBuildDetails(Array.isArray(data?.warning_details) ? data.warning_details : []);
@@ -553,7 +559,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
             <BuildNextStep showcase={readOnly} apiFetch={apiFetch} apiPostJson={apiPostJson} inspireDatabase={settings.inspireDatabase} warehouseId={settings.warehouseId} sessionId={sessionId}
               notebookPath={settings.notebookPath} focusId={selected.id} live={IMPLEMENT_DONE_STATUSES.includes(String(selected.latest?.status || ''))}
               caseOf={(id) => allItems.find((item) => item.id === id)?.uc}
-              onBuilt={readOnly ? undefined : onImplemented} onQueued={readOnly ? undefined : showQueuedBuild} onBuildCustom={readOnly ? undefined : (uc) => setWizard({ uc, focus: null, live: false })}
+              onBuilt={readOnly ? undefined : onImplemented} onQueued={readOnly ? undefined : buildQueued} onBuildCustom={readOnly ? undefined : (uc) => setWizard({ uc, focus: null, live: false })}
               onMeasure={readOnly ? undefined : openMeasure} />
           )}
           {selected ? (
@@ -574,7 +580,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
               onProgress={reportProgress}
               onEdit={readOnly ? undefined : (focus, live) => setWizard({ uc: selected.uc, focus, live })}
               onOpenRun={onOpenRun}
-              onBuildQueued={showQueuedBuild}
+              onBuildQueued={buildQueued}
               onOpenDemoMvp={readOnly && demoMvps?.ids.includes(selected.id) ? () => demoMvps.open(selected.id) : null}
               readOnly={readOnly}
             />
@@ -1091,6 +1097,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
       // Every build starts here (Try again, roll back, Rebuild, App and notebook changes). A drawer that started it closes, so the docked
       // Build progress panel that opens is in view and its Close is reachable. A rejected submit keeps the drawer for its error.
       setDrawer(null);
+      setFeatures(null);
       setNotice([resultTableMoveNote(data?.summary), ...(Array.isArray(data?.warnings) ? data.warnings : [])].filter(Boolean).join(' '));
       await loadStatus();
       return true;

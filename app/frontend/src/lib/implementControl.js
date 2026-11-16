@@ -292,26 +292,47 @@ function landed(row, entry) {
   return entry.version != null && Number(row.spec_version) >= entry.version;
 }
 
+// REQ-386: the queued build is the NEXT version: the version the server answered, or the latest in history + 1 while the submit is pending.
+function queuedVersion(row, entry) {
+  return entry.version ?? (Number(row.spec_version) || 0) + 1;
+}
+
+// REQ-386: the last server row of each use case. A queued overlay is always made from this row, never from a previous overlay: the callers
+// feed the overlaid list back in, and an overlay read as history would count its own queued time as a run that already started.
+const SERVER_ROWS = new Map();
+
 export function withPendingBuilds(latest, now = Date.now()) {
-  const rows = Array.isArray(latest) ? latest : [];
-  const byId = new Map(rows.map((row) => [String(row?.use_case_id ?? ''), row]));
+  const input = Array.isArray(latest) ? latest : [];
+  const served = input.filter((row) => !row?.pending);
+  for (const row of served) if (row?.use_case_id != null) SEEN_VERSIONS.set(String(row.use_case_id), Number(row.spec_version) || 0);
+  for (const row of served) if (row?.use_case_id != null) SERVER_ROWS.set(String(row.use_case_id), row);
+  // An empty list is also the mount-time placeholder read, so only a list with rows counts as a history read.
+  if (input.length) SEEN_READ = true;
+  const byId = new Map(served.map((row) => [String(row?.use_case_id ?? ''), row]));
   const overlay = new Map();
   const placeholders = [];
   let changed = false;
-  for (const row of rows) if (row?.use_case_id != null) SEEN_VERSIONS.set(String(row.use_case_id), Number(row.spec_version) || 0);
-  // An empty list is also the mount-time placeholder read, so only a list with rows counts as a history read.
-  if (rows.length) SEEN_READ = true;
   for (const [id, entry] of [...PENDING_BUILDS]) {
-    const row = byId.get(id);
+    const row = byId.get(id) ?? SERVER_ROWS.get(id);
     if (landed(row, entry) || now - entry.at > PENDING_BUILD_TTL_MS) { PENDING_BUILDS.delete(id); changed = true; continue; }
-    // A row from an older version still reads as the build in progress until the new version lands.
-    // REQ-355: the queued row carries no failure of the superseded version (its status message and stall).
-    if (row) overlay.set(id, { ...row, status: 'queued', status_message: '', stalled: null, pending: true });
-    else placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, pending: true });
+    // The queued build is timed from the click and named as the next version. The superseded run's start time, status and stall are not carried
+    // over (REQ-355, REQ-386): the progress panel of a failed v1 must not read as v1 running for hours, nor show its Job chip.
+    const queued = new Date(entry.at).toISOString();
+    if (row) overlay.set(id, { ...row, spec_version: queuedVersion(row, entry), created_at: queued, status: 'queued', status_message: '', stalled: null, pending: true });
+    else placeholders.push({ use_case_id: id, use_case_name: entry.name || id, status: 'queued', spec_version: null, live_version: null, asset_status: {}, stalled: null, created_at: queued, pending: true });
   }
   if (changed) savePendingBuilds();
-  if (!overlay.size && !placeholders.length) return rows;
-  return [...rows.map((row) => overlay.get(String(row?.use_case_id ?? '')) || row), ...placeholders];
+  if (!overlay.size && !placeholders.length && !input.some((row) => row?.pending)) return input;
+  // The list: each server row, overlaid while its build is queued; a use case whose overlay has ended shows its server row again.
+  const out = served.map((row) => overlay.get(String(row?.use_case_id ?? '')) || row);
+  const listed = new Set([...out, ...placeholders].map((row) => String(row?.use_case_id ?? '')));
+  for (const id of [...overlay.keys(), ...input.filter((row) => row?.pending).map((row) => String(row.use_case_id ?? ''))]) {
+    if (listed.has(id)) continue;
+    listed.add(id);
+    const row = overlay.get(id) || SERVER_ROWS.get(id);
+    if (row) out.push(row);
+  }
+  return [...out, ...placeholders];
 }
 
 export function buildSummary(items) {
