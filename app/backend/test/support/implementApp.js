@@ -328,6 +328,7 @@ function makeApp(overrides = {}, { mount } = {}) {
     res.json({ profiles: listed.map(profileSummaryOf) });
   });
   app.get('/api/inspire/profiles/:profileId', (req, res) => {
+    if (state.profileRefusal) return res.status(403).json({ error: state.profileRefusal.message, permissions: state.profileRefusal.permissions });
     const found = (state.profiles || []).find((p) => p.profile_id === req.params.profileId);
     if (!found) return res.status(404).json({ error: 'That business profile was not found' });
     return res.json({ profile: found });
