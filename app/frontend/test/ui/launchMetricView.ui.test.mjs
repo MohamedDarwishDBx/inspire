@@ -41,9 +41,13 @@ test('a saved Data Filters pick that is a metric view is dropped from the scope 
     await reloaded(page);
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
     await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
-    const note = page.locator('[data-metric-view-note]');
+    // REQ-370: the metric view is named once in the Data Management line, and the dropped filter says so in one whole sentence.
+    const line = page.locator('[data-metric-views-left-out]');
+    await line.waitFor({ timeout: 15000 });
+    assert.match(await line.innerText(), /1 metric view is left out of Data Management: it cannot be filtered\./);
+    const note = page.locator('[data-scope-note="dropped"]');
     await note.waitFor({ timeout: 15000 });
-    assert.match(await note.innerText(), /customer_value_metrics is a metric view, so Inspire leaves it out of Data Management; pick its source table instead/);
+    assert.equal(await note.innerText(), 'Removed the saved filters on customer_value_metrics: a metric view cannot be filtered.');
     await idle(page);
     const block = await page.locator('#launch-block').count() ? await page.locator('#launch-block').innerText() : '';
     assert.equal(block, '', `Get Started is blocked by: ${block}`);

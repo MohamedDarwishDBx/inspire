@@ -402,7 +402,7 @@ async function tableTypeByDescribe(host, token, warehouseId, catalog, schema, na
 
 // `known` holds the full names the REST listing already typed (and the metric views it hid); only the other names are probed.
 async function listTablesSql(host, token, warehouseId, catalog, schema, known = new Set()) {
-  if (!warehouseId || !catalog || !schema) return { rows: [], leftOut: 0 };
+  if (!warehouseId || !catalog || !schema) return { rows: [], leftOut: 0, metricViews: [] };
   try {
     const stmt = `SHOW TABLES IN ${quotedIdent(catalog)}.${quotedIdent(schema)}`;
     const result = await executeSql(host, token, warehouseId, stmt);
@@ -461,10 +461,10 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
         ...(busyNames.has(tname) ? { type_check: 'busy', unusable_reason: TYPE_CHECK_BUSY_REASON } : {}),
       });
     }
-    return { rows: out, leftOut };
+    return { rows: out, leftOut, metricViews: [...metricViewNames] };
   } catch (err) {
     console.warn(`   ⚠️ SHOW TABLES fallback failed for ${catalog}.${schema}: ${err.message}`);
-    return { rows: [], leftOut: 0 };
+    return { rows: [], leftOut: 0, metricViews: [] };
   }
 }
 
@@ -1946,10 +1946,13 @@ app.get('/api/tables/:catalog/:schema', requireToken, async (req, res) => {
     }
     const countAfterRest = byKey.size;
     let leftOut = 0;
+    // The metric views left out of this list, by full name (Data Management names them in one line; they cannot be filtered).
+    const metricViews = new Set(hiddenMetricViews);
     if (warehouseId) {
       const listed = await listTablesSql(req.dbHost, token, warehouseId, catalog, schema,
         new Set([...byKey.keys(), ...hiddenMetricViews]));
       leftOut = listed.leftOut;
+      for (const name of listed.metricViews) metricViews.add(`${catalog}.${schema}.${name}`);
       const hidden = new Set(hiddenMetricViews);
       for (const row of listed.rows) {
         if (!byKey.has(row.full_name) && !hidden.has(row.full_name)) byKey.set(row.full_name, row);
@@ -1962,6 +1965,7 @@ app.get('/api/tables/:catalog/:schema', requireToken, async (req, res) => {
     }
     // Tables past the probe cap are not listed: the count says how many, so the picker can name them (nothing is lost silently).
     res.json({ tables, count: tables.length, truncated: restCut && byKey.size === countAfterRest,
+      metric_views: [...metricViews].sort(),
       ...(leftOut ? { left_out: { count: leftOut, schema: `${catalog}.${schema}` } } : {}) });
   } catch (err) {
     PM_ERROR.sendFailure(res, 500, err.message);

@@ -53,7 +53,7 @@ test('Copy into carries the Data Filter to the copy, and Get Started sends the s
   const { page, made } = ui;
   try {
     await pickSampleAndOpenDataFilters(page);
-    await page.getByRole('button', { name: `Add row filter on brand_name in ${SOURCE.split('.').pop()}` }).click();
+    await page.getByRole('button', { name: `Row filter on brand_name in ${SOURCE.split('.').pop()}` }).click();
     await page.locator('[data-scope-value="Northwind"]').waitFor({ timeout: 15000 });
     await page.locator('[data-scope-value="Northwind"]').click();
     await page.getByRole('button', { name: 'Add filter' }).click();

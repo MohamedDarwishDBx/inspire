@@ -51,7 +51,7 @@ async function findColumn(page, column) {
 
 // Adds one row filter from the column's row in one table: the operator is "is" unless changed, the value is picked from the suggestions.
 async function addFilter(page, column, value, table = ORDERS) {
-  await rowOf(page, column, table).getByRole('button', { name: `Add row filter on ${column} in ${table.split('.').pop()}` }).click();
+  await rowOf(page, column, table).getByRole('button', { name: `Row filter on ${column} in ${table.split('.').pop()}` }).click();
   await page.locator(`[data-scope-value="${value}"]`).waitFor({ timeout: 15000 });
   await page.locator(`[data-scope-value="${value}"]`).click();
   await page.getByRole('button', { name: 'Add filter' }).click();
@@ -69,8 +69,7 @@ async function openPickedOrders(page) {
 }
 
 async function loadGroups(page, column, table = ORDERS) {
-  await rowOf(page, column, table).getByRole('button', { name: 'Row groups' }).click();
-  await page.getByRole('button', { name: `Load groups for ${column}` }).click();
+  await rowOf(page, column, table).getByRole('button', { name: `Load groups on ${column} in ${table.split('.').pop()}` }).click();
   await page.locator(`[data-row-groups="${column}"] [data-group-value]`).first().waitFor({ timeout: 15000 });
 }
 
@@ -122,7 +121,7 @@ test('a column can carry more than one row filter, and each is removable on its 
   try {
     await openPickedOrders(page);
     await findColumn(page, 'brand_name');
-    await rowOf(page, 'brand_name').getByRole('button', { name: 'Add row filter on brand_name in orders' }).click();
+    await rowOf(page, 'brand_name').getByRole('button', { name: 'Row filter on brand_name in orders' }).click();
     await page.getByLabel('Operator for brand_name in orders').selectOption('!=');
     await page.locator('[data-scope-value="Costa"]').waitFor({ timeout: 15000 });
     await page.locator('[data-scope-value="Costa"]').click();
@@ -144,7 +143,7 @@ test('a row filter that keeps 0 rows blocks Get Started with the reason, and rem
   try {
     await openPickedOrders(page);
     await findColumn(page, 'brand_name');
-    await rowOf(page, 'brand_name').getByRole('button', { name: 'Add row filter on brand_name in orders' }).click();
+    await rowOf(page, 'brand_name').getByRole('button', { name: 'Row filter on brand_name in orders' }).click();
     await page.getByLabel('Value for brand_name in orders').fill('Nobody');
     await page.getByRole('button', { name: 'Add value' }).click();
     await page.getByRole('button', { name: 'Add filter' }).click();
@@ -337,7 +336,7 @@ test('a numeric column gets no Load groups, and says row groups are for text col
     await findColumn(page, 'total_sales');
     const numeric = rowOf(page, 'total_sales');
     assert.match(await numeric.innerText(), /Row groups are for text columns/);
-    assert.equal(await numeric.getByRole('button', { name: 'Row groups' }).count(), 0, 'numbers get no Row groups button');
+    assert.equal(await numeric.getByRole('button', { name: /^Load groups/ }).count(), 0, 'numbers get no Load groups button');
   } finally {
     await ui.close();
   }

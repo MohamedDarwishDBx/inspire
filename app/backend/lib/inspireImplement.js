@@ -1,3 +1,4 @@
+const { joinSentences } = require('./sentences');
 const { appShellCatalog } = require('./appShell');
 const { IMPLEMENT_RUN_AS_PARAM, IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, useCaseNameTag, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
 const { parseExactJson } = require('./exactJson');
@@ -3801,7 +3802,7 @@ function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessNam
       { clash: USE_CASE_SCHEMA_CLASHES[candidates.indexOf(ours)], ofSession: true }) : ours;
     const reused = table === ours ? '' : ownSchemaReuseNote(tableParts(ours).schema, held, plainTable(table));
     const clashed = ours === own ? '' : ownSchemaClashNote(tableParts(own).schema, of(own), tableParts(ours).schema, who);
-    return { ...base, own_table: table, table, place: 'own', create: false, note: [clashed, reused].filter(Boolean).join(' ') };
+    return { ...base, own_table: table, table, place: 'own', create: false, note: joinSentences(clashed, reused) };
   }
   const table = candidates.find((name) => owner(name) === 'free');
   if (!table) {
@@ -3814,7 +3815,7 @@ function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessNam
     ? `Inspire could not check whether you can create schemas in ${base.catalog} (${unchecked}), so this use case's tables go to the Inspire database schema; pick Its own schema to try.`
     : ownSchemaFallbackNote(base.catalog, facts.me);
   const permission = facts.me ? ownSchemaPermission(base.catalog, facts.me) : null;
-  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: [note, why].filter(Boolean).join(' '), permission };
+  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: joinSentences(note, why), permission };
 }
 
 function useCaseSchemaTagsSql(catalog, schema, tags) {
@@ -3883,7 +3884,7 @@ function appsRoomCheck(creates) {
 function shareCheck(grant) {
   if (!grant) return { ok: true, detail: 'not checked yet', warn: 'Build still runs; if Inspire cannot share the result table, it skips the sharing and says so.' };
   if (grant.ok) return grant;
-  return { ok: true, detail: grant.detail, warn: [grant.warn, 'Build still runs, without the sharing. Share the result table once you can.'].filter(Boolean).join(' ') };
+  return { ok: true, detail: grant.detail, warn: joinSentences(grant.warn, 'Build still runs, without the sharing. Share the result table once you can.') };
 }
 
 function executionFamily(mandate) {

@@ -9,6 +9,32 @@ function sqlResultToObjects(result) {
   return result.rows || [];
 }
 
+// The Data Management reads (REQ-370), answered from state.columnsByTable: the column search (ILIKE :q, one query per catalog) and the
+// columns of a picked scope (one query per catalog, the picked tables bound as s<i> and t<i>). A metric view is not in columnsByTable.
+function scopeRowsOf(columnsByTable, sql, parameters) {
+  const catalog = ((/FROM `([^`]+)`\.information_schema\.columns/.exec(sql) || [])[1] || '').toLowerCase();
+  const named = (re) => parameters.filter((p) => re.test(p.name));
+  const whole = sql.includes('(TRUE)');
+  const searching = sql.includes('ILIKE :q');
+  const text = searching ? String(named(/^q$/)[0].value).replace(/^%|%$/g, '').replace(/\\([\\%_])/g, '$1').toLowerCase() : '';
+  const schemas = searching ? named(/^s\d+$/).map((p) => p.value) : [];
+  const pairs = searching
+    ? named(/^ts\d+$/).map((p, i) => [p.value, (named(/^tt\d+$/).find((x) => x.name === `tt${i}`) || {}).value])
+    : named(/^s\d+$/).map((p, i) => [p.value, (named(/^t\d+$/).find((x) => x.name === `t${i}`) || {}).value]);
+  const inScope = (schema, table) => whole || schemas.includes(schema) || pairs.some(([s, t]) => s === schema && t === table);
+  const rows = [];
+  for (const [name, cols] of Object.entries(columnsByTable)) {
+    const [c, schema, table] = name.split('.');
+    if (c.toLowerCase() !== catalog || !inScope(schema, table)) continue;
+    for (const col of cols) {
+      if (searching && !col.column_name.toLowerCase().includes(text)) continue;
+      rows.push({ table_schema: schema, table_name: table, column_name: col.column_name, data_type: col.data_type });
+    }
+  }
+  if (!searching) return rows;
+  return rows.slice(0, 300).map((r) => ({ ...r, total: rows.length }));
+}
+
 function makeApp(overrides = {}, { mount } = {}) {
   const sqlCalls = [];
   const fetches = [];
@@ -160,6 +186,9 @@ function makeApp(overrides = {}, { mount } = {}) {
       }
       if (sql.includes('information_schema.columns') && sql.includes('WITH o AS')) {
         return { rows: state.swapRowsByToken ? state.swapRowsByToken[token] || [] : state.swapRows || [] };
+      }
+      if (sql.includes('information_schema.columns') && state.columnsByTable && (sql.includes('ILIKE :q') || sql.includes('table_schema = lower(:s0)'))) {
+        return { rows: scopeRowsOf(state.columnsByTable, sql, parameters || []) };
       }
       if (sql.includes('information_schema.columns') && state.columnsByTable) {
         const catalog = (/FROM `([^`]+)`\.information_schema\.columns/.exec(sql) || [])[1] || '';
@@ -368,7 +397,9 @@ function makeApp(overrides = {}, { mount } = {}) {
         : busy[full] ? { type_check: 'busy', unusable_reason: busy[full] } : {};
       return { name, full_name: full, schema_name: req.params.schema, ...flag };
     });
-    return res.json({ tables, count: names.length, ...((state.leftOut || {})[scope] ? { left_out: state.leftOut[scope] } : {}) });
+    // state.metricViews: full names of the metric views in this schema, left out of the listing and named back (REQ-370).
+    const metricViews = (state.metricViews || []).filter((v) => String(v).toLowerCase().startsWith(`${scope.toLowerCase()}.`));
+    return res.json({ tables, count: names.length, metric_views: metricViews, ...((state.leftOut || {})[scope] ? { left_out: state.leftOut[scope] } : {}) });
   });
   app.post('/api/output-folder/check', (req, res) => {
     if (state.outputRefusal) return res.status(403).json({ error: state.outputRefusal.message, permissions: state.outputRefusal.permissions });

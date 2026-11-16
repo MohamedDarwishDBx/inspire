@@ -1,3 +1,4 @@
+const { joinSentences } = require('./sentences');
 const { parseExactJson } = require('./exactJson');
 const { parseStrategicContext, validateStrategy } = require('../../frontend/src/lib/strategyContext.js');
 const { scopesFromObject, serializeTableScopes, scopeKeyOf } = require('../../frontend/src/lib/tableScope.js');
@@ -137,7 +138,7 @@ function validateStrategicContextParams(params) {
     throw paramError('Strategic Context must be a strategy object or the path of a Workspace or Volumes file that holds one.');
   }
   const problems = parsed.mode === 'tree' ? validateStrategy(parsed.model) : [];
-  if (problems.length) throw paramError(`Strategic Context: ${problems.join(' ')}`);
+  if (problems.length) throw paramError(`Strategic Context: ${joinSentences(...problems)}`);
   params['10_strategic_context'] = text;
   return params;
 }
@@ -168,7 +169,7 @@ function parseTableScopeText(text) {
 
 function validateTableScopeParams(params, picks = params['01_uc_metadata']) {
   const { scopes, problems, label } = parseTableScopeText(params['17_table_scope']);
-  if (problems.length) throw paramError(`Table scope: ${problems.join(' ')}`);
+  if (problems.length) throw paramError(`Table scope: ${joinSentences(...problems)}`);
   const uncovered = Object.keys(scopes).filter((table) => !tableIsPicked(table, picks));
   if (uncovered.length) {
     throw paramError(`Table scope names ${uncovered.join(', ')}, which ${uncovered.length === 1 ? 'is' : 'are'} not picked under Unity Catalog Metadata.`);

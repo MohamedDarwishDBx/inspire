@@ -39,7 +39,7 @@ function metricViewSkipLine(names) {
 
 /** The one plain line a Data Filters read returns for a metric view, instead of a SQL error. */
 function metricViewRefusal(name) {
-  return `${name} is a metric view, so Inspire leaves it out of Data Management; pick its source table instead`;
+  return `${name} is a metric view, so Inspire leaves it out of Data Management; pick its source table instead.`;
 }
 
 /** The plain reason a picker row gives while its type check is busy: not a verdict on the table, and it can be checked again. */
