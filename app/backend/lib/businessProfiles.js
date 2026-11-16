@@ -1,6 +1,8 @@
 // Business profiles: a named, server-stored copy of the Start form, shared by everyone on the App (D-PROF2A).
 // The tables live in the App's own database, next to the launch record. A run started with a profile is linked to it by session.
 const { quoted } = require('./launchLedger');
+const { splitInspireDatabase } = require('./sqlInputs');
+const { quotedIdent } = require('../../frontend/src/lib/tableName.js');
 const { parseExactJson } = require('./exactJson');
 
 const PROFILE_TABLE = '__inspire_profile';
@@ -48,6 +50,22 @@ function createLinkSql(table) {
 }
 
 const str = (name, value) => ({ name, value: String(value ?? ''), type: 'STRING' });
+
+// The profile tables that exist in the App's database. The first save creates them, so a read checks them first and never reads a missing one.
+function presentTablesStatement(appDatabase) {
+  const parsed = splitInspireDatabase(appDatabase);
+  if (!parsed) return null;
+  return {
+    sql: `SELECT table_name FROM ${quotedIdent(parsed.catalog)}.information_schema.tables WHERE table_schema = lower(:schema) `
+      + 'AND table_name IN (:profile, :link)',
+    parameters: [str('schema', parsed.schema), str('profile', PROFILE_TABLE), str('link', LINK_TABLE)],
+  };
+}
+
+function profilesPresent(rows) {
+  const found = new Set((rows || []).map((r) => String(r.table_name)));
+  return found.has(PROFILE_TABLE) && found.has(LINK_TABLE);
+}
 
 function findByNameStatement(table, name) {
   return {
@@ -155,6 +173,8 @@ module.exports = {
   profileToSave,
   createProfileSql,
   createLinkSql,
+  presentTablesStatement,
+  profilesPresent,
   findByNameStatement,
   getStatement,
   listStatement,

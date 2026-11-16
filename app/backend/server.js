@@ -3389,6 +3389,12 @@ function profileTableNames() {
   return profiles && links && DEFAULT_WAREHOUSE_ID ? { profiles, links } : null;
 }
 
+// Both profile tables must exist before any read of them. Checked on each read, so a list never sends a read that Databricks fails.
+async function profileTablesPresent(req) {
+  const statement = BP.presentTablesStatement(DEFAULT_INSPIRE_DB);
+  return BP.profilesPresent(await launchSql(req.dbHost, statement, req.dbToken));
+}
+
 async function ensureProfileTables(host, token, names) {
   if (profileTablesReady) return;
   await executeSql(host, token, DEFAULT_WAREHOUSE_ID, BP.createProfileSql(names.profiles));
@@ -3400,6 +3406,7 @@ app.get('/api/inspire/profiles', requireToken, async (req, res) => {
   const names = profileTableNames();
   if (!names) return res.status(503).json({ error: PROFILE_NO_DATABASE });
   try {
+    if (!(await profileTablesPresent(req))) return res.json({ profiles: [] });
     const rows = await launchSql(req.dbHost, BP.listStatement(names.profiles, req.query.business_name), req.dbToken);
     res.json({ profiles: rows.map(BP.profileSummary) });
   } catch (err) {
@@ -3414,6 +3421,7 @@ app.get('/api/inspire/profiles/:profileId', requireToken, async (req, res) => {
   const statement = BP.getStatement(names.profiles, req.params.profileId);
   if (!statement) return res.status(400).json({ error: 'profile_id must be a profile id Inspire gave out' });
   try {
+    if (!(await profileTablesPresent(req))) return res.status(404).json({ error: 'That business profile was not found' });
     const [row] = await launchSql(req.dbHost, statement, req.dbToken);
     if (!row) return res.status(404).json({ error: 'That business profile was not found' });
     res.json({ profile: BP.profileDetail(row) });
@@ -3469,6 +3477,7 @@ async function attachSessionProfiles(req, inspireDatabase, sessions) {
   const statement = names ? BP.linksOfSessionsStatement(names.links, names.profiles, inspireDatabase, sessions.map((s) => s.session_id)) : null;
   if (!statement) return;
   try {
+    if (!(await profileTablesPresent(req))) return;
     BP.withProfiles(sessions, await launchSql(req.dbHost, statement, req.dbToken));
   } catch (err) {
     if (!isMissingTableError(err)) console.warn(`[sessions] the business profiles of the runs could not be read: ${err.message}`);
