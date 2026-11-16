@@ -27,6 +27,7 @@ const STATE = {
   primaryKeys: [],
 };
 const SHOTS = '/private/tmp/inspire_v15/shots/u4';
+const SHOTS_U7 = '/private/tmp/inspire_v15/shots/u7';
 
 async function openRelationships(page) {
   await page.getByPlaceholder(BUSINESS).fill('Acme');
@@ -186,6 +187,74 @@ test('a wide 550-table pick: the Link dialog says how many tables have their col
     assert.match(await dialog.locator('[data-link-note]').innerText(), /Columns are sent for \d+ of 550 tables/);
     assert.equal(await dialog.getByRole('list', { name: 'Columns of t001' }).getByRole('button').count(), 60, 'the source table is complete');
     assert.equal(await dialog.getByRole('list', { name: 'Columns of t002' }).getByRole('button').count(), 60, 'the target table is complete');
+  } finally {
+    await ui.close();
+  }
+});
+
+// REQ-382: a long table name and two tables with the same name never push the Source and Target lists out of the section. Each list is a
+// fixed height and scrolls; a name truncates with its full catalog.schema.table on hover; a shared name shows schema.table.
+const LONG = 'customer_transaction_history_for_retail_segments_and_regions_2026_quarterly';
+const SHARED_S = 'main.s.orders';
+const SHARED_T = 'main.t.orders';
+const COLS = (names) => names.map((n, i) => ({ column_name: n, data_type: 'BIGINT', ordinal_position: i + 1 }));
+const SHARED_STATE = {
+  ...STATE,
+  schemas: { main: ['s', 't'] },
+  tables: { 'main.s': [LONG, 'orders', 'customers'], 'main.t': ['orders'] },
+  columnsByTable: { ...STATE.columnsByTable, [SHARED_T]: COLS(['order_id', 'region']) },
+};
+const sized = (page, selector) => page.evaluate((sel) => {
+  const el = document.querySelector(sel);
+  const r = el.getBoundingClientRect();
+  return { scrollOver: el.scrollWidth - el.clientWidth, left: r.left, right: r.right, width: r.width };
+}, selector);
+
+test('REQ-382: long names truncate, Source and Target stay equal and inside the section at 1440x900 and 1280x800, and a shared name shows schema.table', async () => {
+  const ui = await openUi('launch', SHARED_STATE);
+  const { page } = ui;
+  try {
+    await page.getByPlaceholder(BUSINESS).fill('Acme');
+    await page.locator('button[title="main"]').click();
+    await page.locator('button[title="s"]').click();
+    await page.locator('button[title="t"]').click();
+    await idle(page);
+    await page.getByRole('button', { name: /Advanced Settings/ }).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
+    await page.locator('[data-relationships]').waitFor({ timeout: 15000 });
+    assert.equal(await source(page, LONG).getAttribute('title'), `main.s.${LONG}`, 'the full name is on hover');
+    assert.equal(await source(page, 's.orders').count(), 1, 'a shared name shows its schema in the Source list');
+    assert.equal(await target(page, 't.orders').count(), 1, 'a shared name shows its schema in the Target list');
+    assert.equal(await source(page, 'orders').count(), 0, 'a shared name is never shown as its bare table name');
+    for (const [width, height] of [[1440, 900], [1280, 800]]) {
+      await page.setViewportSize({ width, height });
+      const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(sideways <= 0, `${width}x${height}: no sideways scroll on the page (overflow ${sideways}px)`);
+      const section = await sized(page, '[data-relationships]');
+      assert.ok(section.scrollOver <= 0, `${width}x${height}: the section does not scroll sideways (overflow ${section.scrollOver}px)`);
+      const src = await sized(page, '[data-list="source"] ul');
+      const tgt = await sized(page, '[data-list="target"] ul');
+      assert.ok(src.width > 0 && tgt.width > 0, `${width}x${height}: both lists are visible`);
+      assert.ok(tgt.right <= section.right + 1, `${width}x${height}: the Target list ends inside the section`);
+      assert.ok(Math.abs(src.width - tgt.width) <= 1, `${width}x${height}: the two lists are the same width (${src.width} vs ${tgt.width})`);
+      await page.locator('[data-relationships]').screenshot({ path: `${SHOTS_U7}/req382-lists-${width}x${height}.png` });
+    }
+    await source(page, 'customers').click();
+    await target(page, 't.orders').click();
+    await page.getByRole('button', { name: 'Link', exact: true }).click();
+    const dialog = page.locator('[data-link-dialog]');
+    await dialog.getByRole('list', { name: 'Columns of t.orders' }).waitFor({ timeout: 15000 });
+    assert.equal(await dialog.getAttribute('aria-label'), 'Link customers to t.orders', 'the dialog names the table that is shared, with its schema');
+    for (const [width, height] of [[1440, 900], [1280, 800]]) {
+      await page.setViewportSize({ width, height });
+      const box = await sized(page, '[data-link-dialog]');
+      assert.ok(box.scrollOver <= 0, `${width}x${height}: the Link dialog does not scroll sideways (overflow ${box.scrollOver}px)`);
+      const left = await sized(page, '[data-link-dialog] ul[aria-label="Columns of customers"]');
+      const right = await sized(page, '[data-link-dialog] ul[aria-label="Columns of t.orders"]');
+      assert.ok(right.right <= box.right + 1 && left.width > 0 && right.width > 0, `${width}x${height}: both column lists are inside the dialog`);
+      assert.ok(Math.abs(left.width - right.width) <= 1, `${width}x${height}: the two column lists are the same width`);
+      await dialog.screenshot({ path: `${SHOTS_U7}/req382-dialog-${width}x${height}.png` });
+    }
   } finally {
     await ui.close();
   }
