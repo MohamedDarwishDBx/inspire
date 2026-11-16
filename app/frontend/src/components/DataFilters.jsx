@@ -586,6 +586,7 @@ export default function DataFilters({ scope, scopes, tables, listing, onScopes, 
           <div data-column-search className="space-y-3">
             <input type="search" aria-label="Search column names" value={query} dir="auto" onChange={(e) => setQuery(e.target.value)}
               placeholder="Search a column name, for example brand" className={`${FIELD} h-9 w-full`} />
+            <p data-search-syntax className="text-text-tertiary">Use * at the start or end, for example brand* or *_id.</p>
             {answer.status === 'loading' && <p data-search-loading className="text-text-tertiary">Searching the columns you picked</p>}
             {answer.status === 'error' && (
               <div className="flex flex-wrap items-center gap-2">

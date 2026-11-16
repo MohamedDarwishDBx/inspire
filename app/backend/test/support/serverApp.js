@@ -38,7 +38,7 @@ function reset(overrides = {}) {
   Object.assign(state, {
     managers: [], managerGroups: [], personGroups: [], aclStatus: 200, personAppsScope: true, launchers: {}, sessionLaunchers: {}, history: [], calls: [],
     launches: [], profiles: [], profileLinks: [], knownSessions: [], ledgerSessions: [], nextRunId: 501, holdFetch: null, createFailure: '', sessionRows: {}, groupParents: {}, indirectGroups: [], conflictOn: null, ucSchemas: null, ucTables: null,
-    createdJob: null, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runViewDenied: null, exportDenied: false, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, tableColumns: {}, files: {}, sessionBusiness: {},
+    createdJob: null, profileTablesMissing: false, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runViewDenied: null, exportDenied: false, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, tableColumns: {}, files: {}, sessionBusiness: {},
     ...folderModel({ folders: { '/Shared/demos': { id: 7, writers: '*' } } }),
   }, overrides);
 }
@@ -66,6 +66,14 @@ function answerSql(body) {
     const value = Object.hasOwn(state.catalogPaths || {}, sid) ? state.catalogPaths[sid] : undefined;
     const reason = (state.catalogReasons || {})[sid] || null;
     return sqlResult(['catalog_json_path', 'catalog_json_reason'], value === undefined ? [] : [[value, reason]]);
+  }
+  // Before the first save the profile tables do not exist: a metadata read finds neither, and a read or write of one fails as Databricks does.
+  if (/information_schema\.tables/i.test(sql) && /table_name IN \(:profile/.test(sql)) {
+    const present = state.profileTablesMissing ? [] : ['__inspire_profile', '__inspire_profile_link'];
+    return sqlResult(['table_name'], present.map((name) => [name]));
+  }
+  if (state.profileTablesMissing && /__inspire_profile/.test(sql) && !/^\s*CREATE TABLE\b/i.test(sql)) {
+    return { statement_id: 's1', status: { state: 'FAILED', error: { message: '[TABLE_OR_VIEW_NOT_FOUND] The table or view cannot be found. Verify the spelling.' } } };
   }
   // Business profiles (REQ-364 to REQ-366): the profile table and its run links, kept in state.profiles and state.profileLinks.
   if (/^\s*CREATE TABLE IF NOT EXISTS\b/i.test(sql) && sql.includes('__inspire_profile')) return sqlResult(['ok'], []);

@@ -19,7 +19,17 @@ const OTHER = { catalog: 'other', table: 'other.x.brand_table', columns: [{ colu
 // A fake warehouse for the search: it answers the ILIKE statement from the fixture, as Databricks would (the scope is read from the
 // statement's own parameters, and a whole-catalog statement is TRUE within its catalog).
 function fakeSearch(sql, parameters) {
-  const pattern = parameters.find((p) => p.name === 'q').value.replace(/\\([\\%_])/g, '$1').replace(/^%|%$/g, '').toLowerCase();
+  // The pattern decides the match the way ILIKE does: a leading % is "ends with", a trailing % is "starts with", both is "contains".
+  const raw = parameters.find((p) => p.name === 'q').value;
+  const leading = raw.startsWith('%');
+  const trailing = raw.endsWith('%') && !raw.endsWith('\\%');
+  const pattern = raw.slice(leading ? 1 : 0, trailing ? -1 : undefined).replace(/\\([\\%_])/g, '$1').toLowerCase();
+  const matches = (name) => {
+    if (leading && trailing) return name.includes(pattern);
+    if (leading) return name.endsWith(pattern);
+    if (trailing) return name.startsWith(pattern);
+    return name.includes(pattern);
+  };
   const catalog = (/FROM `([^`]+)`\.information_schema\.columns/.exec(sql) || [])[1];
   const schemas = parameters.filter((p) => /^s\d+$/.test(p.name)).map((p) => p.value);
   const pairs = parameters.filter((p) => /^ts\d+$/.test(p.name)).map((p, i) => [p.value, parameters.find((x) => x.name === `tt${i}`).value]);
@@ -30,7 +40,7 @@ function fakeSearch(sql, parameters) {
     const [c, schema, table] = name.split('.');
     if (c !== catalog || !inScope(schema, table)) continue;
     for (const col of cols) {
-      if (col.column_name.toLowerCase().includes(pattern)) rows.push({ table_schema: schema, table_name: table, column_name: col.column_name, data_type: col.data_type });
+      if (matches(col.column_name.toLowerCase())) rows.push({ table_schema: schema, table_name: table, column_name: col.column_name, data_type: col.data_type });
     }
   }
   return rows.slice(0, 300).map((r) => ({ ...r, total: rows.length }));
@@ -202,3 +212,67 @@ test('the relationships answer for a 550-table pick of 30 columns each is measur
   }
 });
 const R2_LIMIT = 2 * 1024 * 1024;
+
+// REQ-379: the wildcards of the column search. `seg*` starts with seg, `*seg` ends with it, `seg` or `*seg*` contains it, and ILIKE
+// ignores case. A literal _ in a name is a literal, so *_id finds customer_id and never customerXid.
+// likeMatch reads a pattern the way Databricks ILIKE does (the escape is a backslash), so the cases below test the matching itself.
+function likeMatch(name, pattern) {
+  let re = '^';
+  for (let i = 0; i < pattern.length; i += 1) {
+    const ch = pattern[i];
+    if (ch === '\\' && i + 1 < pattern.length) { re += pattern[i + 1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); i += 1; }
+    else if (ch === '%') re += '.*';
+    else if (ch === '_') re += '.';
+    else re += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`${re}$`, 'is').test(name);
+}
+const NAMES = ['customer_id', 'customerXid', 'seg_total', 'total_seg', 'SEG_upper', 'segment', 'brand'];
+const matchedBy = (text) => NAMES.filter((n) => likeMatch(n, DM.likePatternOf(text))).sort();
+
+test('each wildcard shape matches the names it should and only those (must-keep, must-exclude)', () => {
+  assert.deepEqual(matchedBy('seg*'), ['SEG_upper', 'seg_total', 'segment'], 'seg* starts with seg, ignoring case');
+  assert.deepEqual(matchedBy('*seg'), ['total_seg'], '*seg ends with seg, ignoring case: only total_seg ends in it');
+  assert.deepEqual(matchedBy('seg'), ['SEG_upper', 'seg_total', 'segment', 'total_seg'].sort(), 'a bare word contains it');
+  assert.deepEqual(matchedBy('*seg*'), matchedBy('seg'), 'the star at both ends is the same as a bare word');
+  assert.equal(DM.likePatternOf('seg*'), 'seg%', 'the starts-with pattern has no leading %');
+  assert.equal(DM.likePatternOf('*seg'), '%seg', 'the ends-with pattern has no trailing %');
+  assert.equal(DM.likePatternOf('seg'), '%seg%');
+});
+
+test('an underscore in the search is a literal, so *_id matches customer_id and not customerXid (must-exclude)', () => {
+  assert.equal(DM.likePatternOf('*_id'), '%\\_id');
+  assert.deepEqual(matchedBy('*_id'), ['customer_id']);
+  assert.deepEqual(matchedBy('cust_*'), [], 'cust_* is cust then a literal underscore, and no name has an underscore after cust');
+  assert.deepEqual(matchedBy('cust*'), ['customer_id', 'customerXid'].sort(), 'cust* starts with cust');
+});
+
+test('text made only of stars names nothing, and a percent sign in a name is a literal (must-exclude)', () => {
+  assert.equal(DM.likePatternOf('*'), null);
+  assert.equal(DM.likePatternOf('**'), null);
+  assert.deepEqual(DM.columnSearchStatements({ catalogs: ['main'] }, '*'), [], 'a bare star reads nothing');
+  assert.equal(DM.likePatternOf('50%*'), '50\\%%');
+  assert.equal(DM.likePatternOf('*50%'), '%50\\%');
+});
+
+test('POST /api/data-management/columns honours the wildcards: seg* answers names that start with seg, not names that contain it', async () => {
+  const made = makeApp({ statements: { 'ILIKE :q': (sql, parameters) => ({ rows: fakeSearch(sql, parameters) }) } });
+  const srv = await listen(made.app);
+  const ask = async (q) => {
+    const resp = await fetch(`${srv.url}/api/data-management/columns?${Q}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-email': 'owner@example.com' },
+      body: JSON.stringify(search({ catalogs: [], schemas: ['main.s'], tables: [] }, q)) });
+    assert.equal(resp.status, 200);
+    return (await resp.json()).hits.map((h) => h.column);
+  };
+  try {
+    const starts = await ask('t1*');
+    assert.ok(starts.length > 0 && starts.every((c) => c.startsWith('t1')), `every hit starts with t1: ${starts.slice(0, 3)}`);
+    const ends = await ask('*_id');
+    assert.ok(ends.length > 0 && ends.every((c) => c.endsWith('_id')), `every hit ends with _id: ${ends.slice(0, 3)}`);
+    assert.ok(!ends.includes('id'), 'the bare id column has no underscore before id, so it is not a hit (must-exclude)');
+    assert.deepEqual(await ask('*'), [], 'a bare star answers nothing');
+  } finally {
+    srv.close?.();
+  }
+});

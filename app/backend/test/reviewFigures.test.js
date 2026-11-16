@@ -244,7 +244,7 @@ test('GET /api/inspire/portfolio counts zero for a table that does not exist yet
 
 test('the run list names each run by its bar mode, read from results_json.quality_bar.mode, null where the run has no bar, and still lists a table without that column', async () => {
   const sql = R.sessionListStatement(TABLE).sql;
-  assert.ok(sql.includes("get_json_object(results_json, '$.quality_bar.mode') AS bar_mode"), 'the mode is read in SQL, the payload is not sent');
+  assert.ok(sql.includes("CAST(results_json:quality_bar.mode AS STRING) AS bar_mode"), 'the mode is read in SQL, the payload is not sent');
   assert.equal(R.sessionListStatement(TABLE, { barMode: false }).sql.includes('results_json'), false);
   const rows = [
     { session_id: '9', bar_mode: 'High', business_runs: 1, business_rank: 1 },
@@ -258,7 +258,7 @@ test('the run list names each run by its bar mode, read from results_json.qualit
   const sent = [];
   const noResults = await R.loadSessionList(async (statement) => {
     sent.push(statement.sql);
-    if (statement.sql.includes('get_json_object(results_json')) throw MISSING('results_json');
+    if (statement.sql.includes('results_json:quality_bar')) throw MISSING('results_json');
     return [{ session_id: '5', business_runs: '1', business_rank: '1' }];
   }, TABLE);
   assert.equal(sent.length, 2, 'a table without results_json is read once more without it');
@@ -267,7 +267,7 @@ test('the run list names each run by its bar mode, read from results_json.qualit
   const neither = [];
   await R.loadSessionList(async (statement) => {
     neither.push(statement.sql);
-    if (statement.sql.includes('COALESCE(last_updated') || statement.sql.includes('get_json_object(results_json')) {
+    if (statement.sql.includes('COALESCE(last_updated') || statement.sql.includes('results_json:quality_bar')) {
       throw MISSING(statement.sql.includes('COALESCE(last_updated') ? 'last_updated' : 'results_json');
     }
     return [];
@@ -275,4 +275,29 @@ test('the run list names each run by its bar mode, read from results_json.qualit
   assert.equal(neither.length, 3, 'a table missing both columns is read without each in turn, and the rest of the list still loads');
   await assert.rejects(R.loadSessionList(async () => { throw new Error('PERMISSION_DENIED: no SELECT'); }, TABLE), /PERMISSION_DENIED/,
     'a permission error is not hidden behind the bar fallback');
+});
+
+// REQ-VARIANT: results_json is a VARIANT column. get_json_object needs a STRING, so the live App logged DATATYPE_MISMATCH. That message
+// says "Cannot resolve", which the missing-column test matches, so the error was taken for a missing column and the bar mode was
+// dropped without a word. The read must use the VARIANT path, and a type error must never be read as a missing column.
+test('the bar mode is read from the VARIANT results_json with the colon path, and a type error is never taken for a missing column', async () => {
+  const sent = [];
+  const got = await R.loadSessionList(async (statement) => {
+    sent.push(statement.sql);
+    if (statement.sql.includes('get_json_object(results_json')) {
+      throw new Error('[DATATYPE_MISMATCH.UNEXPECTED_INPUT_TYPE] Cannot resolve "get_json_object(results_json, $.quality_bar.mode)" due to data type mismatch: '
+        + 'The first parameter requires the "STRING" type, however "results_json" has the type "VARIANT". SQLSTATE: 42K09');
+    }
+    return [{ session_id: '9', bar_mode: 'High', business_runs: 1, business_rank: 1 }];
+  }, TABLE);
+  assert.equal(sent.length, 1, 'the list is read once, with the bar mode in it');
+  assert.match(sent[0], /CAST\(results_json:quality_bar\.mode AS STRING\) AS bar_mode/);
+  assert.equal(got.sessions[0].bar_mode, 'High');
+  assert.equal(I.isMissingColumnError(new Error('[DATATYPE_MISMATCH.UNEXPECTED_INPUT_TYPE] Cannot resolve "f(x)" due to data type mismatch')), false,
+    'a type mismatch is not a missing column');
+  assert.equal(I.isMissingColumnError(MISSING('results_json')), true, 'a real missing column still falls back');
+  await assert.rejects(R.loadSessionList(async (statement) => {
+    if (statement.sql.includes('results_json')) throw new Error('[DATATYPE_MISMATCH.UNEXPECTED_INPUT_TYPE] Cannot resolve "x" due to data type mismatch');
+    return [];
+  }, TABLE), /DATATYPE_MISMATCH/, 'the type error reaches the caller instead of being dropped');
 });

@@ -22,6 +22,25 @@ function namesOf(value, label, parts) {
 }
 
 /**
+ * The search text as an ILIKE pattern (REQ-379). `seg*` finds names that start with seg, `*seg` names that end with it, and `seg` or
+ * `*seg*` names that contain it. Case is ignored by ILIKE. A % _ or \\ in the text matches itself. Text that is only stars names
+ * nothing, so it returns null.
+ */
+function likePatternOf(text) {
+  let core = String(text ?? '').trim();
+  const lead = core.startsWith('*');
+  if (lead) core = core.slice(1);
+  const trail = core.endsWith('*');
+  if (trail) core = core.slice(0, -1);
+  core = core.trim();
+  if (!core) return null;
+  const literal = core.replace(/[\\%_]/g, (m) => `\\${m}`);
+  if (trail && !lead) return `${literal}%`;
+  if (lead && !trail) return `%${literal}`;
+  return `%${literal}%`;
+}
+
+/**
  * The search statements for a picked scope ({ catalogs, schemas, tables } as names), one per catalog that has a pick. A catalog picked
  * whole is searched whole; a schema or a table narrows the search to its tables. `q` is bound as a parameter, never written into the SQL.
  */
@@ -34,7 +53,8 @@ function columnSearchStatements(scope, q) {
   for (const [catalog] of namesOf(scope?.catalogs, 'catalog', 1)) of(catalog).whole = true;
   for (const [catalog, schema] of namesOf(scope?.schemas, 'schema', 2)) of(catalog).schemas.push(schema);
   for (const [catalog, schema, table] of namesOf(scope?.tables, 'table', 3)) of(catalog).tables.push([schema, table]);
-  const pattern = `%${String(q).replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+  const pattern = likePatternOf(q);
+  if (pattern === null) return [];
   return [...picks.entries()].filter(([, p]) => p.whole || p.schemas.length || p.tables.length).map(([catalog, p]) => {
     const parameters = [{ name: 'q', value: pattern, type: 'STRING' }];
     const clauses = [];
@@ -80,4 +100,4 @@ function queryOf(value) {
   return q;
 }
 
-module.exports = { COLUMN_SEARCH_LIMIT, QUERY_MAX, columnSearchStatements, mergeColumnHits, queryOf };
+module.exports = { COLUMN_SEARCH_LIMIT, QUERY_MAX, columnSearchStatements, likePatternOf, mergeColumnHits, queryOf };

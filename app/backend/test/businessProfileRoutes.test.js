@@ -106,3 +106,19 @@ test('a run with a profile id that is not an id Inspire gave out is refused befo
   assert.equal(S.state.launches.length, 0);
   assert.equal(S.state.calls.filter((c) => c.path === '/api/2.1/jobs/run-now').length, 0);
 });
+
+// REQ-PROF: the profile tables are created by the first save, so before it a list finds no table. The read was sent anyway and logged
+// TABLE_OR_VIEW_NOT_FOUND as a failed SQL on every page load. The tables are checked first, and a missing table is never read.
+test('before the first save the profile tables do not exist: the list and the run list answer without reading a missing table (must-keep, must-fail)', async () => {
+  S.reset({ profileTablesMissing: true });
+  const listed = await S.request('GET', '/api/inspire/profiles?business_name=Acme', { person: 'amr@example.com' });
+  assert.equal(listed.status, 200, listed.text);
+  assert.deepEqual(listed.data.profiles, []);
+  const sessions = await S.request('GET', LIST, { person: 'amr@example.com' });
+  assert.equal(sessions.status, 200, sessions.text);
+  const missingReads = S.state.calls.filter((c) => /__inspire_profile/.test(c.statement || '') && !/information_schema/i.test(c.statement || ''));
+  assert.deepEqual(missingReads.map((c) => c.statement.slice(0, 40)), [], 'no statement reads a profile table while it does not exist');
+  const got = await S.request('GET', '/api/inspire/profiles/3f2a9c1e-8b7d-4e6f-9a0b-1c2d3e4f5a6b', { person: 'amr@example.com' });
+  assert.equal(got.status, 404, got.text);
+  S.reset();
+});
