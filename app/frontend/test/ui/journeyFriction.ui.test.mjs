@@ -55,7 +55,7 @@ test('the Build page shows a submitted build as queued at once, before the histo
     await startMvp(page);
     await page.waitForFunction(() => !document.querySelector('[data-wizard-body]'), null, { timeout: 20000 });
     await page.getByRole('heading', { name: 'Build', exact: true }).waitFor();
-    await page.getByRole('region', { name: 'Build summary' }).getByText(/building now/).waitFor({ timeout: 2000 });
+    await page.getByRole('region', { name: 'Build summary' }).getByText(/MVP queued/).waitFor({ timeout: 2000 });
   } finally {
     await ui.close();
   }

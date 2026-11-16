@@ -134,7 +134,9 @@ function SummaryBanner({ summary }) {
   let line = 'Pick any use case in the list to start its MVP.';
   if (building.length) {
     mark = { icon: Rocket, tone: 'red', live: true };
-    title = `${plural(building.length, 'MVP')} building now`;
+    // REQ-355: a build the server has only queued (no run yet) reads queued here too, as on its card.
+    const onlyQueued = building.every((item) => item.latest?.status === 'queued');
+    title = `${plural(building.length, 'MVP')} ${onlyQueued ? 'queued' : 'building now'}`;
     line = building.map((item) => `${item.name}${shownStatusMessage(item.latest) ? `: ${shownStatusMessage(item.latest)}` : ''}`).join(' · ');
   } else if (summary.mvps) {
     mark = summary.failed || summary.held || summary.unmet ? { icon: AlertTriangle, tone: 'warning' } : { icon: CheckCircle2, tone: 'success' };
