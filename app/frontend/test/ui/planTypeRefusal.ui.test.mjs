@@ -103,7 +103,7 @@ test('a picker row whose type check is busy shows Try again, and Try again lists
     await idle(page);
     // The Launch picker disables a busy table, so the schema is picked and its tables are listed in Data Filters instead.
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
-    await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
     // The schema is collapsed in the tree until it is opened; opening it lists its tables.
     await page.locator('[data-schema-group] [role="treeitem"]').first().click();
     // The Launch picker lists the same busy table with its own Try again, so this test reads the Data Filters tree only.

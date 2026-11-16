@@ -40,7 +40,7 @@ import DocumentLanguagesMultiselect from '../components/DocumentLanguagesMultise
 import StrategyEditor from '../components/StrategyEditor';
 import { parseStrategicContext, splitPriorities, validateStrategicContextText, withPriorities } from '../lib/strategyContext';
 import UcPermissionErrorHelp from '../components/UcPermissionErrorHelp';
-import DataFilters from '../components/DataFilters';
+import DataManagement from '../components/DataManagement';
 import { groupLabelOf } from '../lib/implementWizard';
 import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
 import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
@@ -897,7 +897,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       : !params['01_uc_metadata'] ? 'Pick at least one catalog, schema or table under Unity Catalog Metadata to get started.'
         : sampleEntries.length > 0 && !samplesDecided ? 'Copy the samples tables into a schema you own, or use descriptions only, above Get Started.'
           : strategyProblems.length ? `Fix the strategy first, in Advanced Settings under Strategy (optional): ${strategyProblems[0]}`
-            : dataFilterProblems.length ? `Fix the data filters first, in Advanced Settings under Data Filters (optional): ${dataFilterProblems[0]}`
+            : dataFilterProblems.length ? `Fix the data filters first, in Advanced Settings under Data Management (optional): ${dataFilterProblems[0]}`
           : bestOfBestInvalid ? 'Best of Best stars takes a whole number from 0 to 100. Fix it in Advanced Settings.' : '';
   const canLaunch = !launchBlock;
   const liveRunNote = useMemo(() => {
@@ -1715,7 +1715,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 >
                   <Table2 size={14} className="text-text-tertiary mt-0.5 shrink-0" />
                   <span className="min-w-0">
-                    <span className="block text-xs font-bold text-text-primary">Data Filters (optional)</span>
+                    <span className="block text-xs font-bold text-text-primary">Data Management (optional)</span>
                     <span className="block text-[10px] text-text-tertiary">
                       The columns Inspire reads and the rows it keeps, per table you picked. Leave it empty to read every column and every row.
                     </span>
@@ -1732,7 +1732,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 </button>
                 {showDataFilters && (
                   <div className="px-4 pb-4 pt-1 border-t border-border">
-                    <DataFilters
+                    <DataManagement
                       scope={scope}
                       scopes={tableScopes}
                       onScopes={setTableScopes}

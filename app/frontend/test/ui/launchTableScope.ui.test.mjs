@@ -62,11 +62,11 @@ async function pickOrdersAndOpenDataFilters(page) {
   await page.locator('button[title="orders"]').click();
   await idle(page);
   await page.getByRole('button', { name: /Advanced Settings/ }).click();
-  await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
+  await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
   await leafOf(page).waitFor({ timeout: 15000 });
 }
 
-test('Data Filters is an optional section in Advanced Settings, collapsed by default, and the picked table sits in the tree under its schema and catalog', async () => {
+test('Data Management is an optional section in Advanced Settings, collapsed by default, and the picked table sits in the tree under its schema and catalog', async () => {
   const ui = await openUi('launch', STATE);
   const { page } = ui;
   try {
@@ -76,7 +76,7 @@ test('Data Filters is an optional section in Advanced Settings, collapsed by def
     await page.locator('button[title="orders"]').click();
     await idle(page);
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
-    const toggle = page.getByRole('button', { name: /Data Filters \(optional\)/ });
+    const toggle = page.getByRole('button', { name: /Data Management \(optional\)/ });
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false', 'the section is collapsed by default, like Strategy');
     assert.equal(await page.locator('[data-data-filters]').count(), 0, 'nothing is listed while the section is collapsed');
     await toggle.click();
@@ -316,7 +316,7 @@ async function openDataFiltersAfter(page, pick) {
   await pick(page);
   await idle(page);
   await page.getByRole('button', { name: /Advanced Settings/ }).click();
-  await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
+  await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
 }
 
 test('a picked schema is a collapsed group that lists its tables when opened, and a filter on one reaches the run under catalog.schema.table', async () => {
@@ -615,7 +615,7 @@ async function pickThenOpenDataFilters(page, pick) {
   await pick(page);
   await idle(page);
   await page.getByRole('button', { name: /Advanced Settings/ }).click();
-  await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
+  await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
 }
 
 test('REQ-305 a table picked under its schema, with the catalog picked: Data Filters lists that one table, not the other tables of the schema', async () => {

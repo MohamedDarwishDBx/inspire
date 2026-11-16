@@ -25,7 +25,7 @@ test('Load groups refused for the signed-in person opens Permission Required wit
     await page.locator('button[title="customers"]').click();
     await idle(page);
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
-    await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
     await page.locator(`[data-scope-table="${ORDERS}"]`).waitFor({ timeout: 15000 });
     await page.locator(`[data-scope-table="${ORDERS}"]`).click();
     await page.locator('[data-scope-column="gender"]').waitFor({ timeout: 15000 });
@@ -55,7 +55,7 @@ test('a column-list refusal opens Permission Required once from the shared error
     await page.locator('button[title="customers"]').click();
     await idle(page);
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
-    await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
     await page.locator(`[data-scope-table="${ORDERS}"]`).waitFor({ timeout: 15000 });
     await page.locator(`[data-scope-table="${ORDERS}"]`).click();
     const dialog = page.locator('[data-permission-dialog=""]');

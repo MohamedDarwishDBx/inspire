@@ -45,7 +45,7 @@ async function pickSampleAndOpenDataFilters(page) {
   await page.locator('button[title="sales_franchises"]').click();
   await idle(page);
   await page.getByRole('button', { name: /Advanced Settings/ }).click();
-  await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
+  await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
   await sourceLeaf(page).click();
   await gridOf(page).locator('[data-scope-column="brand_name"]').waitFor({ timeout: 15000 });
 }

@@ -650,7 +650,7 @@ export default function DataFilters({ scope, scopes, onScopes, label, onLabel, a
     <div data-data-filters className="space-y-4 text-xs">
       {[...new Set(Object.values(columnsOf).map((info) => info.refused).filter(Boolean))].map((note) => (
         <p key={note} role="status" data-metric-view-note="" className="text-warning-fg">
-          {note} Its scope was dropped from Data Filters; the table is left out of the run.
+          {note} Its scope was dropped from Data Management; the table is left out of the run.
         </p>
       ))}
       <p className="text-text-secondary">
