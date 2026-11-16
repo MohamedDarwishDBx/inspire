@@ -26,9 +26,10 @@ test('Load groups refused for the signed-in person opens Permission Required wit
     await idle(page);
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
     await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
-    await page.locator(`[data-scope-table="${ORDERS}"]`).waitFor({ timeout: 15000 });
-    await page.locator(`[data-scope-table="${ORDERS}"]`).click();
-    await page.locator('[data-scope-column="gender"]').waitFor({ timeout: 15000 });
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('gender');
+    const row = page.locator(`[data-column-group="gender"] [data-scope-row="${ORDERS}"]`);
+    await row.waitFor({ timeout: 15000 });
+    await row.getByRole('button', { name: 'Row groups' }).click();
     await page.getByRole('button', { name: 'Load groups for gender' }).click();
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
@@ -56,8 +57,6 @@ test('a column-list refusal opens Permission Required once from the shared error
     await idle(page);
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
     await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
-    await page.locator(`[data-scope-table="${ORDERS}"]`).waitFor({ timeout: 15000 });
-    await page.locator(`[data-scope-table="${ORDERS}"]`).click();
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     assert.equal(await page.locator('[data-permission-dialog=""]').count(), 1, 'exactly one Permission Required dialog');
