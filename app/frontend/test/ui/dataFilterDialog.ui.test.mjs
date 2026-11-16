@@ -27,7 +27,7 @@ test('Load groups refused for the signed-in person opens Permission Required wit
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
     await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
     await page.getByRole('searchbox', { name: 'Search column names' }).fill('gender');
-    const row = page.locator(`[data-column-group="gender"] [data-scope-row="${ORDERS}"]`);
+    const row = page.locator(`[data-column-hit="gender"][data-scope-row="${ORDERS}"]`);
     await row.waitFor({ timeout: 15000 });
     await row.getByRole('button', { name: 'Load groups on gender in customers' }).click();
     const dialog = page.locator('[data-permission-dialog=""]');

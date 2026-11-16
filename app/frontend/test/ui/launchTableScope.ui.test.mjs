@@ -39,15 +39,15 @@ const launchOf = async (page, made) => {
   return made.launches[0].params;
 };
 const search = (page) => page.getByRole('searchbox', { name: 'Search column names' });
-const rowOf = (page, column, table = ORDERS) => page.locator(`[data-column-group="${column}"] [data-scope-row="${table}"]`);
+const rowOf = (page, column, table = ORDERS) => page.locator(`[data-column-hit="${column}"][data-scope-row="${table}"]`);
 // REQ-383: Your filters is one flat list for every table, so the block is the whole Your filters box.
 const inUseOf = (page) => page.locator('[data-filters-in-use]');
-const rowsListed = (page, column) => page.locator(`[data-column-group="${column}"] [data-scope-row]`)
+const rowsListed = (page, column) => page.locator(`[data-column-hit="${column}"][data-scope-row]`)
   .evaluateAll((els) => els.map((el) => el.getAttribute('data-scope-row')).sort());
 
 async function findColumn(page, column) {
   await search(page).fill(column);
-  await page.locator(`[data-column-group="${column}"]`).waitFor({ timeout: 15000 });
+  await page.locator(`[data-column-hit="${column}"]`).first().waitFor({ timeout: 15000 });
 }
 
 // Adds one row filter from the column's row in one table: the operator is "is" unless changed, the value is picked from the suggestions.
@@ -88,7 +88,7 @@ test('Data Management is an optional section, collapsed by default, and a search
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false', 'collapsed by default');
     await toggle.click();
     await search(page).fill('brand');
-    await page.locator('[data-column-group="brand_name"]').waitFor({ timeout: 15000 });
+    await page.locator('[data-column-hit="brand_name"]').first().waitFor({ timeout: 15000 });
     assert.deepEqual(await rowsListed(page, 'brand_name'), [ORDERS], 'the search lists the picked table');
   } finally {
     await ui.close();
