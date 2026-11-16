@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import shell_actions
 import shell_blocks
+import shell_facts
 import shell_db
 import shell_pg
 import shell_sql
@@ -2052,12 +2053,12 @@ class Agent:
         kind_chip = [str(page["kind_question"])] if page.get("kind_question") else []
         chips = kind_chip + list(AGENT_CHIPS) + [str(q) for q in page.get("questions") or [] if isinstance(q, str)]
         if not page.get("records"):
-            return {"page": page["id"], "total": 0, "tickets": [], "actions": [], "chips": chips}
+            return {"page": page["id"], "total": 0, "tickets": [], "actions": [], "chips": chips, "statuses": list(shell_facts.ACTION_STATUSES)}
         ws, _who = self.shell.workspace(headers)
         found = self.listing({"page": page, "headers": dict(headers), "ws": ws}, {}, BRIEF_ROWS)
         tickets = tell_apart([t for t in (ticket_of(page, r) for r in found["rows"]) if t])
         return {"page": page["id"], "total": found["total"], "tickets": tickets,
-                "actions": list(ACTIONS) if self.shell.decides(page) else [], "chips": chips}
+                "actions": list(ACTIONS) if self.shell.decides(page) else [], "chips": chips, "statuses": list(shell_facts.ACTION_STATUSES)}
 
     def tool_ask_genie(self, turn: Turn, job: dict, args: dict) -> dict:
         question = clean_question(args.get("question"))
