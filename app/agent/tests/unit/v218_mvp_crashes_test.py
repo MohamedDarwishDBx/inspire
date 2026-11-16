@@ -147,7 +147,7 @@ def test_widget_default_patch_reads_keyword_and_single_quoted_calls(agent_ns):
 def test_the_fill_round_repairs_widget_defaults_before_it_checks_them(agent_ns):
     from _agentload import agent_source
     source = agent_source()
-    repair = source.index("self._implement_repair_widget_defaults(uc_id, notebook_path, fill, core_widgets)")
+    repair = source.index("self._implement_repair_widget_defaults(uc_id, notebook_path, fill, core_widgets, pinned)")  # REQ-349: the pinned choices go to the restore
     assert source.index("reply = normalize_genie_fill_widgets(fill, core_widgets)") < repair < source.index(
         "reply += validate_genie_fill_result(fill, widget_names[:-1])")
 
