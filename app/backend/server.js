@@ -63,6 +63,7 @@ const { LIVE_STEP_STATUSES, liveDomainsOf, liveUseCasesOf } = require('../fronte
 const { isInspireOwnName, isInspireOwnSchema } = require('../frontend/src/lib/inspireOwnObjects.js');
 const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('./lib/runSummary');
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
+const { createInstalledRuns } = require('./lib/runAsRuns');
 const PM_ERROR = require('./lib/permissionError');
 const { apiRefusalText, logApiBody } = require('./lib/apiRefusal');
 const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, parseImplementRow, builtTableScopeOf, builtFramingOf, builtTextOf, latestBuiltRowsSql, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
@@ -550,6 +551,14 @@ async function appOwnToken() {
   return SERVICE_TOKEN || spTokenCache || null;
 }
 
+// REQ-409: the App's service principal token for the installed jobs in run-as mode only (appOwnToken is null there, on purpose).
+// Used by lib/runAsRuns.js for run-now, cancel and run reads of the installed job ids, and nothing else.
+async function installedJobAppToken() {
+  await refreshSpTokenIfStale();
+  return SERVICE_TOKEN || spTokenCache || null;
+}
+const installedRuns = createInstalledRuns({ dbFetch, appToken: installedJobAppToken });
+
 async function currentManagerCheck(req) {
   if (!policyEnforced()) return { check: 'not needed: Inspire runs outside a Databricks App, so every request uses the developer token', manager: null };
   const verdict = await routePolicy.managerOf(req);
@@ -942,7 +951,7 @@ async function startingSessions(req, inspireDatabase, warehouseId, listed) {
     if (!launches.length) return [];
     const token = req.dbToken;
     const rows = await Promise.all(launches.map(async (launch) => {
-      const resp = await dbFetch(host, token, `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(launch.run_id)}`);
+      const resp = await dbFetch(host, await installedRuns.runToken(host, token, launch.run_id), `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(launch.run_id)}`);
       return resp.ok ? L.startingSessionRow(launch, parseExactJson(await resp.text()), inspireDatabase) : null;
     }));
     return rows.filter(Boolean);
@@ -992,7 +1001,7 @@ async function recordLaunch(host, token, record) {
 // The run is already submitted when its record is written, so a write that fails twice must not leave a run nobody can cancel.
 // The write is retried once. If it still fails, the run is stopped (the same credential that submitted it asks Databricks to cancel it)
 // and the launch answers 503. Only when that stop also fails does the run stay, and then the launch carries a warning naming it.
-async function recordLaunchOrStop(host, token, record) {
+async function recordLaunchOrStop(host, token, record, cancelToken = token) {
   let launch = await recordLaunch(host, token, record);
   if (launch.recorded || !launch.failed) return launch;
   launch = await recordLaunch(host, token, record);
@@ -1001,7 +1010,7 @@ async function recordLaunchOrStop(host, token, record) {
   if (launch.ambiguous && (await launchRecordedFor(host, token, record.runId)) !== false) {
     return { ...launch, warning: `Inspire started run ${record.runId} but could not confirm its record, so it did not stop the run. Cancel it from the App managers if it is not wanted` };
   }
-  const stopped = await dbFetch(host, token, '/api/2.1/jobs/runs/cancel', {
+  const stopped = await dbFetch(host, cancelToken, '/api/2.1/jobs/runs/cancel', {
     method: 'POST',
     body: jsonWithInt64Ids({ run_id: record.runId }, ['run_id']),
   }).then((r) => r.ok, () => false);
@@ -1088,6 +1097,8 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   const openedSession = Boolean(launchedBy) && inspireRunType === 'discovery' && await sessionIsNew(host, token, launchDatabase, launchSession);
 
   const launchPlan = launchPlanFor({ runAs: runAsPerson(), jobType });
+  // REQ-409: a run-as launch starts the installed job with the App's service principal token; the person's token is refused there.
+  const startingToken = launchPlan.mode === 'run-now' ? await installedRuns.startToken(token) : token;
   const createPayload = {
     name: jobName,
     tags: inspireJobTags({ runType: inspireRunType, params, businessName, notebookFilename, useCaseIds, useCaseName }),
@@ -1132,7 +1143,7 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
     console.log(`📋 Run-as-me: starting the installed job ${job_id}; the run's parameters are passed to it`);
   }
 
-  const response = await dbFetch(host, token, '/api/2.1/jobs/run-now', {
+  const response = await dbFetch(host, startingToken, '/api/2.1/jobs/run-now', {
     method: 'POST',
     body: launchPlan.mode === 'create'
       ? jsonWithInt64Ids({ job_id }, ['job_id'])
@@ -1154,7 +1165,7 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   console.log(`✅ Run submitted: ${runId}, job_id=${job_id}, notebook: ${resolvedPath}`);
   const launch = launchedBy
     ? await recordLaunchOrStop(host, token, { runId, jobId: job_id, runType: inspireRunType, inspireDatabase: launchDatabase, sessionId: launchSession, openedSession, launchedBy,
-      outputFolder, outputChecked })
+      outputFolder, outputChecked }, startingToken)
     : { recorded: false, note: 'no signed-in person launched this run, so only App managers can cancel it' };
   if (launch.warning) warnings.push(launch.warning);
   return {
@@ -2255,6 +2266,7 @@ app.post('/api/demo-data/start', requireToken, async (req, res) => {
       req.dbHost,
       req.dbToken,
       {
+        startToken: installedRuns.startToken,
         description: desc,
         businessName,
         inspireDatabase: inspireDb,
@@ -2365,7 +2377,7 @@ app.post('/api/run/:runId/again', requireToken, async (req, res) => {
   const person = personTokenOf(req);
   if (!person) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
   try {
-    const response = await dbFetch(req.dbHost, person, `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, person, req.params.runId), `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
     if (!response.ok) return await refuseRunAgain(req, res, response);
     const again = LC.runAgainOf(parseExactJson(await response.text()), req.params.runId, sessionId);
     if (again.problem) return res.status(409).json({ error: `${again.problem}.` });
@@ -2583,7 +2595,7 @@ app.param('runId', (req, res, next, runId) => (isInt64Id(runId) ? next() : next(
 
 async function taskErrorOf(req, taskRunId) {
   try {
-    const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get-output?run_id=${encodeURIComponent(taskRunId)}`);
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, taskRunId), `/api/2.1/jobs/runs/get-output?run_id=${encodeURIComponent(taskRunId)}`);
     if (!response.ok) return '';
     const data = await response.json();
     return String(data.error || '').replace(/^[A-Za-z_.]*(Error|Exception):\s*/, '').trim().slice(0, 1200);
@@ -2594,7 +2606,7 @@ async function taskErrorOf(req, taskRunId) {
 
 app.get('/api/run/:runId', requireToken, async (req, res) => {
   try {
-    const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, req.params.runId), `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
     if (!response.ok) {
       const action = `read run ${req.params.runId}`;
       const refusalBody = await response.text();
@@ -2635,7 +2647,7 @@ app.get('/api/run/:runId', requireToken, async (req, res) => {
 
 app.get('/api/run/:runId/output', requireToken, async (req, res) => {
   try {
-    const response = await dbFetch(req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get-output?run_id=${req.params.runId}`);
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, req.params.runId), `/api/2.1/jobs/runs/get-output?run_id=${req.params.runId}`);
     if (!response.ok) {
       const action = `read the output of run ${req.params.runId}`;
       const refusalBody = await response.text();
@@ -2662,7 +2674,7 @@ app.get('/api/run/:runId/cancel', async (req, res) => {
 
 app.post('/api/run/:runId/cancel', requireToken, async (req, res) => {
   try {
-    const response = await dbFetch(req.dbHost, req.dbToken, '/api/2.1/jobs/runs/cancel', {
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, req.params.runId), '/api/2.1/jobs/runs/cancel', {
       method: 'POST',
       body: jsonWithInt64Ids({ run_id: req.params.runId }, ['run_id']),
     });
@@ -3230,6 +3242,7 @@ const implementApi = registerImplementRoutes(app, {
   hostedRun,
   runDefaults: () => ({ inspireDatabase: DEFAULT_INSPIRE_DB, warehouseId: DEFAULT_WAREHOUSE_ID }),
   appToken: appOwnToken,
+  installedRuns,
 });
 
 /**
@@ -3325,7 +3338,7 @@ app.get('/api/inspire/genie-progress', requireToken, async (req, res) => {
     if (run_id && String(run_id).trim()) {
       const jr = await dbFetch(
         req.dbHost,
-        req.dbToken,
+        await installedRuns.runToken(req.dbHost, req.dbToken, String(run_id).trim()),
         `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(String(run_id).trim())}`,
       );
       if (jr.ok) {

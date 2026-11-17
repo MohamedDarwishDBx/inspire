@@ -265,6 +265,8 @@ async function triggerDemoDataPipeline(
     ensureInspireNotebookPublished,
     resolveWorkspaceNotebookObjectPath,
     launchedBy = '',
+    // REQ-409: run-as-me starts the installed demo job with the App's service principal token (the person's is refused there).
+    startToken = async (token) => token,
   },
 ) {
   const desc = String(description || '').trim();
@@ -359,7 +361,8 @@ async function triggerDemoDataPipeline(
     viewer = { granted: false, note: 'run-as-me: the job runs as you, so it needs no viewer grant' };
   }
 
-  const runResp = await dbFetch(host, token, '/api/2.1/jobs/run-now', {
+  const startingToken = plan.mode === 'run-now' ? await startToken(token) : token;
+  const runResp = await dbFetch(host, startingToken, '/api/2.1/jobs/run-now', {
     method: 'POST',
     body: JSON.stringify(
       plan.mode === 'create'

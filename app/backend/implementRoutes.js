@@ -139,6 +139,7 @@ async function jsonOf(dbFetch, host, token, path, opts = {}) {
 
 function registerImplementRoutes(app, deps) {
   const {
+    installedRuns = { startToken: async (token) => token, runToken: async (host, token) => token },
     requireToken,
     executeSql,
     sqlResultToObjects,
@@ -373,6 +374,8 @@ function registerImplementRoutes(app, deps) {
   }
 
   async function loadGenieCode(req) {
+    // REQ-409: in run-as mode the run checks its AI model as the installer, so this person's check reports unchecked rather than refusing.
+    if (runAsPerson()) return GC.runAsUnchecked();
     try {
       return await genieCodeCheck(req.dbHost, req.dbToken, (path, opts) => jsonOf(dbFetch, req.dbHost, req.dbToken, path, opts));
     } catch (err) {
@@ -487,7 +490,7 @@ function registerImplementRoutes(app, deps) {
 
   async function genieRunState(host, token, runId) {
     if (!runId) return null;
-    const got = await jsonOf(dbFetch, host, token, `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(runId)}`);
+    const got = await jsonOf(dbFetch, host, await installedRuns.runToken(host, token, runId), `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(runId)}`);
     return got.ok ? got.data?.state?.life_cycle_state || null : null;
   }
 
@@ -1090,10 +1093,20 @@ function registerImplementRoutes(app, deps) {
     }
   });
 
+  // REQ-408: the picked whole catalogs of this request's run, for the App read offers the build raises (empty without a readable scope).
+  async function buildScopeOf(req, warehouseId) {
+    try {
+      const { catalog, schema } = dbOf(req, splitInspireDatabase);
+      return { wholeCatalogs: await wholeCatalogsOf(req, warehouseId, catalog, schema, sessionIdOf(req)) };
+    } catch {
+      return {};
+    }
+  }
+
   async function sourceVerdict(req, warehouseId, useCase, latest, resultTable = '') {
     const spec = latest && latest.spec_json;
     const withOutput = I.withResultTable(spec || {}, resultTable || (spec && spec.config && spec.config.result_table) || '');
-    return sourceAccess(req, warehouseId, I.checkedSourceTables(withOutput, I.useCaseTables(useCase || {})));
+    return sourceAccess(req, warehouseId, I.checkedSourceTables(withOutput, I.useCaseTables(useCase || {})), 'build', await buildScopeOf(req, warehouseId));
   }
 
   const NO_READS = { refusal: null, skipped: [], uncheckedWarnings: [] };
@@ -1102,7 +1115,8 @@ function registerImplementRoutes(app, deps) {
     if (!sourcesReadBy(spec, history)) return { refusal: null, reads: NO_READS, app_unreadable: null };
     // REQ-324: the App's probes and the person's read plan are independent, so they run together.
     const tables = I.sourceTables(spec, I.useCaseTables(useCase));
-    const [sourced, reads] = await Promise.all([sourceAccess(req, warehouseId, tables), U.runReadPlan(dbFetch, req, { tables })]);
+    const scope = await buildScopeOf(req, warehouseId);
+    const [sourced, reads] = await Promise.all([sourceAccess(req, warehouseId, tables, 'build', scope), U.runReadPlan(dbFetch, req, { tables })]);
     const blocking = I.blockingMissingTables(sourced.missing, spec, useCase);
     const refusal = sourced.app_unreadable
       ? Object.assign(I.badRequest(sourced.app_unreadable.text, 409), { details: { missing_tables: sourced.missing, app_unreadable: sourced.app_unreadable } })
@@ -1464,7 +1478,7 @@ function registerImplementRoutes(app, deps) {
     if (!row || (!I.IMPLEMENT_ACTIVE_STATUSES.includes(row.status) && !I.implementEndedRecord(row))) return null;
     const runId = String(row.implement_run_id ?? '');
     const got = /^\d{1,19}$/.test(runId)
-      ? await jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${runId}`).catch(() => null)
+      ? await jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, runId), `/api/2.1/jobs/runs/get?run_id=${runId}`).catch(() => null)
       : null;
     const runState = got && got.ok && got.data && got.data.state ? got.data.state : {};
     const stopper = String(runState.result_state || '') === 'CANCELED' ? await stoppedByOf(req, row, runId) : null;
@@ -1831,7 +1845,7 @@ function registerImplementRoutes(app, deps) {
       stalledOf(req, history[0]),
       held == null && !appUpdate ? null : personOf(req),
       latestRunsOf(req, warehouseId, [history[0]], () => history),
-      builtBy ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
+      builtBy ? jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, builtBy), `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
     ]);
     if (history[0]) {
       history[0].app_update = appUpdate && !I.appShellUpdateRefusal(history, { rollback_outputs: { app: appUpdate.version } }, person.username) ? appUpdate : null;
@@ -2610,7 +2624,8 @@ function registerImplementRoutes(app, deps) {
       if (asset !== 'build' && I.IMPLEMENT_ACTIVE_STATUSES.includes(latest.status)) {
         throw I.badRequest(`spec v${latest.spec_version} is still ${latest.status}; ${phrase} after it finishes, or stop the build first`, 409);
       }
-      const owner = await jsonOf(dbFetch, req.dbHost, req.dbToken, C.ownerCheckPath(asset, id));
+      // Who may cancel stays as it is (C.ownerProblem); only the read of a build's run takes the run token (REQ-409).
+      const owner = await jsonOf(dbFetch, req.dbHost, asset === 'build' ? await installedRuns.runToken(req.dbHost, req.dbToken, id) : req.dbToken, C.ownerCheckPath(asset, id));
       const problem = C.ownerProblem(asset, owner, { useCaseId: ctx.useCaseId, sessionId: ctx.sid, history: ctx.history });
       if (problem) throw I.badRequest(`Inspire did not ${phrase}: ${problem}`, 409);
       const label = C.controlAction(asset, action);
@@ -2635,7 +2650,9 @@ function registerImplementRoutes(app, deps) {
           throw I.badRequest(`Inspire did not ${phrase}: it could not record who stopped it in ${C.CONTROL_LOG_TABLE} (${e.message})`, 502);
         }
       }
-      const got = await jsonOf(dbFetch, req.dbHost, req.dbToken, request.path,
+      // REQ-409: a build's run is cancelled or read with the App's token when it is an installed job's run (run-as mode only).
+      const callToken = asset === 'build' ? await installedRuns.runToken(req.dbHost, req.dbToken, id) : req.dbToken;
+      const got = await jsonOf(dbFetch, req.dbHost, callToken, request.path,
         { method: request.method, ...(request.body ? { body: jsonWithInt64Ids(request.body, request.int64 || []) } : {}) });
       const failure = got.ok ? '' : String((got.data && (got.data.message || got.data.error || got.data.raw)) || `HTTP ${got.status}`);
       const message = got.ok ? `${label}: done` : `${label} failed: ${failure}`;
@@ -2708,7 +2725,7 @@ function registerImplementRoutes(app, deps) {
       const viewer = plan.mode === 'create'
         ? await grantJobViewer(dbFetch, req.dbHost, req.dbToken, jobId, (await personOf(req)).username)
         : { granted: false, note: 'run-as-me: the shared job runs as you, so it needs no viewer grant' };
-      const resp = await dbFetch(req.dbHost, req.dbToken, '/api/2.1/jobs/run-now', {
+      const resp = await dbFetch(req.dbHost, plan.mode === 'run-now' ? await installedRuns.startToken(req.dbToken) : req.dbToken, '/api/2.1/jobs/run-now', {
         method: 'POST',
         body: plan.mode === 'create'
           ? jsonWithInt64Ids({ job_id: jobId, notebook_params: notebookParams, only: [I.IMPLEMENT_NOTEBOOK_TASK_KEY] }, ['job_id'])
