@@ -11,7 +11,7 @@ def _describe(columns):
     return [{"col_name": name, "data_type": "string"} for name in columns]
 
 
-def _gates(agent_ns, tables, use_case):
+def _gates(agent_ns, tables, use_case, skips=None):
     def respond(statement):
         for table, columns in tables.items():
             if statement == f"DESCRIBE TABLE {agent_ns['inspire_table_name'](table)}":
@@ -25,7 +25,8 @@ def _gates(agent_ns, tables, use_case):
     inst._implement_run_stale_flags = lambda uc, case, outcome: {}
     inst._implement_run_shared_flag = lambda uc, case, outcome: {}
     inst._implement_run_untested = lambda uc, case, outcome: False
-    return inst._implement_preview_gates("N01-U01", use_case, {"run_id": "r-1"}, None)
+    outcome = {"run_id": "r-1", **({"companion_skips": skips} if skips else {})}
+    return inst._implement_preview_gates("N01-U01", use_case, outcome, None)
 
 
 FORECAST = {"result_table": TABLE, "use_case_kind": "forecast"}
