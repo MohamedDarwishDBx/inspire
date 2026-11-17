@@ -34,6 +34,7 @@ test('a run whose grants are missing opens Permission Required before the run st
   const { ui, page, made } = await openLaunch([PERMISSION]);
   try {
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     assert.match(await dialog.locator('#permission-required-title').innerText(), /^Permission Required$/);
@@ -51,6 +52,7 @@ test('Close returns to Launch and starts nothing', async () => {
   const { ui, page, made } = await openLaunch([PERMISSION]);
   try {
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await page.locator('[data-permission-dialog=""]').waitFor({ timeout: 15000 });
     await page.locator('[data-permission-dialog=""]').getByRole('button', { name: 'Close' }).click();
     assert.equal(await page.locator('[data-permission-dialog=""]').count(), 0, 'the dialog closes');
@@ -65,6 +67,7 @@ test('Start anyway starts the run after the dialog', async () => {
   const { ui, page, made } = await openLaunch([PERMISSION]);
   try {
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     await dialog.getByRole('button', { name: 'Start anyway' }).click();
@@ -80,6 +83,7 @@ test('Copy puts every statement on the clipboard and shows Copied', async () => 
   try {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     await dialog.getByRole('button', { name: 'Copy' }).click();
@@ -98,6 +102,7 @@ test('when the clipboard is refused, Copy selects the statements and falls back 
       document.execCommand = () => true;
     });
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     await dialog.getByRole('button', { name: 'Copy' }).click();
@@ -113,6 +118,7 @@ test('a run with nothing to grant starts with no dialog', async () => {
   const { ui, page, made } = await openLaunch([]);
   try {
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(async () => made.launches.filter((l) => !l.check).length === 1, 'the run starts');
     assert.equal(await page.locator('[data-permission-dialog=""]').count(), 0);
   } finally {

@@ -398,6 +398,8 @@ test('Versions in each drawer lists the live version and only the earlier ones t
     assert.equal(stored.spec.outputs.dashboard_vibes, LONG_ASK);
     assert.deepEqual(stored.classes.split(','), ['outputs', 'rollback']);
     await confirm.waitFor({ state: 'detached' });
+    // A build started from the drawer closes it, so the Build progress panel that opens beneath it is in view.
+    await until(async () => (await page.locator('[data-mvp-panel]').count()) === 0, 'the drawer closes once the roll back is queued');
     assert.deepEqual(ui.pageErrors, []);
   } finally {
     await ui.close();

@@ -300,6 +300,8 @@ export function mvpStages(steps, latest, { now = Date.now(), stalled = null } = 
   const seenAt = new Map();
   let lastAt = null;
   for (const { row, payload, at } of stepEvents(steps)) {
+    // REQ-356: a superseded version's steps (a failed v1 under a building v2) never colour the panel of the version shown.
+    if (!sameVersion(payload, latest)) continue;
     if (since !== null && at !== null && at < since) continue;
     if (at !== null && (lastAt === null || at > lastAt)) lastAt = at;
     const index = indexOf(stepPhase(row, payload));

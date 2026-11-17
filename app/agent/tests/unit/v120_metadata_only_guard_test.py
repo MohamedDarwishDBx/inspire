@@ -401,14 +401,30 @@ def violations_in(sql):
 # metadata answers that: the one-value check counts the distinct values of one column of the scoped source. It is the one aggregate
 # the Implement operation reads from a user table. The reviewed shape is one COUNT(DISTINCT) per column, read through the same scope
 # Discover uses, and nothing else; any other read in an implement_* function stays a violation.
-ONE_VALUE_FUNCTIONS = ("_implement_one_value_columns", "count")  # "count" is the nested helper that executes the statement
-ONE_VALUE_SOURCE = "{scoped_read_source(table, scopes)}"
+ONE_VALUE_FUNCTIONS = ("inspire_implement_one_value_columns", "count")  # the reviewed reader (inlined history source; the agent method delegates to it); "count" is its nested helper that executes the statement
+ONE_VALUE_SOURCE = "{inspire_scoped_read_source(table, scopes)}"
 ONE_VALUE_SHAPE = re.compile(r"^SELECT COUNT\(DISTINCT COALESCE\(NULLIF\(TRIM\(CAST\(\{inspire_column\(column\)\} AS STRING\)\), ''\), "
-                             r"'no \{column\}'\)\) AS distinct_values FROM \{scoped_read_source\(table, scopes\)\}$")
+                             r"'no \{column\}'\)\) AS distinct_values FROM \{inspire_scoped_read_source\(table, scopes\)\}$")
+
+
+# REQ-353 (r42, main decision): a Grouping column that a join brings in is counted in the Launch scope through the same reviewed
+# function, as ONE join of two scoped sources: the table's records (alias m) LEFT JOIN the joined table's key-unique aggregate. It returns
+# only COUNT(DISTINCT ...) AS distinct_values. A third source, a non-aggregate select, or any other join is still refused.
+ONE_VALUE_JOINED_SOURCES = ("{inspire_scoped_read_source(table, scopes, 'm')}", "{inspire_scoped_read_source(join['table'], scopes)}")
+ONE_VALUE_JOINED_SHAPE = re.compile(
+    r"^SELECT COUNT\(DISTINCT COALESCE\(NULLIF\(TRIM\(CAST\(g\.\{named\} AS STRING\)\), ''\), 'no \{join\['column'\]\}'\)\) AS distinct_values "
+    r"FROM \{inspire_scoped_read_source\(table, scopes, 'm'\)\} LEFT JOIN \(SELECT CAST\(\{ref\} AS STRING\) AS inspire_join_key, MAX\(\{named\}\) AS \{named\} "
+    r"FROM \{inspire_scoped_read_source\(join\['table'\], scopes\)\} WHERE \{ref\} IS NOT NULL GROUP BY CAST\(\{ref\} AS STRING\)\) g "
+    r"ON CAST\(m\.\{inspire_column\(key\)\} AS STRING\) = g\.inspire_join_key$")
 
 
 def is_reviewed_one_value_read(function, kind, target, sql):
-    return function in ONE_VALUE_FUNCTIONS and kind == "read" and target == ONE_VALUE_SOURCE and bool(ONE_VALUE_SHAPE.match(" ".join(sql.split())))
+    if function not in ONE_VALUE_FUNCTIONS or kind != "read":
+        return False
+    text = " ".join(sql.split())
+    if target == ONE_VALUE_SOURCE:
+        return bool(ONE_VALUE_SHAPE.match(text))
+    return target in ONE_VALUE_JOINED_SOURCES and bool(ONE_VALUE_JOINED_SHAPE.match(text))
 
 
 def implement_permits(function, kind, target, sql, implement=None):
@@ -1001,11 +1017,52 @@ def test_guard_reads_no_rows_in_a_permission_statement_but_still_flags_a_read():
     assert violations_in("WITH r AS (SELECT 1) SELECT * FROM main.sales.orders") == [("read", "main.sales.orders")]
 
 
+def test_the_joined_one_value_read_admits_only_its_one_join_of_two_scoped_sources():
+    source = agent_source()
+    joined_head = ('f"SELECT COUNT(DISTINCT COALESCE(NULLIF(TRIM(CAST(g.{named} AS STRING)), \'\'), \'no {join[\'column\']}\')) AS distinct_values "')
+    assert source.count(joined_head) == 1, "the reviewed joined one-value select moved; update ONE_VALUE_JOINED_SHAPE with it"
+
+    def bad_in_one_value(text):
+        # The reviewed reader lives in the inlined history source, which the generated notebook runs too, so the audit reads that code.
+        code = inlined_history_code(text)
+        method = next(node for node in ast.walk(ast.parse(code)) if isinstance(node, ast.FunctionDef)
+                      and node.name == "inspire_implement_one_value_columns")
+        return [entry for entry in audit(code, with_implement_reads=True)[2] if method.lineno <= entry[0] <= method.end_lineno]
+
+    assert bad_in_one_value(source) == [], "the reviewed joined one-value read is refused"
+    # MUST FAIL: a joined count that selects rows instead of COUNT(DISTINCT ...)
+    rows = source.replace(joined_head, 'f"SELECT g.{named} AS distinct_values "')
+    assert rows != source and bad_in_one_value(rows), "a joined one-value read that selects rows is admitted"
+    # MUST FAIL: a third source joined on top of the two reviewed sources
+    third = source.replace('f"ON CAST(m.{inspire_column(key)} AS STRING) = g.inspire_join_key")',
+                           'f"ON CAST(m.{inspire_column(key)} AS STRING) = g.inspire_join_key "\n'
+                           '                       f"LEFT JOIN {inspire_scoped_read_source(table, scopes)} AS z ON 1 = 1")')
+    assert third != source and bad_in_one_value(third), "a joined one-value read with a third source is admitted"
+
+
+HISTORY_OPEN = "IMPLEMENT_RESULT_HISTORY_SOURCE = r'''"
+
+
+def inlined_history_code(text):
+    """The source the generated notebook inlines (IMPLEMENT_RESULT_HISTORY_SOURCE), as code. Its reads are audited like the agent's."""
+    start = text.index(HISTORY_OPEN) + len(HISTORY_OPEN)
+    return text[start:text.index("'''", start)]
+
+
+def test_guard_flags_an_unreviewed_read_inside_the_inlined_history_source():
+    # MUST FAIL: a row read added to the one-value reader that the generated notebook runs
+    source = _inject(agent_source(), ("    one, unchecked = [], []\n", "    spark.sql('SELECT * FROM main.sales.orders').collect()\n"))
+    report = runtime_audit(source)
+    assert "main.sales.orders" in _bad_targets(report), report["bad"]
+
+
 def test_implement_reads_only_its_result_tables_and_zero_row_probes():
     _, _, bad, _, implement = audit(agent_source(), with_implement_reads=True)
+    # The reviewed one-value reader is in the inlined history source, so its implement reads are listed from that code too.
+    implement = implement + audit(inlined_history_code(agent_source()), with_implement_reads=True)[4]
     assert not bad
     assert {"{inspire_table_name(result_table)}", "{inspire_table_name(table)}"} <= {target for _, _, target, _, _ in implement}
-    one_value = [entry for entry in implement if entry[4] in ONE_VALUE_FUNCTIONS and entry[2] == ONE_VALUE_SOURCE]
+    one_value = [entry for entry in implement if entry[4] in ONE_VALUE_FUNCTIONS and entry[2] in (ONE_VALUE_SOURCE,) + ONE_VALUE_JOINED_SOURCES]
     assert one_value, "the reviewed REQ-263 one-value read is no longer reached by the Implement operation"
     rest = [entry for entry in implement if entry not in one_value]
     assert all(IMPLEMENT_FUNCTION.match(function) for *_, function in rest)
@@ -1207,7 +1264,7 @@ def test_the_probe_helper_is_the_only_sql_the_key_check_may_send_to_a_user_table
     source = agent_source()
     _, _, bad, _ = audit(source)
     assert not [entry for entry in bad if "source_table" in entry[2]], bad
-    broken = source.replace("LEFT ANTI JOIN {scoped_read_source(source_table, scopes, 's')} ON", "LEFT ANTI JOIN {scoped_read_source(source_table, scopes, 's')} AS s, {named} AS v ON", 1)
+    broken = source.replace("LEFT ANTI JOIN {inspire_scoped_read_source(source_table, scopes, 's')} ON", "LEFT ANTI JOIN {inspire_scoped_read_source(source_table, scopes, 's')} AS s, {named} AS v ON", 1)
     assert broken != source
     _, _, probe_bad, _ = audit(broken)
     assert any(kind == "probe" for _, kind, _, _ in probe_bad), probe_bad

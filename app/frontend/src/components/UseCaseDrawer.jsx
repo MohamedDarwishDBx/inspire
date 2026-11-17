@@ -5,6 +5,7 @@ import ImplementStatusBadge from './ImplementStatusBadge';
 import { FeedbackChip, StrategyChip } from './UseCaseStrategyDetail';
 import { bestOfBestLabel } from '../lib/v130UseCase';
 import QualityBarChip, { QualityBarReason } from './QualityBarChip';
+import { PlainMessage } from './TechnicalDetails';
 import { priorityPillClass, subtitleOfUseCase } from '../lib/useCaseFields';
 
 const typingTarget = (el) => !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
@@ -130,6 +131,10 @@ export default function UseCaseDrawer({
           )}
           {uc.data_filters === null && (
             <p data-data-filters="unread" className="mt-2 text-[12px] text-text-secondary">Data Filters: could not be read from this session.</p>
+          )}
+          {uc.build_scope_unread === true && (
+            <PlainMessage text="The build's scope could not be read. The Data Filters above are the Discover run's." data-build-scope-unread=""
+              className="mt-1 text-[12px] text-warning-fg" />
           )}
 
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">

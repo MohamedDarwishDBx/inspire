@@ -6760,6 +6760,19 @@ def current_query(table: str, keys: list) -> tuple:
             f"AND `record_key` IN ({_key_list(params, keys)})", params.items)
 
 
+def population_query(table: str, stake: str, tier: str, stake_value) -> tuple:
+    """One aggregate over the current rows: how many, their mean and sample spread of the stake, how many sit above or below
+    this stake, and how many are flagged (a non-empty tier). Portable SQL (CASE sums, no COUNT_IF), so it runs on Serverless and Lakebase."""
+    params = _Params()
+    value = params.add(stake_value, "DOUBLE")
+    tier_sql = quote(tier) if tier else "CAST(NULL AS STRING)"
+    return (f"SELECT COUNT(*) AS n, AVG(d.s) AS mean, STDDEV_SAMP(d.s) AS sd, "
+            f"SUM(CASE WHEN d.s > {value} THEN 1 ELSE 0 END) AS above, SUM(CASE WHEN d.s < {value} THEN 1 ELSE 0 END) AS below, "
+            f"SUM(CASE WHEN d.t IS NOT NULL AND d.t <> '' THEN 1 ELSE 0 END) AS flagged "
+            f"FROM (SELECT {quote(stake)} AS s, {tier_sql} AS t FROM {table_name(table)} WHERE {CURRENT_ROWS} AND {quote(stake)} IS NOT NULL) AS d",
+            params.items)
+
+
 def keys_within(match: dict, keys: list) -> tuple:
     params = match["params"]
     return (f"SELECT w.`_inspire_key` FROM ({match['keys']}) AS w WHERE w.`_inspire_key` IN ({_key_list(params, keys)})",

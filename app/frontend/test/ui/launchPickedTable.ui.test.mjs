@@ -21,6 +21,7 @@ const launchOf = async (page, made) => {
   assert.equal(await btn.isDisabled(), false, `Get Started is disabled (block: '${block}', described by: ${await btn.getAttribute('aria-describedby')})`);
   const before = made.launches.length;
   await btn.click();
+  await page.locator('[data-launch-run-unsaved]').click();
   await until(() => made.launches.length === before + 1, 'the launch was sent once');
   return made.launches[made.launches.length - 1].params;
 };

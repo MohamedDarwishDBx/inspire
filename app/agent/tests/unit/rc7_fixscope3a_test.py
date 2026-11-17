@@ -121,7 +121,7 @@ def test_a_global_discover_scope_does_not_rename_the_wizard_view(clean):
     clean["INSPIRE_TABLE_SCOPES"].update(clean["parse_table_scopes"](json.dumps({OTHER: {"columns": ["id"]}}), DATABASE))
     scopes = _scopes(clean)
     assert scopes[TABLE]["view"].endswith("__implement_scope")
-    assert clean["scopes_in_force"](scopes)[TABLE] is scopes[TABLE], "the wizard scope wins for its own table"
+    assert clean["inspire_scopes_in_force"](scopes)[TABLE] is scopes[TABLE], "the wizard scope wins for its own table"
 
 
 def test_a_wizard_scope_on_table_b_is_found_on_the_run_even_when_a_discover_scope_exists_on_table_a(clean):
@@ -165,10 +165,10 @@ def test_the_scoped_kpi_and_read_sources_are_valid_spark_sql_with_an_aliased_sub
     sql = clean["DeepEvidence"].kpi_sql(kpi, scopes)
     assert _unready_subqueries(sql) == [], sql
     assert _unready_subqueries(f"SELECT COUNT(*) AS n FROM {clean['scoped_source']('main', 's', 'orders')}") == []
-    join = (f"SELECT f.*, j0.`order_id` AS `x` FROM (SELECT * FROM {clean['scoped_read_source'](TABLE, scopes)}) AS f "
+    join = (f"SELECT f.*, j0.`order_id` AS `x` FROM (SELECT * FROM {clean['inspire_scoped_read_source'](TABLE, scopes)}) AS f "
             f"LEFT JOIN {clean['scoped_source']('main', 's', 'orders', alias='j0')} ON f.`order_id` = j0.`order_id`")
     assert _unready_subqueries(join) == [], join
-    sample = clean["DeepEvidence"]._source(types.SimpleNamespace(sample_rows=10), clean["scoped_read_source"](TABLE, scopes), 10**9)[0]
+    sample = clean["DeepEvidence"]._source(types.SimpleNamespace(sample_rows=10), clean["inspire_scoped_read_source"](TABLE, scopes), 10**9)[0]
     assert _unready_subqueries(f"SELECT COUNT(*) AS n FROM {sample}") == [], sample
     sqlglot.parse_one(sql, read="databricks")
 

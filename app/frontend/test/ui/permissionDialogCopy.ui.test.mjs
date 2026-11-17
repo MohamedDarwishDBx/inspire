@@ -32,6 +32,7 @@ async function openLaunch(checkPermissions) {
 
 async function openDialog(page) {
   await page.getByRole('button', { name: 'Get Started' }).click();
+  await page.locator('[data-launch-run-unsaved]').click();
   const dialog = page.locator('[data-permission-dialog=""]');
   await dialog.waitFor({ timeout: 15000 });
   return dialog;

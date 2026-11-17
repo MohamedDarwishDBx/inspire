@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Table2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { PlainMessage } from './TechnicalDetails';
 import { groupLabelOf } from '../lib/implementWizard';
 import { raisePermissions } from '../lib/permissionBus';
 import { METRIC_VIEW_REFUSAL } from '../lib/pickProblem';
-import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
-import TypeCheckBusyTryAgain from './TypeCheckBusyTryAgain';
+import { leftOutLine } from '../lib/tableUsability';
 import {
-  SCOPE_OPS, columnKindOf, filterValuesOf, isGroupRow, labelAvailable, normalizeTableScope, pickedTableNames, scopeKeyOf,
-  scopeOpOf, scopeProblems, tableBrowseQuery, tableScopeOf,
+  SCOPE_OPS, columnKindOf, filterValuesOf, isGroupRow, labelAvailable, normalizeTableScope, scopeKeyOf, scopeOpOf, scopeProblems, tableScopeOf,
 } from '../lib/tableScope';
 
 const VALUE_CHIPS = 40;
 const COUNT_DEBOUNCE_MS = 350;
-const ALL_READ = 'All columns, all rows';
+const GROUP_TOP = 500;
+const ANSWER_MS = 20000;
+const SEARCH_DEBOUNCE_MS = 300;
+const COLLAPSE_KEY = 'inspire-data-filter-collapse-names';
+const IDLE_SEARCH = { status: 'idle', rows: [], total: 0 };
 const BUTTON = 'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle disabled:opacity-50';
 const FIELD = 'h-8 rounded-md border border-border bg-surface px-2 text-xs text-text-primary';
-const ITEM = 'flex items-center gap-2 rounded-md px-2 py-1 cursor-pointer hover:bg-bg-subtle/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-db-red-fg/60';
+const CHIP = 'inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg';
 
 const maxValues = (op) => {
   const def = scopeOpOf(op);
@@ -32,27 +34,16 @@ function filterIsComplete(f) {
 }
 
 const shortName = (table) => table.split('.').pop();
-const SPLIT_MIN = 20;
-const SPLIT_MAX = 80;
-const SPLIT_DEFAULT = 50;
-const SPLIT_KEY = 'inspire.dataFilters.split';
-const GROUP_TOP = 500;
-const ANSWER_MS = 20000;
+// The catalog and schema of a table: the part a row collapses to <..> (REQ-385).
+const prefixOf = (table) => table.split('.').slice(0, -1).join('.');
 const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error('Inspire did not get an answer in time.')), ms);
   promise.then((value) => { clearTimeout(timer); resolve(value); }, (err) => { clearTimeout(timer); reject(err); });
 });
-const GROUP_SEARCH_MIN = 20;
-const clampSplit = (value) => Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, Math.round(value)));
-const readSplit = () => {
-  const saved = Number(window.sessionStorage.getItem(SPLIT_KEY));
-  return Number.isFinite(saved) && saved >= SPLIT_MIN && saved <= SPLIT_MAX ? saved : SPLIT_DEFAULT;
-};
-const writeSplit = (value) => window.sessionStorage.setItem(SPLIT_KEY, String(value));
-const byName = (a, b) => a.name.localeCompare(b.name);
 const browseQuery = (warehouseId, table) => `warehouse_id=${encodeURIComponent(warehouseId || '')}&table=${encodeURIComponent(table)}`;
-const columnsKey = (warehouseId, table) => `cols:${warehouseId || ''}:${table}`;
 const valueKey = (warehouseId, table, column) => `val:${warehouseId || ''}:${table}\u0000${column}`;
+const groupKey = (table, column) => `${table}\u0000${column}`;
+const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
 
 function conditionText(f) {
   const def = scopeOpOf(f.op);
@@ -61,166 +52,42 @@ function conditionText(f) {
   return `${label} ${f.values.join(def.op === 'in' ? ', ' : ' and ')}`;
 }
 
-// The tree is built from the same picked scope the run reads (pickedScope): a catalog or schema is whole only when the run reads
-// all of it, and only a whole node lists every table under it. A picked table is listed alone.
-function buildTree(scope, tables) {
-  const catalogs = new Map();
-  const catalogOf = (name) => {
-    const key = scopeKeyOf(name);
-    if (!catalogs.has(key)) catalogs.set(key, { name, whole: false, schemas: new Map() });
-    return catalogs.get(key);
-  };
-  const schemaOf = (catalog, schema) => {
-    const cat = catalogOf(catalog);
-    const key = scopeKeyOf(schema);
-    if (!cat.schemas.has(key)) cat.schemas.set(key, { name: schema, whole: false, tables: new Map() });
-    return cat.schemas.get(key);
-  };
-  scope.catalogs.forEach((c) => { catalogOf(c).whole = true; });
-  scope.schemas.forEach((s) => { const [c, sc] = s.split('.'); schemaOf(c, sc).whole = true; });
-  tables.forEach((t) => { const [c, sc] = t.split('.'); schemaOf(c, sc).tables.set(scopeKeyOf(t), t); });
-  return [...catalogs.values()].map((c) => ({
-    name: c.name,
-    whole: c.whole,
-    schemas: [...c.schemas.values()].map((s) => ({ name: s.name, whole: s.whole, tables: [...s.tables.values()] })).sort(byName),
-  })).sort(byName);
+// One row of a table's filter: a condition on a column, or a row group (the values the person picked for a column).
+const rowText = (f) => (isGroupRow(f) ? `groups: ${f.values.join(', ')}` : conditionText(f));
+
+// The search hits (one row per table and column, from the column search route) as one flat list of matching columns (REQ-384).
+// Exact names come first, then names that start with the text, then names that contain it; then by column name, then by table.
+// `first` marks the first row of a column name, and `sameTables` lists every table that has that name (for Apply to all).
+const termOf = (q) => q.replace(/\*/g, '').trim().toLowerCase();
+
+function hitRowsOf(rows, q) {
+  const term = termOf(q);
+  const tablesOf = new Map();
+  for (const row of rows) {
+    const key = row.column.toLowerCase();
+    if (!tablesOf.has(key)) tablesOf.set(key, []);
+    tablesOf.get(key).push(row.table);
+  }
+  const rankOf = (key) => (key === term ? 0 : key.startsWith(term) ? 1 : 2);
+  const hits = rows.map((row) => {
+    const key = row.column.toLowerCase();
+    return { column: row.column, table: row.table, type: row.data_type || '', key, rank: rankOf(key), sameTables: tablesOf.get(key) };
+  }).sort((a, b) => a.rank - b.rank || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) || (a.table < b.table ? -1 : a.table > b.table ? 1 : 0));
+  return hits.map((hit, i) => ({ ...hit, first: i === 0 || hits[i - 1].key !== hit.key }));
 }
 
-function treeKey(e, { hasChildren, open, setOpen, activate }) {
-  const item = e.currentTarget;
-  const all = () => Array.from(item.closest('[role="tree"]').querySelectorAll('[role="treeitem"]'));
-  const at = () => all().indexOf(item);
-  if (e.key === 'ArrowDown') all()[at() + 1]?.focus();
-  else if (e.key === 'ArrowUp') all()[at() - 1]?.focus();
-  else if (e.key === 'Home') all()[0]?.focus();
-  else if (e.key === 'End') all().at(-1)?.focus();
-  else if (e.key === 'ArrowRight') { if (hasChildren && !open) setOpen(true); else if (hasChildren) all()[at() + 1]?.focus(); }
-  else if (e.key === 'ArrowLeft') {
-    if (hasChildren && open) setOpen(false);
-    else item.closest('[role="group"]')?.parentElement?.querySelector(':scope > [role="treeitem"]')?.focus();
-  } else if (e.key === 'Enter' || e.key === ' ') activate();
-  else return;
-  e.preventDefault();
-}
-
-function Branch({ level, label, dataKey, name, open, setOpen, count, error, children }) {
+// The matched text of a column name in bold, so the person sees why the row matched (REQ-384).
+function ColumnName({ name, term }) {
+  const at = term ? name.toLowerCase().indexOf(term) : -1;
+  if (at < 0) return <span className="font-mono font-semibold text-text-primary">{name}</span>;
   return (
-    <li role="none" className="space-y-1" {...{ [dataKey]: name }}>
-      <div role="treeitem" aria-level={level} aria-expanded={open} tabIndex={0}
-        onClick={() => setOpen(!open)}
-        onKeyDown={(e) => treeKey(e, { hasChildren: true, open, setOpen, activate: () => setOpen(!open) })}
-        className={`${ITEM} text-xs`}>
-        {open ? <ChevronDown size={12} className="shrink-0 text-text-tertiary" /> : <ChevronRight size={12} className="shrink-0 text-text-tertiary" />}
-        <span className="font-mono text-text-primary">{label}</span>
-        <span className="ms-auto text-text-tertiary">{count}</span>
-      </div>
-      {open && (
-        <ul role="group" className="ps-4 space-y-1">
-          {error && <li role="none"><PlainMessage role="alert" className="text-error-fg" text={error} /></li>}
-          {children}
-        </ul>
-      )}
-    </li>
+    <span className="font-mono font-semibold text-text-primary">
+      {name.slice(0, at)}<mark className="rounded-sm bg-db-red-50 text-db-red-fg">{name.slice(at, at + term.length)}</mark>{name.slice(at + term.length)}
+    </span>
   );
 }
 
-function TableLeaf({ level, table, summary, selected, onSelect }) {
-  return (
-    <li role="none">
-      <div role="treeitem" aria-level={level} aria-selected={selected} tabIndex={0} data-scope-table={table}
-        onClick={onSelect}
-        onKeyDown={(e) => treeKey(e, { hasChildren: false, open: false, setOpen: () => {}, activate: onSelect })}
-        className={`${ITEM} flex-wrap text-xs ${selected ? 'bg-surface ring-1 ring-db-red-fg/60' : ''}`}>
-        <Table2 size={12} className="shrink-0 text-text-tertiary" />
-        <span className="font-mono text-text-primary">{shortName(table)}</span>
-        <span data-scope-summary={table} className="ms-auto text-text-secondary">{summary}</span>
-      </div>
-    </li>
-  );
-}
-
-// The listed tables of one schema, with the tables that cannot be picked (fail closed) and the count the listing left out.
-function listedOf(d, name) {
-  const rows = d.tables || [];
-  const fqn = (t) => t.full_name || `${name}.${t.name}`;
-  return {
-    tables: rows.map(fqn),
-    // A busy type check is not a verdict on the table: it is listed apart, with Try again, and is never shown as not usable.
-    unusable: Object.fromEntries(rows.filter((t) => !typeCheckBusyOf(t) && unusableReasonOf(t)).map((t) => [fqn(t), unusableReasonOf(t)])),
-    busy: Object.fromEntries(rows.filter(typeCheckBusyOf).map((t) => [fqn(t), unusableReasonOf(t)])),
-    leftOut: d.left_out ? { count: d.left_out.count, schema: d.left_out.schema || name } : null,
-  };
-}
-
-function SchemaNode({ catalog, schema, listable, tableNames, apiFetch, warehouseId, renderTable }) {
-  const [manual, setOpen] = useState(null);
-  const open = manual ?? tableNames.length > 0;
-  const [listed, setListed] = useState(null);
-  const name = `${catalog}.${schema}`;
-  useEffect(() => {
-    if (!open || !listable || listed) return undefined;
-    let cancelled = false;
-    apiFetch(`/api/tables/${encodeURIComponent(catalog)}/${encodeURIComponent(schema)}${tableBrowseQuery(warehouseId)}`)
-      .then((d) => { if (!cancelled) setListed(listedOf(d, name)); })
-      .catch((e) => { if (!cancelled) setListed({ error: e.message || `Inspire could not list the tables of ${name}.` }); });
-    return () => { cancelled = true; };
-  }, [open, listable, listed, apiFetch, warehouseId, catalog, schema, name]);
-  const seen = new Set();
-  const names = [...(listed?.tables || []), ...tableNames].filter((t) => (seen.has(scopeKeyOf(t)) ? false : seen.add(scopeKeyOf(t))));
-  names.sort();
-  const count = listed?.tables ? `${listed.tables.length} table${listed.tables.length === 1 ? '' : 's'}`
-    : tableNames.length ? `${tableNames.length} picked` : '';
-  return (
-    <Branch level={2} label={schema} dataKey="data-schema-group" name={name} open={open} setOpen={setOpen} count={count}
-      error={open ? listed?.error : ''}>
-      {open && listable && !listed && <li role="none" className="px-2 text-text-tertiary">Listing the tables of {name}</li>}
-      {open && listed?.tables && listed.tables.length === 0 && <li role="none" className="px-2 text-text-secondary">{name} has no tables.</li>}
-      {names.map((t) => {
-        if (listed?.busy?.[t]) {
-          return (
-            <li role="none" key={t} data-type-check-busy={t} className="px-2 text-[11px] text-warning-fg flex flex-wrap items-center gap-2">
-              <TypeCheckBusyTryAgain name={shortName(t)} onTryAgain={() => setListed(null)} />
-            </li>
-          );
-        }
-        if (listed?.unusable?.[t]) {
-          return <li role="none" key={t} data-unusable-table={t} className="px-2 text-[11px] text-text-secondary">{shortName(t)}: {listed.unusable[t]}</li>;
-        }
-        return renderTable(t);
-      })}
-      {open && listed?.leftOut && <li role="none" data-left-out="" className="px-2 text-[11px] text-text-secondary">{leftOutLine(listed.leftOut)}</li>}
-    </Branch>
-  );
-}
-
-function CatalogNode({ catalog, whole, schemas, apiFetch, warehouseId, renderSchema }) {
-  const [manual, setOpen] = useState(null);
-  const open = manual ?? schemas.length > 0;
-  const [listed, setListed] = useState(null);
-  useEffect(() => {
-    if (!open || !whole || listed) return undefined;
-    let cancelled = false;
-    apiFetch(`/api/catalogs/${encodeURIComponent(catalog)}/schemas${tableBrowseQuery(warehouseId)}`)
-      .then((d) => { if (!cancelled) setListed({ schemas: (d.schemas || []).map((s) => s.name) }); })
-      .catch((e) => { if (!cancelled) setListed({ error: e.message || `Inspire could not list the schemas of ${catalog}.` }); });
-    return () => { cancelled = true; };
-  }, [open, whole, listed, apiFetch, warehouseId, catalog]);
-  const merged = new Map();
-  (listed?.schemas || []).forEach((name) => merged.set(scopeKeyOf(name), { name, whole: false, tables: [] }));
-  schemas.forEach((s) => merged.set(scopeKeyOf(s.name), s));
-  const children = [...merged.values()].sort(byName);
-  const count = listed?.schemas ? `${listed.schemas.length} schema${listed.schemas.length === 1 ? '' : 's'}`
-    : schemas.length ? `${schemas.length} picked` : '';
-  return (
-    <Branch level={1} label={catalog} dataKey="data-catalog-group" name={catalog} open={open} setOpen={setOpen} count={count}
-      error={open ? listed?.error : ''}>
-      {open && whole && !listed && <li role="none" className="px-2 text-text-tertiary">Listing the schemas of {catalog}</li>}
-      {children.map((s) => renderSchema(catalog, s, whole))}
-    </Branch>
-  );
-}
-
-function AddRowFilter({ table, column, suggestions, loadValues, onCommit }) {
+function AddRowFilter({ table, column, who, openLabel = 'Row filter', commitLabel = 'Add filter', suggestions, loadValues, onCommit }) {
   const [open, setOpen] = useState(false);
   const [op, setOp] = useState('=');
   const [draft, setDraft] = useState([]);
@@ -237,17 +104,17 @@ function AddRowFilter({ table, column, suggestions, loadValues, onCommit }) {
     setDraft(max === 1 ? [text] : [...draft, text].slice(0, max));
   };
   if (!open) {
-    return <button type="button" aria-label={`Add row filter on ${column}`} className={`${BUTTON} whitespace-nowrap`} onClick={() => setOpen(true)}>Add row filter</button>;
+    return <button type="button" aria-label={`${openLabel} on ${who || column}`} className={`${BUTTON} whitespace-nowrap`} onClick={() => setOpen(true)}>{openLabel}</button>;
   }
   return (
-    <fieldset aria-label={`New row filter on ${column}`} className="rounded-lg border border-border bg-surface p-2 space-y-2">
+    <fieldset aria-label={`New row filter on ${who || column}`} className="w-full rounded-lg border border-border bg-surface p-2 space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <select aria-label={`Operator for ${column}`} className={FIELD} value={op} onChange={(e) => { setOp(e.target.value); setDraft([]); }}>
+        <select aria-label={`Operator for ${who || column}`} className={FIELD} value={op} onChange={(e) => { setOp(e.target.value); setDraft([]); }}>
           {SCOPE_OPS.map((o) => <option key={o.op} value={o.op}>{o.label}</option>)}
         </select>
         {needsValues && draft.length < max && (
           <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); addValue(typed); setTyped(''); }}>
-            <input dir="auto" aria-label={`Value for ${column}`} className={FIELD} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Type a value" />
+            <input dir="auto" aria-label={`Value for ${who || column}`} className={FIELD} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Type a value" />
             <button type="submit" className={BUTTON} disabled={!typed.trim()}>Add value</button>
           </form>
         )}
@@ -255,7 +122,7 @@ function AddRowFilter({ table, column, suggestions, loadValues, onCommit }) {
       {needsValues && draft.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {draft.map((v, i) => (
-            <span key={`${i}-${v}`} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
+            <span key={`${i}-${v}`} className={CHIP}>
               {v}
               <button type="button" aria-label={`Remove value ${v}`} onClick={() => setDraft(draft.filter((x) => x !== v))}><X size={10} /></button>
             </span>
@@ -263,7 +130,7 @@ function AddRowFilter({ table, column, suggestions, loadValues, onCommit }) {
         </div>
       )}
       {needsValues && suggestions.length > 0 && (
-        <div className="flex flex-wrap gap-1" aria-label={`Values in ${column}`}>
+        <div className="flex flex-wrap gap-1" aria-label={`Values in ${who || column}`}>
           {suggestions.map((v, i) => (
             <button key={`${i}-${v}`} type="button" data-scope-value={v} onClick={() => addValue(v)}
               className="rounded-md border border-border bg-bg-subtle px-2 py-0.5 text-text-secondary hover:text-text-primary">
@@ -274,17 +141,17 @@ function AddRowFilter({ table, column, suggestions, loadValues, onCommit }) {
       )}
       <div className="flex gap-2">
         <button type="button" className={BUTTON} disabled={!complete}
-          onClick={() => { onCommit({ column, op, values: draft }); reset(); }}>Add filter</button>
+          onClick={() => { onCommit({ column, op, values: draft }); reset(); }}>{commitLabel}</button>
         <button type="button" className={BUTTON} onClick={reset}>Cancel</button>
       </div>
     </fieldset>
   );
 }
 
-function RowGroups({ column, ticked, picked, loaded, onLoad, onPick }) {
+// The groups of one text column. Opening "Load groups" on a row loads them; "Reload groups" appears once they are loaded.
+function RowGroups({ column, picked, loaded, onLoad, onPick }) {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState(true);
-  if (!ticked) return <p className="text-text-tertiary">Tick {column} to pick its groups.</p>;
   const values = loaded?.status === 'done' ? loaded.values : [];
   const shown = values.filter((g) => !search || g.value.toLowerCase().includes(search.trim().toLowerCase()));
   const chosen = new Set(picked);
@@ -292,14 +159,16 @@ function RowGroups({ column, ticked, picked, loaded, onLoad, onPick }) {
   return (
     <div className="space-y-2" data-row-groups={column}>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={BUTTON} aria-label={`Load groups for ${column}`} disabled={loaded?.status === 'loading'}
-          onClick={() => { setEditing(true); onLoad(); }}>
-          {loaded ? 'Reload groups' : 'Load groups'}
-        </button>
+        {loaded && (
+          <button type="button" className={BUTTON} aria-label={`Reload groups for ${column}`} disabled={loaded.status === 'loading'}
+            onClick={() => { setEditing(true); onLoad(); }}>
+            Reload groups
+          </button>
+        )}
         {loaded?.status === 'loading' && <span className="text-text-tertiary">Loading the groups of {column}</span>}
         {loaded?.status === 'done' && (
           <span className="text-text-tertiary">
-            {values.length.toLocaleString()} value{values.length === 1 ? '' : 's'}{loaded.truncated ? `, the top ${GROUP_TOP} by rows` : ''}
+            {plural(values.length, 'value')}{loaded.truncated ? `, the top ${GROUP_TOP} by rows` : ''}
           </span>
         )}
         {loaded?.status === 'done' && values.length > 0 && picked.length > 0 && (
@@ -309,7 +178,7 @@ function RowGroups({ column, ticked, picked, loaded, onLoad, onPick }) {
       {loaded?.status === 'error' && <PlainMessage role="alert" className="text-error-fg" text={loaded.error} />}
       {listing && (
         <>
-          {values.length > GROUP_SEARCH_MIN && (
+          {values.length > 20 && (
             <input type="search" aria-label={`Search the groups of ${column}`} value={search} placeholder="Search groups" dir="auto"
               onChange={(e) => setSearch(e.target.value)} className={`${FIELD} w-full`} />
           )}
@@ -331,11 +200,13 @@ function RowGroups({ column, ticked, picked, loaded, onLoad, onPick }) {
           </ul>
         </>
       )}
-      {loaded?.status === 'done' && values.length === 0 && <p className="text-text-secondary">{column} has no values in the rows in scope.</p>}
+      {loaded?.status === 'done' && values.length === 0 && (
+        <p data-groups-reason={column} className="text-text-secondary">{loaded.reason || `${column} has no values in the rows in scope.`}</p>
+      )}
       {picked.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {picked.map((v, i) => (
-            <span key={`${i}-${v}`} data-scope-group={column} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
+            <span key={`${i}-${v}`} data-scope-group={column} className={CHIP}>
               <span dir="auto">{v}</span>
               <button type="button" aria-label={`Remove group ${v}`} onClick={() => onPick(picked.filter((x) => x !== v))}><X size={10} /></button>
             </span>
@@ -343,142 +214,6 @@ function RowGroups({ column, ticked, picked, loaded, onLoad, onPick }) {
         </div>
       )}
     </div>
-  );
-}
-
-function ColumnGrid({ table, entry, meta, problems, onEntry, valuesOf, loadValues, apiFetch, warehouseId }) {
-  const [note, setNote] = useState('');
-  const [groupsOf, setGroupsOf] = useState({});
-  if (meta?.error) {
-    return (
-      <>
-        <PlainMessage role="alert" className="text-error-fg" text={meta.error} />
-      </>
-    );
-  }
-  if (!meta) return <p className="text-text-tertiary">Reading the columns of {table}</p>;
-  const names = meta.columns.map((c) => c.column_name);
-  const typeOf = new Map(meta.columns.map((c) => [c.column_name, c.data_type || '']));
-  const scope = normalizeTableScope(entry);
-  const shown = entry ? scope.columns : names;
-  const rows = scope.rows;
-  const write = (nextColumns, nextRows) => {
-    const dropped = nextRows.filter((f) => !nextColumns.includes(f.column));
-    const kept = nextRows.filter((f) => nextColumns.includes(f.column));
-    setNote(dropped.length
-      ? `Removed ${dropped.length} row filter${dropped.length === 1 ? '' : 's'} on ${[...new Set(dropped.map((f) => f.column))].join(', ')}: a column Inspire does not read cannot be filtered.`
-      : '');
-    const everyColumn = names.length > 0 && names.every((n) => nextColumns.includes(n));
-    if (!kept.length && everyColumn) return onEntry(table, null);
-    return onEntry(table, { columns: names.length ? names.filter((n) => nextColumns.includes(n)) : nextColumns, rows: kept });
-  };
-  const toggle = (name) => write(shown.includes(name) ? shown.filter((n) => n !== name) : [...shown, name], rows);
-  const keyNotes = (meta.keys || []).filter((k) => !shown.includes(k));
-  const groupOf = (name) => rows.find((f) => isGroupRow(f) && f.column === name)?.values || [];
-  const pickGroups = (name, values) => {
-    const others = rows.filter((f) => !(isGroupRow(f) && f.column === name));
-    write(shown, values.length ? [...others, { column: name, op: 'in', values, group: true }] : others);
-  };
-  const loadGroups = (name) => {
-    setGroupsOf((prev) => ({ ...prev, [name]: { status: 'loading' } }));
-    const filters = rows.filter((f) => filterIsComplete(f) && !(isGroupRow(f) && f.column === name));
-    withTimeout(apiFetch(`/api/inspire/implement/group-counts?${browseQuery(warehouseId, table)}`, {
-      method: 'POST',
-      body: JSON.stringify({ columns: [name], filters, window: {}, top: GROUP_TOP }),
-    }), ANSWER_MS)
-      .then((d) => setGroupsOf((prev) => ({
-        ...prev,
-        [name]: {
-          status: 'done',
-          truncated: Boolean(d.truncated),
-          values: (d.groups || []).map((g) => ({ value: String(g[name]), records: Number(g.records) || 0 })),
-        },
-      })))
-      .catch((e) => {
-        const permissions = Array.isArray(e.body?.permissions) ? e.body.permissions : [];
-        setGroupsOf((prev) => ({ ...prev, [name]: { status: 'error', error: e.message || `The groups of ${name} could not be listed.`, permissions } }));
-        raisePermissions(permissions, { retry: () => loadGroups(name) });
-      });
-  };
-  return (
-    <section aria-label={`Columns of ${table}`} data-column-grid={table} className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="font-mono text-text-primary">{table}</h3>
-        <span className="text-text-tertiary">{shown.length} of {names.length} columns ticked</span>
-        <button type="button" className={`${BUTTON} ms-auto`} onClick={() => write(names, rows)}>Select all</button>
-        <button type="button" className={BUTTON} onClick={() => write([], rows)}>Unselect all</button>
-      </div>
-      {problems.length > 0 && (
-        <ul role="alert" className="list-disc ps-4 text-error-fg">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
-      )}
-      {note && <p data-scope-note="dropped" role="status" className="text-text-secondary">{note}</p>}
-      {keyNotes.length > 0 && (
-        <p data-key-note="removed" className="text-warning-fg">
-          Key columns {keyNotes.join(', ')} are not ticked. Inspire then identifies each row by its own row key.
-        </p>
-      )}
-      <div className="overflow-x-auto">
-      <table className="w-full table-fixed border-collapse">
-        <caption className="sr-only">Columns of {table}: tick the columns Inspire reads, add row filters, and pick row groups.</caption>
-        <thead>
-          <tr className="text-text-tertiary">
-            <th scope="col" className="w-[30%] px-2 py-1 text-start font-semibold">Column</th>
-            <th scope="col" className="w-[28%] px-2 py-1 text-start font-semibold">Row filters</th>
-            <th scope="col" className="w-[42%] px-2 py-1 text-start font-semibold">Row Groups</th>
-          </tr>
-        </thead>
-        <tbody>
-          {names.map((name) => {
-            const ticked = shown.includes(name);
-            const conditions = rows.map((f, index) => ({ f, index })).filter(({ f }) => f.column === name && !isGroupRow(f));
-            return (
-              <tr key={name} data-scope-row={name} className="border-t border-border align-top">
-                <td className="break-words px-2 py-1.5">
-                  <label className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <input type="checkbox" data-scope-column={name} checked={ticked} onChange={() => toggle(name)} />
-                    <span className="font-mono text-text-primary">{name}</span>
-                    {typeOf.get(name) && <span className="text-text-tertiary">{typeOf.get(name)}</span>}
-                  </label>
-                </td>
-                <td className="break-words px-2 py-1.5 space-y-2">
-                  {conditions.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {conditions.map(({ f, index }) => (
-                        <span key={index} data-scope-condition={name} className="inline-flex items-center gap-1 rounded-full bg-db-red-50 px-2 py-0.5 text-db-red-fg">
-                          {conditionText(f)}
-                          <button type="button" aria-label={`Remove row filter on ${name}: ${conditionText(f)}`}
-                            onClick={() => write(shown, rows.filter((_, i) => i !== index))}>
-                            <X size={10} />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {ticked ? (
-                    <AddRowFilter table={table} column={name} suggestions={valuesOf(name)} loadValues={loadValues}
-                      onCommit={(condition) => write(shown, [...rows, condition])} />
-                  ) : (
-                    <>
-                      <button type="button" disabled aria-label={`Add row filter on ${name}`} className={`${BUTTON} whitespace-nowrap`}>Add row filter</button>
-                      <p className="text-text-tertiary">Tick {name} to add a row filter to it.</p>
-                    </>
-                  )}
-                </td>
-                <td className="break-words px-2 py-1.5">
-                  {columnKindOf(typeOf.get(name)) === 'categorical' ? (
-                    <RowGroups column={name} ticked={ticked} picked={groupOf(name)} loaded={groupsOf[name]}
-                      onLoad={() => loadGroups(name)} onPick={(values) => pickGroups(name, values)} />
-                  ) : (
-                    <p className="text-text-tertiary">Use Row filters for numbers and dates.</p>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      </div>
-    </section>
   );
 }
 
@@ -509,48 +244,157 @@ function UseCaseLabel({ scopes, tables, label, onLabel }) {
   );
 }
 
-export default function DataFilters({ scope, scopes, onScopes, label, onLabel, apiFetch, warehouseId, onProblems }) {
-  const [split, setSplit] = useState(readSplit);
-  const rootRef = useRef(null);
-  useEffect(() => { writeSplit(split); }, [split]);
-  const [openTable, setOpenTable] = useState(null);
+// One matching column in one table (REQ-384, REQ-385): one dotted name, catalog.schema.table.column with the column highlighted, then its type
+// in small text, then the Read box, the filter on it (if any), Row filter, and Load groups (categorical columns only). The <..> part
+// (catalog.schema) expands in place for this row when `collapsed`. `applyAll` is the Apply to all action, set on the first row of a
+// column name that several tables have.
+function HitRow({ hit, term, rows, read, onRead, valuesOf, loadValues, groupOf, groupState, onLoadGroups, onPickGroups, onAdd, applyAll, collapsed, onToggleName }) {
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const name = hit.column;
+  const conditions = rows.map((f, index) => ({ f, index })).filter(({ f }) => f.column === name);
+  const categorical = columnKindOf(hit.type) === 'categorical';
+  return (
+    <li data-column-hit={name} data-scope-row={hit.table} className="flex flex-wrap items-start gap-2 border-t border-border pt-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
+        <span data-dotted-name className="font-mono break-all" title={hit.table}>
+          <button type="button" aria-expanded={!collapsed} aria-label={`${collapsed ? 'Show' : 'Hide'} the catalog and schema of ${name} in ${shortName(hit.table)}`}
+            onClick={onToggleName} className="text-text-tertiary hover:text-text-primary">{collapsed ? '<..>' : prefixOf(hit.table)}</button>
+          <span className="text-text-tertiary">.{shortName(hit.table)}.</span>
+          <ColumnName name={name} term={term} />
+        </span>
+        <span className="text-text-tertiary">{hit.type}</span>
+      </div>
+      <label className="flex items-center gap-1.5 text-text-secondary">
+        <input type="checkbox" aria-label={`Read ${name} in ${shortName(hit.table)}`} checked={read} onChange={(e) => onRead(e.target.checked)} />
+        Read
+      </label>
+      <div className="flex flex-wrap gap-1.5 min-w-0">
+        {conditions.map(({ f }, i) => <span key={i} data-scope-filtered={name} className="text-text-secondary">{conditionText(f)}</span>)}
+      </div>
+      <div className="ms-auto flex flex-wrap items-center gap-2">
+        {applyAll}
+        <AddRowFilter table={hit.table} column={name} who={`${name} in ${shortName(hit.table)}`} suggestions={valuesOf(hit.table, name)}
+          loadValues={loadValues} onCommit={(condition) => onAdd(hit.table, condition)} />
+        {categorical && (
+          <button type="button" className={BUTTON} aria-expanded={groupsOpen} aria-label={`Load groups on ${name} in ${shortName(hit.table)}`}
+            onClick={() => {
+              const open = !groupsOpen;
+              setGroupsOpen(open);
+              if (open && !groupState(hit.table, name)) onLoadGroups(hit.table, name);
+            }}>Load groups</button>
+        )}
+      </div>
+      {categorical && groupsOpen && (
+        <div className="w-full">
+          <RowGroups column={name} picked={groupOf(hit.table, name)} loaded={groupState(hit.table, name)}
+            onLoad={() => onLoadGroups(hit.table, name)} onPick={(values) => onPickGroups(hit.table, name, values)} />
+        </div>
+      )}
+      {!categorical && <p className="w-full text-text-tertiary">Row groups are for text columns. Use a row filter for numbers and dates.</p>}
+    </li>
+  );
+}
+
+export default function DataFilters({ scope, scopes, tables, listing, onScopes, label, onLabel, apiFetch, warehouseId, onProblems, onMetricViews }) {
+  const [query, setQuery] = useState('');
   const [columnsOf, setColumnsOf] = useState({});
   const [valuesOf, setValuesOf] = useState({});
   const [counts, setCounts] = useState({});
-  const requested = useRef(new Set());
-  const fired = useRef({});
-
-  const tables = pickedTableNames(scopes, scope);
-  const coveredBy = (table) => {
-    const key = scopeKeyOf(table);
-    return tables.some((t) => scopeKeyOf(t) === key)
-      || scope.schemas.some((s) => key.startsWith(`${scopeKeyOf(s)}.`))
-      || scope.catalogs.some((c) => key.startsWith(`${scopeKeyOf(c)}.`));
+  const [groupsOf, setGroupsOf] = useState({});
+  const [note, setNote] = useState('');
+  const [search, setSearch] = useState(IDLE_SEARCH);
+  const [attempt, setAttempt] = useState(0);
+  // Collapse names (REQ-385): ticked by default, remembered in this browser. nameOverrides holds the rows a click on <..> changed.
+  const [collapseNames, setCollapseNames] = useState(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) !== '0'; } catch { return true; }
+  });
+  const [nameOverrides, setNameOverrides] = useState({});
+  const chooseCollapse = (next) => {
+    setCollapseNames(next);
+    setNameOverrides({});
+    try { localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0'); } catch { /* storage off: the choice lasts this visit */ }
   };
-  const shownTable = openTable && coveredBy(openTable) ? openTable : null;
-  const tree = buildTree(scope, tables);
+  // A Read change waits for the column names of a table it has not read yet: the box shows the new state at once, until the write lands.
+  const [pendingReads, setPendingReads] = useState({});
+  const fired = useRef({});
+  const requested = useRef(new Set());
+  const pending = useRef({});
+  // The columns of a table are read one table at a time, only for a table with a saved filter or when the person reads a column of it
+  // (REQ-370): a whole-catalog pick is not read table by table. The effects below read the current lists through refs.
+  const columnsRef = useRef(columnsOf);
+  const scopeNow = useRef(scope);
+  const savedTables = tables.filter((t) => tableScopeOf(scopes, t));
+  const savedJson = JSON.stringify(savedTables);
+  const savedNow = useRef(savedTables);
+  useEffect(() => {
+    columnsRef.current = columnsOf;
+    savedNow.current = savedTables;
+    scopeNow.current = scope;
+  });
+  const scopeJson = JSON.stringify(scope || {});
+  const namesOf = (table) => (columnsOf[table]?.columns || []).map((c) => c.column_name);
+  const rowsOf = (table) => normalizeTableScope(tableScopeOf(scopes, table)).rows;
   const jobs = tables
-    .map((table) => ({ table, filters: normalizeTableScope(tableScopeOf(scopes, table)).rows.filter(filterIsComplete) }))
+    .map((table) => ({ table, filters: rowsOf(table).filter(filterIsComplete) }))
     .filter((job) => job.filters.length)
     .map((job) => ({ ...job, key: `${warehouseId || ''}|${JSON.stringify(job.filters)}` }));
   const jobsJson = JSON.stringify(jobs);
-  const wantedKey = [...new Set([...tables.filter((t) => tableScopeOf(scopes, t)), ...(shownTable ? [shownTable] : [])])].join('\n');
+
+  // The columns of one table, read once. A failure is kept on the table (a metric view is named as one, see the effect below).
+  const loadColumns = (table) => {
+    if (!pending.current[table]) {
+      pending.current[table] = apiFetch(`/api/inspire/implement/columns?${browseQuery(warehouseId, table)}`)
+        .then((d) => {
+          const columns = d.columns || [];
+          setColumnsOf((prev) => ({ ...prev, [table]: { columns, keys: d.primary_keys || [] } }));
+          return columns.map((c) => c.column_name);
+        }, (e) => {
+          setColumnsOf((prev) => ({ ...prev, [table]: {
+            error: e.message || 'The columns of this table could not be read.',
+            refused: METRIC_VIEW_REFUSAL.test(e.message || '') ? e.message : '',
+            permissions: Array.isArray(e.body?.permissions) ? e.body.permissions : [],
+          } }));
+          throw e;
+        })
+        .finally(() => { delete pending.current[table]; });
+    }
+    return pending.current[table];
+  };
+  const ensureColumns = (table) => {
+    const known = columnsRef.current[table];
+    return known?.columns ? Promise.resolve(known.columns.map((c) => c.column_name)) : loadColumns(table);
+  };
 
   useEffect(() => {
-    wantedKey.split('\n').filter(Boolean).forEach((table) => {
-      const key = columnsKey(warehouseId, table);
-      if (requested.current.has(key)) return;
-      requested.current.add(key);
-      apiFetch(`/api/inspire/implement/columns?${browseQuery(warehouseId, table)}`)
-        .then((d) => setColumnsOf((prev) => ({ ...prev, [table]: { columns: d.columns || [], keys: d.primary_keys || [] } })))
-        .catch((e) => setColumnsOf((prev) => ({ ...prev, [table]: {
-          error: e.message || 'The columns of this table could not be read.',
-          // A saved pick that is a metric view: the refusal line, acted on by the effect below.
-          refused: METRIC_VIEW_REFUSAL.test(e.message || '') ? e.message : '',
-          permissions: Array.isArray(e.body?.permissions) ? e.body.permissions : [],
-        } })));
+    savedNow.current.forEach((table) => {
+      if (columnsRef.current[table]) return;
+      loadColumns(table).catch(() => {});
     });
-  }, [wantedKey, apiFetch, warehouseId]);
+  }, [savedJson, apiFetch, warehouseId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The column search (REQ-370): one request for the whole picked scope, debounced, and empty text searches nothing.
+  const searchText = query.trim();
+  // Empty text shows no search at all: the answer below is derived, so clearing the box needs no state write.
+  const answer = searchText ? search : IDLE_SEARCH;
+  useEffect(() => {
+    if (!searchText) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setSearch((prev) => ({ ...prev, status: 'loading' }));
+      withTimeout(apiFetch(`/api/data-management/columns?warehouse_id=${encodeURIComponent(warehouseId || '')}`, {
+        method: 'POST',
+        body: JSON.stringify({ scope: scopeNow.current || {}, q: searchText }),
+      }), ANSWER_MS)
+        .then((d) => { if (!cancelled) setSearch({ status: 'done', q: searchText, rows: d.hits || [], total: Number(d.total) || 0 }); })
+        .catch((e) => {
+          if (cancelled) return;
+          const permissions = Array.isArray(e.body?.permissions) ? e.body.permissions : [];
+          setSearch({ status: 'error', rows: [], total: 0, error: e.message || 'The columns could not be searched. Try again.' });
+          raisePermissions(permissions, { retry: () => setAttempt((n) => n + 1) });
+        });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [searchText, scopeJson, apiFetch, warehouseId, attempt]);
 
   const latestJobs = useRef(jobs);
   useEffect(() => { latestJobs.current = jobs; });
@@ -574,9 +418,37 @@ export default function DataFilters({ scope, scopes, onScopes, label, onLabel, a
     const key = valueKey(warehouseId, table, column);
     if (!column || requested.current.has(key)) return;
     requested.current.add(key);
+    // The column names of the table are read with its values, so a row filter or a group saved on it can be written at once.
+    ensureColumns(table).catch(() => {});
     apiFetch(`/api/inspire/implement/values?${browseQuery(warehouseId, table)}&column=${encodeURIComponent(column)}&limit=${VALUE_CHIPS}`)
       .then((d) => setValuesOf((prev) => ({ ...prev, [key]: d.values || [] })))
       .catch(() => setValuesOf((prev) => ({ ...prev, [key]: [] })));
+  };
+  const valuesFor = (table, column) => valuesOf[valueKey(warehouseId, table, column)] || [];
+
+  const loadGroups = (table, name) => {
+    const key = groupKey(table, name);
+    setGroupsOf((prev) => ({ ...prev, [key]: { status: 'loading' } }));
+    ensureColumns(table).catch(() => {});
+    const filters = rowsOf(table).filter((f) => filterIsComplete(f) && !(isGroupRow(f) && f.column === name));
+    withTimeout(apiFetch(`/api/inspire/implement/group-counts?${browseQuery(warehouseId, table)}`, {
+      method: 'POST',
+      body: JSON.stringify({ columns: [name], filters, window: {}, top: GROUP_TOP }),
+    }), ANSWER_MS)
+      .then((d) => setGroupsOf((prev) => ({
+        ...prev,
+        [key]: {
+          status: 'done',
+          truncated: Boolean(d.truncated),
+          reason: String(d.reason || ''),
+          values: (d.groups || []).map((g) => ({ value: String(g[name]), records: Number(g.records) || 0 })),
+        },
+      })))
+      .catch((e) => {
+        const permissions = Array.isArray(e.body?.permissions) ? e.body.permissions : [];
+        setGroupsOf((prev) => ({ ...prev, [key]: { status: 'error', error: e.message || `The groups of ${name} could not be listed.`, permissions } }));
+        raisePermissions(permissions, { retry: () => loadGroups(table, name) });
+      });
   };
 
   const problemsOf = (table) => {
@@ -592,110 +464,235 @@ export default function DataFilters({ scope, scopes, onScopes, label, onLabel, a
     }
     return list;
   };
-  const tableProblems = tables.map(problemsOf);
-  const problems = tableProblems.flat();
+  const problems = tables.map(problemsOf).flat();
   const labelProblem = label.on && labelAvailable(scopes, tables) && !(label.text ?? groupLabelOf(filterValuesOf(scopes, tables))).trim()
     ? ['Use case labeling is ticked but the label is empty: type the label or untick the box.'] : [];
   const allProblems = [...problems, ...labelProblem];
   const allKey = allProblems.join('\n');
   useEffect(() => { if (onProblems) onProblems(allProblems); }, [allKey, onProblems]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const summaryOf = (table) => {
+  // Every change to one or more tables' filters is one write. The write is a functional update: it is applied to the scopes as they are
+  // when it lands, so a change made while a column read was in flight is kept (REQ-370).
+  const commitRows = (updates) => {
+    const unread = updates.filter((u) => !u.columns && !tableScopeOf(scopes, u.table) && !columnsRef.current[u.table]?.columns).map((u) => u.table);
+    if (!unread.length) return writeRows(updates, {});
+    Promise.all(unread.map((table) => ensureColumns(table).then((names) => [table, names])))
+      .then((pairs) => writeRows(updates, Object.fromEntries(pairs)), () => setNote('Inspire could not read the columns of this table. Try again.'));
+    return undefined;
+  };
+  // The scopes after one write: the tables in updates replaced, the others kept as they are in `current`.
+  const mergeScopes = (current, updates, namesFor) => {
+    const changed = (name) => updates.some((u) => scopeKeyOf(u.table) === scopeKeyOf(name));
+    const next = Object.fromEntries(Object.entries(current).filter(([name]) => !changed(name)));
+    for (const { table, rows, columns: wanted } of updates) {
+      const entry = tableScopeOf(current, table);
+      const names = namesFor[table] || (columnsRef.current[table]?.columns || []).map((c) => c.column_name);
+      const columns = wanted || (entry ? normalizeTableScope(entry).columns : names);
+      // With no rows left and every column read, the table goes back to a plain read.
+      const whole = names.length ? names.every((n) => columns.includes(n)) : !entry;
+      if (!rows.length && whole) continue;
+      next[table] = { columns: names.length ? names.filter((n) => columns.includes(n)) : columns, rows };
+    }
+    return next;
+  };
+  const writeRows = (updates, namesFor) => onScopes((prev) => mergeScopes(prev || {}, updates, namesFor));
+  // Read for one column of one table, against the scopes given: the table's columns with the column added or left out, and the row
+  // filters on a column that is no longer read are dropped (a column Inspire does not read cannot be filtered).
+  const rowsIn = (current, table) => normalizeTableScope(tableScopeOf(current, table)).rows;
+  const readUpdateIn = (current, table, name, read, names) => {
+    const entry = tableScopeOf(current, table);
+    const known = entry ? normalizeTableScope(entry).columns : names;
+    const columns = read ? [...new Set([...known, name])] : known.filter((c) => c !== name);
+    const rows = rowsIn(current, table);
+    const kept = rows.filter((f) => columns.includes(f.column));
+    const dropped = rows.filter((f) => !columns.includes(f.column)).map((f) => f.column);
+    return { table, columns, rows: kept, dropped };
+  };
+  const droppedNote = (updates) => {
+    const dropped = updates.filter((u) => u.dropped.length);
+    return dropped.map((u) => `Removed ${u.dropped.length} row filter${u.dropped.length === 1 ? '' : 's'} on ${[...new Set(u.dropped)].join(', ')} in ${shortName(u.table)}: a column Inspire does not read cannot be filtered.`).join(' ');
+  };
+  // Read or stop reading one column in the tables given. A table read whole already reads the column, so reading it changes nothing
+  // there; the column names of the other tables are read first (one table each, only when the person changes a read).
+  const readKey = (table, name) => `${scopeKeyOf(table)}\u0000${name}`;
+  const readOf = (table, name) => (readKey(table, name) in pendingReads ? pendingReads[readKey(table, name)] : readsColumn(table, name));
+  const readColumn = (tablesToChange, name, read) => {
+    const work = tablesToChange.filter((table) => !read || tableScopeOf(scopes, table));
+    if (!work.length) return;
+    setPendingReads((prev) => ({ ...prev, ...Object.fromEntries(work.map((table) => [readKey(table, name), read])) }));
+    const settle = () => setPendingReads((prev) => {
+      const next = { ...prev };
+      work.forEach((table) => delete next[readKey(table, name)]);
+      return next;
+    });
+    Promise.all(work.map((table) => ensureColumns(table).then((names) => [table, names])))
+      .then((pairs) => {
+        const namesFor = Object.fromEntries(pairs);
+        // The write is applied to the latest scopes; the note reads the scopes as the person last saw them.
+        onScopes((prev) => {
+          const current = prev || {};
+          return mergeScopes(current, pairs.map(([table]) => readUpdateIn(current, table, name, read, namesFor[table])), namesFor);
+        });
+        const note = droppedNote(pairs.map(([table]) => readUpdateIn(scopes, table, name, read, namesFor[table])));
+        if (note) setNote(note);
+        settle();
+      }, () => { settle(); setNote('Inspire could not read the columns of these tables. Try again.'); });
+  };
+  const readsColumn = (table, name) => {
     const entry = tableScopeOf(scopes, table);
-    if (!entry) return ALL_READ;
-    const scope = normalizeTableScope(entry);
-    const total = columnsOf[table]?.columns?.length || 0;
-    const ticked = scope.columns.length;
-    const parts = [];
-    if (total && ticked === total) parts.push('All columns');
-    else parts.push(total ? `${ticked} of ${total} columns` : `${ticked} column${ticked === 1 ? '' : 's'}`);
-    const filters = scope.rows.filter((r) => !isGroupRow(r)).length;
-    const groups = scope.rows.length - filters;
-    if (filters) parts.push(`${filters} row filter${filters === 1 ? '' : 's'}`);
-    if (groups) parts.push(`${groups} row group${groups === 1 ? '' : 's'}`);
-    const job = jobs.find((j) => j.table === table);
-    if (job) {
-      const c = counts[table];
-      parts.push(!c || c.key !== job.key ? 'counting rows' : c.error ? 'rows could not be counted' : `${c.rows.toLocaleString()} rows match`);
-    }
-    if (problemsOf(table).length) parts.push('needs a fix');
-    return parts.join(', ');
+    return !entry || normalizeTableScope(entry).columns.includes(name);
   };
+  const addRow = (table, condition) => commitRows([{ table, rows: [...rowsOf(table), condition] }]);
+  const removeRow = (table, index) => commitRows([{ table, rows: rowsOf(table).filter((_, i) => i !== index) }]);
+  const pickGroups = (table, name, values) => {
+    const rows = rowsOf(table);
+    const others = rows.filter((f) => !(isGroupRow(f) && f.column === name));
+    commitRows([{ table, rows: values.length ? [...others, { column: name, op: 'in', values, group: true }] : others }]);
+  };
+  const groupOf = (table, name) => rowsOf(table).find((f) => isGroupRow(f) && f.column === name)?.values || [];
+  const groupState = (table, name) => groupsOf[groupKey(table, name)];
 
-  const setEntry = (table, entry) => {
-    const next = Object.fromEntries(Object.entries(scopes || {}).filter(([name]) => scopeKeyOf(name) !== scopeKeyOf(table)));
-    if (entry) next[table] = entry;
-    onScopes(next);
-  };
-  // A saved pick that is a metric view is dropped from the scope on load, with a note. Idempotent: it acts only while the
-  // entry is still in the scope.
+  // A metric view is named once in the Data Management line (REQ-370). A saved pick that is a metric view is also dropped from the
+  // scope, with a note. Idempotent: it acts only while the entry is still in the scope.
   useEffect(() => {
-    for (const [table, info] of Object.entries(columnsOf)) {
-      if (!info.refused || !tableScopeOf(scopes, table)) continue;
-      onScopes(Object.fromEntries(Object.entries(scopes || {}).filter(([name]) => scopeKeyOf(name) !== scopeKeyOf(table))));
-    }
-  }, [columnsOf, scopes, onScopes]);
+    const refused = Object.entries(columnsOf).filter(([, info]) => info.refused).map(([table]) => table);
+    if (!refused.length) return;
+    if (onMetricViews) onMetricViews(refused);
+    const saved = refused.filter((table) => tableScopeOf(scopes, table));
+    if (!saved.length) return;
+    onScopes(Object.fromEntries(Object.entries(scopes || {}).filter(([name]) => !saved.some((t) => scopeKeyOf(t) === scopeKeyOf(name)))));
+    // The note records a drop this effect has just made, so it is written here on purpose.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNote(`Removed the saved filters on ${saved.map(shortName).join(', ')}: a metric view cannot be filtered.`);
+  }, [columnsOf, scopes, onScopes, onMetricViews]);
 
-  const renderTable = (table) => (
-    <TableLeaf key={table} level={3} table={table} summary={summaryOf(table)} selected={table === shownTable}
-      onSelect={() => setOpenTable(table)} />
-  );
-  const renderSchema = (catalog, s, catalogWhole) => (
-    <SchemaNode key={`${catalog}.${s.name}`} catalog={catalog} schema={s.name}
-      listable={catalogWhole || s.whole} tableNames={s.tables} apiFetch={apiFetch} warehouseId={warehouseId} renderTable={renderTable} />
-  );
+  const hits = hitRowsOf(answer.rows, answer.q || '');
+  const term = termOf(answer.q || '');
+  const columnNames = hits.filter((hit) => hit.first).length;
+  // Every picked table that has a saved scope is listed, so a problem with it is shown where the person can fix it.
+  const withFilters = tables.filter((t) => tableScopeOf(scopes, t));
+  // The columns of a saved table that Inspire does not read, named as table.column (the person can see them without a search).
+  const leftOutColumns = withFilters.flatMap((table) => {
+    const kept = normalizeTableScope(tableScopeOf(scopes, table)).columns;
+    return namesOf(table).filter((n) => !kept.includes(n)).map((n) => `${shortName(table)}.${n}`);
+  });
+  const countLine = (table) => {
+    const job = jobs.find((j) => j.table === table);
+    if (!job) return '';
+    const c = counts[table];
+    return !c || c.key !== job.key ? 'counting rows' : c.error ? 'rows could not be counted' : `${c.rows.toLocaleString()} rows match`;
+  };
   const nothingPicked = !scope.entries.length;
+  // Filters in use lists the row filters and row groups saved on the tables (REQ-377): the block exists only once one exists.
+  const filterCount = withFilters.reduce((n, table) => n + rowsOf(table).length, 0);
 
   return (
     <div data-data-filters className="space-y-4 text-xs">
-      {[...new Set(Object.values(columnsOf).map((info) => info.refused).filter(Boolean))].map((note) => (
-        <p key={note} role="status" data-metric-view-note="" className="text-warning-fg">
-          {note} Its scope was dropped from Data Filters; the table is left out of the run.
-        </p>
-      ))}
-      <p className="text-text-secondary">
-        A table with no filters is read whole: every column, every row. Pick a table on the left to tick its columns and add row filters.
-        Picked schemas and catalogs open to their tables.
-      </p>
-      {nothingPicked && <p data-data-filters-empty className="text-text-tertiary">Pick tables, schemas or catalogs under Unity Catalog Metadata to filter them.</p>}
+      {nothingPicked && <p data-data-filters-empty className="text-text-tertiary">Pick tables above to filter their columns.</p>}
       {!nothingPicked && (
-        <div ref={rootRef} data-filters-layout className="grid grid-cols-1 gap-4 min-[1024px]:[grid-template-columns:var(--dfl)_0.5rem_var(--dfr)]"
-          style={{ '--dfl': `minmax(0,${split}fr)`, '--dfr': `minmax(0,${100 - split}fr)` }}>
-          <div data-filters-tree className="min-w-0 max-h-[28rem] overflow-y-auto">
-            <ul role="tree" aria-label="Tables you picked, by catalog, schema and table" className="space-y-1">
-              {tree.map((c) => (
-                <CatalogNode key={c.name} catalog={c.name} whole={c.whole} schemas={c.schemas} apiFetch={apiFetch}
-                  warehouseId={warehouseId} renderSchema={renderSchema} />
-              ))}
-            </ul>
-          </div>
-          <div role="separator" aria-orientation="vertical" aria-label="Resize the table list and the column grid" aria-valuemin={SPLIT_MIN}
-            aria-valuemax={SPLIT_MAX} aria-valuenow={split} tabIndex={0} data-filters-splitter
-            onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
-            onPointerMove={(e) => {
-              if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-              const box = rootRef.current.getBoundingClientRect();
-              setSplit(clampSplit(((e.clientX - box.left) / box.width) * 100));
-            }}
-            onKeyDown={(e) => {
-              const next = { ArrowLeft: split - 2, ArrowRight: split + 2, Home: SPLIT_MIN, End: SPLIT_MAX }[e.key];
-              if (next === undefined) return;
-              e.preventDefault();
-              setSplit(clampSplit(next));
-            }}
-            className="hidden min-[1024px]:flex cursor-col-resize justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-db-red-fg/60">
-            <span className="w-px bg-border" />
-          </div>
-          <div data-filters-grid-pane className="min-w-0">
-            {shownTable ? (
-              <ColumnGrid key={shownTable} table={shownTable} entry={tableScopeOf(scopes, shownTable)} meta={columnsOf[shownTable]}
-                problems={problemsOf(shownTable)} onEntry={setEntry} apiFetch={apiFetch} warehouseId={warehouseId}
-                valuesOf={(column) => valuesOf[valueKey(warehouseId, shownTable, column)] || []} loadValues={loadValues} />
-            ) : (
-              <p data-grid-empty className="text-text-tertiary">Click a table on the left to see its columns.</p>
+        <>
+          {filterCount > 0 && (
+            <div data-filters-in-use className="rounded-lg border border-border p-3 space-y-2">
+              <p className="font-semibold text-text-primary">Your filters ({filterCount})</p>
+              <ul className="flex flex-wrap gap-1.5">
+                {withFilters.flatMap((table) => rowsOf(table).map((f, index) => (
+                  <li key={`${table}\u0000${index}`} data-filter-table={table} data-scope-condition={f.column} className={CHIP}>
+                    <span>{f.column}: {rowText(f)}</span>
+                    <span className="text-text-tertiary">{shortName(table)}{countLine(table) && ` · ${countLine(table)}`}</span>
+                    <button type="button" aria-label={`Remove ${f.group ? 'row group' : 'row filter'} on ${f.column} in ${shortName(table)}: ${rowText(f)}`}
+                      onClick={() => removeRow(table, index)}>
+                      <X size={10} />
+                    </button>
+                  </li>
+                )))}
+              </ul>
+              {problems.length > 0 && (
+                <ul role="alert" className="list-disc ps-4 text-error-fg">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+              )}
+            </div>
+          )}
+          {leftOutColumns.length > 0 && (
+            <div data-columns-left-out className="space-y-1 text-text-secondary">
+              <p>Columns left out: {leftOutColumns.length}</p>
+              <ul className="flex flex-wrap gap-1.5">
+                {leftOutColumns.map((full) => <li key={full} data-left-out-column={full} className="font-mono text-text-tertiary">{full}</li>)}
+              </ul>
+            </div>
+          )}
+          {note && <p data-scope-note="dropped" role="status" className="text-text-secondary">{note}</p>}
+          <div data-column-search className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <input type="search" aria-label="Search column names" value={query} dir="auto" onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search a column name, for example brand" className={`${FIELD} h-9 min-w-0 flex-1`} />
+              <label className="flex items-center gap-1.5 whitespace-nowrap text-text-secondary">
+                <input type="checkbox" aria-label="Collapse names" checked={collapseNames} onChange={(e) => chooseCollapse(e.target.checked)} />
+                Collapse names
+              </label>
+            </div>
+            <p data-search-syntax className="text-text-tertiary">Use * at the start or end, for example brand* or *_id.</p>
+            {answer.status === 'loading' && <p data-search-loading className="text-text-tertiary">Searching the columns you picked</p>}
+            {answer.status === 'error' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <PlainMessage role="alert" className="text-error-fg" text={answer.error} />
+                <button type="button" className={BUTTON} onClick={() => setAttempt((n) => n + 1)}>Try again</button>
+              </div>
+            )}
+            {tables.length === 0 && (
+              <p data-search-empty className="text-text-secondary">
+                The tables you picked cannot be searched yet. Pick tables above to search their columns.
+              </p>
+            )}
+            {!query.trim() && tables.length > 0 && (
+              <p data-search-hint className="text-text-secondary">Type a column name to find it in the {plural(tables.length, 'table')} you picked.</p>
+            )}
+            {query.trim() && answer.status === 'done' && hits.length === 0 && (
+              <p data-search-none className="text-text-secondary">No column name contains &quot;{query.trim()}&quot; in the {plural(tables.length, 'table')} you picked.</p>
+            )}
+            {hits.length > 0 && (
+              <p className="text-text-secondary">{plural(columnNames, 'column name')} match, in {plural(hits.length, 'table')}.</p>
+            )}
+            {answer.total > answer.rows.length && (
+              <p data-hits-capped className="text-text-secondary">
+                Showing {answer.rows.length.toLocaleString()} of {answer.total.toLocaleString()} matches. Type more letters to narrow it down.
+              </p>
+            )}
+            {listing.listErrors.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2" data-list-errors>
+                <PlainMessage role="alert" className="text-error-fg" text={listing.listErrors[0]} />
+                {listing.listErrors.length > 1 && <span className="text-text-secondary">and {listing.listErrors.length - 1} more</span>}
+                <button type="button" className={BUTTON} onClick={listing.retry}>Try again</button>
+              </div>
+            )}
+            {listing.leftOut.map((l) => <p key={`${l.schema}-${l.count}`} data-left-out="" className="text-text-secondary">{leftOutLine(l)}</p>)}
+            {hits.length > 0 && (
+              <ul data-column-hits className="space-y-1">
+                {hits.map((hit) => (
+                  <HitRow key={`${hit.key}\u0000${hit.table}`} hit={hit} term={term} rows={rowsOf(hit.table)} read={readOf(hit.table, hit.column)}
+                    collapsed={nameOverrides[`${hit.table}\u0000${hit.column}`] ?? collapseNames}
+                    onToggleName={() => setNameOverrides((prev) => {
+                      const key = `${hit.table}\u0000${hit.column}`;
+                      return { ...prev, [key]: !(prev[key] ?? collapseNames) };
+                    })}
+                    onRead={(next) => readColumn([hit.table], hit.column, next)} valuesOf={valuesFor} loadValues={loadValues}
+                    groupOf={groupOf} groupState={groupState} onLoadGroups={loadGroups} onPickGroups={pickGroups} onAdd={addRow}
+                    applyAll={hit.first && hit.sameTables.length > 1 ? (
+                      <>
+                        <label className="flex items-center gap-1.5 text-text-secondary">
+                          <input type="checkbox" aria-label={`Read ${hit.column} in all ${hit.sameTables.length} tables`}
+                            checked={hit.sameTables.every((table) => readOf(table, hit.column))}
+                            onChange={(e) => readColumn(hit.sameTables, hit.column, e.target.checked)} />
+                          Read in all {hit.sameTables.length} tables
+                        </label>
+                        <AddRowFilter table={hit.table} column={hit.column} who={`${hit.column} in ${hit.sameTables.length} tables`}
+                          openLabel="Apply to all" commitLabel="Apply to all tables" suggestions={valuesFor(hit.table, hit.column)} loadValues={loadValues}
+                          onCommit={(condition) => commitRows(hit.sameTables.map((table) => ({ table, rows: [...rowsOf(table), condition] })))} />
+                      </>
+                    ) : null} />
+                ))}
+              </ul>
             )}
           </div>
-        </div>
+        </>
       )}
       {tables.length > 0 && <UseCaseLabel scopes={scopes} tables={tables} label={label} onLabel={onLabel} />}
     </div>

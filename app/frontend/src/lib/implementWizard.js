@@ -1,5 +1,6 @@
 import OUTPUT_LABELS from '../../../backend/lib/implementOutputLabels.json' with { type: 'json' };
 import { busySwapRows, unusableSwapRows } from './tableUsability.js';
+import { isInspireOwnName } from './inspireOwnObjects.js';
 import { compareMeetsQualityBarFirst, nameOfUseCase, subtitleOfUseCase } from './useCaseFields.js';
 import { placeholderWords } from './placeholderWords.js';
 import { briefList, plural } from './plural.js';
@@ -305,16 +306,16 @@ export function withAppBackend(spec, backend) {
 
 export const APP_OPTION_DEFAULTS = { modify: false, replace_edits: false, decisions: true, alerts: false };
 export const APP_OPTION_KEYS = Object.keys(APP_OPTION_DEFAULTS);
-// The experience is a choice, not a switch. An App built before it existed is classic (ui) in the shell; a new build starts agentic.
-export const APP_EXPERIENCE_DEFAULT = 'agentic';
+// The experience is a choice, not a switch. An App built before it existed is classic (ui) in the shell; a new build starts classic too (REQ-391).
+export const APP_EXPERIENCE_DEFAULT = 'ui';
 export const APP_EXPERIENCE_QUESTION = 'How people start in the App';
 export const APP_EXPERIENCE_CHOICES = [
-  { id: 'agentic', label: 'Agentic (default)', blurb: 'The App opens on the Agent page: a briefing of the records that matter most, and a box to ask or act. Every task the classic pages allow can be done there.' },
-  { id: 'ui', label: 'Classic UI', blurb: 'The App opens on the dashboard and the decision list, as before. The Agent page is not shown.' },
-  { id: 'both', label: 'Both', blurb: 'The App keeps its classic pages and adds the Agent page in the side menu. It does not open on it.' },
+  { id: 'agentic', label: 'Agentic', blurb: 'The App opens on the Agent page: a briefing of the records that matter most, and a box to ask or act. Every task the classic pages allow can be done there.' },
+  { id: 'ui', label: 'Classic UI (default)', blurb: 'The App opens on the dashboard and the decision list, as before. The Agent page is not shown.' },
+  { id: 'both', label: 'Both', blurb: 'The App keeps its classic pages and does not open on the Agent page.' },
 ];
 export const experienceOf = (value) => (APP_EXPERIENCE_CHOICES.some((c) => c.id === value) ? value : APP_EXPERIENCE_DEFAULT);
-// A rebuild of an App that never chose an experience keeps it classic; a new build starts agentic (same rule as the backend).
+// A rebuild of an App that never chose an experience keeps it classic; a new build starts classic too (same rule as the backend).
 export const experienceDefault = (spec) => (spec?.based_on_version != null && spec.based_on_version !== '' ? 'ui' : APP_EXPERIENCE_DEFAULT);
 export const PER_USER_OFF = ['alerts'];
 export const APP_OPTIONS = [
@@ -956,6 +957,13 @@ export function groupPartColumns(profile) {
   const cols = (Array.isArray(profile?.suggested_groups) ? profile.suggested_groups : [])
     .flatMap((g) => (Array.isArray(g?.parts) ? g.parts : []).map((p) => String(p?.column || '')));
   return [...new Set(cols.filter(Boolean))];
+}
+
+// The Data step's choice of table scope (REQ-389). A null scopes takes the choice off, so the Discover run's scope is read again.
+export function withChosenScope(spec, scopes) {
+  const data = { ...(spec.data || {}) };
+  delete data.table_scope;
+  return { ...spec, data: scopes ? { ...data, table_scope: scopes } : data };
 }
 
 export function withoutTableFilters(spec, table) {
@@ -2941,12 +2949,11 @@ export function viewerRows(reads) {
   return rows;
 }
 
-// D-NAMES: a source table keeps its name in person copy. Inspire's own working views (…__implement_scope, …__signal, …__inspire) are named by
-// what they are, never by their generated name (REQ-260).
-const INSPIRE_WORKING_VIEW = /__(?:implement|inspire|signal)\w*$/i;
+// D-NAMES: a source table keeps its name in person copy. Inspire's own working views (…__implement_scope, …__signal, __inspire_*) are named by
+// what they are, never by their generated name (REQ-260). The rule is inspireOwnObjects.js (REQ-387).
 export function appReadsName(table) {
   const name = String(table || '');
-  return INSPIRE_WORKING_VIEW.test(name.split('.').pop() || '') ? "this use case's working copy of its data" : name;
+  return isInspireOwnName(name) ? "this use case's working copy of its data" : name;
 }
 
 // One row per table of a service-principal App: the read grants it still needs on that table.
@@ -3260,6 +3267,8 @@ export function implementState(latest, notebook = null) {
     if (s === IMPLEMENT_VIBE_NOT_MET) return { group: 'held', label: 'MVP vibes not met', tone: 'warning', kind: 'mvp', hold: 'vibe' };
     if (runStopped(s, latest.stalled)) return { group: 'failed', label: 'MVP stopped', tone: 'error', kind: 'mvp' };
     if (s === 'failed') return { group: 'failed', label: 'MVP failed', tone: 'error', kind: 'mvp' };
+    // REQ-355: a queued build is in the active class (Building) with the same label. The card text (ImplementStatusBadge) says queued when this flag is set.
+    if (s === 'queued') return { group: 'in_progress', label: 'MVP running', tone: 'busy', kind: 'mvp', queued: true };
     if (IMPLEMENT_ACTIVE_STATUSES.includes(s)) return { group: 'in_progress', label: 'MVP running', tone: 'busy', kind: 'mvp' };
     return { group: 'in_progress', label: `MVP ${s.replace(/_/g, ' ')}`, tone: 'idle', kind: 'mvp' };
   }

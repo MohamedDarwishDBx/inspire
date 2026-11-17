@@ -58,3 +58,56 @@ test('the Build route hands the run picks and the Launch scope to the job check'
   assert.equal(made.jobs[0].scopePicks, TABLE, 'the job is told which tables the run picked');
   assert.deepEqual(JSON.parse(made.jobs[0].params['17_table_scope'])[TABLE].rows, SCOPE[TABLE].rows);
 });
+
+// REQ-389: the Data step lets the person take the Discover row filters off, or read whole data. The build reads that choice.
+const WHOLE = {};
+const NO_FILTER_BUT_COLUMNS = { [TABLE]: { columns: ['brand_name', 'total_sales'], rows: [] } };
+
+test('the spec keeps an optional table scope: absent is the Discover scope, an empty one is whole data, a bad one is refused (REQ-389)', () => {
+  const APP = { ...SPEC, outputs: { dashboard: true, inspire_url: 'https://inspire.example.com' } };
+  const absent = I.validateImplementSpec({ ...APP }).spec;
+  assert.equal(absent.data.table_scope, undefined, 'no choice is kept as no choice');
+  const whole = I.validateImplementSpec({ ...APP, data: { table_scope: WHOLE } });
+  assert.deepEqual(whole.errors, []);
+  assert.deepEqual(whole.spec.data.table_scope, {}, 'whole data is an empty scope, not the Discover scope');
+  const bad = I.validateImplementSpec({ ...APP, data: { table_scope: { 'not-a-table': { columns: [], rows: [] } } } });
+  assert.match(bad.errors.join(' '), /table scope: not-a-table must be a catalog\.schema\.table name/);
+});
+
+test('a Build with whole data sends no row filter to the job, so the build reads every row (REQ-389, must-fail before)', async () => {
+  const made = makeApp({ useCase: USE_CASE, forwardedToken: PERSON_TOKEN, forwardedEmail: OWNER, session: { ...SESSION, table_scope: SCOPE_JSON } });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/inspire/implement/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...DB, spec: { ...SPEC, data: { table_scope: WHOLE } } }) });
+    assert.equal(resp.status, 200, JSON.stringify(await resp.json()));
+  } finally {
+    await srv.close();
+  }
+  assert.equal(made.jobs.length, 1);
+  assert.equal(made.jobs[0].params['17_table_scope'], undefined, 'the Discover row filter is not sent');
+});
+
+test('a Build with one row filter taken off reads the columns kept and the other filters only (REQ-389, must-fail before)', async () => {
+  const made = makeApp({ useCase: USE_CASE, forwardedToken: PERSON_TOKEN, forwardedEmail: OWNER, session: { ...SESSION, table_scope: SCOPE_JSON } });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/inspire/implement/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...DB, spec: { ...SPEC, data: { table_scope: NO_FILTER_BUT_COLUMNS } } }) });
+    assert.equal(resp.status, 200, JSON.stringify(await resp.json()));
+  } finally {
+    await srv.close();
+  }
+  const sent = JSON.parse(made.jobs[0].params['17_table_scope']);
+  assert.deepEqual(sent[TABLE], { columns: ['brand_name', 'total_sales'], rows: [] }, 'the columns stay, the row filter is gone');
+});
+
+test('a Build that makes no Data-step choice still sends the Discover scope unchanged (must-keep)', async () => {
+  const made = makeApp({ useCase: USE_CASE, forwardedToken: PERSON_TOKEN, forwardedEmail: OWNER, session: { ...SESSION, table_scope: SCOPE_JSON } });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/inspire/implement/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...DB, spec: SPEC }) });
+    assert.equal(resp.status, 200, JSON.stringify(await resp.json()));
+  } finally {
+    await srv.close();
+  }
+  assert.deepEqual(JSON.parse(made.jobs[0].params['17_table_scope'])[TABLE].rows, SCOPE[TABLE].rows);
+});

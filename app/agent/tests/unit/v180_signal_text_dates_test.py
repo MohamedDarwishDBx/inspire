@@ -49,8 +49,9 @@ def test_a_forecast_on_a_text_date_column_is_checked_once_its_dates_parse(agent_
     kept, dropped = inst._check_data_signal(ucs, [])
     record = ucs[0]["data_signal"]
     assert record["status"] == "passed" and record["date_formats"] == {"time": "timestamp text"}
-    assert "CAST(try_cast(`visit_date` AS TIMESTAMP) AS DATE) AS d" in spark.statements[-1]
-    assert "CAST(try_cast(`visit_date` AS TIMESTAMP) AS DATE) IS NOT NULL" in spark.statements[-1]
+    dates = [s for s in spark.statements if "CAST(try_cast(`visit_date` AS TIMESTAMP) AS DATE) AS d" in s]
+    assert len(dates) == 1, spark.statements
+    assert "CAST(try_cast(`visit_date` AS TIMESTAMP) AS DATE) IS NOT NULL" in dates[0]
     assert kept == ucs and dropped == []
 
 

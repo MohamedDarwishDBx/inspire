@@ -45,7 +45,7 @@ import {
   keptVersions, loadAssetFilters, saveAssetFilters,
   loadCollectedVibes, missingAsks, notDoneLines, rebuildSpec, rebuildingText, rephrasedAsk, removeChanges, removeKeptChanges, rollbackChanges, rollingBackText,
   saveCollectedVibes, statusWarnings, tryAgainChanges, uninstallChanges, vibeCards, vibeFeaturesLabel,
-  trackBuildSubmit, withPendingBuilds,
+  carriedStart, trackBuildSubmit, withPendingBuilds,
 } from '../lib/implementControl';
 import {
   buildingAssets, mvpScope, mvpStages, mvpProgressSummary, mvpRepairOf, feedArrivals, railProgress, sortedTo, statusProgress, steadyFeed, versionPlan, vibeChecklist,
@@ -134,7 +134,9 @@ function SummaryBanner({ summary }) {
   let line = 'Pick any use case in the list to start its MVP.';
   if (building.length) {
     mark = { icon: Rocket, tone: 'red', live: true };
-    title = `${plural(building.length, 'MVP')} building now`;
+    // REQ-355: a build the server has only queued (no run yet) reads queued here too, as on its card.
+    const onlyQueued = building.every((item) => item.latest?.status === 'queued');
+    title = `${plural(building.length, 'MVP')} ${onlyQueued ? 'queued' : 'building now'}`;
     line = building.map((item) => `${item.name}${shownStatusMessage(item.latest) ? `: ${shownStatusMessage(item.latest)}` : ''}`).join(' · ');
   } else if (summary.mvps) {
     mark = summary.failed || summary.held || summary.unmet ? { icon: AlertTriangle, tone: 'warning' } : { icon: CheckCircle2, tone: 'success' };
@@ -509,6 +511,12 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
     setRail((prev) => ({ ...prev, latest: withPendingBuilds(prev.latest || []) }));
     loadRail().catch((e) => setRailError(e.message));
   };
+  // REQ-386: a build queued from a card or the detail (Try again, Rebuild, Build next) closes the Start Use Case MVP dialog open over it, so the
+  // progress panel is in view. The wizard's own submit keeps the dialog until the server answers (its onImplemented closes it), so its errors show.
+  const buildQueued = () => {
+    setWizard(null);
+    showQueuedBuild();
+  };
   const onImplemented = (data) => {
     setBuildNotes(Array.isArray(data?.warnings) ? data.warnings : []);
     setBuildDetails(Array.isArray(data?.warning_details) ? data.warning_details : []);
@@ -551,7 +559,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
             <BuildNextStep showcase={readOnly} apiFetch={apiFetch} apiPostJson={apiPostJson} inspireDatabase={settings.inspireDatabase} warehouseId={settings.warehouseId} sessionId={sessionId}
               notebookPath={settings.notebookPath} focusId={selected.id} live={IMPLEMENT_DONE_STATUSES.includes(String(selected.latest?.status || ''))}
               caseOf={(id) => allItems.find((item) => item.id === id)?.uc}
-              onBuilt={readOnly ? undefined : onImplemented} onQueued={readOnly ? undefined : showQueuedBuild} onBuildCustom={readOnly ? undefined : (uc) => setWizard({ uc, focus: null, live: false })}
+              onBuilt={readOnly ? undefined : onImplemented} onQueued={readOnly ? undefined : buildQueued} onBuildCustom={readOnly ? undefined : (uc) => setWizard({ uc, focus: null, live: false })}
               onMeasure={readOnly ? undefined : openMeasure} />
           )}
           {selected ? (
@@ -572,7 +580,7 @@ export default function ImplementPage({ settings, sessionId, focusId = null, foc
               onProgress={reportProgress}
               onEdit={readOnly ? undefined : (focus, live) => setWizard({ uc: selected.uc, focus, live })}
               onOpenRun={onOpenRun}
-              onBuildQueued={showQueuedBuild}
+              onBuildQueued={buildQueued}
               onOpenDemoMvp={readOnly && demoMvps?.ids.includes(selected.id) ? () => demoMvps.open(selected.id) : null}
               readOnly={readOnly}
             />
@@ -838,6 +846,9 @@ function PartTabs({ assets, picked, onPick }) {
   return <TabStrip label="Pick a part" idBase={PART_TABS} tabs={tabs} current={picked} onPick={onPick} />;
 }
 
+// REQ-355: the steps a queued build reads: none, so the superseded run's steps never show under the queued row.
+const NO_STEPS = [];
+
 function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson, databricksHost, notebookRunError, refreshKey, collectedKey, valueEstimate = null, onSetRule = null,
   onEdit, onOpenRun = null, onBuildQueued = null, onOpenDemoMvp = null, onProgress = null, readOnly = false }) {
   const useCaseId = item.id;
@@ -908,7 +919,12 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     return () => clearInterval(id);
   }, [hasMvp, loadStatus, refreshKey]);
 
-  const latest = status ? status.latest : item.latest;
+  // REQ-355: a queued build (pending overlay on the card) shows as queued here too. The status read still holds the old failed version until the server answers,
+  // so the detail takes the queued row and no steps of the superseded run.
+  const pending = Boolean(item.latest?.pending);
+  // REQ-395: the status read's row times from the click of its queued build, so the timer does not move back when the server answers.
+  const latest = useMemo(() => (pending ? item.latest : carriedStart(status ? status.latest : item.latest, useCaseId)), [pending, item.latest, status, useCaseId]);
+  const stepsNow = pending ? NO_STEPS : status?.steps;
   const stalled = (status ? status.stalled : item.latest?.stalled) || null;
   const uninstalled = latest?.status === IMPLEMENT_UNINSTALLED;
   const built = hasMvp && !uninstalled;
@@ -1001,15 +1017,15 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [active]);
-  const stages = useMemo(() => mvpStages(status?.steps, latest, { now, stalled }), [status?.steps, latest, now, stalled]);
+  const stages = useMemo(() => mvpStages(stepsNow, latest, { now, stalled }), [stepsNow, latest, now, stalled]);
   const diagnostics = useBuildDiagnostics({
     apiFetch, query: `${qBase}&use_case_id=${encodeURIComponent(useCaseId)}`, enabled: built && !readOnly,
     refreshKey: `${latest?.spec_version ?? ''}|${latest?.status ?? ''}|${stages.map((s) => s.state).join(',')}`,
   });
-  const repair = useMemo(() => mvpRepairOf(status?.steps, latest), [status?.steps, latest]);
-  const plan = useMemo(() => versionPlan(status?.steps, latest), [status?.steps, latest]);
-  const scope = useMemo(() => mvpScope(status?.steps, latest), [status?.steps, latest]);
-  const sorted = useMemo(() => sortedTo(status?.steps, latest), [status?.steps, latest]);
+  const repair = useMemo(() => mvpRepairOf(stepsNow, latest), [stepsNow, latest]);
+  const plan = useMemo(() => versionPlan(stepsNow, latest), [stepsNow, latest]);
+  const scope = useMemo(() => mvpScope(stepsNow, latest), [stepsNow, latest]);
+  const sorted = useMemo(() => sortedTo(stepsNow, latest), [stepsNow, latest]);
   const progress = mvpProgressSummary(stages, latest, { now, stalled, repair });
   const row = useMemo(() => (item.uc ? catalogRow(item.uc, 0, { statusOf: () => item.state }) : null), [item.uc, item.state]);
   const { percent: shownPercent, step: shownStep } = railProgress(chip, progress);
@@ -1079,6 +1095,10 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     try {
       const data = await trackBuildSubmit(body.spec, () => apiPostJson(path, body), onBuildQueued);
       onBuildQueued?.();
+      // Every build starts here (Try again, roll back, Rebuild, App and notebook changes). A drawer that started it closes, so the docked
+      // Build progress panel that opens is in view and its Close is reachable. A rejected submit keeps the drawer for its error.
+      setDrawer(null);
+      setFeatures(null);
       setNotice([resultTableMoveNote(data?.summary), ...(Array.isArray(data?.warnings) ? data.warnings : [])].filter(Boolean).join(' '));
       await loadStatus();
       return true;
@@ -1143,7 +1163,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
   };
   const history = status?.history || [];
   const kept = keptVersions(history);
-  const checklist = useMemo(() => vibeChecklist(status?.steps, latest), [status?.steps, latest]);
+  const checklist = useMemo(() => vibeChecklist(stepsNow, latest), [stepsNow, latest]);
   const held = heldVersion(latest, status?.history ?? null);
   const progressView = useProgressView(useCaseId, progress.active);
   const alertAsset = latest?.asset_status?.alert || {};
@@ -1178,7 +1198,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
     setRebuildError(`Rebuild needs one more thing: ${problems.join('; ')}.`);
     return false;
   };
-  const failure = mvpFailureOf(status?.steps, latest);
+  const failure = mvpFailureOf(stepsNow, latest);
   const terminal = Boolean(failure?.terminal) && latest?.status === 'failed';
   const sendAgain = async () => {
     if (!terminal) return submitChecked(nextSpecFrom(latest, buildAgainChanges(latest)));
@@ -1267,7 +1287,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
 
   const buildRunUrl = stalled?.run_url || status?.build_run_url || '';
   const dataStop = !readOnly && dataStopped(latest);
-  const genieChanges = genieChangesOf(status?.steps, latest);
+  const genieChanges = genieChangesOf(stepsNow, latest);
   const [sourceNow, setSourceNow] = useState({ loaded: false, unreadable: null, canGrant: false });
   useEffect(() => {
     if (readOnly || !latest) return undefined;

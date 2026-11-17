@@ -738,23 +738,62 @@ def settings_problems(settings: dict, pages: list) -> list:
     return problems
 
 
+def page_problems_split(problems, pages, own_id=None) -> tuple:
+    """(own, aside): the problems that refuse the App, and the (page, problems) pairs of the pages the other problems name.
+
+    A problem names a page as "page <id>: ...". One that names only pages other than own_id sets those pages aside. Any other
+    problem refuses: this page's own problem, or a problem of the App as a whole (settings, shared datasets, no page left).
+    own_id=None means no page of this build is at stake, so every page-named problem sets its page aside."""
+    own, aside = [], {}
+    for text in problems:
+        named = [p for p in pages if f"page {p.get('id')}:" in text]
+        if named and all(p.get("id") != own_id for p in named):
+            for p in named:
+                aside.setdefault(p.get("id"), (p, []))[1].append(text)
+        else:
+            own.append(text)
+    return own, list(aside.values())
+
+
 def load_app(root: str) -> tuple:
+    """(settings, pages, aside): the App's pages that start, and aside, the (page, problems) pairs of the pages set aside.
+
+    A problem that names one page sets only that page aside, so the App starts and serves every other page. An App-level
+    problem refuses the App."""
     with open(os.path.join(root, SETTINGS_FILE), encoding="utf-8") as handle:
         settings = json.load(handle)
     pages = []
     for ident in settings.get("pages") or []:
         with open(os.path.join(root, PAGES_DIR, f"{ident}.json"), encoding="utf-8") as handle:
             pages.append(json.load(handle))
-    problems = settings_problems(settings, pages)
-    if problems:
-        raise ValueError("the App files do not hold together: " + "; ".join(problems))
+    own, aside = page_problems_split(settings_problems(settings, pages), pages)
+    if own:
+        raise ValueError("the App files do not hold together: " + "; ".join(own))
+    set_aside = {p.get("id") for p, _problems in aside}
+    if aside and len(set_aside) == len(pages):
+        raise ValueError("the App files do not hold together: no page is left to show; " + "; ".join(t for _p, texts in aside for t in texts))
+    for page, problems in aside:
+        for text in problems:
+            print(f"[APP-SET-ASIDE] page={page.get('id')} {text}", file=sys.stderr, flush=True)
+    pages = [p for p in pages if p.get("id") not in set_aside]
     for page in pages:
         tour, notes = fit_tour(page)
         if tour:
             page[TOUR] = tour
         for note in notes:
             print(f"[APP-TOUR FIXED] page={page.get('id')} {note}", file=sys.stderr, flush=True)
-    return settings, pages
+    return settings, pages, aside
+
+
+def set_aside_notice(page: dict) -> str:
+    return f"{page_label(page)} needs its use case built again. The App keeps this page set aside until then."
+
+
+def set_aside_view(page: dict, notice: str) -> dict:
+    """The nav entry of a page set aside: its name and notice, no data, no Genie, no reports."""
+    out = {k: page.get(k) for k in ("id", "use_case_id", "title", "domain", "subdomain", "icon", "hue")}
+    return dict(out, set_aside=notice, genie={"enabled": False, "title": "", "url": "", "note": ""}, is_owner=False,
+                reports={"ready": False, "note": "", "where": REPORTS_WHERE})
 
 
 def click_filters(page: dict) -> dict:
@@ -1172,6 +1211,56 @@ def explain_entry(value) -> str:
     return explain_cell(value)
 
 
+Q_VALUE_COLUMNS = ("q_value", "qvalue", "adjusted_p_value", "adj_p_value", "p_value", "pvalue")
+
+
+def q_value_text(row: dict) -> str:
+    """REQ-400: a significance value the run wrote for this record, named as the run named it. Never invented."""
+    for name in Q_VALUE_COLUMNS:
+        value = row.get(name)
+        if value is None or value == "":
+            continue
+        try:
+            shown = shell_sql.shown_number(float(value))
+        except (TypeError, ValueError):
+            shown = explain_cell(value)
+        return f"{name.replace('_', ' ')} {shown}"
+    return ""
+
+
+def reasons_text(value) -> list:
+    """The chips the run wrote into the reasons column, split the way the drawer splits them."""
+    if value is None or value == "":
+        return []
+    items = value if isinstance(value, list) else re.split(r"\s*[;|]\s*|\s*,\s+", str(value))
+    return [explain_line(item) for item in items if str(item).strip()][:8]
+
+
+def population_summary(score, stats: dict, label: str = "ranking value", against=(), quality: str = "") -> dict:
+    """REQ-400: the deterministic 'Compared to the rest' sentence. Every number comes from the aggregate read or the run's own
+    columns, never from the model. Rank counts the records with a higher value, so rank 1 is the highest score."""
+    n = int(float(stats.get("n") or 0))
+    if not n:
+        return {"count": 0, "text": ""}
+    shown = shell_sql.shown_number
+    if score is None:
+        return {"count": n, "text": f"Compared to the rest: this record has no {label}, so it cannot be placed against the {shown(n)} records on this list."}
+    x, mean, sd = float(score), float(stats.get("mean") or 0), float(stats.get("sd") or 0)
+    above, below, flagged = (int(float(stats.get(k) or 0)) for k in ("above", "below", "flagged"))
+    z = (x - mean) / sd if sd > 0 else None
+    spread = (f"{abs(z):.2f} sigma {'above' if x >= mean else 'below'} the average of {shown(mean)} "
+              f"(spread {shown(sd)}, z-score {z:+.2f})") if z is not None else "with no spread across the list, so no sigma is shown"
+    sentences = [f"Compared to the rest: its {label} is {shown(x)}, {spread}."]
+    rank = above + 1
+    sentences.append(f"It ranks {shown(rank)} of {shown(n)}, higher than {shown(round(100 * below / n, 1))}% of records." if n > 1 else "It is the only record on the list.")
+    if quality:
+        sentences.append(f"It has {quality}.")
+    if against:
+        sentences.append("Against: " + "; ".join(against) + ".")
+    sentences.append(f"{shown(flagged)} of {shown(n)} records are flagged.")
+    return {"count": n, "text": " ".join(sentences)}
+
+
 def record_explain_parts(title: str, context: dict) -> tuple:
     fields, history = explain_fields(context), context.get("history") or []
     if not isinstance(history, list):
@@ -1183,6 +1272,9 @@ def record_explain_parts(title: str, context: dict) -> tuple:
     if action:
         head.append(f"Recommended action: {action}.")
     head += level_lines(context.get("confidence"), context.get("facts"))
+    compared = explain_context_line(context.get("population"))
+    if compared:
+        head.append(compared)
     shown = list(fields.items())[:EXPLAIN_FIELDS]
     describe_fields = lambda n, total: (None if not total else "Its fields:" if n == total else f"Its fields (first {shell_sql.shown_number(n)} of {shell_sql.shown_number(total)}):")
     describe_history = lambda n, total: (None if not total else f"Its history ({shell_sql.plural(total, 'version')}):" if n == total
@@ -2061,7 +2153,8 @@ class Shell:
     def __init__(self, root: str, env=None, sp_factory=sp_workspace_factory, user_factory=user_workspace_factory, clock=time.time,
                  timer=time.monotonic, lakebase_factory=shell_pg.Lakebase, strict: bool = False, writer_factory=None):
         self.env = dict(os.environ if env is None else env)
-        self.settings, self.pages = load_app(root)
+        self.settings, self.pages, self.aside = load_app(root)
+        self.set_aside = {str(page.get("id")): set_aside_notice(page) for page, _problems in self.aside}
         self.inside = self.settings.get("host") == INSIDE
         self.sp_factory, self.user_factory, self.writer_factory = sp_factory, user_factory, writer_factory
         self._sp, self._writer = None, None
@@ -2618,6 +2711,13 @@ class Shell:
             route = (method, path.strip("/"))
             if route == ("GET", "app"):
                 return 200, self.app_info(headers)
+            notice = self.set_aside.get(str(query.get("page") or data.get("page") or ""))
+            if notice is not None:
+                # A page set aside answers its notice on every route that names it. A read gets the notice as its answer; a write is
+                # refused with it, because nothing is changed.
+                if is_write_route(method, route[1]):
+                    return 409, error_body(notice)
+                return 200, {"set_aside": notice}
             if route == ("GET", "filters"):
                 return 200, self.filters(headers, query.get("page"))
             if route == ("GET", "filters/options"):
@@ -2695,6 +2795,8 @@ class Shell:
                 return 200, self.genie_feedback(headers, data)
             if route == ("GET", "records/history"):
                 return 200, self.record_history(headers, query)
+            if route == ("GET", "records/population"):
+                return 200, self.record_population(headers, query)
             if route == ("GET", "records/fields"):
                 return 200, self.record_fields(headers, query.get("page"))
             if method == "POST" and route[1] in WRITE_SOURCES:
@@ -2801,6 +2903,9 @@ class Shell:
         pages = [dict(public_page(p, self.tour_gaps(p)), genie=self.genie_info(p, host, agent), is_owner=bool(self.signed_in(headers) & self.page_editors(p)),
                       reports=reports_view(p, self.settings.get("feedback_table", "")))
                  for p in (self.with_saved_money(page) for page in self.pages)]
+        order = {str(ident): i for i, ident in enumerate(s.get("pages") or [])}
+        pages = sorted(pages + [set_aside_view(page, self.set_aside[str(page.get("id"))]) for page, _problems in self.aside],
+                       key=lambda p: order.get(str(p.get("id")), len(order)))
         answering = agent or any(p["genie"]["enabled"] for p in pages)
         genie = (pages[0]["genie"] if len(pages) == 1 else
                  {"enabled": answering, "title": "", "url": "", "note": HUB_GENIE_NOTE if answering else HUB_GENIE_OFF})
@@ -4633,6 +4738,9 @@ class Shell:
         if own is not None and (not isinstance(own, str) or len(own) > ASK_CHARS):
             raise HttpError(400, f"ask a question of at most {shell_sql.shown_number(ASK_CHARS)} characters")
         page = self.page(data.get("page"))
+        if kind == "record" and isinstance(context.get("key"), str) and context.get("key"):
+            ws, _who = self.workspace(headers)
+            context = dict(context, population=self.population_of(ws, page, context["key"])["text"])
         question = explain_question(hub_title(self.settings), page, kind, title, context, question=own or "")
         self.genie_space(page)
         genie_conversation(data.get("conversation_id"))
@@ -4716,6 +4824,34 @@ class Shell:
             raise HttpError(400, "name the record by its record_key, or by its key on the decision list")
         ws, who = self.workspace(headers)
         return self.history_of(ws, who, page, self.change_table(ws, who, page), value, bool(record_key))
+
+    def record_population(self, headers: dict, query: dict) -> dict:
+        page = self.page(query.get("page"))
+        record_key = str(query.get("record_key") or query.get("key") or "")
+        if not record_key or len(record_key) > RECORD_KEY_CHARS:
+            raise HttpError(400, "name the record by its record_key, or by its key on the decision list")
+        ws, who = self.workspace(headers)
+        return self.population_of(ws, page, record_key)
+
+    def population_of(self, ws, page: dict, record_key: str) -> dict:
+        """REQ-400: one read of the record and one aggregate over the App's own results table. The score is the column the
+        page ranks by. Returns {count, text}; text is '' when the table has no such column."""
+        records = page.get("records") or {}
+        if not page.get("result_table") or not records:
+            return {"count": 0, "text": ""}
+        score = records.get("rank") or "rank"
+        sql, params = shell_sql.current_query(page["result_table"], [record_key])
+        rows = self.execute(ws, sql, params, 1, delta=False)["rows"]
+        if not rows:
+            raise HttpError(404, "no current record has this key")
+        row = rows[0]
+        if score not in row:
+            return {"count": 0, "text": ""}
+        sql, params = shell_sql.population_query(page["result_table"], score, records.get("tier") or "", row.get(score))
+        stats = self.execute(ws, sql, params, 1, delta=False)["rows"][0]
+        label = next((c.get("label") for c in records.get("columns") or [] if c.get("column") == score and c.get("label")), score)
+        return population_summary(row.get(score), stats, label=str(label), against=reasons_text(row.get(records.get("reasons") or "")),
+                                  quality=q_value_text(row))
 
     def record_fields(self, headers: dict, ident) -> dict:
         page = self.page(ident)

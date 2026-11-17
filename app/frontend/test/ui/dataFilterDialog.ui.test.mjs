@@ -25,11 +25,11 @@ test('Load groups refused for the signed-in person opens Permission Required wit
     await page.locator('button[title="customers"]').click();
     await idle(page);
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
-    await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
-    await page.locator(`[data-scope-table="${ORDERS}"]`).waitFor({ timeout: 15000 });
-    await page.locator(`[data-scope-table="${ORDERS}"]`).click();
-    await page.locator('[data-scope-column="gender"]').waitFor({ timeout: 15000 });
-    await page.getByRole('button', { name: 'Load groups for gender' }).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('gender');
+    const row = page.locator(`[data-column-hit="gender"][data-scope-row="${ORDERS}"]`);
+    await row.waitFor({ timeout: 15000 });
+    await row.getByRole('button', { name: 'Load groups on gender in customers' }).click();
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     // The SQL sits under Advanced, which stays closed while a request offer is shown (REQ-311). innerText of a closed disclosure is '', so the listed text is read.
@@ -55,9 +55,9 @@ test('a column-list refusal opens Permission Required once from the shared error
     await page.locator('button[title="customers"]').click();
     await idle(page);
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
-    await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
-    await page.locator(`[data-scope-table="${ORDERS}"]`).waitFor({ timeout: 15000 });
-    await page.locator(`[data-scope-table="${ORDERS}"]`).click();
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
+    // The column search reads the columns of the picked scope (REQ-370), so the refusal comes with the first search.
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('name');
     const dialog = page.locator('[data-permission-dialog=""]');
     await dialog.waitFor({ timeout: 15000 });
     assert.equal(await page.locator('[data-permission-dialog=""]').count(), 1, 'exactly one Permission Required dialog');

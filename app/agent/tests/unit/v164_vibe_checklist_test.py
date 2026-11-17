@@ -201,6 +201,7 @@ def _carried_app(inst, agent_ns, tmp_path, filters):
 
     class ServedShell:
         pages = [PAGE]
+        aside = []  # the real Shell always sets aside (set-aside pages from load_app); this App sets none
 
         def __init__(self, root, **kwargs):
             pass

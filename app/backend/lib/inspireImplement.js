@@ -1,3 +1,4 @@
+const { joinSentences } = require('./sentences');
 const { appShellCatalog } = require('./appShell');
 const { IMPLEMENT_RUN_AS_PARAM, IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, useCaseNameTag, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
 const { parseExactJson } = require('./exactJson');
@@ -20,6 +21,7 @@ const {
   ownSchemaAllTakenNote, ownSchemaClashNote, ownSchemaFallbackNote, ownSchemaReuseNote, rowKeyOf, USE_CASE_SCHEMA_CLASH_LIMIT,
 } = require('../../frontend/src/lib/implementWizard.js');
 const { quotedIdent } = require('../../frontend/src/lib/tableName.js');
+const { scopesFromObject } = require('../../frontend/src/lib/tableScope.js');
 const { RUN_STATE_UNKNOWN, runStateText } = require('../../frontend/src/lib/runState.js');
 
 const IMPLEMENT_OPERATION = 'Implement Use Cases';
@@ -88,9 +90,9 @@ const IMPLEMENT_OUTPUT_OPTIONS = {
 const IMPLEMENT_APP_LOOK_DEFAULT = { style: 'a', layout: 'sidebar', palette: 'default', theme: 'light' };
 const IMPLEMENT_APP_LOOK_LISTS = { style: 'styles', layout: 'layouts', palette: 'palettes', theme: 'themes' };
 const IMPLEMENT_APP_OPTION_DEFAULTS = { modify: false, replace_edits: false, decisions: true, alerts: false };
-// The experience is a choice, not a switch: the App lands on its Agent page (agentic), its classic pages (ui) or both.
+// The experience is a choice, not a switch: the App lands on its Agent page (agentic), its classic pages (ui) or both. A new build is classic (REQ-391).
 const IMPLEMENT_APP_EXPERIENCES = ['agentic', 'ui', 'both'];
-const IMPLEMENT_APP_EXPERIENCE_DEFAULT = 'agentic';
+const IMPLEMENT_APP_EXPERIENCE_DEFAULT = 'ui';
 // An App built before the experience choice has no key; that App is the classic one.
 const IMPLEMENT_APP_EXPERIENCE_CLASSIC = 'ui';
 const IMPLEMENT_APP_OPTION_KEYS = Object.keys(IMPLEMENT_APP_OPTION_DEFAULTS);
@@ -152,7 +154,7 @@ const IMPLEMENT_COLUMNS = [
   ['suggested_schedule', 'VARIANT'], ['asset_status', 'VARIANT'], ['created_by', 'STRING'], ['created_at', 'TIMESTAMP'],
   ['updated_at', 'TIMESTAMP'], ['alert_id', 'STRING'], ['alert_url', 'STRING'], ['implement_run_id', 'BIGINT'],
   ['asset_snapshots', 'STRING'], ['ended_by', 'STRING'],
-  ['use_case_name_tag', 'STRING'], ['warehouse_id', 'STRING'], ['lakebase_project_id', 'STRING'],
+  ['use_case_name_tag', 'STRING'], ['warehouse_id', 'STRING'], ['lakebase_project_id', 'STRING'], ['built_framing', 'VARIANT'],
 ];
 const IMPLEMENT_UNREAD_COLUMNS = ['asset_snapshots'];
 const IMPLEMENT_VARIANT_COLUMNS = IMPLEMENT_COLUMNS.filter(([, t]) => t === 'VARIANT').map(([n]) => n);
@@ -402,6 +404,13 @@ function validateImplementSpec(input, { shell = null, legacyAccess = '', impact 
       filters.push({ table, column, op, values });
     }
   }
+  // REQ-389: the scope the build reads when the person changed the Discover filters on the Data step. Absent: the Discover scope.
+  let tableScope = null;
+  if (data.table_scope !== undefined && data.table_scope !== null) {
+    const parsed = scopesFromObject(data.table_scope);
+    if (parsed.problems.length) errors.push(`table scope: ${parsed.problems.join(' ')}`);
+    else tableScope = parsed.scopes;
+  }
   const profileText = textValue(data.run_profile);
   const profile = profileText === null ? '' : (profileText || 'preview').toLowerCase();
   if (!IMPLEMENT_RUN_PROFILES.includes(profile)) errors.push(`run_profile must be one of ${IMPLEMENT_RUN_PROFILES.join(', ')}`);
@@ -456,6 +465,7 @@ function validateImplementSpec(input, { shell = null, legacyAccess = '', impact 
   out.data = {
     tables, removed_tables: removedTables, filters, run_profile: profile, column_roles: roles, window: { start, end },
     notes: vibesText(data.notes, 'data.notes', 'notebook', errors),
+    ...(tableScope ? { table_scope: tableScope } : {}),
   };
 
   const config = objectField(spec.config, 'config', errors);
@@ -542,7 +552,7 @@ function validateImplementSpec(input, { shell = null, legacyAccess = '', impact 
   const chosen = {};
   for (const name of IMPLEMENT_OUTPUTS) chosen[name] = flagField(outputs[name], `outputs.${name}`, errors);
   if (!ownKey(spec, 'outputs')) chosen.dashboard = true;
-  // A rebuild keeps the experience the App already has (appExperience, read from its live build); a new build starts agentic.
+  // A rebuild keeps the experience the App already has (appExperience, read from its live build); a new build starts classic.
   const experience = appExperience || (spec.based_on_version != null && spec.based_on_version !== '' ? IMPLEMENT_APP_EXPERIENCE_CLASSIC : IMPLEMENT_APP_EXPERIENCE_DEFAULT);
   const app = appSettings(outputs, chosen.app, shell, errors, legacyAccess, experience);
   const merge = mergeChoices(outputs, chosen, errors);
@@ -1641,8 +1651,11 @@ function implementMissingColumns(existing) {
   return IMPLEMENT_COLUMNS.filter(([name]) => !existing.has(name.toLowerCase()));
 }
 
+// A missing column, by its error class. A type mismatch says "Cannot resolve" too, so it is named out first: it is a bug in the query, never a
+// column that is not there, and a fallback must not drop the field it failed on.
 function isMissingColumnError(err) {
-  return /UNRESOLVED_COLUMN|42703|FIELD_NOT_FOUND|cannot be resolved|cannot resolve/i.test(str(err && err.message ? err.message : err));
+  const text = str(err && err.message ? err.message : err);
+  return !/DATATYPE_MISMATCH/i.test(text) && /UNRESOLVED_COLUMN|42703|FIELD_NOT_FOUND|cannot be resolved|cannot resolve/i.test(text);
 }
 
 function implementInsertStatement(table, { sessionId, useCaseId, specVersion, basedOnVersion, spec, createdBy, statusMessage, changeClasses, useCaseName = '', warehouseId = '' }) {
@@ -2098,6 +2111,39 @@ function previousBuilt(history) {
   return row && row.status !== IMPLEMENT_UNINSTALLED ? row : null;
 }
 
+// REQ-389 (Results list): the one row per use case that previousBuilt reads, the newest row whose status is done or uninstalled. The window
+// keeps the read to that row, so a session's whole build history is not read for the Results list.
+function latestBuiltRowsSql(table, sessionIds) {
+  const statuses = [...IMPLEMENT_DONE_STATUSES, IMPLEMENT_UNINSTALLED].map((s) => `'${s}'`).join(', ');
+  return 'SELECT session_id, use_case_id, spec_version, status, spec_json, built_framing FROM ('
+    + 'SELECT CAST(session_id AS STRING) AS session_id, use_case_id, CAST(spec_version AS STRING) AS spec_version, status, '
+    + 'to_json(spec_json) AS spec_json, to_json(built_framing) AS built_framing, ROW_NUMBER() OVER (PARTITION BY session_id, use_case_id ORDER BY spec_version DESC) AS latest '
+    + `FROM ${table} WHERE session_id IN (${sessionIds.join(', ')}) AND status IN (${statuses})) WHERE latest = 1`;
+}
+
+// REQ-389 (Results list): the Table Scope the latest built version of a use case read, when its build chose one on the Data step.
+// undefined when no build chose a scope, so the caller keeps the Discover run's scope.
+function builtTableScopeOf(history) {
+  const built = previousBuilt(history);
+  const data = built && built.spec_json && built.spec_json.data;
+  return data && data.table_scope && typeof data.table_scope === 'object' ? data.table_scope : undefined;
+}
+
+// REQ-389 (R49): the use case text the latest built version carries, written by the build into its own record (built_framing). The
+// Discover statement is not changed by it. undefined when no done build wrote a goal, so the caller keeps the statement.
+function builtFramingOf(history) {
+  const built = previousBuilt(history);
+  const framing = built && built.built_framing;
+  if (!framing || typeof framing !== 'object' || typeof framing.goal !== 'string' || !framing.goal) return undefined;
+  return { goal: framing.goal, success_measures: Array.isArray(framing.success_measures) ? framing.success_measures.map(String) : [] };
+}
+
+// REQ-389 (R49): the App's use case text for a framed use case: its Statement is the built goal, and its built success measures are
+// carried beside it. No framing gives no fields, so the row keeps its Discover statement.
+function builtTextOf(framing) {
+  return framing ? { Statement: framing.goal, built_success_measures: framing.success_measures } : {};
+}
+
 function withVibePreviousDefault(history, spec) {
   return spec.vibes && !spec.vibe_previous && previousBuilt(history) ? { ...spec, vibe_previous: IMPLEMENT_VIBE_PREVIOUS[0] } : spec;
 }
@@ -2473,6 +2519,26 @@ function groupCountsStatement(name, columns = [], { filters = [], window = {}, t
     parameters: parameters.length ? parameters : null,
     columns: wanted,
   };
+}
+
+// REQ-380: why a group list came back empty. One count of the rows the person can read and of the rows where the column has a value,
+// under the same filters and window as the groups. Only run when the groups are empty.
+function groupReasonStatement(name, column, { filters = [], window = {} } = {}) {
+  const { where, parameters } = scopeWhere(filters, window);
+  return {
+    sql: `SELECT COUNT(*) AS rows_read, COUNT(${quoteColumn(column)}) AS with_value FROM ${quoteTable(name)}`
+      + `${where.length ? ` WHERE ${where.join(' AND ')}` : ''}`,
+    parameters: parameters.length ? parameters : null,
+  };
+}
+
+// The one plain line the App shows for an empty group list, or '' when the counts do not explain it.
+function groupEmptyReason(row, column) {
+  const rowsRead = Number(row && row.rows_read) || 0;
+  const withValue = Number(row && row.with_value) || 0;
+  if (!rowsRead) return 'The table has no rows you can read';
+  if (!withValue) return `${column} is empty in all ${rowsRead.toLocaleString('en-US')} rows`;
+  return '';
 }
 
 function readinessFromRow(row, columns) {
@@ -3801,7 +3867,7 @@ function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessNam
       { clash: USE_CASE_SCHEMA_CLASHES[candidates.indexOf(ours)], ofSession: true }) : ours;
     const reused = table === ours ? '' : ownSchemaReuseNote(tableParts(ours).schema, held, plainTable(table));
     const clashed = ours === own ? '' : ownSchemaClashNote(tableParts(own).schema, of(own), tableParts(ours).schema, who);
-    return { ...base, own_table: table, table, place: 'own', create: false, note: [clashed, reused].filter(Boolean).join(' ') };
+    return { ...base, own_table: table, table, place: 'own', create: false, note: joinSentences(clashed, reused) };
   }
   const table = candidates.find((name) => owner(name) === 'free');
   if (!table) {
@@ -3814,7 +3880,7 @@ function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessNam
     ? `Inspire could not check whether you can create schemas in ${base.catalog} (${unchecked}), so this use case's tables go to the Inspire database schema; pick Its own schema to try.`
     : ownSchemaFallbackNote(base.catalog, facts.me);
   const permission = facts.me ? ownSchemaPermission(base.catalog, facts.me) : null;
-  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: [note, why].filter(Boolean).join(' '), permission };
+  return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: joinSentences(note, why), permission };
 }
 
 function useCaseSchemaTagsSql(catalog, schema, tags) {
@@ -3883,7 +3949,7 @@ function appsRoomCheck(creates) {
 function shareCheck(grant) {
   if (!grant) return { ok: true, detail: 'not checked yet', warn: 'Build still runs; if Inspire cannot share the result table, it skips the sharing and says so.' };
   if (grant.ok) return grant;
-  return { ok: true, detail: grant.detail, warn: [grant.warn, 'Build still runs, without the sharing. Share the result table once you can.'].filter(Boolean).join(' ') };
+  return { ok: true, detail: grant.detail, warn: joinSentences(grant.warn, 'Build still runs, without the sharing. Share the result table once you can.') };
 }
 
 function executionFamily(mandate) {
@@ -4031,6 +4097,10 @@ module.exports = {
   mvpActionProblems,
   withVibePreviousDefault,
   previousBuilt,
+  builtTableScopeOf,
+  builtFramingOf,
+  builtTextOf,
+  latestBuiltRowsSql,
   appExperienceOf,
   IMPLEMENT_OUTPUTS,
   IMPLEMENT_OUTPUT_LABELS,
@@ -4224,6 +4294,8 @@ module.exports = {
   columnValuesStatement,
   readinessStatement,
   groupCountsStatement,
+  groupReasonStatement,
+  groupEmptyReason,
   scopeWhere,
   GROUP_COUNT_MAX_COLUMNS,
   GROUP_COUNT_LIMIT,

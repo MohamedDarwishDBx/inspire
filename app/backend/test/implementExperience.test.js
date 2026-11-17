@@ -33,9 +33,9 @@ test('an accepted experience is kept on the spec', () => {
   assert.equal(out.spec.outputs.app_options.experience, 'both');
 });
 
-test('a new build starts agentic when the spec names no experience', () => {
+test('a new build starts classic (ui) when the spec names no experience', () => {
   const out = I.validateImplementSpec({ ...BASE, outputs: { ...BASE.outputs } });
-  assert.equal(out.spec.outputs.app_options.experience, 'agentic');
+  assert.equal(out.spec.outputs.app_options.experience, 'ui');
 });
 
 test('a rebuild of an App that never chose an experience keeps it classic (ui)', () => {
@@ -51,11 +51,11 @@ test('a rebuild keeps the experience the App already has, and the wizard choice 
 });
 
 // A stored build with no experience key is a classic App: validated as the build a rebuild starts from, it stays ui, so the
-// rebuild (ui) is not an experience change. Without a live App the same spec is a new build and starts agentic.
+// rebuild (ui) is not an experience change. Without a live App the same spec is a new build and starts classic too.
 test('a stored build with no experience key stays classic, so a rebuild of it does not change the App experience', () => {
   const stored = I.validateImplementSpec(BASE, { appExperience: 'ui' }).spec;
   assert.equal(stored.outputs.app_options.experience, 'ui');
-  assert.equal(I.validateImplementSpec(BASE).spec.outputs.app_options.experience, 'agentic');
+  assert.equal(I.validateImplementSpec(BASE).spec.outputs.app_options.experience, 'ui');
   const rebuild = I.validateImplementSpec({ ...BASE, based_on_version: 1 }).spec;
   assert.equal(rebuild.outputs.app_options.experience, 'ui');
   assert.ok(!I.classifyImplementChange({ outputs: stored.outputs }, { outputs: rebuild.outputs }).includes('outputs'));

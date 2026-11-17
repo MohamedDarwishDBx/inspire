@@ -40,11 +40,14 @@ import DocumentLanguagesMultiselect from '../components/DocumentLanguagesMultise
 import StrategyEditor from '../components/StrategyEditor';
 import { parseStrategicContext, splitPriorities, validateStrategicContextText, withPriorities } from '../lib/strategyContext';
 import UcPermissionErrorHelp from '../components/UcPermissionErrorHelp';
-import DataFilters from '../components/DataFilters';
+import DataManagement from '../components/DataManagement';
 import { groupLabelOf } from '../lib/implementWizard';
 import { leftOutLine, typeCheckBusyOf, unusableReasonOf } from '../lib/tableUsability';
 import TypeCheckBusyTryAgain from '../components/TypeCheckBusyTryAgain';
+import ModalDialog from '../components/ModalDialog';
+import { sameSettings } from '../lib/businessProfiles';
 import { scopesFromObject, launchTableScopeText, filterValuesOf, labelAvailable, pickedTableNames, tableBrowseQuery, tableScopeOf, tableScopeSummary } from '../lib/tableScope';
+import { launchRelationshipsText, restoredRelationshipList } from '../lib/tableRelationships';
 import { PlainMessage } from '../components/TechnicalDetails';
 import LatestRunBadge from '../components/LatestRunBadge';
 import { runBusiness } from '../lib/reviewFigures';
@@ -62,7 +65,7 @@ import { responseError } from '../lib/apiClient';
 import { placeholderWords } from '../lib/placeholderWords';
 import { inspireScoreFromUc, nameOfUseCase } from '../lib/useCaseFields';
 import { counted } from '../lib/plural';
-import { catalogListNote, pickedScope, scopeSummary, typedCatalog, wholeCatalogsAfterChildRemoval } from '../lib/catalogList';
+import { catalogListNote, listedCatalogs, pickedScope, scopeSummary, typedCatalog, wholeCatalogsWithoutPicks } from '../lib/catalogList';
 import { SAMPLE_CATALOG, applySampleCopies, isSampleEntry, samplesTarget, scopesAfterSampleCopies, validCopyTarget } from '../lib/samplesCopy';
 import { DISCOVERY_AI_ENHANCED, DISCOVERY_MODE_TEXT, DISCOVERY_BADGE, DISCOVERY_PRIVACY, DISCOVERY_RECOMMENDED, DISCOVERY_STANDARD, discoveryTypeOf } from '../lib/discoveryType';
 import { raisePermissions } from '../lib/permissionBus';
@@ -185,7 +188,7 @@ const DRAFT_PARAMS = ['00_business_name', '03_discovery_type', '04_table_electio
   '11_generation_path', '12_documents_languages', '13_generate_genie_code_for', '15_operation', '16_best_of_best_count'];
 const FORM_DEFAULTS = {
   genChecks: { 'PDF Catalog': true, Presentation: false, Excel: true }, priorityChecks: {}, customPriorities: [], strategyBase: '',
-  selectedCatalogs: [], wholeCatalogs: [], selectedSchemas: [], selectedTables: [], tableScopes: {}, dataFilterLabel: { on: false, text: null },
+  selectedCatalogs: [], wholeCatalogs: [], selectedSchemas: [], selectedTables: [], tableScopes: {}, dataFilterLabel: { on: false, text: null }, relationships: [],
   electionTouched: false, discoveryTouched: false, strategyTouched: false, prioritiesTouched: false,
 };
 const FLAGS = ['electionTouched', 'discoveryTouched', 'strategyTouched', 'prioritiesTouched'];
@@ -201,6 +204,7 @@ const PRISTINE_FORM = JSON.stringify(draftFormOf(defaultParams(''), FORM_DEFAULT
 function restoredForm(draft) {
   const spec = draft && draft.step === START_DRAFT_STEP ? draft.spec : null;
   if (!spec || typeof spec !== 'object') return null;
+  const listOf = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
   const checks = (v, fallback) => (v && typeof v === 'object' && !Array.isArray(v)
     ? Object.fromEntries(Object.entries(v).filter(([, on]) => typeof on === 'boolean')) : fallback);
   const saved = spec.params && typeof spec.params === 'object' ? spec.params : {};
@@ -210,12 +214,18 @@ function restoredForm(draft) {
     priorityChecks: checks(spec.priorityChecks, {}),
     strategyBase: typeof spec.strategyBase === 'string' ? spec.strategyBase : '',
     ...Object.fromEntries(LISTS.map((key) => [key, Array.isArray(spec[key]) ? spec[key].filter((x) => typeof x === 'string') : []])),
-    // A draft saved before wholeCatalogs existed took every listed catalog as whole, so it restores that way.
-    wholeCatalogs: (Array.isArray(spec.wholeCatalogs) ? spec.wholeCatalogs : Array.isArray(spec.selectedCatalogs) ? spec.selectedCatalogs : [])
-      .filter((x) => typeof x === 'string'),
+    // A draft saved before wholeCatalogs existed took every listed catalog as whole, so it restores that way. A catalog with a picked
+    // schema or table under it is not whole (REQ-388), so a profile saved before that fix restores without the stale flag.
+    wholeCatalogs: wholeCatalogsWithoutPicks(
+      (Array.isArray(spec.wholeCatalogs) ? spec.wholeCatalogs : Array.isArray(spec.selectedCatalogs) ? spec.selectedCatalogs : [])
+        .filter((x) => typeof x === 'string'),
+      listOf(spec.selectedSchemas), listOf(spec.selectedTables)),
     tableScopes: scopesFromObject(spec.tableScopes).scopes,
     dataFilterLabel: restoredLabel(spec.dataFilterLabel),
+    relationships: restoredRelationshipList(spec.relationships),
     ...Object.fromEntries(FLAGS.map((key) => [key, spec[key] === true])),
+    // The profile the draft was loaded from (REQ-364): a reload keeps the link, so an unchanged profile still runs without the question.
+    profile: draft && draft.profile ? draft.profile : null,
   };
 }
 
@@ -225,14 +235,18 @@ function restoredLabel(value) {
   return { on, text };
 }
 
-export default function LaunchPage({ settings, update, onLaunched, onOpenResults, onNoData }) {
+export default function LaunchPage({ settings, update, onLaunched, onOpenResults }) {
   const { databricksHost, token, notebookPath, warehouseId, inspireDatabase, serverEnvHasPat } = settings;
+  // The catalogs the installer picked for the App to read. Empty when the install gave none, so every catalog is listed (REQ-359).
+  const installerCatalogs = Array.isArray(settings.installerDataCatalogs) ? settings.installerDataCatalogs : [];
   const canUseUcApi = !!(databricksHost && (token || serverEnvHasPat));
 
   const draftKey = useMemo(() => startDraftKey({ host: databricksHost }), [databricksHost]);
   const [draft] = useState(() => restoredForm(readWizardDraft(draftKey, START_DRAFT_STAMP)));
   const [draftBack, setDraftBack] = useState(Boolean(draft));
   const start = draft || FORM_DEFAULTS;
+  // The profile the form was loaded from, with its saved settings (REQ-364). Declared before the draft effect, which saves it.
+  const [loadedProfile, setLoadedProfile] = useState(start.profile || null);
 
   // ── Widget params (must match notebook widget names exactly) ──
   const [params, setParams] = useState(() => ({ ...defaultParams(inspireDatabase), ...(draft ? draft.params : {}) }));
@@ -248,6 +262,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
+  const [showAllCatalogs, setShowAllCatalogs] = useState(false);
   const [schemaSearch, setSchemaSearch] = useState('');
 
   // ── Table state ──
@@ -258,6 +273,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [selectedTables, setSelectedTables] = useState(start.selectedTables);
   const [tableScopes, setTableScopes] = useState(start.tableScopes);
   const [dataFilterLabel, setDataFilterLabel] = useState(start.dataFilterLabel);
+  const [relationships, setRelationships] = useState(start.relationships);
   const [showDataFilters, setShowDataFilters] = useState(false);
   const [dataFilterProblems, setDataFilterProblems] = useState([]);
   const [loadingTables, setLoadingTables] = useState(false);
@@ -643,35 +659,42 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
   const [prioritiesTouched, setPrioritiesTouched] = useState(start.prioritiesTouched);
 
   const draftForm = useMemo(() => draftFormOf(params, {
-    genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
+    genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel, relationships,
     electionTouched, discoveryTouched, strategyTouched, prioritiesTouched,
-  }), [params, genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel,
+  }), [params, genChecks, priorityChecks, customPriorities, strategyBase, selectedCatalogs, wholeCatalogs, selectedSchemas, selectedTables, tableScopes, dataFilterLabel, relationships,
     electionTouched, discoveryTouched, strategyTouched, prioritiesTouched]);
   useEffect(() => {
-    if (JSON.stringify(draftForm) === PRISTINE_FORM) clearWizardDraft(draftKey);
-    else writeWizardDraft(draftKey, { stamp: START_DRAFT_STAMP, spec: draftForm, step: START_DRAFT_STEP });
-  }, [draftKey, draftForm]);
+    if (JSON.stringify(draftForm) === PRISTINE_FORM && !loadedProfile) clearWizardDraft(draftKey);
+    else writeWizardDraft(draftKey, { stamp: START_DRAFT_STAMP, spec: draftForm, step: START_DRAFT_STEP, profile: loadedProfile });
+  }, [draftKey, draftForm, loadedProfile]);
+
+  // One code path sets the whole form: Start over sets the defaults, and a picked profile sets its saved settings.
+  const applyForm = (form) => {
+    setParams(form.params);
+    setGenChecks(form.genChecks);
+    setPriorityChecks(form.priorityChecks);
+    setCustomPriorities(form.customPriorities);
+    setStrategyBase(form.strategyBase);
+    setSelectedCatalogs(form.selectedCatalogs);
+    setWholeCatalogs(form.wholeCatalogs);
+    setSelectedSchemas(form.selectedSchemas);
+    setSelectedTables(form.selectedTables);
+    setTableScopes(form.tableScopes);
+    setDataFilterLabel(form.dataFilterLabel);
+    setRelationships(form.relationships || []);
+    setElectionTouched(form.electionTouched);
+    setDiscoveryTouched(form.discoveryTouched);
+    setStrategyTouched(form.strategyTouched);
+    setPrioritiesTouched(form.prioritiesTouched);
+    setPrefillNote('');
+    setStrategyEditorKey((k) => k + 1);
+  };
 
   const startOver = () => {
     clearWizardDraft(draftKey);
     setDraftBack(false);
-    setParams(defaultParams(inspireDatabase));
-    setGenChecks(FORM_DEFAULTS.genChecks);
-    setPriorityChecks(FORM_DEFAULTS.priorityChecks);
-    setCustomPriorities(FORM_DEFAULTS.customPriorities);
-    setStrategyBase(FORM_DEFAULTS.strategyBase);
-    setSelectedCatalogs(FORM_DEFAULTS.selectedCatalogs);
-    setWholeCatalogs(FORM_DEFAULTS.wholeCatalogs);
-    setSelectedSchemas(FORM_DEFAULTS.selectedSchemas);
-    setSelectedTables(FORM_DEFAULTS.selectedTables);
-    setTableScopes(FORM_DEFAULTS.tableScopes);
-    setDataFilterLabel(FORM_DEFAULTS.dataFilterLabel);
-    setElectionTouched(false);
-    setDiscoveryTouched(false);
-    setStrategyTouched(false);
-    setPrioritiesTouched(false);
-    setPrefillNote('');
-    setStrategyEditorKey((k) => k + 1);
+    setLoadedProfile(null);
+    applyForm({ ...FORM_DEFAULTS, params: defaultParams(inspireDatabase) });
   };
 
   const handleStrategyChange = useCallback((value) => {
@@ -761,12 +784,88 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       : []),
   ], [strategicContextText, customPriorities, strategyBase]);
 
-  // Launch
-  const handleLaunch = async () => {
-    if (launchBlock) return setLaunchError(launchBlock);
-    if (!outputCheck.ready)
-      return setLaunchError(outputCheck.text || 'Wait until Inspire has checked that you can write to the output folder.');
+  // ── Business profiles (REQ-364, REQ-365): named copies of this form, shared by everyone on the App ──
+  const [profiles, setProfiles] = useState([]);
+  const [profilesError, setProfilesError] = useState('');
+  const [profileBusy, setProfileBusy] = useState(false);
+  // The save dialog: null when closed, else { name, confirmReplace } of the profile it would save. A listed name needs a second confirm.
+  const [saveAsk, setSaveAsk] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
+  const loadProfiles = useCallback(async () => {
+    if (!canUseUcApi) return;
+    try {
+      const data = await apiFetch('/api/inspire/profiles');
+      setProfiles(Array.isArray(data.profiles) ? data.profiles : []);
+      setProfilesError('');
+    } catch (err) {
+      setProfilesError(parseApiErrorMessage(err.message));
+    }
+  }, [apiFetch, canUseUcApi]);
+
+  useEffect(() => { loadProfiles(); }, [loadProfiles]);
+
+  // A picked profile sets the whole form through applyForm, from its saved settings (restoredForm is the draft's own reader).
+  // Every touch flag is set, so the last run's prefill never overwrites a value the profile saved.
+  const pickProfile = async (profileId) => {
+    if (!profileId) return setLoadedProfile(null);
+    setProfileBusy(true);
+    setProfilesError('');
+    try {
+      const data = await apiFetch(`/api/inspire/profiles/${encodeURIComponent(profileId)}`);
+      const { profile: _drafted, ...form } = restoredForm({ step: START_DRAFT_STEP, spec: data.profile.spec });
+      const applied = {
+        ...form,
+        params: { ...defaultParams(inspireDatabase), ...form.params },
+        electionTouched: true,
+        discoveryTouched: true,
+        strategyTouched: true,
+        prioritiesTouched: true,
+      };
+      applyForm(applied);
+      // Compare later edits against the form as it was loaded, not the stored spec: a profile saved before a form key
+      // existed (for example relationships) restores that key to its default, and that is not a change.
+      setLoadedProfile({ profile_id: data.profile.profile_id, name: data.profile.name, spec: draftFormOf(applied.params, applied) });
+    } catch (err) {
+      setProfilesError(parseApiErrorMessage(err.message));
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const profileLabel = (p) => `${p.name}: updated by ${p.updated_by || 'someone'} on ${formatWhen(p.updated_at, 'an unknown date')}`;
+  const profileNamed = (name) => profiles.find((p) => String(p.name).trim().toLowerCase() === String(name || '').trim().toLowerCase()) || null;
+
+  const saveAndRun = async () => {
+    const name = saveAsk.name.trim();
+    const replacing = profileNamed(name);
+    if (replacing && !saveAsk.confirmReplace) return setSaveAsk({ name: saveAsk.name, confirmReplace: true });
+    setSaving(true);
+    setSaveError('');
+    try {
+      const data = await apiFetch('/api/inspire/profiles', {
+        method: 'POST',
+        body: JSON.stringify({ name, business_name: params['00_business_name'], spec: draftForm, overwrite: Boolean(replacing) }),
+      });
+      setSaveAsk(null);
+      setLoadedProfile({ profile_id: data.profile.profile_id, name: data.profile.name, spec: draftForm });
+      loadProfiles();
+      launchNow(data.profile.profile_id);
+    } catch (err) {
+      setSaveError(parseApiErrorMessage(err.message));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runWithoutSaving = () => {
+    setSaveAsk(null);
+    launchNow('');
+  };
+
+  // The launch itself: the grant check, then the run. A profile id links the run to its profile once it is submitted.
+  const launchNow = async (profileId = '') => {
     setLaunching(true);
     setLaunchError('');
     const finalParams = { ...params };
@@ -776,6 +875,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     const tableScopeText = launchTableScopeText(tableScopes, scope,
       dataFilterLabel.on ? (dataFilterLabel.text ?? groupLabelOf(filterValuesOf(tableScopes, scopeTables))) : '');
     if (tableScopeText) finalParams['17_table_scope'] = tableScopeText;
+    // REQ-373: the joins the person drew between the tables the run reads; sent only when one applies.
+    const relationshipText = launchRelationshipsText(relationships, scopeTables);
+    if (relationshipText) finalParams['18_table_relationships'] = relationshipText;
 
     const startRun = async () => {
       try {
@@ -787,6 +889,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
             params: finalParams,
             warehouse_id: warehouseId,
             samples_choice: sampleEntries.length ? samplesChoice.choice : undefined,
+            profile_id: profileId || undefined,
           }),
         }), { label: 'The launch' });
         clearWizardDraft(draftKey);
@@ -819,6 +922,16 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     startRun();
   };
 
+  // Get Started asks to save the settings as a profile. A loaded profile whose settings are unchanged runs without asking.
+  const handleLaunch = () => {
+    if (launchBlock) return setLaunchError(launchBlock);
+    if (!outputCheck.ready)
+      return setLaunchError(outputCheck.text || 'Wait until Inspire has checked that you can write to the output folder.');
+    if (loadedProfile && sameSettings(draftForm, loadedProfile.spec)) return launchNow(loadedProfile.profile_id);
+    setSaveError('');
+    return setSaveAsk({ name: String(params['00_business_name'] || '').trim(), confirmReplace: false });
+  };
+
   const copySamples = async () => {
     setSamplesCopying(true);
     setSamplesError('');
@@ -832,7 +945,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       if (Array.isArray(data.permissions) && data.permissions.length) raisePermissions(data.permissions);
       const picks = applySampleCopies({ catalogs: selectedCatalogs, schemas: selectedSchemas, tables: selectedTables }, { destination: data.destination, copies, failed });
       setSelectedCatalogs(picks.catalogs);
-      setWholeCatalogs((p) => p.filter((c) => picks.catalogs.includes(c)));
+      setWholeCatalogs((p) => wholeCatalogsWithoutPicks(p.filter((c) => picks.catalogs.includes(c)), picks.schemas, picks.tables));
       setSelectedSchemas(picks.schemas);
       setSelectedTables(picks.tables);
       setTableScopes(scopesAfterSampleCopies(tableScopes, copies));
@@ -848,8 +961,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
 
   // Derived
   const typedCatalogItem = typedCatalog(catalogs, catalogsCut, catalogSearch);
+  const shownCatalogs = listedCatalogs(catalogs, installerCatalogs, [...selectedCatalogs, ...selectedSchemas, ...selectedTables], showAllCatalogs);
   const filteredCatalogs = [
-    ...catalogs.filter((c) => !catalogSearch || c.name.toLowerCase().includes(catalogSearch.toLowerCase())),
+    ...shownCatalogs.filter((c) => !catalogSearch || c.name.toLowerCase().includes(catalogSearch.toLowerCase())),
     ...(typedCatalogItem ? [typedCatalogItem] : []),
   ];
   const filteredSchemas = schemas.filter(
@@ -864,10 +978,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
     [params['12_documents_languages']],
   );
 
-  // Removing the last schema or table under a whole catalog stops that catalog being read whole (wholeCatalogsAfterChildRemoval).
+  // Every change to the picked schemas or tables goes through here: a catalog with a picked child is not whole (REQ-388).
   const setPickedChildren = (nextSchemas, nextTables) => {
-    const before = [...selectedSchemas, ...selectedTables];
-    setWholeCatalogs((p) => wholeCatalogsAfterChildRemoval(p, before, [...nextSchemas, ...nextTables]));
+    setWholeCatalogs((p) => wholeCatalogsWithoutPicks(p, nextSchemas, nextTables));
     setSelectedSchemas(nextSchemas);
     setSelectedTables(nextTables);
   };
@@ -880,7 +993,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       setPickedChildren(selectedSchemas, selectedTables.filter((t) => !filteredNames.has(t)));
     } else {
       const newNames = filteredTables.map((t) => t.full_name);
-      setSelectedTables((prev) => [...new Set([...prev, ...newNames])]);
+      setPickedChildren(selectedSchemas, [...new Set([...selectedTables, ...newNames])]);
     }
   };
 
@@ -897,7 +1010,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
       : !params['01_uc_metadata'] ? 'Pick at least one catalog, schema or table under Unity Catalog Metadata to get started.'
         : sampleEntries.length > 0 && !samplesDecided ? 'Copy the samples tables into a schema you own, or use descriptions only, above Get Started.'
           : strategyProblems.length ? `Fix the strategy first, in Advanced Settings under Strategy (optional): ${strategyProblems[0]}`
-            : dataFilterProblems.length ? `Fix the data filters first, in Advanced Settings under Data Filters (optional): ${dataFilterProblems[0]}`
+            : dataFilterProblems.length ? `Fix the data filters first, in Advanced Settings under Data Management (optional): ${dataFilterProblems[0]}`
           : bestOfBestInvalid ? 'Best of Best stars takes a whole number from 0 to 100. Fix it in Advanced Settings.' : '';
   const canLaunch = !launchBlock;
   const liveRunNote = useMemo(() => {
@@ -1256,14 +1369,41 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
           <div className="px-6 py-6 space-y-6">
             {/* Business Name */}
             <Field label="Business Name" required icon={Building2} hint="The company or business unit to analyze">
-              <input dir="auto"
-                type="text"
-                placeholder="e.g. Contoso, Acme Corp, Retail Division"
-                value={params['00_business_name']}
-                onChange={(e) => updateParam('00_business_name', e.target.value)}
-                onBlur={(e) => setHeadlineBusiness((e.target.value || '').trim())}
-                className="w-full ps-10 pe-4 py-2.5 text-sm border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-tertiary glow-focus transition-smooth"
-              />
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <input dir="auto"
+                  type="text"
+                  placeholder="e.g. Contoso, Acme Corp, Retail Division"
+                  value={params['00_business_name']}
+                  onChange={(e) => updateParam('00_business_name', e.target.value)}
+                  onBlur={(e) => setHeadlineBusiness((e.target.value || '').trim())}
+                  className="min-w-0 flex-1 w-full ps-10 pe-4 py-2.5 text-sm border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-tertiary glow-focus transition-smooth"
+                />
+                <label className="flex shrink-0 items-center gap-2 text-xs font-medium text-text-primary">
+                  <span className="whitespace-nowrap">Profile</span>
+                  <select data-launch-profile="" aria-label="Business profile"
+                    value={loadedProfile?.profile_id || ''}
+                    disabled={profileBusy || launching}
+                    onChange={(e) => pickProfile(e.target.value)}
+                    className="min-w-0 w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-primary glow-focus sm:w-80">
+                    <option value="">No profile</option>
+                    {/* The loaded profile is its own option, so the picker shows its name even when the list below does not carry it (REQ-390). */}
+                    {loadedProfile && (
+                      <option value={loadedProfile.profile_id}>
+                        {sameSettings(draftForm, loadedProfile.spec) ? loadedProfile.name : `${loadedProfile.name} (changed)`}
+                      </option>
+                    )}
+                    {profiles.filter((p) => p.profile_id !== loadedProfile?.profile_id).map((p) => <option key={p.profile_id} value={p.profile_id}>{profileLabel(p)}</option>)}
+                  </select>
+                </label>
+              </div>
+              {loadedProfile && (
+                <p data-launch-profile-note="" role="status" className="mt-2 text-xs text-text-secondary">
+                  {sameSettings(draftForm, loadedProfile.spec)
+                    ? `This run uses the profile ${loadedProfile.name}.`
+                    : `You changed the profile ${loadedProfile.name}. Get Started asks whether to save these settings.`}
+                </p>
+              )}
+              {profilesError && <PlainMessage text={profilesError} role="alert" data-launch-profile-error="" className="mt-2 text-xs text-error-fg" />}
             </Field>
 
             {/* UC Metadata — Catalog/Schema/Table pickers with shopping basket */}
@@ -1271,16 +1411,6 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 {catalogBrowseGuidance && <UcPermissionErrorHelp guidance={catalogBrowseGuidance} />}
                 {pickerReadGuidance && <UcPermissionErrorHelp guidance={pickerReadGuidance} />}
                 {catalogsWhy && <PlainMessage text={catalogsWhy} role="note" data-uc-why="" className="mb-3 text-xs text-text-secondary" />}
-                {onNoData && (
-                  <button
-                    type="button"
-                    onClick={onNoData}
-                    className="mb-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-border text-sm text-text-secondary hover:border-db-red/40 hover:text-db-red-fg hover:bg-db-red-50/30 transition-smooth"
-                  >
-                    <Sparkles size={16} />
-                    I don&apos;t have data. Generate demo tables instead
-                  </button>
-                )}
                 {/* Selected Metadata Basket — always visible */}
                 {scope.entries.length === 0 && (
                   <p data-scope-empty="" className="mb-3 text-[11px] text-text-tertiary">Nothing picked yet</p>
@@ -1356,6 +1486,19 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                         <span className="text-[11px] font-semibold text-text-secondary">Catalogs</span>
                         {loadingCatalogs && <Loader2 size={10} className="animate-spin text-text-tertiary" />}
                       </div>
+                      {installerCatalogs.length > 0 && (
+                        <div className="mb-2 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            data-load-all-catalogs=""
+                            onClick={() => setShowAllCatalogs(!showAllCatalogs)}
+                            className="text-[11px] font-semibold text-db-red-fg hover:underline"
+                          >
+                            {showAllCatalogs ? 'Installer catalogs only' : 'Load all catalogs'}
+                          </button>
+                          {!showAllCatalogs && <span className="text-[10px] text-text-tertiary">Showing the catalogs picked at install.</span>}
+                        </div>
+                      )}
                       <PickerList
                         items={filteredCatalogs}
                         selected={selectedCatalogs}
@@ -1366,7 +1509,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                             setSelectedSchemas((p) => p.filter((x) => !x.startsWith(name + '.')));
                           } else {
                             setSelectedCatalogs((p) => [...p, name]);
-                            setWholeCatalogs((p) => [...p, name]);
+                            setWholeCatalogs((p) => wholeCatalogsWithoutPicks([...p, name], selectedSchemas, selectedTables));
                           }
                         }}
                         getKey={(c) => c.name}
@@ -1383,7 +1526,9 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                                 ? 'Loading...'
                                 : catalogBrowseError || catalogsWhy
                                   ? 'Inspire could not list the catalogs. The message above says why.'
-                                  : 'No catalogs found'
+                                  : shownCatalogs.length === 0 && catalogs.length > 0
+                                    ? 'None of the catalogs picked at install is listed. Use Load all catalogs.'
+                                    : 'No catalogs found'
                         }
                       />
                       {catalogsCut && (
@@ -1404,7 +1549,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                           if (selectedSchemas.includes(name)) {
                             setPickedChildren(selectedSchemas.filter((x) => x !== name), selectedTables);
                           } else {
-                            setSelectedSchemas((p) => [...p, name]);
+                            setPickedChildren([...selectedSchemas, name], selectedTables);
                           }
                         }}
                         getKey={(s) => s.full_name}
@@ -1437,7 +1582,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                         selected={selectedTables}
                         onToggle={(name) => {
                           if (selectedTables.includes(name)) setPickedChildren(selectedSchemas, selectedTables.filter((x) => x !== name));
-                          else setSelectedTables((p) => [...p, name]);
+                          else setPickedChildren(selectedSchemas, [...selectedTables, name]);
                         }}
                         getKey={(t) => t.full_name}
                         disabledReasonOf={unusableReasonOf}
@@ -1715,7 +1860,7 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 >
                   <Table2 size={14} className="text-text-tertiary mt-0.5 shrink-0" />
                   <span className="min-w-0">
-                    <span className="block text-xs font-bold text-text-primary">Data Filters (optional)</span>
+                    <span className="block text-xs font-bold text-text-primary">Data Management (optional)</span>
                     <span className="block text-[10px] text-text-tertiary">
                       The columns Inspire reads and the rows it keeps, per table you picked. Leave it empty to read every column and every row.
                     </span>
@@ -1732,12 +1877,14 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
                 </button>
                 {showDataFilters && (
                   <div className="px-4 pb-4 pt-1 border-t border-border">
-                    <DataFilters
+                    <DataManagement
                       scope={scope}
                       scopes={tableScopes}
                       onScopes={setTableScopes}
                       label={dataFilterLabel}
                       onLabel={setDataFilterLabel}
+                      relationships={relationships}
+                      onRelationships={setRelationships}
                       apiFetch={apiFetch}
                       warehouseId={warehouseId}
                       onProblems={setDataFilterProblems}
@@ -2008,6 +2155,42 @@ export default function LaunchPage({ settings, update, onLaunched, onOpenResults
           )}
         </button>
         {launchBlock && !launching && <p id="launch-block" data-launch-block="" role="status" className="text-xs text-text-secondary mt-2 text-center">{launchBlock}</p>}
+        {saveAsk && (
+          <ModalDialog titleId="launch-save-profile-title" title="Save these settings as a business profile?"
+            onClose={() => { if (!saving) setSaveAsk(null); }} widthClass="max-w-md"
+            dialogAttrs={{ 'data-launch-save-profile': '' }}
+            footer={(
+              <>
+                <button type="button" data-launch-run-unsaved="" onClick={runWithoutSaving} disabled={saving}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-text-primary hover:bg-bg-subtle disabled:opacity-50">
+                  Run without saving
+                </button>
+                <button type="button" data-launch-save-run="" onClick={saveAndRun} disabled={saving || !saveAsk.name.trim()}
+                  className="rounded-lg bg-db-red-solid px-4 py-2 text-sm font-bold text-white hover:bg-db-red-solid-hover disabled:opacity-50">
+                  {saving ? 'Saving…' : profileNamed(saveAsk.name) && saveAsk.confirmReplace ? 'Replace and run' : 'Save and run'}
+                </button>
+              </>
+            )}>
+            <label className="block text-xs font-semibold text-text-primary">
+              Profile name
+              <input data-launch-profile-name="" dir="auto" type="text" value={saveAsk.name} disabled={saving}
+                onChange={(e) => setSaveAsk({ name: e.target.value, confirmReplace: false })}
+                className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary glow-focus" />
+            </label>
+            {profileNamed(saveAsk.name) && !saveAsk.confirmReplace && (
+              <p data-launch-profile-replace="" className="text-xs text-warning-fg">
+                A profile named {profileNamed(saveAsk.name).name} already exists. Saving replaces it.
+              </p>
+            )}
+            {profileNamed(saveAsk.name) && saveAsk.confirmReplace && (
+              <p data-launch-profile-replace-confirm="" role="alert" className="text-xs font-semibold text-warning-fg">
+                Replace the profile {profileNamed(saveAsk.name).name} saved by {profileNamed(saveAsk.name).updated_by || 'someone'} on {formatWhen(profileNamed(saveAsk.name).updated_at, 'an unknown date')}?
+              </p>
+            )}
+            {saveError && <PlainMessage text={saveError} role="alert" data-launch-profile-error="" className="text-xs text-error-fg" />}
+            <p className="text-xs text-text-secondary">Everyone on this App can load a saved profile. The list shows who saved it and when.</p>
+          </ModalDialog>
+        )}
 
         <p data-admin-footer="" className="text-xs text-text-tertiary mt-3 text-center">
           Notebook: <span className="font-mono text-text-secondary">{notebookPath || 'not set'}</span>

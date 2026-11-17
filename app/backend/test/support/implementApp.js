@@ -9,6 +9,41 @@ function sqlResultToObjects(result) {
   return result.rows || [];
 }
 
+// The Data Management reads (REQ-370), answered from state.columnsByTable: the column search (ILIKE :q, one query per catalog) and the
+// columns of a picked scope (one query per catalog, the picked tables bound as s<i> and t<i>). A metric view is not in columnsByTable.
+function scopeRowsOf(columnsByTable, sql, parameters) {
+  const catalog = ((/FROM `([^`]+)`\.information_schema\.columns/.exec(sql) || [])[1] || '').toLowerCase();
+  const named = (re) => parameters.filter((p) => re.test(p.name));
+  const whole = sql.includes('(TRUE)');
+  const searching = sql.includes('ILIKE :q');
+  // The pattern decides the match as ILIKE does: a leading % is ends-with, a trailing % is starts-with, both is contains (REQ-379).
+  const raw = searching ? String(named(/^q$/)[0].value) : '';
+  const leading = raw.startsWith('%');
+  const trailing = raw.endsWith('%') && !raw.endsWith('\\%');
+  const text = raw.slice(leading ? 1 : 0, trailing ? -1 : undefined).replace(/\\([\\%_])/g, '$1').toLowerCase();
+  const textMatches = (name) => {
+    if (leading && !trailing) return name.endsWith(text);
+    if (trailing && !leading) return name.startsWith(text);
+    return name.includes(text);
+  };
+  const schemas = searching ? named(/^s\d+$/).map((p) => p.value) : [];
+  const pairs = searching
+    ? named(/^ts\d+$/).map((p, i) => [p.value, (named(/^tt\d+$/).find((x) => x.name === `tt${i}`) || {}).value])
+    : named(/^s\d+$/).map((p, i) => [p.value, (named(/^t\d+$/).find((x) => x.name === `t${i}`) || {}).value]);
+  const inScope = (schema, table) => whole || schemas.includes(schema) || pairs.some(([s, t]) => s === schema && t === table);
+  const rows = [];
+  for (const [name, cols] of Object.entries(columnsByTable)) {
+    const [c, schema, table] = name.split('.');
+    if (c.toLowerCase() !== catalog || !inScope(schema, table)) continue;
+    for (const col of cols) {
+      if (searching && !textMatches(col.column_name.toLowerCase())) continue;
+      rows.push({ table_schema: schema, table_name: table, column_name: col.column_name, data_type: col.data_type });
+    }
+  }
+  if (!searching) return rows;
+  return rows.slice(0, 300).map((r) => ({ ...r, total: rows.length }));
+}
+
 function makeApp(overrides = {}, { mount } = {}) {
   const sqlCalls = [];
   const fetches = [];
@@ -27,6 +62,7 @@ function makeApp(overrides = {}, { mount } = {}) {
     session: { business_name: 'Acme', discovery_type: 'Deep', catalogs: 'main', schemas_str: 's', tables_str: 'main.s.orders', generation_path: '/tmp/out', inspire_database_name: 'main.inspire' },
     useCase: { id: 'N01-U01', use_case: 'Predict churn', genie_instruction: '## Parameters\n| top_k | text | 25 | Top K |\n' },
     history: [],
+    profiles: [],
     columns: [{ column_name: 'order_id', data_type: 'STRING', ordinal_position: 1 }],
     warehouses: { warehouses: [{ id: 'wh1', name: 'SQL' }] },
     appsOk: true,
@@ -160,6 +196,9 @@ function makeApp(overrides = {}, { mount } = {}) {
       if (sql.includes('information_schema.columns') && sql.includes('WITH o AS')) {
         return { rows: state.swapRowsByToken ? state.swapRowsByToken[token] || [] : state.swapRows || [] };
       }
+      if (sql.includes('information_schema.columns') && state.columnsByTable && (sql.includes('ILIKE :q') || sql.includes('table_schema = lower(:s0)'))) {
+        return { rows: scopeRowsOf(state.columnsByTable, sql, parameters || []) };
+      }
       if (sql.includes('information_schema.columns') && state.columnsByTable) {
         const catalog = (/FROM `([^`]+)`\.information_schema\.columns/.exec(sql) || [])[1] || '';
         const named = (key) => ((parameters || []).find((p) => p.name === key) || {}).value || '';
@@ -173,6 +212,8 @@ function makeApp(overrides = {}, { mount } = {}) {
         const steps = state.steps || [];
         return { rows: since ? steps.filter((s) => Date.parse(s.last_updated) > Date.parse(since.value)) : steps };
       }
+      // REQ-380: the reason an empty group list gets (rows read and rows with a value under the same filters).
+      if (sql.startsWith('SELECT COUNT(*) AS rows_read')) return { rows: [state.groupReasonRow || { rows_read: '1200', with_value: '1200' }] };
       if (sql.includes(' GROUP BY ') && sql.includes(' AS records FROM ')) {
         const grouped = (/CAST\(`([^`]+)` AS STRING\) AS/.exec(sql) || [])[1] || '';
         return { rows: (state.groupCountsByColumn || {})[grouped] || state.groupCounts || [] };
@@ -321,6 +362,27 @@ function makeApp(overrides = {}, { mount } = {}) {
       truncated: Boolean(state.sessionsTruncated),
     });
   });
+  app.get('/api/inspire/profiles', (req, res) => {
+    const business = String(req.query.business_name || '').trim().toLowerCase();
+    const listed = (state.profiles || []).filter((p) => !business || String(p.business_name).toLowerCase() === business);
+    res.json({ profiles: listed.map(profileSummaryOf) });
+  });
+  app.get('/api/inspire/profiles/:profileId', (req, res) => {
+    if (state.profileRefusal) return res.status(403).json({ error: state.profileRefusal.message, permissions: state.profileRefusal.permissions });
+    const found = (state.profiles || []).find((p) => p.profile_id === req.params.profileId);
+    if (!found) return res.status(404).json({ error: 'That business profile was not found' });
+    return res.json({ profile: found });
+  });
+  app.post('/api/inspire/profiles', (req, res) => {
+    const body = req.body || {};
+    state.profileSaves = [...(state.profileSaves || []), body];
+    const taken = (state.profiles || []).find((p) => p.name.toLowerCase() === String(body.name || '').trim().toLowerCase());
+    if (taken && !body.overwrite) return res.status(409).json({ error: `A business profile named "${body.name}" already exists.`, exists: true, profile_id: taken.profile_id });
+    const row = { profile_id: taken ? taken.profile_id : `profile-${(state.profiles || []).length + 1}`, name: String(body.name || '').trim(),
+      business_name: String(body.business_name || ''), updated_by: 'amr@x', updated_at: '2026-11-16T09:00:00Z', spec: body.spec || {} };
+    state.profiles = taken ? state.profiles.map((p) => (p.profile_id === taken.profile_id ? row : p)) : [...(state.profiles || []), row];
+    return res.json({ profile: profileSummaryOf(row) });
+  });
   app.get('/api/inspire/step-results', (_req, res) => res.json({ results: state.stepResults || null }));
   app.get('/api/warehouses', (_req, res) => {
     const listed = (state.warehouses && state.warehouses.warehouses) || [];
@@ -346,7 +408,9 @@ function makeApp(overrides = {}, { mount } = {}) {
         : busy[full] ? { type_check: 'busy', unusable_reason: busy[full] } : {};
       return { name, full_name: full, schema_name: req.params.schema, ...flag };
     });
-    return res.json({ tables, count: names.length, ...((state.leftOut || {})[scope] ? { left_out: state.leftOut[scope] } : {}) });
+    // state.metricViews: full names of the metric views in this schema, left out of the listing and named back (REQ-370).
+    const metricViews = (state.metricViews || []).filter((v) => String(v).toLowerCase().startsWith(`${scope.toLowerCase()}.`));
+    return res.json({ tables, count: names.length, metric_views: metricViews, ...((state.leftOut || {})[scope] ? { left_out: state.leftOut[scope] } : {}) });
   });
   app.post('/api/output-folder/check', (req, res) => {
     if (state.outputRefusal) return res.status(403).json({ error: state.outputRefusal.message, permissions: state.outputRefusal.permissions });
@@ -399,6 +463,11 @@ function makeApp(overrides = {}, { mount } = {}) {
   app.get('/api/inspire/value/runs', (_req, res) => res.json(state.valueRuns || { runs: {} }));
   app.get('/api/inspire/value/estimates', (_req, res) => res.json(state.valueEstimates || { use_cases: {}, totals: { estimated: {} } }));
   return { app, sqlCalls, fetches, jobs, state, altered, flagged, appCalls, launches, catalogLists, sampleCopies };
+}
+
+// Business profiles as the App shares them (REQ-364 to REQ-366). state.profiles holds the saved rows; state.profileSaves records each save the page sent.
+function profileSummaryOf(row) {
+  return { profile_id: row.profile_id, name: row.name, business_name: row.business_name, updated_by: row.updated_by, updated_at: row.updated_at };
 }
 
 function json(data, status = 200) {

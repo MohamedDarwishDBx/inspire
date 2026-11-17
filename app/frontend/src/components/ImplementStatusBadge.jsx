@@ -14,7 +14,7 @@ export default function ImplementStatusBadge({ state, className = '' }) {
       className={`inline-flex items-center text-[10px] font-semibold uppercase tracking-[0.14em] px-2 py-1 rounded-md border leading-none ${TONE[state.tone] || TONE.idle} ${className}`}
     >
       {state.tone === 'busy' && <span className="me-1.5 w-1.5 h-1.5 rounded-full bg-db-red-fg motion-safe:animate-pulse" aria-hidden />}
-      {state.label}
+      {state.queued ? 'MVP queued' : state.label}
     </span>
   );
   if (!state.note) return badge;

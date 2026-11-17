@@ -204,7 +204,7 @@ def test_every_create_scope_views_call_in_the_notebook_is_a_candidate_attempt_or
         'self.spark, scopes, live=context.setdefault("live_views", {})',
         "self.spark, scopes",
         "self.spark, scopes",
-        "self.spark, {key: scope_named(scope, suffix) for key, scope in scopes_in_force(scopes).items()}",
+        "self.spark, {key: scope_named(scope, suffix) for key, scope in inspire_scopes_in_force(scopes).items()}",
     ]), args
     for match in calls:
         if match.group(1) == "self.spark, scopes":

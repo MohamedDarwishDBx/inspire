@@ -51,16 +51,17 @@ export function readWizardDraft(key, stamp, storage) {
     saved = null;
   }
   const fits = saved && typeof saved === 'object' && saved.version === WIZARD_DRAFT_VERSION && saved.stamp === stamp && saved.spec && typeof saved.spec === 'object' && typeof saved.step === 'string';
-  if (fits) return { spec: saved.spec, step: saved.step, visited: Array.isArray(saved.visited) ? saved.visited.map(String) : [] };
+  // profile is present only when the draft holds a loaded business profile, the same way writeWizardDraft stores it.
+  if (fits) return { spec: saved.spec, step: saved.step, visited: Array.isArray(saved.visited) ? saved.visited.map(String) : [], ...(saved.profile && typeof saved.profile === 'object' ? { profile: saved.profile } : {}) };
   if (raw) clearWizardDraft(key, store);
   return null;
 }
 
-export function writeWizardDraft(key, { stamp, spec, step, visited = [] }, storage) {
+export function writeWizardDraft(key, { stamp, spec, step, visited = [], profile = null }, storage) {
   const store = storageOf(storage);
   if (!key || !store) return false;
   try {
-    store.setItem(key, JSON.stringify({ version: WIZARD_DRAFT_VERSION, stamp, spec, step, visited }));
+    store.setItem(key, JSON.stringify({ version: WIZARD_DRAFT_VERSION, stamp, spec, step, visited, ...(profile ? { profile } : {}) }));
     return true;
   } catch {
     return false;

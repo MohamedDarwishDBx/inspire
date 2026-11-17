@@ -2,7 +2,7 @@
 // alone; a parent is read whole only when no table under it was picked; a removed parent never takes a picked table with it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickedScope, wholeCatalogsAfterChildRemoval } from '../src/lib/catalogList.js';
+import { pickedScope, wholeCatalogsWithoutPicks } from '../src/lib/catalogList.js';
 
 const T = 'inspire_kinds_rc7._inspire.sales_transactions';
 const C = 'inspire_kinds_rc7';
@@ -32,11 +32,14 @@ test('a catalog listed but not whole reads nothing under it, so an opened catalo
   assert.deepEqual(pickedScope([C], [], [T], []).entries, [T], 'a table picked under a listed catalog is still read');
 });
 
-test('removing the last schema or table under a whole catalog stops it being whole, and a catalog that keeps a child stays whole', () => {
-  assert.deepEqual(wholeCatalogsAfterChildRemoval([C], [S], []), []);
-  assert.deepEqual(wholeCatalogsAfterChildRemoval([C], [S, T], [T]), [C]);
-  assert.deepEqual(wholeCatalogsAfterChildRemoval([C], [T], []), []);
-  assert.deepEqual(wholeCatalogsAfterChildRemoval(['other', C], [S], []), ['other']);
-  assert.deepEqual(wholeCatalogsAfterChildRemoval([C], [], [T]), [C], 'adding a child keeps the catalog whole');
-  assert.deepEqual(wholeCatalogsAfterChildRemoval([C], [], []), [C], 'a catalog picked alone is never dropped');
+test('a picked schema or table under a whole catalog stops that catalog being whole, so a saved profile never keeps it (REQ-388, must-fail before)', () => {
+  assert.deepEqual(wholeCatalogsWithoutPicks([C], [S], []), [], 'a picked schema');
+  assert.deepEqual(wholeCatalogsWithoutPicks([C], [], [T]), [], 'a picked table');
+  assert.deepEqual(wholeCatalogsWithoutPicks([C], [S], [T]), [], 'a picked schema and table');
+  assert.deepEqual(wholeCatalogsWithoutPicks(['other', C], [S], []), ['other'], 'another whole catalog is kept');
+});
+
+test('a catalog with nothing picked under it stays whole, so picking nothing never drops a catalog (must-keep)', () => {
+  assert.deepEqual(wholeCatalogsWithoutPicks([C], [], []), [C]);
+  assert.deepEqual(wholeCatalogsWithoutPicks([C], ['other.s'], ['other.s.t']), [C], 'a child of another catalog does not drop this one');
 });

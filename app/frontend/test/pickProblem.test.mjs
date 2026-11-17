@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { METRIC_VIEW_REFUSAL, TYPE_CHECK_BUSY, permanentPickProblem } from '../src/lib/pickProblem.js';
 
-const METRIC_REFUSAL = 'adb_fe_uae_01.default.order_revenue_metrics is a metric view, so Inspire leaves it out of Data Filters; pick its source table instead';
+const METRIC_REFUSAL = 'adb_fe_uae_01.default.order_revenue_metrics is a metric view, so Inspire leaves it out of Data Management; pick its source table instead';
 const GONE = '[TABLE_OR_VIEW_NOT_FOUND] The table or view `amr_ali`.`sales`.`orders` cannot be found. Verify the spelling. SQLSTATE: 42P01';
 
 test('a metric view refusal is a permanent pick problem, and the refusal pattern matches it', () => {

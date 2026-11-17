@@ -1,6 +1,7 @@
 const { isMissingTableError } = require('./lib/inspireFeedback');
 const { INSPIRE_DB_SHAPE, USE_CASE_ID_SHAPE, noSessionText, stepsStatement } = require('./lib/sqlInputs');
 const I = require('./lib/inspireImplement');
+const RL = require('./lib/relationships');
 const { createGenieJobGuard } = require('./lib/genieJobGuard');
 const { mapLimit } = require('./lib/mapLimit');
 
@@ -14,9 +15,10 @@ const { appShellCatalog, bundledBuildStamp } = require('./lib/appShell');
 const { moneyStatements, moneyView, moneyWithheld } = require('./lib/implementMoney');
 const FB = require('./lib/appFeedback');
 const { specVibeAsks } = require('../frontend/src/lib/vibeLimits.js');
+const { chosenTableScopes } = require('../frontend/src/lib/tableScope.js');
 const { HOSTED_NO_TOKEN } = require('./lib/hostedRun');
 const { ownServicePrincipalId } = require('./lib/inspireSpGrants');
-const { inspireJobEnvironmentChange, inspireJobEnvironmentWarning, inspireJobTestTagChange, inspireJobTestTagWarning, parseTableScopeText, runAsPerson, launchPlanFor } = require('./lib/inspireJobParams');
+const { inspireJobEnvironmentChange, inspireJobEnvironmentWarning, inspireJobTestTagChange, inspireJobTestTagWarning, parseTableScopeText, runAsPerson, launchPlanFor, withChosenTableScope, previewScopesOf } = require('./lib/inspireJobParams');
 const R = require('./lib/reviewFigures');
 const A = require('./lib/useCaseAlerts');
 const P = require('./lib/requestPerson');
@@ -44,6 +46,8 @@ const GC = require('./lib/genieCodeCheck');
 const SA = require('./lib/sourceAccess');
 const D = require('./lib/buildDiagnostics');
 const MV = require('./lib/metricViews');
+const DM = require('./lib/dataManagement');
+const { joinSentences } = require('./lib/sentences');
 const AR = require('./lib/accessRequest');
 
 function sendError(res, err) {
@@ -446,7 +450,7 @@ function registerImplementRoutes(app, deps) {
     const appWarehouse = own ? await appWarehouseCheck(req, options.appWarehouse, access.identity, '', true) : warehouse;
     const warnings = [...I.shareWarnings(table, rows, options.principals, { createsSchema }),
       ...I.shareWarehouseWarnings(warehouse, options.principals, options.viewed, options.warehouseName)];
-    if (warnings.length) access.grant = { ...access.grant, warn: warnings.join(' ') };
+    if (warnings.length) access.grant = { ...access.grant, warn: joinSentences(...warnings) };
     access.app = I.appAccessCheck(access.app, own ? null : warehouse);
     const appGaps = I.accessPlan(table, rows, '', { createsSchema }).gaps;
     if (appGaps.length && builder) {
@@ -809,6 +813,64 @@ function registerImplementRoutes(app, deps) {
     }
   });
 
+  // The relationships of one picked table (REQ-362, REQ-370): its declared keys in both directions, and the name matches across the
+  // picked scope (one information_schema.columns query per catalog of the scope). A metric view is named back and read no further.
+  app.post('/api/relationships', requireToken, async (req, res) => {
+    try {
+      const warehouseId = warehouseOf(req);
+      const table = RL.pickedTableOf(req.body?.table);
+      const scope = RL.pickedTablesOf(req.body?.tables || []);
+      if (!scope.some((t) => t.toLowerCase() === table.toLowerCase())) scope.push(table);
+      const token = personReadToken(req);
+      const looked = await tableTypeOf(req, () => token, warehouseId, table);
+      if (MV.isMetricViewType(looked.type)) return res.json({ tables: {}, suggestions: [], metric_views: [table] });
+      const byCatalog = new Map();
+      for (const name of scope) {
+        const catalog = name.split('.')[0];
+        byCatalog.set(catalog, [...(byCatalog.get(catalog) || []), name]);
+      }
+      const catalogs = [...byCatalog.keys()];
+      const reads = await I.readPickedTable(table, () => Promise.all([
+        Promise.all(catalogs.map((catalog) => sqlRows(req.dbHost, token, warehouseId, RL.scopeColumnsStatement(catalog, byCatalog.get(catalog))))),
+        Promise.all(catalogs.map((catalog) => sqlRows(req.dbHost, token, warehouseId, RL.scopeKeysStatement(catalog, byCatalog.get(catalog))))),
+        sqlRows(req.dbHost, token, warehouseId, RL.declaredKeysStatement(table)),
+        sqlRows(req.dbHost, token, warehouseId, RL.declaredIntoStatement(table)),
+      ]));
+      const [catalogRows, keyRows, declared, into] = reads;
+      const columns = catalogRows.flatMap((rows, i) => rows.map((r) => ({
+        table: `${catalogs[i]}.${r.table_schema}.${r.table_name}`, column_name: r.column_name,
+      })));
+      const keys = keyRows.flatMap((rows, i) => rows.filter((r) => r.table_schema).map((r) => ({
+        table: `${catalogs[i]}.${r.table_schema}.${r.table_name}`, column_name: r.column_name,
+      })));
+      if (!columns.some((c) => c.table.toLowerCase() === table.toLowerCase())) throw I.unreadableTableError(table);
+      // The other table of a link the dialog is making: its columns are sent first, so the answer can always pair them.
+      const focus = Array.isArray(req.body?.focus) ? RL.pickedTablesOf(req.body.focus) : [];
+      res.json({ ...RL.relationshipsOfTable(table, { columns, keys, declared, into, focus }), metric_views: [] });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  // The Data Management column search (REQ-370): one information_schema.columns query per catalog of the picked scope, metric views
+  // left out, at most COLUMN_SEARCH_LIMIT hits. An empty search reads nothing.
+  app.post('/api/data-management/columns', requireToken, async (req, res) => {
+    try {
+      const warehouseId = warehouseOf(req);
+      const q = DM.queryOf(req.body?.q);
+      if (!q) return res.json({ hits: [], total: 0, shown: 0, limit: DM.COLUMN_SEARCH_LIMIT });
+      const token = personReadToken(req);
+      const statements = DM.columnSearchStatements(req.body?.scope || {}, q);
+      const parts = await Promise.all(statements.map(async ({ catalog, statement }) => ({
+        catalog, rows: await sqlRows(req.dbHost, token, warehouseId, statement),
+      })));
+      const { hits, total } = DM.mergeColumnHits(parts);
+      res.json({ hits, total, shown: hits.length, limit: DM.COLUMN_SEARCH_LIMIT });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
   app.post('/api/inspire/implement/swaps', requireToken, async (req, res) => {
     try {
       const warehouseId = warehouseOf(req);
@@ -961,11 +1023,21 @@ function registerImplementRoutes(app, deps) {
         top,
       });
       if (!statement) return res.status(400).json({ error: top ? 'name one group column to list its values' : `name between 1 and ${I.GROUP_COUNT_MAX_COLUMNS} group columns to count` });
-      const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
+      const token = personReadToken(req);
+      const rows = await sqlRows(req.dbHost, token, warehouseId, statement);
       const cap = top || I.GROUP_COUNT_LIMIT;
       const truncated = rows.length > cap;
       const kept = truncated ? rows.slice(0, cap) : rows;
-      res.json({ truncated, groups: kept.map((r) => ({ ...r, records: Number(r.records) || 0 })) });
+      // REQ-380: an empty list says why, from one count under the same filters (only when the list is empty).
+      let reason = '';
+      if (!rows.length) {
+        const column = String((req.body?.columns || [])[0] ?? '').trim();
+        const counted = await sqlRows(req.dbHost, token, warehouseId, I.groupReasonStatement(q(req, 'table'), column, {
+          filters: req.body?.filters || [], window: req.body?.window || {},
+        }));
+        reason = I.groupEmptyReason(counted[0], column);
+      }
+      res.json({ truncated, reason, groups: kept.map((r) => ({ ...r, records: Number(r.records) || 0 })) });
     } catch (err) {
       sendError(res, err);
     }
@@ -1477,7 +1549,7 @@ function registerImplementRoutes(app, deps) {
     }
     if (spec?.money?.rate_table) await refuseTableTypes(req, warehouseId, [spec.money.rate_table.table], { unknownType: true });
     const [stalled, tables, empty, unshared] = await Promise.all([stalledOf(req, history[0]), ownerTableChange(req, warehouseId, history, spec, useCase, person),
-      emptyDataWarning(req, warehouseId, spec, useCase, parseTableScopeText(session.table_scope).scopes), newAppReads(req, warehouseId, spec, useCase)]);
+      emptyDataWarning(req, warehouseId, spec, useCase, chosenTableScopes(spec.data, parseTableScopeText(session.table_scope).scopes)), newAppReads(req, warehouseId, spec, useCase)]);
     const plan = I.planSubmission(history, spec, stalled, { requester: person.username, tableChange: tables.change });
     if (moved) plan.summary.result_table_moved = moved;
     if (tables.change) plan.summary.table_change = tables.change;
@@ -1591,7 +1663,8 @@ function registerImplementRoutes(app, deps) {
     if (!rebuildAsIs) I.refuseUnchanged(plan);
     const { spec, warnings: outputWarnings } = await outputBeforeBuild(req, warehouseId, planned, useCaseId);
     const warnings = [...noted, ...outputWarnings];
-    const sessionParams = notebookParamsFromSessionForGenerateRun(session, sid);
+    // REQ-389: the build reads the scope the person chose on the Data step, not always the Discover run's scope.
+    const sessionParams = withChosenTableScope(notebookParamsFromSessionForGenerateRun(session, sid), spec.data);
     // Run-as-me (REQ-113): the job gets no App principal and runs as the signed-in person.
     const params = I.implementJobParams(sessionParams, useCaseId, plan.nextVersion, runAsPerson() ? '' : ownServicePrincipalId(), runAsPerson());
     const token = P.personTokenOf(req);
@@ -1601,7 +1674,7 @@ function registerImplementRoutes(app, deps) {
       return sqlResultToObjects(await executeSql(req.dbHost, token, warehouseOf(req), sql, parameters,
         { rowLimit: 500, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' }));
     };
-    const scopes = await launchScopesOf(req, warehouseId);
+    const scopes = await launchScopesOf(req, warehouseId, spec.data?.table_scope);
     Object.assign(params, await JC.implementCurrencyParams(spec?.money, { runSql, scopes }));
     if (!params['02_inspire_database']) params['02_inspire_database'] = inspire_database;
     if (!sessionParams['01_uc_metadata']) {
@@ -2090,12 +2163,13 @@ function registerImplementRoutes(app, deps) {
   });
 
   // The Data Filters of the session the preview names: the money previews and the profile read their tables through them.
-  async function launchScopesOf(req, warehouseId) {
+  // REQ-389: the Table Scope a wizard preview reads through. The Data step names its choice (asked); with none, the Discover run's scope.
+  async function launchScopesOf(req, warehouseId, asked) {
     const sid = sessionIdOf(req);
     const { catalog, schema } = dbOf(req, splitInspireDatabase);
     const session = await fetchInspireSessionWidgetRow(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid);
     if (!session) throw I.badRequest(`No Inspire session ${sid} is in this Inspire database, so Inspire cannot read its Data Filters.`, 404);
-    return parseTableScopeText(session.table_scope).scopes;
+    return previewScopesOf(asked, parseTableScopeText(session.table_scope).scopes);
   }
 
   function builtData(history) {
@@ -2143,7 +2217,7 @@ function registerImplementRoutes(app, deps) {
     if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
     try {
       const warehouseId = warehouseOf(req);
-      const scopes = await launchScopesOf(req, warehouseId);
+      const scopes = await launchScopesOf(req, warehouseId, req.body?.table_scope);
       const column = req.body?.rate_column;
       const made = column ? GP.rateColumnSampleSql(req.body?.table, req.body?.currency_column, column, scopes)
         : GP.rateSampleSql(req.body?.rate_table, req.body?.base, scopes);
@@ -2168,7 +2242,7 @@ function registerImplementRoutes(app, deps) {
       const warehouseId = byColumn ? warehouseOf(req) : '';
       let currencies = codes.map((code) => ({ code, records: null }));
       if (byColumn) {
-        const scopes = await launchScopesOf(req, warehouseId);
+        const scopes = await launchScopesOf(req, warehouseId, req.body?.table_scope);
         const made = GP.currencySpreadSql(req.body?.table, req.body?.currency_column, scopes);
         if (!made) throw I.badRequest('Name the use case table and its currency column, and the reporting currency as a three-letter code such as USD.');
         const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.CURRENCY_SPREAD_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
@@ -2188,7 +2262,7 @@ function registerImplementRoutes(app, deps) {
     if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
     try {
       const warehouseId = warehouseOf(req);
-      const scopes = await launchScopesOf(req, warehouseId);
+      const scopes = await launchScopesOf(req, warehouseId, req.body?.table_scope);
       const made = GP.moneyValueSampleSql(req.body?.table, req.body?.value, scopes, req.body?.lost_filter ?? null);
       if (!made) throw I.badRequest('Name the use case table, and the value: a fixed amount, one column, or an equation over its columns, with one currency.');
       const found = await executeSql(req.dbHost, token, warehouseId, made.sql, made.parameters, { rowLimit: GP.MONEY_VALUE_ROWS, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' });
@@ -2215,7 +2289,7 @@ function registerImplementRoutes(app, deps) {
       });
       if (!got.ok) throw I.badRequest(`the model ${endpoint} did not answer: ${got.data.message || got.data.error || `HTTP ${got.status}`}`, 502);
       const described = MD.parseDescription(got.data, columns);
-      if (described.problems.length) return res.status(422).json({ error: described.problems.join(' '), problems: described.problems, model: endpoint });
+      if (described.problems.length) return res.status(422).json({ error: joinSentences(...described.problems), problems: described.problems, model: endpoint });
       return res.json({ value: described.value, explanation: described.explanation, model: endpoint });
     } catch (err) {
       return sendError(res, err);
@@ -2249,7 +2323,8 @@ function registerImplementRoutes(app, deps) {
         throw I.badRequest(`${String(useCase.use_case ?? '').trim() || 'This use case'} names no main table as catalog.schema.table, so Inspire cannot read it for Data groups.`);
       }
       await refuseTableTypes(req, warehouseId, [table], { unknownType: true });
-      const launchScopes = parseTableScopeText(session?.table_scope).scopes;
+      // REQ-389: the profile reads through the Data step's choice when the wizard names one, else the Discover run's scope.
+      const launchScopes = previewScopesOf(req.body?.table_scope ?? req.query.table_scope, parseTableScopeText(session?.table_scope).scopes);
       const options = (rowLimit) => ({ rowLimit, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s', signal: stop.signal });
       const rows = async (sql, parameters, rowLimit) => sqlResultToObjects(await executeSql(req.dbHost, token, warehouseId, sql, parameters, options(rowLimit)));
       let refusals = [];
@@ -2579,8 +2654,8 @@ function registerImplementRoutes(app, deps) {
       body: jsonWithInt64Ids(update, ['job_id']),
     }).catch(refused);
     if (updated.ok) return '';
-    return [change && inspireJobEnvironmentWarning(jobId, { from: change.from, reason: reason(updated) }),
-      tagged && inspireJobTestTagWarning(jobId, { ...tagged, reason: reason(updated) })].filter(Boolean).join(' ');
+    return joinSentences(change && inspireJobEnvironmentWarning(jobId, { from: change.from, reason: reason(updated) }),
+      tagged && inspireJobTestTagWarning(jobId, { ...tagged, reason: reason(updated) }));
   }
 
   app.post('/api/inspire/implement/rerun', requireToken, async (req, res) => {

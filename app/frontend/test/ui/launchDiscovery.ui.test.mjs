@@ -73,6 +73,7 @@ test('AI Enhanced Discovery is recommended and the default, both modes are expla
     await page.locator('button[title="s"]').click();
     await page.locator('button[title="orders"]').click();
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1, 'the launch was sent once');
     assert.equal(made.launches[0].params['03_discovery_type'], 'AI Enhanced Discovery', 'AI Enhanced Discovery is the default');
     assert.deepEqual(pageErrors, []);
@@ -92,6 +93,7 @@ test('picking Standard Discovery launches with it', async () => {
     await page.locator('button[title="s"]').click();
     await page.locator('button[title="orders"]').click();
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1, 'the launch was sent once');
     assert.equal(made.launches[0].params['03_discovery_type'], 'Standard Discovery');
     assert.deepEqual(pageErrors, []);

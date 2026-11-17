@@ -434,6 +434,16 @@ class AppYamlTest(unittest.TestCase):
         self.assertEqual(self.deploy({"TEST_TAG": "inspire-rc0"})[6], "inspire-rc0")
         self.assertEqual(self.deploy({"TEST_TAG": ""})[6], "")
 
+    def test_the_deploy_step_hands_the_picked_data_catalogs_to_the_app_env(self):
+        self.assertEqual(self.deploy({"DATA_CATALOGS": ["sales", "hr"]})[7]["INSPIRE_DATA_CATALOGS"], '["sales", "hr"]')
+        self.assertNotIn("INSPIRE_DATA_CATALOGS", self.deploy({"DATA_CATALOGS": []})[7] or {})
+
+    def test_the_deploy_step_writes_no_data_catalog_line_when_the_all_token_was_picked(self):
+        self.assertNotIn("INSPIRE_DATA_CATALOGS", self.deploy({"DATA_CATALOGS": ["sales", "hr"], "DATA_ALL_PICKED": True})[7] or {},
+                         "All catalogs stays open to catalogs created later (must-exclude)")
+        self.assertEqual(self.deploy({"DATA_CATALOGS": ["sales"], "DATA_ALL_PICKED": False})[7]["INSPIRE_DATA_CATALOGS"], '["sales"]',
+                         "an explicit pick is still written (must-keep)")
+
     def deploy(self, extra):
         written = []
         saved, clock = setup.write_app_yaml_deploy, setup.time
@@ -1964,6 +1974,32 @@ class RunAsTest(unittest.TestCase):
             path = os.path.join(folder, "app.yaml")
             stamped = setup.write_app_yaml_deploy(path, "my.inspire", "wh", "/n", "sp", None, None, {"INSPIRE_RELEASE_TAG": "v1.5.3-rc.2"})
         self.assertIn('  - name: "INSPIRE_RELEASE_TAG"\n    value: "v1.5.3-rc.2"', stamped)
+
+    def test_app_yaml_carries_the_installer_data_catalogs_as_a_json_list_and_none_when_nothing_was_picked(self):
+        import tempfile as _t
+        with _t.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "app.yaml")
+            picked = setup.write_app_yaml_deploy(path, "my.inspire", "wh", "/n", "sp", None, None,
+                                                 setup.installer_data_catalog_env(["sales", "hr"]))
+            none = setup.write_app_yaml_deploy(path, "my.inspire", "wh", "/n", "sp", None, None,
+                                               setup.installer_data_catalog_env([]) or None)
+        self.assertIn('  - name: "INSPIRE_DATA_CATALOGS"\n    value: "[\\"sales\\", \\"hr\\"]"', picked)
+        self.assertNotIn("INSPIRE_DATA_CATALOGS", none)
+
+    def test_the_all_token_is_detected_alone_or_among_others_but_never_from_a_plain_pick(self):
+        self.assertTrue(setup.data_pick_is_all(setup.DATA_ALL))
+        self.assertTrue(setup.data_pick_is_all(setup.DATA_ALL + ", sales"))
+        self.assertFalse(setup.data_pick_is_all("sales,hr"), "a list of names is an explicit pick (must-keep)")
+        self.assertFalse(setup.data_pick_is_all(""))
+        self.assertFalse(setup.data_pick_is_all(None))
+
+    def test_installer_data_catalog_env_writes_nothing_for_the_all_token(self):
+        self.assertEqual(setup.installer_data_catalog_env(["sales"], True), {})
+        self.assertEqual(setup.installer_data_catalog_env(["sales"], False), {"INSPIRE_DATA_CATALOGS": '["sales"]'})
+
+    def test_installer_data_catalog_env_drops_blank_names_and_keeps_the_pick_order(self):
+        self.assertEqual(setup.installer_data_catalog_env(["zeta", " ", "alpha", ""]), {"INSPIRE_DATA_CATALOGS": '["zeta", "alpha"]'})
+        self.assertEqual(setup.installer_data_catalog_env(None), {})
 
 
 class RunAsPreflightTest(unittest.TestCase):

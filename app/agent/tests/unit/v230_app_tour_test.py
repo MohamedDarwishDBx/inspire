@@ -198,7 +198,7 @@ def test_load_app_fits_the_tour_never_blocks_and_logs_each_replacement(tmp_path,
     os.makedirs(tmp_path / shell_core.PAGES_DIR)
     (tmp_path / shell_core.PAGES_DIR / f"{page['id']}.json").write_text(json.dumps(page), encoding="utf-8")
     (tmp_path / shell_core.SETTINGS_FILE).write_text(json.dumps(dict(SETTINGS, pages=[page["id"]])), encoding="utf-8")
-    _, pages = shell_core.load_app(str(tmp_path))
+    _, pages, _aside = shell_core.load_app(str(tmp_path))
     said = capsys.readouterr().err
     assert f"[APP-TOUR FIXED] page={page['id']} tour English step 5: the text shows a raw column id or SQL; replaced by the template step for actions" in said
     assert shell_core.tour_template("actions", "English", page) in pages[0]["tour"]["steps"]["English"]

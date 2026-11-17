@@ -73,7 +73,7 @@ test('a queued rebuild overlays the older row until the new version lands (REQ-3
   markBuildPending('uc-rebuild', { name: 'Rebuild', version: null }, Date.now());
   const older = [{ use_case_id: 'uc-rebuild', use_case_name: 'Rebuild', spec_version: 1, status: 'ready' }];
   const shown = withPendingBuilds(older, Date.now()).filter((r) => r.use_case_id === 'uc-rebuild');
-  assert.deepEqual(shown.map((r) => [r.spec_version, r.status, r.pending]), [[1, 'queued', true]]);
+  assert.deepEqual(shown.map((r) => [r.spec_version, r.status, r.pending]), [[2, 'queued', true]], 'the queued build is the next version, not the superseded v1 (REQ-386)');
   markBuildPending('uc-rebuild', { name: 'Rebuild', version: 2 }, Date.now());
   assert.deepEqual(withPendingBuilds(older, Date.now()).filter((r) => r.use_case_id === 'uc-rebuild').map((r) => [r.status, r.pending]), [['queued', true]], 'version 2 is not landed yet');
   assert.deepEqual(withPendingBuilds([{ ...older[0], spec_version: 2, status: 'ready' }], Date.now()).map((r) => [r.spec_version, r.status]), [[2, 'ready']]);

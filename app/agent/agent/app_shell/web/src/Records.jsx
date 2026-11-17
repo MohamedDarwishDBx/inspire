@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import DataTable, { FieldGrid, recordColumns } from './DataTable.jsx';
 import { GenieMark, Icon } from './icons.jsx';
 import { ExplainButton } from './Genie.jsx';
+import Markdown from './Markdown.jsx';
 import { AGENT_OPEN, showVisible } from './agentView.js';
 import { askGenieAbout, fixQuestion, genieOn } from './genieAsk.js';
 import { BUSY_TITLE, fieldsOf, tableContext } from './explain.js';
@@ -15,7 +16,7 @@ import { foundNothingText } from './zeroState.js';
 
 import { hueVars, reducedMotion } from './theme.js';
 import { Failure, Popover, Skeleton, useDebounced, useDialog, useToast, PlainNote, toastFailure } from './ui.jsx';
-import { failureOf, getListed, getRecords, waitingOf } from './api.js';
+import { failureOf, getListed, getPopulation, getRecords, waitingOf } from './api.js';
 import WaitingForAccess from './WaitingForAccess.jsx';
 import { HistoryList, useHistory } from './History.jsx';
 import { SaveButton, missingWhy, savingLabel, useWrite } from './saving.jsx';
@@ -26,7 +27,7 @@ import { ColumnFilterStatus, withColumnFilters } from './ColumnFilters.jsx';
 import { useCopyLink } from './PageLink.jsx';
 import { WindowChips, useFocusList, useMyView } from './MyView.jsx';
 import { EVERYTHING, listLimit, listWindow, localDay, markVisit, narrowWindow, nextDay, visitedAt, windowLabel } from './prefs.js';
-import { BatchesDialog, BulkBar, CaughtUp, ChoiceSelect, ConflictNote, HelpDialog, NoteField, SimilarDialog, isTyping, useActs } from './Work.jsx';
+import { BatchesDialog, BulkBar, CaughtUp, ChoiceSelect, ConflictNote, HelpDialog, SimilarDialog, isTyping, useActs } from './Work.jsx';
 import { recordName, recordSentenceName,
   DRAFT_LABEL, ACT_LIMIT, CHOICE_COLUMN, CLOSED_STATUSES, DONE, HELD, NOTE_CHARS, PAGE_SIZES, REASON_CHARS, UNEXPLAINED, actionForm, actionProblem, actionValues, pageChoices, pickChoice, statusKind, OPEN_STATUSES, isOpenStatus, choiceLabel, closingChoices, isDefaultChoice, QUICK_CLOSE,
   aiValue, askQuestions, changeBadge, doneText, dueText, explainContext, heldBack, heldText, impactText, initials, isOverdue, keptText, leftText, matchOf,
@@ -46,13 +47,10 @@ const NONE = new Map();
 const NO_ALIASES = {};
 const KEPT = new Map();
 const NO_PICKS = {};
-const FOOTER_CELLS = 6;
-const NARROW_FOOTER = 470;
 const SOMEONE_ELSE = ' someone else';
 const CLEAR_OWNER = ' clear owner';
 const SAVED = 'Action saved. The earlier version stays in the history.';
 const SAVE_WRITE = 'drawer:save';
-const NOTE_WRITE = 'drawer:note';
 const SNOOZE_WRITE = 'drawer:snooze';
 const GIVE_WRITE = 'drawer:give';
 const closeWrite = (choice) => `drawer:close:${choice.id}`;
@@ -131,24 +129,6 @@ function useAction(data, person, acts, label, choices) {
     return send(values, said, key);
   };
   return { form, setForm, failure, saving, slow: gate.slow, mine: gate.mine, save, send, choices };
-}
-
-function AddNote({ action }) {
-  const [note, setNote] = useState('');
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!note.trim()) return;
-    if (await action.send({ note: note.trim() }, 'Note added. The status stays as it was.', NOTE_WRITE)) setNote('');
-  };
-  return (
-    <section className="sec" aria-label="Add a note">
-      <h3><Icon name="edit" size={13} />Add a note</h3>
-      <form className="note-f" onSubmit={submit}>
-        <NoteField name="record_note" value={note} onChange={setNote} label="Note for the history" />
-        <SaveButton write={NOTE_WRITE} type="submit" disabled={!note.trim()} why={missingWhy(['a note'])}>Add note</SaveButton>
-      </form>
-    </section>
-  );
 }
 
 const ACT_OFF = 'This record cannot be acted on here: it is deleted, held, or this App keeps no action tracker.';
@@ -264,16 +244,17 @@ export function ExplainedAnswer({ explained }) {
   if (!explained) return null;
   if (explained.state === 'busy') return <p className="explained" role="status" data-explained="busy">Genie is explaining this record.</p>;
   if (explained.state === 'failed') return <p className="explained" role="status" data-explained="failed">Genie could not explain this record. Try Explain again.</p>;
-  return <div className="explained" data-explained="done">{String(explained.text).split(/\n+/).filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}</div>;
+  return <div className="explained" data-explained="done"><Markdown text={String(explained.text)} /></div>;
 }
 
-function Why({ view, row, meta, explain, title, genieBusy, explained }) {
+function Why({ view, row, meta, explain, title, genieBusy, explained, compared }) {
   const reasons = meta.reasons ? reasonsOf(row[meta.reasons]).slice(0, 8) : [];
   const button = explain && <ExplainButton title={title} busy={genieBusy || explained?.state === 'busy'} onClick={explain} />;
   return (
     <section className="sec" aria-label="Why it is flagged">
       <h3><GenieMark size={13} />Why it is flagged</h3>
       {view.explanation ? <p>{view.explanation}</p> : <div className="unexplained"><p>{view.held ? `${HELD}: ${view.held}.` : UNEXPLAINED}</p>{button}</div>}
+      {compared && <p className="compared" data-compared>{compared}</p>}
       {view.evidence.length > 0 && <ul className="ev">{view.evidence.map((e, i) => <li key={i}>{e}</li>)}</ul>}
       {reasons.length > 0 && <div className="reasons">{reasons.map((t, i) => <span key={`${i}-${t}`} className="chip chip--static">{t}</span>)}</div>}
       {view.explanation && button && <div className="why-x">{button}</div>}
@@ -326,16 +307,6 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
   const [undoAsk, setUndoAsk] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [more, setMore] = useState(false);
-  const [foot, setFoot] = useState(null);
-  const [narrow, setNarrow] = useState(false);
-  useLayoutEffect(() => {
-    if (!foot) return undefined;
-    const read = () => setNarrow(foot.getBoundingClientRect().width < NARROW_FOOTER);
-    read();
-    const watch = new ResizeObserver(read);
-    watch.observe(foot);
-    return () => watch.disconnect();
-  }, [foot]);
   useEffect(() => { setUndoAsk(false); }, [linkKey, undoBatch]);
   useEffect(() => { setMore(false); }, [linkKey]);
   const modify = canModify && !deleted && !readOnly;
@@ -357,9 +328,18 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
   const explainKey = useRef(linkKey);
   explainKey.current = linkKey;
   useEffect(() => { setExplained(null); }, [linkKey]);
+  // REQ-400: the population line comes from one deterministic read, so it shows even when Genie cannot answer.
+  const [compared, setCompared] = useState('');
+  useEffect(() => {
+    setCompared('');
+    if (!linkKey) return undefined;
+    let live = true;
+    getPopulation(pageId, linkKey).then((out) => { if (live) setCompared(out?.text || ''); }).catch(() => {});
+    return () => { live = false; };
+  }, [linkKey, pageId, nonce]);
   const explain = genieOn(app, pageId) && onExplain ? () => {
     setExplained({ state: 'busy' });
-    Promise.resolve(onExplain('record', title, explainContext(meta, log.data, row, unit, kind), { inPlace: true })).then((answer) => {
+    Promise.resolve(onExplain('record', title, { ...explainContext(meta, log.data, row, unit, kind), key: linkKey }, { inPlace: true })).then((answer) => {
       if (explainKey.current === linkKey) setExplained(answer?.text ? { state: 'done', text: answer.text } : { state: 'failed' });
     });
   } : null;
@@ -431,7 +411,7 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                 {saving.note && <div className="fx">{saving.note}</div>}
               </section>
             )}
-            <Why view={view} row={row} meta={meta} explain={explain} title={title} genieBusy={genieBusy} explained={explained} />
+            <Why view={view} row={row} meta={meta} explain={explain} title={title} genieBusy={genieBusy} explained={explained} compared={compared} />
             {view.confidence && (
               <section className="sec" aria-label="How sure the AI is">
                 <h3><GenieMark size={13} />How sure the AI is</h3>
@@ -451,7 +431,6 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
               </section>
             )}
             {acting && !readOnly && <ActionPanel action={action} owners={owners} pageId={pageId} reason={reason} owner={ownerInput} closing={closing} unit={unit} kind={kind} />}
-            {acting && !readOnly && <AddNote action={action} />}
             {genieOn(app, pageId) && <AskAbout meta={meta} onAsk={ask} busy={genieBusy} />}
             {details.length > 0 && (
               <section className="sec" aria-label="Details">
@@ -470,41 +449,46 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
             )}
           </div>
           {cluster.length > 0 && <ClusterBar page={groupPage} app={app} name={String(row[meta.group.column] ?? '')} items={cluster} decide={decide} can={!!tracker} />}
-          <footer ref={setFoot} className="panel-f dr-f" data-toast-host data-narrow={narrow || undefined}>
+          <footer className="panel-f dr-f" data-toast-host>
             <Failure failure={action.failure} as="div" className="hint hint--box">
               <Icon name="info" size={14} /><span>{action.failure?.text}</span>
               {action.failure?.stale && <button type="button" className="link" onClick={() => log.reload().catch(() => {})}><Icon name="undo" size={13} />Reload the record</button>}
             </Failure>
             {work && <WorkBar key={linkKey} work={work} action={action} tomorrow={tomorrow} canAct={acting} />}
             {acting && !work && !closed && (() => {
-              const closers = closingChoices(choices).map((c, i) => {
+              const picks = closingChoices(choices);
+              const kinds = picks.map((c) => statusKind(c.status));
+              const closers = picks.map((c, i) => {
                 const [text, act] = isDefaultChoice(c) ? QUICK_CLOSE[statusKind(c.status)] : [c.label, `choice-${c.id}`];
                 const done = statusKind(c.status) === 'done';
-                const shape = { className: `btn ${i === 0 ? 'btn--pri' : ''}`, 'data-act': act, 'data-choice': c.id, ...(i === 0 && done ? { 'data-key': 'd' } : {}) };
-                const face = <>{done && i === 0 && <Icon name="check" size={15} />}{text}</>;
+                const shape = { className: `btn ${i === 0 && done ? 'btn--pri' : ''}`, 'data-act': act, 'data-choice': c.id, ...(i === 0 && done ? { 'data-key': 'd' } : {}) };
+                const face = <>{i === 0 && done && <Icon name="check" size={15} />}{text}</>;
                 if (statusKind(c.status) === 'dismissed') return <button key={c.id} {...shape} disabled={action.saving} onClick={() => dismiss(c)}>{face}</button>;
                 const write = closeWrite(c);
+                const finish = async () => {
+                  const saved = await action.save(pickChoice(action.form, choices, c.id), doneText({ action_status: c.status, [CHOICE_COLUMN]: c.id }, '', '', choices), write);
+                  if (saved && statusKind(c.status) === 'done') onClose();
+                };
                 return (
                   <SaveButton key={c.id} write={write} {...shape}
-                    onClick={() => action.save(pickChoice(action.form, choices, c.id), doneText({ action_status: c.status, [CHOICE_COLUMN]: c.id }, '', '', choices), write)}>
+                    onClick={finish}>
                     {face}
                   </SaveButton>
                 );
               });
-              const cells = [
-                ...closers,
-                <SnoozeButton key="snooze" action={action} tomorrow={tomorrow} />,
+              // REQ-397: one primary action, a short row (Not an issue, Give to someone, Snooze), and More for the rest.
+              const primary = closers.filter((_, i) => kinds[i] === 'done');
+              const dismissals = closers.filter((_, i) => kinds[i] === 'dismissed');
+              const rest = [
+                ...closers.filter((_, i) => kinds[i] !== 'done' && kinds[i] !== 'dismissed'),
                 <button key="draft" type="button" className="btn" onClick={() => setDrafting(true)} data-act="draft"><Icon name="send" size={14} />{DRAFT_LABEL}</button>,
                 genieOn(app, pageId) && <button key="genie" type="button" className="btn" onClick={() => ask(fixQuestion(title))} data-act="genie"><GenieMark size={14} />Ask Genie to fix</button>,
                 ...(modify ? modifyButtons : []),
               ].filter(Boolean);
-              const folded = narrow ? cells.length > closers.length + 1 : cells.length > FOOTER_CELLS;
-              const draft = narrow && cells.find((c) => c.key === 'draft');
-              const kept = !folded ? cells : narrow ? closers : cells.slice(0, FOOTER_CELLS - 1);
-              const rest = cells.filter((c) => !kept.includes(c) && c !== draft);
               return (
                 <>
-                  {kept.slice(0, 2)}
+                  {primary}
+                  {dismissals}
                   <select className="btn" aria-label="Give to someone" value="" onChange={giveTo} disabled={action.saving} aria-busy={action.mine(GIVE_WRITE) || undefined}>
                     <option value="">{action.mine(GIVE_WRITE) ? savingLabel(action.slow) : owner ? `With ${owner}` : 'Give to someone'}</option>
                     {owner && <option value={CLEAR_OWNER}>Clear the owner</option>}
@@ -512,10 +496,9 @@ function Drawer({ meta, row: given, onClose, history, canModify, tracker, owners
                     {owners.filter((o) => o !== owner && o !== person).map((o) => <option key={o} value={o}>Give to {o}</option>)}
                     <option value={SOMEONE_ELSE}>Someone else…</option>
                   </select>
-                  {kept.slice(2)}
-                  {folded && <button type="button" className="btn" aria-expanded={more} onClick={() => setMore(!more)} data-act="more"><Icon name="dots" size={14} />{more ? 'Fewer' : 'More'}</button>}
-                  {folded && draft}
-                  {folded && more && rest}
+                  <SnoozeButton key="snooze" action={action} tomorrow={tomorrow} />
+                  <button type="button" className="btn" aria-expanded={more} onClick={() => setMore(!more)} data-act="more"><Icon name="dots" size={14} />{more ? 'Fewer' : 'More'}</button>
+                  {more && rest}
                 </>
               );
             })()}

@@ -171,6 +171,7 @@ export const draftMessage = (body) => json('POST', 'records/draft', body);
 export const getBatches = (page) => json('GET', `records/batches?page=${encodeURIComponent(page)}`);
 export const getSimilar = (page, recordKey, by) => json('GET', `records/similar?${new URLSearchParams({ page, by: by.join(','),
   ...(Array.isArray(recordKey) ? { record_keys: JSON.stringify(recordKey.map(String)) } : { record_key: recordKey }) })}`);
+export const getPopulation = (page, recordKey) => json('GET', `records/population?${new URLSearchParams({ page, record_key: recordKey })}`);
 export const getFilterOptions = (page, which, q) => json('GET', `filters/options?${new URLSearchParams({ page, ...which, q })}`);
 export const getRuns = (page, offset = 0) => json('GET', `runs?${new URLSearchParams({ page, offset })}`);
 export const getFreshness = (page) => json('GET', `freshness?page=${encodeURIComponent(page)}`);

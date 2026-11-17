@@ -11,7 +11,7 @@ const USE_CASE = { id: 'N01-U01', use_case: 'Predict churn', primary_table: 'mai
 const BUILT = { session_id: '42', use_case_id: 'N01-U01', spec_version: 1, status: 'ready', created_by: 'owner@example.com', updated_at: '2026-10-21T04:00:00Z',
   spec_json: JSON.stringify({ use_case_id: 'N01-U01', config: { warehouse_id: 'wh1', result_table: 'main.inspire.churn_out' }, outputs: {} }),
   asset_status: JSON.stringify({}) };
-const REFUSAL = `${VIEW} is a metric view, so Inspire leaves it out of Data Filters; pick its source table instead`;
+const REFUSAL = `${VIEW} is a metric view, so Inspire leaves it out of Data Management; pick its source table instead.`;
 
 async function call(base, url, { method = 'GET', body } = {}) {
   const resp = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'x-forwarded-email': 'owner@example.com' },
@@ -65,4 +65,9 @@ test('the refusal line is the one the lib builds, so the route and the App say t
   const stmt = I.tableTypeStatement('main.s.customer_value_metrics');
   assert.match(stmt.sql, /information_schema\.tables/);
   assert.deepEqual(stmt.parameters.map((p) => [p.name, p.value]), [['s', 's'], ['t', 'customer_value_metrics']]);
+});
+
+// REQ-370: the refusal is one whole sentence, so a line that adds a sentence after it reads cleanly.
+test('the metric view refusal ends with a full stop, so a sentence added after it does not run on (REQ-370)', () => {
+  assert.match(REFUSAL, /pick its source table instead\.$/);
 });

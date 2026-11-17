@@ -107,6 +107,7 @@ test('a folder the person cannot write keeps Get Started off and shows the refus
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
     await launchButton(page).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => calls.runs === 1, 'the launch');
     assert.deepEqual([...new Set(calls.urls)], ['/api/output-folder/check']);
     assert.deepEqual(notFound(ui.pageErrors), []);
@@ -178,6 +179,7 @@ test('an App manager on Start sees one quiet line naming where results go and ne
     await shoot(page, 'launch-manager-fallback');
 
     await launchButton(page).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     const notes = page.getByTestId('launch-notes');
     await notes.waitFor({ timeout: 15000 });
     assert.equal(await notes.locator('li > span').innerText(), FALLBACK_SENTENCE, 'the run page repeats the one sentence');

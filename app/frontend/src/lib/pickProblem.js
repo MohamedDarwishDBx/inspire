@@ -1,7 +1,7 @@
 import { failureCauseOf } from './plainText.js';
 
 // The refusal a Data Filters read gives for a metric view (backend/lib/metricViews.js). It is a fact about the pick, not a fault.
-export const METRIC_VIEW_REFUSAL = /is a metric view, so Inspire leaves it out of Data Filters/;
+export const METRIC_VIEW_REFUSAL = /is a metric view, so Inspire leaves it out of Data Management/;
 
 // The refusal the backend gives for a table whose type cannot be read (fail closed): named, with the plain reason, no Try again.
 export const UNUSABLE_TYPE_REFUSAL = /Inspire could not read this table's type, so it cannot be used here/;

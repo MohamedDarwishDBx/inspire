@@ -37,8 +37,8 @@ const state = {
 function reset(overrides = {}) {
   Object.assign(state, {
     managers: [], managerGroups: [], personGroups: [], aclStatus: 200, personAppsScope: true, launchers: {}, sessionLaunchers: {}, history: [], calls: [],
-    launches: [], knownSessions: [], ledgerSessions: [], nextRunId: 501, holdFetch: null, createFailure: '', sessionRows: {}, groupParents: {}, indirectGroups: [], conflictOn: null, ucSchemas: null, ucTables: null,
-    createdJob: null, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runViewDenied: null, exportDenied: false, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, tableColumns: {}, files: {}, sessionBusiness: {},
+    launches: [], profiles: [], profileLinks: [], knownSessions: [], ledgerSessions: [], nextRunId: 501, holdFetch: null, createFailure: '', sessionRows: {}, groupParents: {}, indirectGroups: [], conflictOn: null, ucSchemas: null, ucTables: null,
+    createdJob: null, profileTablesMissing: false, presentPaths: [], statusErrors: {}, catalogPaths: {}, catalogReasons: {}, catalogColumnMissing: false, catalogQueryError: '', runJobs: {}, runStates: null, runViewDenied: null, exportDenied: false, runOutputs: null, sessionList: [], usecases: [], usecaseColumns: null, tableColumns: {}, files: {}, sessionBusiness: {},
     ...folderModel({ folders: { '/Shared/demos': { id: 7, writers: '*' } } }),
   }, overrides);
 }
@@ -53,7 +53,7 @@ function paramOf(body, name) {
 }
 
 const USECASE_RULE_COLUMNS = ['inspire_score', 'quality_score', 'priority_score', 'elite_status', 'business_domain'];
-const HISTORY_COLUMNS = ['session_id', 'use_case_id', 'spec_version', 'status', 'created_by', 'spec_json'];
+const HISTORY_COLUMNS = ['session_id', 'use_case_id', 'spec_version', 'status', 'created_by', 'spec_json', 'built_framing'];
 
 function answerSql(body) {
   const sql = String(body.statement || '');
@@ -66,6 +66,57 @@ function answerSql(body) {
     const value = Object.hasOwn(state.catalogPaths || {}, sid) ? state.catalogPaths[sid] : undefined;
     const reason = (state.catalogReasons || {})[sid] || null;
     return sqlResult(['catalog_json_path', 'catalog_json_reason'], value === undefined ? [] : [[value, reason]]);
+  }
+  // Before the first save the profile tables do not exist: a metadata read finds neither, and a read or write of one fails as Databricks does.
+  if (/information_schema\.tables/i.test(sql) && /table_name IN \(:profile/.test(sql)) {
+    const present = state.profileTablesMissing ? [] : ['__inspire_profile', '__inspire_profile_link'];
+    return sqlResult(['table_name'], present.map((name) => [name]));
+  }
+  if (state.profileTablesMissing && /__inspire_profile/.test(sql) && !/^\s*CREATE TABLE\b/i.test(sql)) {
+    return { statement_id: 's1', status: { state: 'FAILED', error: { message: '[TABLE_OR_VIEW_NOT_FOUND] The table or view cannot be found. Verify the spelling.' } } };
+  }
+  // Business profiles (REQ-364 to REQ-366): the profile table and its run links, kept in state.profiles and state.profileLinks.
+  if (/^\s*CREATE TABLE IF NOT EXISTS\b/i.test(sql) && sql.includes('__inspire_profile')) return sqlResult(['ok'], []);
+  if (/^\s*INSERT INTO\b/i.test(sql) && sql.includes('__inspire_profile_link')) {
+    const row = Object.fromEntries((body.parameters || []).map((p) => [p.name, p.value]));
+    state.profileLinks.push({ ...row, linked_at: String(state.profileLinks.length + 1) });
+    return sqlResult(['num_inserted_rows'], [['1']]);
+  }
+  if (/^\s*INSERT INTO\b/i.test(sql) && sql.includes('__inspire_profile')) {
+    const row = Object.fromEntries((body.parameters || []).map((p) => [p.name, p.value]));
+    state.profiles.push({ ...row, created_by: row.by, updated_by: row.by, updated_at: '2026-11-16T09:00:00Z' });
+    return sqlResult(['num_inserted_rows'], [['1']]);
+  }
+  if (/^\s*UPDATE\b/i.test(sql) && sql.includes('__inspire_profile')) {
+    const row = Object.fromEntries((body.parameters || []).map((p) => [p.name, p.value]));
+    const saved = state.profiles.find((p) => p.profile_id === row.profile_id);
+    if (saved) Object.assign(saved, { name: row.name, business_name: row.business_name, spec_json: row.spec_json, updated_by: row.by, updated_at: '2026-11-16T10:00:00Z' });
+    return sqlResult(['num_affected_rows'], [[saved ? '1' : '0']]);
+  }
+  if (/^\s*SELECT CAST\(l\.session_id AS STRING\)/.test(sql) && sql.includes('__inspire_profile_link')) {
+    const db = paramOf(body, 'inspire_database');
+    const asked = (body.parameters || []).filter((p) => /^s\d+$/.test(p.name)).map((p) => p.value);
+    const rows = state.profileLinks.filter((l) => l.inspire_database === db && asked.includes(l.session_id)).slice().reverse()
+      .map((l) => {
+        const profile = state.profiles.find((p) => p.profile_id === l.profile_id);
+        return profile ? [l.session_id, l.profile_id, profile.name] : null;
+      }).filter(Boolean);
+    return sqlResult(['session_id', 'profile_id', 'profile_name'], rows);
+  }
+  if (/^\s*SELECT profile_id FROM\b/i.test(sql) && sql.includes('__inspire_profile')) {
+    const name = String(paramOf(body, 'name') || '').toLowerCase();
+    return sqlResult(['profile_id'], state.profiles.filter((p) => String(p.name).toLowerCase() === name).map((p) => [p.profile_id]));
+  }
+  if (/^\s*SELECT profile_id, name, business_name, spec_json\b/.test(sql) && sql.includes('__inspire_profile')) {
+    const id = paramOf(body, 'profile_id');
+    return sqlResult(['profile_id', 'name', 'business_name', 'spec_json', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+      state.profiles.filter((p) => p.profile_id === id).map((p) => [p.profile_id, p.name, p.business_name, p.spec_json, p.created_by, p.created_at ?? null, p.updated_by, p.updated_at]));
+  }
+  if (/^\s*SELECT profile_id, name, business_name, created_by\b/.test(sql) && sql.includes('__inspire_profile')) {
+    const business = paramOf(body, 'business_name');
+    const rows = state.profiles.filter((p) => !business || String(p.business_name).toLowerCase() === String(business).toLowerCase());
+    return sqlResult(['profile_id', 'name', 'business_name', 'created_by', 'created_at', 'updated_by', 'updated_at'],
+      rows.map((p) => [p.profile_id, p.name, p.business_name, p.created_by, p.created_at ?? null, p.updated_by, p.updated_at]));
   }
   if (/^\s*INSERT INTO\b/i.test(sql) && sql.includes('__inspire_launch')) {
     const row = Object.fromEntries((body.parameters || []).map((p) => [p.name, p.value]));
@@ -144,6 +195,18 @@ function answerSql(body) {
     const cols = (state.tableColumns || {})[name] || [];
     return sqlResult(['column_name', 'data_type', 'ordinal_position'], cols.map((c, i) => [c, 'string', String(i + 1)]));
   }
+  // REQ-389: the Results list reads a session's use cases whole, and the Table Scope of each session it lists.
+  if (/^\s*SELECT \* FROM\b/i.test(sql) && sql.includes('__inspire_usecases')) {
+    const asked = String((/WHERE session_id = (\d+)/.exec(sql) || [])[1] || '');
+    const rows = (state.listedUseCases || []).filter((u) => String(u.session_id) === asked);
+    const columns = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+    return sqlResult(columns, rows.map((r) => columns.map((c) => (r[c] == null ? null : String(r[c])))));
+  }
+  if (/^\s*SELECT CAST\(session_id AS STRING\) AS session_id, table_scope FROM\b/.test(sql) && sql.includes('__inspire_session')) {
+    const ids = ((/session_id IN \(([^)]*)\)/.exec(sql) || [])[1] || '').split(',').map((t) => t.trim()).filter(Boolean);
+    return sqlResult(['session_id', 'table_scope'], ids.filter((id) => (state.sessionTableScopes || {})[id] !== undefined)
+      .map((id) => [id, state.sessionTableScopes[id]]));
+  }
   if (/^\s*SELECT session_id,/.test(sql) && sql.includes('__inspire_usecases')) {
     const lacking = (state.usecaseColumns ? USECASE_RULE_COLUMNS.filter((c) => !state.usecaseColumns.includes(c) && new RegExp(`\\b${c}\\b`).test(sql)) : []);
     if (lacking.length) return { statement_id: 's1', status: { state: 'FAILED', error: { message: `[UNRESOLVED_COLUMN] A column with name \`${lacking[0]}\` cannot be resolved.` } } };
@@ -172,7 +235,12 @@ function answerSql(body) {
     return sqlResult(['session_id', 'title', 'rn'], rows.map((u, i) => [u.session_id, u.use_case, String(i + 1)]));
   }
   if (/^\s*SELECT\b/i.test(sql) && sql.includes('__inspire_implement')) {
-    const rows = state.history.map((r) => HISTORY_COLUMNS.map((c) => (c === 'spec_json' ? JSON.stringify(r[c] || {}) : (r[c] == null ? null : String(r[c])))));
+    if (state.implementReadError) return { statement_id: 's1', status: { state: 'FAILED', error: { message: state.implementReadError } } };
+    const rows = state.history.map((r) => HISTORY_COLUMNS.map((c) => {
+      if (c === 'spec_json') return JSON.stringify(r[c] || {});
+      if (c === 'built_framing') return r[c] == null ? null : JSON.stringify(r[c]);
+      return r[c] == null ? null : String(r[c]);
+    }));
     return sqlResult(HISTORY_COLUMNS, rows);
   }
   return sqlResult(['ok'], []);

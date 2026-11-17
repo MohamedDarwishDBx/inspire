@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { APP_DIR, BACKEND_DIR } = require('./lib/appPaths');
 const { redactConsole, redactCrashes } = require('./lib/redact');
+const { installerDataCatalogs } = require('./lib/installerDataCatalogs');
 
 redactConsole();
 // Load backend/.env then app/ then repo root — later files only fill keys not already set.
@@ -59,11 +60,12 @@ const { withBusyRetry } = require('./lib/busyRetry');
 const { registerShowcaseRoutes, showcaseWriteGuard } = require('./lib/showcase');
 const { loadSessionList, loadSessionOverviews, sessionListCap, SESSION_LIST_CAP } = require('./lib/reviewFigures');
 const { LIVE_STEP_STATUSES, liveDomainsOf, liveUseCasesOf } = require('../frontend/src/lib/liveUseCases.js');
+const { isInspireOwnName, isInspireOwnSchema } = require('../frontend/src/lib/inspireOwnObjects.js');
 const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('./lib/runSummary');
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
 const PM_ERROR = require('./lib/permissionError');
 const { apiRefusalText, logApiBody } = require('./lib/apiRefusal');
-const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
+const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, parseImplementRow, builtTableScopeOf, builtFramingOf, builtTextOf, latestBuiltRowsSql, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
 const { keepLongInteger, parseExactJson } = require('./lib/exactJson');
 const { int64Id, isInt64Id, jsonWithInt64Ids } = require('./lib/int64Id');
 const { dataFiltersOf, scopesOfSessions } = require('./lib/dataFilters');
@@ -82,6 +84,7 @@ const DJ = require('./lib/documentJob');
 const LC = require('./lib/launchChoice');
 const { crossSiteGuard } = require('./lib/crossSite');
 const L = require('./lib/launchLedger');
+const BP = require('./lib/businessProfiles');
 const { workspacePathProblem, rejectUnsafeQueryPath, fsApiPath, attachmentHeader } = require('./lib/workspacePaths');
 const { CACHE_REVALIDATE, compressedStatic, staticHeaders } = require('./lib/assetTypes');
 const { grantJobViewer, rememberViewer, viewerNoteOf } = require('./lib/jobViewer');
@@ -123,6 +126,8 @@ const DEFAULT_NOTEBOOK_PATH = process.env.NOTEBOOK_PATH || '';
 // Installer-injected defaults — pre-fill the Setup Wizard so users skip manual config.
 const DEFAULT_WAREHOUSE_ID = process.env.INSPIRE_WAREHOUSE_ID || '';
 const DEFAULT_INSPIRE_DB = process.env.INSPIRE_DATABASE || '';
+// The catalogs the installer picked for the App to read (REQ-359). Null means every catalog the person can see.
+const INSTALLER_DATA_CATALOGS = installerDataCatalogs(process.env.INSPIRE_DATA_CATALOGS);
 
 // Static token (legacy / manual config) — trim so pasted PATs with trailing newlines are accepted
 let SERVICE_TOKEN = (process.env.DATABRICKS_TOKEN || '').trim();
@@ -398,7 +403,7 @@ async function tableTypeByDescribe(host, token, warehouseId, catalog, schema, na
 
 // `known` holds the full names the REST listing already typed (and the metric views it hid); only the other names are probed.
 async function listTablesSql(host, token, warehouseId, catalog, schema, known = new Set()) {
-  if (!warehouseId || !catalog || !schema) return { rows: [], leftOut: 0 };
+  if (!warehouseId || !catalog || !schema) return { rows: [], leftOut: 0, metricViews: [] };
   try {
     const stmt = `SHOW TABLES IN ${quotedIdent(catalog)}.${quotedIdent(schema)}`;
     const result = await executeSql(host, token, warehouseId, stmt);
@@ -457,10 +462,10 @@ async function listTablesSql(host, token, warehouseId, catalog, schema, known = 
         ...(busyNames.has(tname) ? { type_check: 'busy', unusable_reason: TYPE_CHECK_BUSY_REASON } : {}),
       });
     }
-    return { rows: out, leftOut };
+    return { rows: out, leftOut, metricViews: [...metricViewNames] };
   } catch (err) {
     console.warn(`   ⚠️ SHOW TABLES fallback failed for ${catalog}.${schema}: ${err.message}`);
-    return { rows: [], leftOut: 0 };
+    return { rows: [], leftOut: 0, metricViews: [] };
   }
 }
 
@@ -1633,6 +1638,7 @@ app.get('/api/defaults', (req, res) => {
     databricksHost: fullHost || '',
     warehouseId: DEFAULT_WAREHOUSE_ID,
     inspireDatabase: DEFAULT_INSPIRE_DB,
+    installerDataCatalogs: INSTALLER_DATA_CATALOGS,
     notebookPath: DEFAULT_NOTEBOOK_PATH,
     isDatabricksApp:
       !!DATABRICKS_HOST && platformAuth && process.env.NODE_ENV === 'production',
@@ -1892,7 +1898,8 @@ app.get('/api/catalogs/:catalog/schemas', requireToken, async (req, res) => {
         if (!byKey.has(k)) byKey.set(k, row);
       }
     }
-    const schemas = [...byKey.values()].sort((a, b) => a.full_name.localeCompare(b.full_name));
+    // A use case's own result schema (`_inspire_<business>_<use case>`) is not the person's data (REQ-387): the one rule, inspireOwnObjects.js.
+    const schemas = [...byKey.values()].filter((s) => !isInspireOwnSchema(s.full_name)).sort((a, b) => a.full_name.localeCompare(b.full_name));
     console.log(`   📂 schemas ${catalog}: REST=${raw.length} merged=${schemas.length}`);
     if (raw.length === 0 && schemas.length === 0 && restErr) {
       return PM_ERROR.sendFailure(res, restStatus, restErr);
@@ -1941,22 +1948,27 @@ app.get('/api/tables/:catalog/:schema', requireToken, async (req, res) => {
     }
     const countAfterRest = byKey.size;
     let leftOut = 0;
+    // The metric views left out of this list, by full name (Data Management names them in one line; they cannot be filtered).
+    const metricViews = new Set(hiddenMetricViews);
     if (warehouseId) {
       const listed = await listTablesSql(req.dbHost, token, warehouseId, catalog, schema,
         new Set([...byKey.keys(), ...hiddenMetricViews]));
       leftOut = listed.leftOut;
+      for (const name of listed.metricViews) metricViews.add(`${catalog}.${schema}.${name}`);
       const hidden = new Set(hiddenMetricViews);
       for (const row of listed.rows) {
         if (!byKey.has(row.full_name) && !hidden.has(row.full_name)) byKey.set(row.full_name, row);
       }
     }
-    const tables = [...byKey.values()].sort((a, b) => a.full_name.localeCompare(b.full_name));
+    // Inspire's own tables and views are not the person's data (REQ-387): the one rule, inspireOwnObjects.js.
+    const tables = [...byKey.values()].filter((t) => !isInspireOwnName(t.full_name)).sort((a, b) => a.full_name.localeCompare(b.full_name));
     console.log(`   📋 tables ${catalog}.${schema}: REST=${raw.length} merged=${tables.length}`);
     if (raw.length === 0 && tables.length === 0 && restErr) {
       return PM_ERROR.sendFailure(res, restStatus, restErr);
     }
     // Tables past the probe cap are not listed: the count says how many, so the picker can name them (nothing is lost silently).
     res.json({ tables, count: tables.length, truncated: restCut && byKey.size === countAfterRest,
+      metric_views: [...metricViews].sort(),
       ...(leftOut ? { left_out: { count: leftOut, schema: `${catalog}.${schema}` } } : {}) });
   } catch (err) {
     PM_ERROR.sendFailure(res, 500, err.message);
@@ -2306,7 +2318,9 @@ app.post('/api/run', requireToken, async (req, res) => {
   const { cluster_id, notebook_path } = req.body;
   const params = (req.body.params && typeof req.body.params === 'object') ? { ...req.body.params } : {};
   if (samplesNeedChoice(params, req.body.samples_choice)) return res.status(409).json({ error: SAMPLES_CHOICE_TEXT });
-  return launchDiscover(req, res, { params, notebook_path, cluster_id });
+  const profileId = String(req.body.profile_id || '').trim();
+  if (profileId && !BP.isProfileId(profileId)) return res.status(400).json({ error: 'profile_id must be a profile id Inspire gave out' });
+  return launchDiscover(req, res, { params, notebook_path, cluster_id, profileId });
 });
 
 // The job a recorded run belongs to, from Inspire's own launch record (App database). Null when it is not recorded.
@@ -2422,7 +2436,7 @@ async function checkLaunchReads(req, params) {
   })());
 }
 
-async function launchDiscover(req, res, { params, notebook_path, cluster_id }) {
+async function launchDiscover(req, res, { params, notebook_path, cluster_id, profileId = '' }) {
   try {
     const refused = LC.launchParamsProblem(params) || await launchSessionProblem(req, params);
     if (refused) return res.status(403).json(RP.refusalBody(req.policyKey, 'launcher', `${refused}.`));
@@ -2438,7 +2452,8 @@ async function launchDiscover(req, res, { params, notebook_path, cluster_id }) {
       writeCheck: (writes) => outputWriteVerdict(req, writes),
       asker: req,
     });
-    const warnings = [...reads.warnings, ...access.warnings, ...(out.warnings || [])];
+    const profileWarning = profileId ? await linkProfileToRun(req, { profileId, sessionId: params['14_session_id'], inspireDatabase: params['02_inspire_database'] }) : '';
+    const warnings = [...reads.warnings, ...access.warnings, ...(out.warnings || []), ...(profileWarning ? [profileWarning] : [])];
     const details = [...(reads.skipped.length ? [skippedTablesDetail(reads.skipped)] : []), ...(out.warning_details || [])];
     res.json({ ...out, ...(warnings.length ? { warnings } : {}), ...(access.permissions.length ? { permissions: access.permissions } : {}), ...(details.length ? { warning_details: details } : {}), ...(reads.skipped.length ? { skipped_tables: reads.skipped } : {}) });
   } catch (err) {
@@ -2978,6 +2993,34 @@ async function tableScopesOfRows(req, warehouseId, catalog, schema, rows) {
   }
 }
 
+// REQ-389: the Table Scope each use case's latest built version read, keyed by session and use case. A build that chose its own scope on
+// the Data step has it in its spec; a use case no build chose for has no entry, so its Discover run's scope is shown. When the build record
+// cannot be read, no entry is known: those use cases show the Discover run's scope and carry unread, so the App says so.
+async function builtScopesOfRows(req, warehouseId, catalog, schema, rows) {
+  const sids = [...new Set(rows.map((r) => int64Id(r.session_id)).filter(Boolean))];
+  const built = new Map();
+  const framings = new Map();
+  if (!sids.length) return { built, framings, unread: false };
+  try {
+    const history = new Map();
+    const sql = latestBuiltRowsSql(implementTableName(catalog, schema), sids);
+    for (const row of sqlResultToObjects(await executeSql(req.dbHost, req.dbToken, warehouseId, sql)).map(parseImplementRow)) {
+      const key = `${row.session_id}|${row.use_case_id}`;
+      history.set(key, [...(history.get(key) || []), row]);
+    }
+    for (const [key, versions] of history) {
+      const scope = builtTableScopeOf(versions);
+      if (scope !== undefined) built.set(key, scope);
+      const framing = builtFramingOf(versions);
+      if (framing !== undefined) framings.set(key, framing);
+    }
+    return { built, framings, unread: false };
+  } catch (err) {
+    console.warn(`usecases: the scope the latest build read could not be read, so the Discover run's Data Filters are shown: ${err.message}`);
+    return { built, framings, unread: true };
+  }
+}
+
 // Get use cases from __inspire_usecases table (final polished data)
 app.get('/api/inspire/usecases', requireToken, async (req, res) => {
   try {
@@ -3059,9 +3102,14 @@ app.get('/api/inspire/usecases', requireToken, async (req, res) => {
     );
     // REQ-171: each use case carries the Data Filters of its session's Table Scope, so the App shows them on the use case.
     const sessionScopes = await tableScopesOfRows(req, warehouse_id, catalog, schema, rows);
+    const builtScopes = await builtScopesOfRows(req, warehouse_id, catalog, schema, rows);
     for (const row of rows) {
-      const scopes = sessionScopes.get(String(row.session_id));
+      const chosen = builtScopes.built.get(`${row.session_id}|${row.id}`);
+      const scopes = chosen !== undefined ? chosen : sessionScopes.get(String(row.session_id));
       row.data_filters = scopes === undefined ? null : dataFiltersOf(row, scopes);
+      row.build_scope_unread = builtScopes.unread;
+      // REQ-389 (R49): the App's use case text is the text the latest build carried; a use case no build framed keeps its Discover statement.
+      Object.assign(row, builtTextOf(builtScopes.framings.get(`${row.session_id}|${row.id}`)));
     }
     res.json({ usecases: rows, count: rows.length, all_sessions: listAll });
   } catch (err) {
@@ -3363,6 +3411,115 @@ app.get('/api/inspire/results', requireToken, async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════
+//  Business profiles (REQ-364 to REQ-366): named copies of the Start form, shared by everyone on the App.
+//  Stored in the App's own database with the App's token, like the launch record. A run started with one is linked to it by session.
+// ═══════════════════════════════════════════════════
+
+const PROFILE_NO_DATABASE = 'Inspire has no database of its own set, so it has no business profiles';
+let profileTablesReady = false;
+
+function profileTableNames() {
+  const profiles = BP.profilesTable(DEFAULT_INSPIRE_DB);
+  const links = BP.linksTable(DEFAULT_INSPIRE_DB);
+  return profiles && links && DEFAULT_WAREHOUSE_ID ? { profiles, links } : null;
+}
+
+// Both profile tables must exist before any read of them. Checked on each read, so a list never sends a read that Databricks fails.
+async function profileTablesPresent(req) {
+  const statement = BP.presentTablesStatement(DEFAULT_INSPIRE_DB);
+  return BP.profilesPresent(await launchSql(req.dbHost, statement, req.dbToken));
+}
+
+async function ensureProfileTables(host, token, names) {
+  if (profileTablesReady) return;
+  await executeSql(host, token, DEFAULT_WAREHOUSE_ID, BP.createProfileSql(names.profiles));
+  await executeSql(host, token, DEFAULT_WAREHOUSE_ID, BP.createLinkSql(names.links));
+  profileTablesReady = true;
+}
+
+app.get('/api/inspire/profiles', requireToken, async (req, res) => {
+  const names = profileTableNames();
+  if (!names) return res.status(503).json({ error: PROFILE_NO_DATABASE });
+  try {
+    if (!(await profileTablesPresent(req))) return res.json({ profiles: [] });
+    const rows = await launchSql(req.dbHost, BP.listStatement(names.profiles, req.query.business_name), req.dbToken);
+    res.json({ profiles: rows.map(BP.profileSummary) });
+  } catch (err) {
+    if (isMissingTableError(err)) return res.json({ profiles: [] });
+    PM_ERROR.sendFailure(res, 500, err.message);
+  }
+});
+
+app.get('/api/inspire/profiles/:profileId', requireToken, async (req, res) => {
+  const names = profileTableNames();
+  if (!names) return res.status(503).json({ error: PROFILE_NO_DATABASE });
+  const statement = BP.getStatement(names.profiles, req.params.profileId);
+  if (!statement) return res.status(400).json({ error: 'profile_id must be a profile id Inspire gave out' });
+  try {
+    if (!(await profileTablesPresent(req))) return res.status(404).json({ error: 'That business profile was not found' });
+    const [row] = await launchSql(req.dbHost, statement, req.dbToken);
+    if (!row) return res.status(404).json({ error: 'That business profile was not found' });
+    res.json({ profile: BP.profileDetail(row) });
+  } catch (err) {
+    if (isMissingTableError(err)) return res.status(404).json({ error: 'That business profile was not found' });
+    PM_ERROR.sendFailure(res, 500, err.message);
+  }
+});
+
+// Saves a profile under its name. A name that is taken answers 409 unless the save says overwrite, so the page asks first.
+app.post('/api/inspire/profiles', requireToken, async (req, res) => {
+  const saved = BP.profileToSave(req.body);
+  if (saved.error) return res.status(400).json({ error: saved.error });
+  const names = profileTableNames();
+  if (!names) return res.status(503).json({ error: PROFILE_NO_DATABASE });
+  const by = RP.forwardedPerson(req.headers);
+  try {
+    await ensureProfileTables(req.dbHost, req.dbToken, names);
+    const [existing] = await launchSql(req.dbHost, BP.findByNameStatement(names.profiles, saved.name), req.dbToken);
+    if (existing && !saved.overwrite) {
+      return res.status(409).json({ error: `A business profile named "${saved.name}" already exists. Save it again to replace it.`, exists: true, profile_id: String(existing.profile_id) });
+    }
+    const profileId = existing ? String(existing.profile_id) : crypto.randomUUID();
+    const write = existing ? BP.overwriteStatement : BP.insertStatement;
+    const statement = write(names.profiles, { profileId, name: saved.name, businessName: saved.businessName, specJson: saved.specJson, by });
+    await executeSql(req.dbHost, req.dbToken, DEFAULT_WAREHOUSE_ID, statement.sql, statement.parameters);
+    res.json({ profile: BP.profileSummary({ profile_id: profileId, name: saved.name, business_name: saved.businessName, updated_by: by, updated_at: new Date().toISOString() }) });
+  } catch (err) {
+    const code = err.statusCode && Number.isFinite(err.statusCode) ? err.statusCode : 500;
+    PM_ERROR.sendFailure(res, code, err.message);
+  }
+});
+
+// The run is already submitted, so a link that fails is a warning on the launch, never a failed launch.
+async function linkProfileToRun(req, { profileId, sessionId, inspireDatabase }) {
+  const names = profileTableNames();
+  if (!names) return 'Inspire has no database of its own set, so this run is not linked to its business profile';
+  try {
+    await ensureProfileTables(req.dbHost, req.dbToken, names);
+    const [row] = await launchSql(req.dbHost, BP.getStatement(names.profiles, profileId), req.dbToken);
+    if (!row) return 'The business profile of this run was not found, so the run is not linked to it';
+    const link = BP.linkInsertStatement(names.links, { inspireDatabase, sessionId, profileId, by: RP.forwardedPerson(req.headers) });
+    await executeSql(req.dbHost, req.dbToken, DEFAULT_WAREHOUSE_ID, link.sql, link.parameters);
+    return '';
+  } catch (err) {
+    console.warn(`business profile link for session ${sessionId} failed: ${err.message}`);
+    return `Inspire started the run but could not link it to its business profile (${String(err.message).slice(0, 200)})`;
+  }
+}
+
+async function attachSessionProfiles(req, inspireDatabase, sessions) {
+  const names = profileTableNames();
+  const statement = names ? BP.linksOfSessionsStatement(names.links, names.profiles, inspireDatabase, sessions.map((s) => s.session_id)) : null;
+  if (!statement) return;
+  try {
+    if (!(await profileTablesPresent(req))) return;
+    BP.withProfiles(sessions, await launchSql(req.dbHost, statement, req.dbToken));
+  } catch (err) {
+    if (!isMissingTableError(err)) console.warn(`[sessions] the business profiles of the runs could not be read: ${err.message}`);
+  }
+}
+
 // List all sessions (for results page - pick which session to view)
 app.get('/api/inspire/sessions', requireToken, async (req, res) => {
   try {
@@ -3408,6 +3565,7 @@ app.get('/api/inspire/sessions', requireToken, async (req, res) => {
       schema,
       sessions
     );
+    await attachSessionProfiles(req, inspire_database, sessions);
 
     res.json({ sessions, truncated });
   } catch (err) {

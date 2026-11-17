@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { joinSentences } = require('../lib/sentences');
 const assert = require('node:assert/strict');
 const { makeApp, json, listen } = require('./support/implementApp');
 const I = require('../lib/inspireImplement');
@@ -970,12 +971,14 @@ test('preflight disables a new App up front when its service principal could not
     assert.equal(got.data.checks.result_grant.ok, true);
     const warehouseWarning = I.shareWarehouseWarnings({ ok: false }, ['amr@x', 'planners'], ['the dashboard'], 'wh1')[0];
     assert.match(warehouseWarning, /^amr@x and planners need CAN USE on wh1 to open the dashboard, because they query with their own access/);
-    assert.equal(got.data.checks.result_grant.warn, `${I.accessGapMessage('planners', gaps)} ${warehouseWarning}`);
+    // Two messages, each a whole sentence: the join adds the full stop the first one lacks (REQ-370, no run-on sentence).
+    assert.equal(got.data.checks.result_grant.warn, joinSentences(I.accessGapMessage('planners', gaps), warehouseWarning));
+    assert.doesNotMatch(got.data.checks.result_grant.warn, /Permission Required amr@x/);
     assert.ok(made.fetches.some((f) => f.path === '/api/2.0/permissions/sql/warehouses/wh1'));
     const genie = await call(url, `/api/inspire/implement/preflight?${Q}&${OUT}&share=1&genie=1&principals=${principals}`);
     assert.match(genie.data.checks.result_grant.warn, /to open the dashboard and the Genie Agent, because/);
     const appOnly = await call(url, `/api/inspire/implement/preflight?${Q}&${OUT}&share=1&dashboard=0&principals=${principals}`);
-    assert.equal(appOnly.data.checks.result_grant.warn, I.accessGapMessage('planners', gaps), 'no dashboard or Genie Agent, so no warehouse access to ask for');
+    assert.equal(appOnly.data.checks.result_grant.warn, joinSentences(I.accessGapMessage('planners', gaps)), 'no dashboard or Genie Agent, so no warehouse access to ask for');
     assert.deepEqual(appOnly.data.new_app, got.data.checks.app_access, 'with no App asked for, the new App check is still answered');
     assert.equal(appOnly.data.checks.app_access, undefined, 'and it stays out of the checks, so a build without an App is not stopped (must-exclude)');
     assert.equal(got.data.new_app, undefined, 'an App asked for is checked in the checks only (must-exclude)');

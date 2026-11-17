@@ -14,7 +14,7 @@ test('an older run keeps its row overlaid as queued until a run from the click s
   const pending = trackBuildSubmit({ use_case_id: 'uc-r', use_case_name: 'Rebuild' }, async () => ({ session_id: '42', use_case_id: 'uc-r' }), null, click);
   await pending;
   const before = mine(withPendingBuilds([row()], click + 1000));
-  assert.deepEqual(before.map((r) => [r.spec_version, r.status, r.pending]), [[1, 'queued', true]], 'the older run still reads as the build in progress');
+  assert.deepEqual(before.map((r) => [r.spec_version, r.status, r.pending]), [[2, 'queued', true]], 'the older run still reads as the build in progress, as the next version (REQ-386)');
 });
 
 test('a newer run created after the click clears the overlay, even when the answer had no spec_version (REQ-352)', async () => {
@@ -65,4 +65,41 @@ test('UseCaseDetail submits through its own onBuildQueued prop, not the parent-o
   assert.ok(detail.length > 0);
   assert.equal(detail.includes('showQueuedBuild'), false, 'showQueuedBuild is not in scope in UseCaseDetail: every detail submit threw a ReferenceError');
   assert.match(detail, /trackBuildSubmit\(body\.spec, \(\) => apiPostJson\(path, body\), onBuildQueued\)/);
+});
+
+// REQ-386: while the submit is pending the queued build is the next version and counts from the click; once the server answers, its version is shown.
+test('a queued build over a failed v1 reads v2 timed from the click, and follows the version the server answered (REQ-386)', async () => {
+  const click = 700000;
+  const failedV1 = () => row({ created_at: iso(click - 15 * 3600000), status: 'failed' });
+  withPendingBuilds([failedV1()], click - 1);
+  let release = () => {};
+  const held = new Promise((resolve) => { release = resolve; });
+  const pending = trackBuildSubmit({ use_case_id: 'uc-r', use_case_name: 'Rebuild' }, async () => { await held; return { session_id: '42', use_case_id: 'uc-r', spec_version: 3 }; }, null, click);
+  const pendingShown = mine(withPendingBuilds([failedV1()], click + 1000));
+  assert.deepEqual(pendingShown.map((r) => [r.spec_version, r.created_at, r.status]), [[2, iso(click), 'queued']],
+    'v2 timed from the click, with no 15-hour start (must-fail before the fix: v1 with the old start)');
+  release();
+  await pending;
+  const answered = mine(withPendingBuilds([failedV1()], click + 2000));
+  assert.deepEqual(answered.map((r) => [r.spec_version, r.created_at, r.status]), [[3, iso(click), 'queued']],
+    'after the answer the panel follows the server version 3 and still counts from the submit');
+});
+
+// REQ-386: the callers feed the overlaid list back in. An overlay is never read as history, so a second read keeps the queued build (the
+// one-build-per-use-case lock depends on it) and a landed build shows its server row again.
+test('feeding the overlaid list back in keeps the queued overlay, and a landed build shows its server row (REQ-386)', async () => {
+  const click = 800000;
+  withPendingBuilds([row({ use_case_id: 'uc-r', spec_version: 3 })], click - 1);
+  let release = () => {};
+  const held = new Promise((resolve) => { release = resolve; });
+  const pending = trackBuildSubmit({ use_case_id: 'uc-r', use_case_name: 'Rebuild' }, async () => { await held; return { session_id: '42', use_case_id: 'uc-r' }; }, null, click);
+  const once = withPendingBuilds([row({ use_case_id: 'uc-r', spec_version: 3 })], click + 1000);
+  const twice = withPendingBuilds(once, click + 2000);
+  assert.deepEqual(mine(twice).map((r) => [r.spec_version, r.status, r.pending]), [[4, 'queued', true]], 'the second read still shows the queued build');
+  assert.deepEqual(mine(withPendingBuilds(twice, click + 2500)).map((r) => [r.spec_version, r.pending]), [[4, true]], 'a third read too');
+  release();
+  await pending;
+  const landedRow = row({ use_case_id: 'uc-r', spec_version: 4, status: 'ready', created_at: iso(click + 500) });
+  assert.deepEqual(mine(withPendingBuilds([landedRow, ...twice.filter((r) => r.pending)], click + 3000)).map((r) => [r.spec_version, r.status, r.pending]),
+    [[4, 'ready', undefined]], 'a landed build shows its server row, not the overlay');
 });

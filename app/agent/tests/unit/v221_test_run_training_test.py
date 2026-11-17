@@ -70,7 +70,61 @@ def test_the_training_text_says_it_trained_on_a_sample_and_scored_the_scope(fres
 def test_a_small_mvp_test_run_that_shrank_training_is_named_with_where_to_change_it(fresh_ns):
     cause = fresh_ns["inspire_unreliable_cause"](False, NARROWED, COARSE, {"trains_model": True})
     assert cause.startswith(fresh_ns["INSPIRE_CAUSE_LEAD"]) and "First run" in cause
-    assert "choose all for First run on the Run page" in cause and "Vibe/Add/Remove Features on the Build page" in cause
+    assert "choose Run on everything on the Run page" in cause and "Vibe/Add/Remove Features on the Build page" not in cause
+
+
+def test_the_first_run_line_counts_the_records_it_left_out_and_names_the_full_run(fresh_ns):
+    # Fails before the fix: the old clause said "the First run scope, 1,000 records ..." and never said what was left out.
+    left = dict(NARROWED, scope=dict(RECORDS, available=3333))
+    cause = fresh_ns["inspire_unreliable_cause"](False, left, COARSE, {"trains_model": True})
+    assert cause.startswith(fresh_ns["INSPIRE_CAUSE_LEAD"] + " the First run left out 2,333 of 3,333 records, so the model learned from "
+                            "only 1,000 records; choose Run on everything on the Run page to use all of them."), cause
+    assert "spread across" not in cause and "stable hash" not in cause
+
+
+def test_a_first_run_that_covers_every_record_is_not_blamed_for_leaving_any_out(fresh_ns):
+    whole = dict(NARROWED, scope=dict(RECORDS, available=1000))
+    assert fresh_ns["inspire_unreliable_cause"](False, whole, {"mode": "none"}, {"trains_model": True}) == ""
+
+
+def test_a_value_the_data_does_not_hold_is_named_as_the_reason_and_not_the_first_run(fresh_ns):
+    # Fails before the fix: the First run clause was the only cause, though the one price per product is in every row.
+    fact = {"name": "unitPrice", "scoped": 1, "whole": 1,
+            "text": "unitPrice holds 1 distinct value in the data, so the price effect cannot be measured"}
+    cause = fresh_ns["inspire_unreliable_cause"](False, dict(NARROWED, scope=dict(RECORDS, available=3333), value_facts=[fact]),
+                                                 {"mode": "none"}, {"trains_model": True})
+    assert cause == (fresh_ns["INSPIRE_CAUSE_LEAD"] + " unitPrice holds 1 distinct value in the data, so the price effect cannot be "
+                     "measured."), cause
+
+
+def test_the_first_run_clause_appears_only_when_the_first_run_moves_the_value_fact(fresh_ns):
+    moved = {"name": "unitPrice", "scoped": 1, "whole": 6, "text": "unused"}
+    cause = fresh_ns["inspire_unreliable_cause"](False, dict(NARROWED, scope=dict(RECORDS, available=3333), value_facts=[moved]),
+                                                 {"mode": "none"}, {"trains_model": True})
+    assert "the First run left out 2,333 of 3,333 records" in cause and "unitPrice" not in cause, cause
+
+
+def test_no_clause_when_the_scored_and_whole_data_both_hold_the_value(fresh_ns):
+    # Fails before the fix: the old clause blamed the First run whatever the data held.
+    held = {"name": "unitPrice", "scoped": 6, "whole": 6, "text": "unused"}
+    cause = fresh_ns["inspire_unreliable_cause"](False, dict(NARROWED, scope=dict(RECORDS, available=3333), value_facts=[held]),
+                                                 {"mode": "none"}, {"trains_model": True})
+    assert cause == "", cause
+
+
+def test_the_readiness_step_records_its_value_fact_and_returns_the_line_to_show(fresh_ns):
+    log = {}
+    said = fresh_ns["inspire_note_value_fact"]("unitPrice", 1, 1, "the price effect", log=log)
+    assert said == "unitPrice holds 1 distinct value in the data, so the price effect cannot be measured", said
+    assert log["value_facts"] == [{"name": "unitPrice", "scoped": 1, "whole": 1, "text": said}]
+
+
+def test_a_first_run_on_groups_says_it_covers_only_those_groups(fresh_ns):
+    groups = dict(NARROWED, scope={"scope": "groups", "table": ORDERS, "column": "region", "values": ["EMEA"]},
+                  reads={ORDERS: {"where": "CAST(`region` AS STRING) IN ('EMEA')", "limit": None}})
+    cause = fresh_ns["inspire_unreliable_cause"](False, groups, {"mode": "none"}, {"trains_model": True})
+    assert "the First run covers only the 1 group EMEA of region" in cause, cause
+    assert "choose Run on everything on the Run page to use all of them" in cause
     fresh_ns["INSPIRE_RUN_LOG"], fresh_ns["INSPIRE_RUN_GROUPING"] = NARROWED, COARSE
     said = fresh_ns["inspire_with_cause"]("no model passed its acceptance check", False)
     assert said.startswith("no model passed its acceptance check. This may come from a setting you can change:"), said

@@ -273,20 +273,19 @@ test('when the browser refuses the clipboard, the record link shows selected in 
   await context.close();
 });
 
-test('Add a note writes only the note, so the status stays as it was', async () => {
+test('a note typed in the action form saves with the action and writes only the note, so the status stays as it was', async () => {
   const { calls, routes } = tracked();
   const { page, seen, context } = await openWith(appInfo(DECIDE, 1, TABLE), routes);
   await waitList(page);
   await page.locator('.cell-t').first().click();
-  const note = page.getByRole('region', { name: 'Add a note' });
-  await note.waitFor();
-  assert.equal(await note.getByRole('button', { name: 'Add note' }).isDisabled(), true, 'an empty note cannot be added');
-  await note.locator('textarea[name="record_note"]').fill('  Called the store, they ship Monday  ');
-  await note.getByRole('button', { name: 'Add note' }).click();
+  const form = page.locator('dialog.drawer[open] .act-form');
+  await form.waitFor();
+  assert.equal(await page.getByRole('region', { name: 'Add a note' }).count(), 0, 'there is no separate note block');
+  await form.locator('textarea[name="action_note"]').fill('  Called the store, they ship Monday  ');
+  await form.getByRole('button', { name: 'Save action' }).click();
   await until(() => calls.acts.length === 1);
-  assert.deepEqual(calls.acts[0], { page: 'n01_u05', record_keys: ['R001'], seen: { R001: '102' }, values: { note: 'Called the store, they ship Monday' } });
-  await page.waitForFunction(() => document.querySelector('.toast .toast-t')?.textContent === 'Note added. The status stays as it was.');
-  assert.equal(await note.locator('textarea[name="record_note"]').inputValue(), '');
+  assert.deepEqual(calls.acts[0], { page: 'n01_u05', record_keys: ['R001'], seen: { R001: '102' }, values: { action_note: 'Called the store, they ship Monday' } });
+  await page.waitForFunction(() => document.querySelector('.toast .toast-t')?.textContent === 'Action saved. The earlier version stays in the history.');
   assert.deepEqual(seen.errors, []);
   await context.close();
 });

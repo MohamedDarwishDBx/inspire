@@ -1,8 +1,10 @@
+const { joinSentences } = require('./sentences');
 const { parseExactJson } = require('./exactJson');
 const { parseStrategicContext, validateStrategy } = require('../../frontend/src/lib/strategyContext.js');
 const { scopesFromObject, serializeTableScopes, scopeKeyOf } = require('../../frontend/src/lib/tableScope.js');
+const { relationshipsFromObject } = require('../../frontend/src/lib/tableRelationships.js');
 
-const INSPIRE_AGENT_VERSION = 'v1.5.3';
+const INSPIRE_AGENT_VERSION = 'v1.5.4';
 /** The release a person sees: the installer stamps INSPIRE_RELEASE_TAG (e.g. v1.5.3-rc.2) into app.yaml; the package version is the fallback. */
 const INSPIRE_RELEASE_TAG_PATTERN = /^v\d\.\d\.\d(-rc\.\d)?$/;
 function inspireReleaseLabel(env = process.env) {
@@ -31,6 +33,7 @@ const INSPIRE_NOTEBOOK_WIDGET_KEYS = [
   '13_generate_genie_code_for',
   '14_session_id',
   '17_table_scope',
+  '18_table_relationships',
   'currency',
   'currency_rates',
   'currency_default',
@@ -137,7 +140,7 @@ function validateStrategicContextParams(params) {
     throw paramError('Strategic Context must be a strategy object or the path of a Workspace or Volumes file that holds one.');
   }
   const problems = parsed.mode === 'tree' ? validateStrategy(parsed.model) : [];
-  if (problems.length) throw paramError(`Strategic Context: ${problems.join(' ')}`);
+  if (problems.length) throw paramError(`Strategic Context: ${joinSentences(...problems)}`);
   params['10_strategic_context'] = text;
   return params;
 }
@@ -166,9 +169,39 @@ function parseTableScopeText(text) {
   return scopesFromObject(parsed);
 }
 
+/** REQ-389: the build reads the scope the person chose on the Data step. No choice (dataSpec.table_scope absent) keeps the Discover
+ * run's scope; an empty choice takes every row filter off, so the build reads whole tables. */
+function withChosenTableScope(params, dataSpec) {
+  const chosen = dataSpec && dataSpec.table_scope;
+  if (!chosen) return params;
+  const { label } = parseTableScopeText(params['17_table_scope']);
+  const text = serializeTableScopes(chosen, Object.keys(chosen), label || '');
+  const next = { ...params };
+  if (text) next['17_table_scope'] = text;
+  else delete next['17_table_scope'];
+  return next;
+}
+
+/** REQ-389: the Table Scope a wizard preview reads through. Absent or empty keeps the Discover run's scope; a scope (text or object)
+ * replaces it, and {} reads whole tables. */
+function previewScopesOf(asked, carried) {
+  if (asked === undefined || asked === null || asked === '') return carried;
+  let value = asked;
+  if (typeof asked === 'string') {
+    try {
+      value = parseExactJson(asked);
+    } catch {
+      throw paramError('The table scope is not valid JSON.');
+    }
+  }
+  const { scopes, problems } = scopesFromObject(value);
+  if (problems.length) throw paramError(`Table scope: ${joinSentences(...problems)}`);
+  return scopes;
+}
+
 function validateTableScopeParams(params, picks = params['01_uc_metadata']) {
   const { scopes, problems, label } = parseTableScopeText(params['17_table_scope']);
-  if (problems.length) throw paramError(`Table scope: ${problems.join(' ')}`);
+  if (problems.length) throw paramError(`Table scope: ${joinSentences(...problems)}`);
   const uncovered = Object.keys(scopes).filter((table) => !tableIsPicked(table, picks));
   if (uncovered.length) {
     throw paramError(`Table scope names ${uncovered.join(', ')}, which ${uncovered.length === 1 ? 'is' : 'are'} not picked under Unity Catalog Metadata.`);
@@ -176,6 +209,27 @@ function validateTableScopeParams(params, picks = params['01_uc_metadata']) {
   const text = serializeTableScopes(scopes, Object.keys(scopes), label);
   if (text) params['17_table_scope'] = text;
   else delete params['17_table_scope'];
+  return params;
+}
+
+/** REQ-373: the joins the person drew (18_table_relationships). A join is refused when malformed; a join whose table the picks do not read is dropped, as a scope is (REQ-242). */
+function validateRelationshipParams(params, picks = params['01_uc_metadata']) {
+  const source = String(params['18_table_relationships'] ?? '').trim();
+  if (!source) {
+    delete params['18_table_relationships'];
+    return params;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    throw paramError('Table relationships: the relationships are not valid JSON.');
+  }
+  const { relations, problems } = relationshipsFromObject(parsed);
+  if (problems.length) throw paramError(`Table relationships: ${problems.join(' ')}`);
+  const covered = relations.filter((r) => tableIsPicked(r.from.table, picks) && tableIsPicked(r.to.table, picks));
+  if (covered.length) params['18_table_relationships'] = JSON.stringify(covered);
+  else delete params['18_table_relationships'];
   return params;
 }
 
@@ -204,6 +258,7 @@ function sanitizeInspireNotebookJobParams(params, { scopePicks } = {}) {
   validateStrategicContextParams(params);
   validateBestOfBestCountParams(params);
   validateTableScopeParams(params, scopePicks ?? params['01_uc_metadata']);
+  validateRelationshipParams(params, scopePicks ?? params['01_uc_metadata']);
   const out = {};
   for (const k of [...INSPIRE_NOTEBOOK_WIDGET_KEYS, ...INSPIRE_JOB_ONLY_PARAM_KEYS]) {
     if (!Object.prototype.hasOwnProperty.call(params, k)) continue;
@@ -585,6 +640,9 @@ module.exports = {
   validateStrategicContextParams,
   validateBestOfBestCountParams,
   validateTableScopeParams,
+  withChosenTableScope,
+  previewScopesOf,
+  validateRelationshipParams,
   parseMaybeJson,
   belowBarLabelFromUseCase,
   V130_JSON_FIELDS,

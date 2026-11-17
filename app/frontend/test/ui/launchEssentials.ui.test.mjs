@@ -74,6 +74,7 @@ test('a Get Started that cannot start yet says what is missing next to it, and t
     await until(async () => !(await start.isDisabled()));
     assert.equal(await start.getAttribute('aria-describedby'), null);
     await start.click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1);
     assert.deepEqual(pageErrors.filter((line) => !/status of 40[13]/.test(line)), []);
   } finally {
@@ -103,6 +104,7 @@ test('Advanced Settings stays closed by default, keeps what was set in it after 
     await page.locator('button[title="s"]').click();
     await page.locator('button[title="orders"]').click();
     await page.getByRole('button', { name: 'Get Started' }).click();
+    await page.locator('[data-launch-run-unsaved]').click();
     await until(() => made.launches.length === 1, 'the launch was sent once');
     assert.equal(made.launches[0].params['06_business_domains'], 'Sales, Finance');
     assert.match(made.launches[0].params['07_business_priorities'], /Reduce Cost/, 'closing keeps the priority');

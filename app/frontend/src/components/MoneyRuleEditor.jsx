@@ -6,6 +6,7 @@ import { moneyPartsOf } from '../lib/moneyParts.js';
 import { ALL_PERIODS, DEFAULT_CURRENCY, MONEY_CURRENCY_CHOICES, WINDOW_CHOICES, valueTextOf } from '../lib/moneyDefaults.js';
 import AVERAGES from '../../../backend/lib/fxAverages.json';
 import { PlainMessage } from './TechnicalDetails.jsx';
+import { joinSentences } from '../lib/sentences';
 
 const ISO = /^[A-Z]{3}$/;
 const COLUMN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
@@ -171,7 +172,7 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
       shownBase.current = data.base;
       setDraft(next);
       const droppedText = merged.dropped.length ? `Your typed rate for ${merged.dropped.join(', ')} was for the previous reporting currency, so it was dropped; check the rate.` : '';
-      setNotice([data.message, droppedText].filter(Boolean).join(' '));
+      setNotice(joinSentences(data.message, droppedText));
       save(next, current.pick);
     }).catch((err) => { if (request === ratesRequest.current) setNotice(err?.message || 'The rates could not be read; type them in.'); });
   };
@@ -511,7 +512,7 @@ export function MoneyRuleEditor({ value, onChange, sample = null, table = '', co
       {!draft.off && !effective.method && <p className="text-[12px] text-text-secondary" data-money-genie-estimate>Until you choose how to measure value, the totals are Genie estimate, not your rule.</p>}
       {!draft.base && draft.mode === 'convert' && <p className="text-[12px] text-text-secondary" data-money-base-needed>Pick the reporting currency: every amount is reported in it.</p>}
       {sentence && <p className="sentence text-[12px] text-text-primary" data-money-sentence>{sentence}</p>}
-      {problems.length > 0 && <PlainMessage text={problems.join(' ')} className="text-[12px] text-danger" data-money-error />}
+      {problems.length > 0 && <PlainMessage text={joinSentences(...problems)} className="text-[12px] text-danger" data-money-error />}
     </div>
   );
 }

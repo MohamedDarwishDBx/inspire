@@ -82,7 +82,7 @@ test('a build queued from Build Next shows on the Build page after a reload, bef
     await page.waitForFunction(() => window.location.hash.includes('/build/42/N01-U02'), null, { timeout: 20000 });
     await page.reload();
     await page.getByRole('heading', { name: 'Build', exact: true }).waitFor({ timeout: 20000 });
-    await page.getByText('building now', { exact: false }).first().waitFor({ timeout: 15000 });
+    await page.getByText('MVP queued', { exact: false }).first().waitFor({ timeout: 15000 });
     assert.equal(await page.getByText('No MVP started yet', { exact: false }).count(), 0, 'the queued build is not reported as missing (must-fail: a reload drops the in-memory store)');
     assert.deepEqual(ui.pageErrors, []);
   } finally {
@@ -109,7 +109,7 @@ test('the early Build button shows its queued build on the Build page at once (R
     await goToStep(page, 'Data');
     await page.locator('[data-build-now]').click();
     await until(() => log.submits === 1, 'one build submitted');
-    await page.getByText('building now', { exact: false }).first().waitFor({ timeout: 15000 });
+    await page.getByText('MVP queued', { exact: false }).first().waitFor({ timeout: 15000 });
     assert.equal(await page.getByText('No MVP started yet', { exact: false }).count(), 0, 'the queued build is shown at once (must-fail without noteBuildSubmitted on this path)');
     assert.deepEqual(ui.pageErrors, []);
   } finally {
@@ -146,10 +146,10 @@ test('a submit shows the queued build on the Build page while the server is stil
     await goToStep(page, 'Data');
     await page.locator('[data-build-now]').click();
     await until(() => log.submits === 1, 'one build submitted');
-    await page.getByText('building now', { exact: false }).first().waitFor({ timeout: 15000 });
+    await page.getByText('MVP queued', { exact: false }).first().waitFor({ timeout: 15000 });
     assert.equal(await page.getByText('No MVP started yet', { exact: false }).count(), 0, 'the queued build is shown while the answer is pending (must-fail: the store is written only after the server answers, about a minute later)');
     await page.reload();
-    await page.getByText('building now', { exact: false }).first().waitFor({ timeout: 20000 });
+    await page.getByText('MVP queued', { exact: false }).first().waitFor({ timeout: 20000 });
     assert.equal(await page.getByText('No MVP started yet', { exact: false }).count(), 0, 'the queued build survives a reload during the wait (must-fail: no sessionStorage entry until the answer)');
     assert.deepEqual(ui.pageErrors, []);
   } finally {

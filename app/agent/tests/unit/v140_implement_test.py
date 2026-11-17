@@ -1074,7 +1074,7 @@ def _flow_inspire(ns, previews):
     queue = list(previews)
     inst._implement_preview = lambda *a: queue.pop(0)
     inst.number_reports = []
-    inst._implement_cell_problems = lambda path, training_sample=False, grouping=None, sources=(), training_read=False: inst.number_reports.pop(0) if inst.number_reports else []
+    inst._implement_cell_problems = lambda path, training_sample=False, **build_kwargs: inst.number_reports.pop(0) if inst.number_reports else []
     return inst
 
 
@@ -1471,7 +1471,7 @@ def test_an_app_name_taken_by_someone_else_gets_a_hash_never_an_overwrite(agent_
     assert inst._implement_app_name(recorded, "churn-desk") == renamed, \
         "a recorded App name is not proof: the App under that name must still carry this use case's tag"
     assert recorded["app_renamed"] == context["app_renamed"] == (
-        f"App: an App named churn-desk exists but is not this use case's App, so Inspire deployed this one as {renamed}; pick another App "
+        f"Agentic App: an App named churn-desk exists but is not this use case's App, so Inspire deployed this one as {renamed}; pick another App "
         "name in the wizard to name it yourself")
     assert not [e for e in getattr(inst, "emitted", []) if "ended_warning" in e], "the rename is a warning of the App, never a yellow step"
 
@@ -3298,7 +3298,7 @@ def test_an_app_without_a_genie_agent_gets_no_genie_grant_and_a_failed_grant_is_
     inst, context, _calls, _imported = _deploy_inspire(agent_ns, list(answers))
     inst._implement_grant = lambda *a: (_ for _ in ()).throw(RuntimeError("PERMISSION_DENIED: not a manager"))
     fields = inst._implement_deploy_app(context, "churn-desk", SHELL_FILES, READS, "g1", poll_s=0)
-    assert fields["_warnings"] == ["App: Ask Genie may fail because the App's service principal could not get CAN RUN on the Genie "
+    assert fields["_warnings"] == ["Agentic App: Ask Genie may fail because the App's service principal could not get CAN RUN on the Genie "
                                    "Agent g1: PERMISSION_DENIED: not a manager. Give it CAN RUN on the Genie Agent, or build the App again with Vibe/Add/Remove Features on the Build page"]
     assert fields["app_url"] == "https://churn-desk.example"
 
@@ -3615,7 +3615,7 @@ def test_an_app_that_cannot_be_tagged_deploys_with_a_warning_that_says_why(agent
     inst, context, calls, emitted = _tag_inspire(agent_ns, error=RuntimeError("PERMISSION_DENIED: cannot assign tags on apps"))
     warning = inst._implement_tag_app(context, "churn-desk")
     assert len(calls) == 1, "a permission error is not retried"
-    assert warning == ("App: the App churn-desk was not tagged, so its usage cannot be traced to this use case: "
+    assert warning == ("Agentic App: the App churn-desk was not tagged, so its usage cannot be traced to this use case: "
                        "PERMISSION_DENIED: cannot assign tags on apps. Build the App again with Vibe/Add/Remove Features on the Build page to tag it")
     assert emitted == [], "the App step is not turned yellow; the warning goes to the App's warnings"
 
@@ -5334,7 +5334,7 @@ def test_the_app_settings_start_with_decisions_on_and_every_other_option_off_and
     settings = agent_ns["implement_app_settings"]
     off = settings(core.SETTINGS_VERSION, " N01-U01   Predict churn ", [page["id"]], None, "no agent", "2026-10-27T00:00:00Z",
                    {"app_access": "sp"})
-    assert off["options"] == {"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "agentic"}
+    assert off["options"] == {"modify": False, "replace_edits": False, "decisions": True, "alerts": False, "experience": "ui"}
     assert (off["title"], off["style"], off["layout"], off["palette"], off["theme"], off["auth"]) == (
         "N01-U01 Predict churn", "a", "sidebar", "default", "light", "sp")
     assert off["genie"] is None and off["genie_note"] == "no agent"
@@ -5421,7 +5421,7 @@ def test_the_app_is_built_from_genie_page_json_checked_at_its_defaults_then_depl
 def test_an_app_without_a_ready_genie_agent_deploys_with_ask_genie_off_and_a_warning(agent_ns, tmp_path, outputs, asset_status, note):
     inst, context, seen = _app_flow(agent_ns, tmp_path, outputs=outputs, asset_status=asset_status)
     fields = inst._implement_app(context, None)
-    assert fields == {"app_name": "churn-desk", "_warnings": [f"App: {note}"], "_asset": {"page": "n01_u01"}}, "every App deploy records the page of this use case, its own App as well as a joined one"
+    assert fields == {"app_name": "churn-desk", "_warnings": [f"Agentic App: {note}"], "_asset": {"page": "n01_u01"}}, "every App deploy records the page of this use case, its own App as well as a joined one"
     _name, files, reads, space_id = seen["deployed"][0]
     settings = json.loads(files["inspire_app.json"])
     assert settings["genie"] is None and settings["genie_note"] == note and space_id == ""
@@ -5530,7 +5530,7 @@ def test_a_page_the_app_cannot_run_still_goes_back_to_genie(agent_ns, tmp_path):
     with pytest.raises(RuntimeError) as raised:
         inst._implement_app(context, None)
     assert type(raised.value) is RuntimeError, "Genie can fix its own page, so this failure is retried"
-    assert "the App was run at its default filters and KPI k1 failed: UNRESOLVED_COLUMN" in str(raised.value)
+    assert "the Agentic App was run at its default filters and KPI k1 failed: UNRESOLVED_COLUMN" in str(raised.value)
 
 
 @pytest.mark.parametrize("error,text", [
@@ -5631,7 +5631,7 @@ def _reads_salaries(ns):
     (None, True, {"_implement_run_query_check": lambda sql, require_rows=False, limit=20: (_ for _ in ()).throw(
         RuntimeError("TABLE_OR_VIEW_NOT_FOUND"))}, "dataset records failed: TABLE_OR_VIEW_NOT_FOUND"),
     (None, True, {"_implement_app_check": lambda work, files, modules, warehouse: ["page n01_u01: chart:by_category failed: boom"]},
-     "the App was run at its default filters and page n01_u01: chart:by_category failed: boom"),
+     "the Agentic App was run at its default filters and page n01_u01: chart:by_category failed: boom"),
 ])
 def test_a_page_json_that_breaks_a_rule_goes_back_to_genie_and_nothing_deploys(agent_ns, tmp_path, make, write, stubs, needle):
     inst, context, seen = _app_flow(agent_ns, tmp_path, page=make(agent_ns) if make else None, write=write, **stubs)

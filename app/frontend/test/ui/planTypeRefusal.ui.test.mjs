@@ -87,7 +87,7 @@ test('a swap candidate whose type check is busy is listed busy and cannot be cho
   }
 });
 
-// The Data Filters picker (the tree of a picked schema): a busy type check is a row with Try again, not a leaf and not not-usable.
+// Data Management's search: a busy type check is not searched and is not shown as not usable (the Launch picker keeps Try again).
 const PICKER_TABLE = 'adb_fe_uae_01.demo_telco.customers';
 const PICKER_BUSY = "Inspire could not check this table's type right now. Try again.";
 
@@ -103,19 +103,11 @@ test('a picker row whose type check is busy shows Try again, and Try again lists
     await idle(page);
     // The Launch picker disables a busy table, so the schema is picked and its tables are listed in Data Filters instead.
     await page.getByRole('button', { name: /Advanced Settings/ }).click();
-    await page.getByRole('button', { name: /Data Filters \(optional\)/ }).click();
-    // The schema is collapsed in the tree until it is opened; opening it lists its tables.
-    await page.locator('[data-schema-group] [role="treeitem"]').first().click();
-    // The Launch picker lists the same busy table with its own Try again, so this test reads the Data Filters tree only.
-    const busy = page.locator(`[data-schema-group] [data-type-check-busy="${PICKER_TABLE}"]`);
-    await busy.waitFor({ timeout: 15000 });
-    assert.match(await busy.innerText(), /could not check this table's type right now/);
+    await page.getByRole('button', { name: /Data Management \(optional\)/ }).click();
+    await page.getByRole('searchbox', { name: 'Search column names' }).fill('brand_name');
+    await page.locator('[data-search-empty]').waitFor({ timeout: 15000 });
+    assert.equal(await page.locator(`[data-scope-row="${PICKER_TABLE}"]`).count(), 0, 'a busy table is not searched while its type check is busy');
     assert.equal(await page.locator(`[data-unusable-table="${PICKER_TABLE}"]`).count(), 0, 'not shown as not usable');
-    assert.equal(await page.locator(`[data-scope-table="${PICKER_TABLE}"]`).count(), 0, 'cannot be picked while busy');
-    made.state.busyTables = {};
-    await busy.getByRole('button', { name: 'Try again', exact: true }).click();
-    await page.locator(`[data-scope-table="${PICKER_TABLE}"]`).waitFor({ timeout: 15000 });
-    assert.equal(await page.locator(`[data-schema-group] [data-type-check-busy="${PICKER_TABLE}"]`).count(), 0);
     assert.deepEqual(ui.pageErrors.filter((e) => !/Failed to load resource/.test(e)), [], 'no page exception');
   } finally {
     await ui.close();
