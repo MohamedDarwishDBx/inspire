@@ -60,3 +60,20 @@ test('a refused check rejects to the caller and never opens the App-level dialog
     await assert.rejects(() => checkAccessRequest(STATEMENTS));
   });
 });
+
+// REQ-406: the fallback picks the form to open and the one plain line it leaves on the dialog.
+import { otherRequestLinks, requestFormLink, requestFormText } from '../src/lib/accessRequestText.js';
+
+test('the form opened is the first securable with a URL, the rest are listed, and no link gives the copy line', () => {
+  const links = [
+    { type: 'SCHEMA', full_name: 'main.s', url: 'https://h/explore/data/main/s' },
+    { type: 'TABLE', full_name: 'main.s.t', url: 'https://h/explore/data/main/s/t' },
+  ];
+  assert.equal(requestFormLink(links).url, 'https://h/explore/data/main/s');
+  assert.deepEqual(otherRequestLinks(links).map((l) => l.full_name), ['main.s.t']);
+  assert.equal(requestFormLink([]), null);
+  assert.equal(requestFormLink(undefined), null);
+  assert.equal(requestFormText(requestFormLink(links)), 'Opened the access request form for main.s in a new tab. Send the request there.');
+  assert.equal(requestFormText(null), 'Copy the SQL under Advanced to request this access.');
+  assert.doesNotMatch(requestFormText(null), /Request not sent|error|PERMISSION_DENIED/i, 'never a raw error');
+});

@@ -123,7 +123,7 @@ def test_discover_names_who_cannot_read_a_table_and_keeps_going_for_the_readable
     evidence = obj._collect_discovery_evidence(BUSINESS_DETAILS)
     assert "main.s.orders" in evidence["profiles"] and "main.s.customers" not in evidence["profiles"]
     grants = (f"GRANT USE CATALOG ON CATALOG `main` TO `{APP_ID}`; GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `{APP_ID}`; "
-              f"GRANT SELECT ON TABLE `main`.`s`.`customers` TO `{APP_ID}`")
+              f"GRANT SELECT ON SCHEMA `main`.`s` TO `{APP_ID}`")  # REQ-408: the dialog asks at schema level
     reason = (f"Discover reads source tables as the service principal inspire-app (application id {APP_ID}), which cannot read "
               "this source table. Ask your data owner of that table to grant USE CATALOG, USE SCHEMA and SELECT on it to that identity")
     access = evidence["data_access"]

@@ -5,6 +5,7 @@
 // 'unity-catalog' (Databricks API reference, Request For Access: "API scopes: unity-catalog"), which the Apps API does not grant as a
 // user scope (the workspace refused it on install, REQ-320). So a person's token may lack it: the send is then refused with a scope
 // error and the dialog falls back to the copyable SQL under Advanced, opened (REQ-313).
+const { coarseGrants } = require('./grantScope');
 const RFA_SCOPE = 'unity-catalog';
 const RFA_TYPES = new Set(['CATALOG', 'SCHEMA', 'TABLE', 'VOLUME']);
 const GRANT_RE = /^GRANT\s+(.+?)\s+ON\s+(CATALOG|SCHEMA|TABLE|VOLUME)\s+(.+?)\s+TO\s+(.+?);?$/i;
@@ -31,9 +32,10 @@ function parseGrant(statement) {
 }
 
 // The requestable grants of a dialog: one entry per grantee and securable, with its privileges once each.
+// REQ-408: the request asks for the same coarse securables as the SQL the dialog shows (the schema, not each table).
 function requestsOf(statements) {
   const byKey = new Map();
-  for (const statement of Array.isArray(statements) ? statements : []) {
+  for (const statement of coarseGrants(Array.isArray(statements) ? statements : [])) {
     const grant = parseGrant(statement);
     if (!grant) continue;
     const key = `${grant.grantee.toLowerCase()}|${grant.type}:${grant.fullName}`;
@@ -105,7 +107,12 @@ async function destinationsOfChain(call, securable) {
 }
 
 // Reads the destinations of each requestable securable once (with its parents), resolves each grantee, and keeps the requests that can be sent.
-async function checkAccessRequest({ call, who, statements }) {
+async function checkAccessRequest({ call, who, statements, host }) {
+  const got = await checkOffer({ call, who, statements });
+  return { ...got, links: linksOf(statements, host) };
+}
+
+async function checkOffer({ call, who, statements }) {
   if (!who) return { offered: false, destinations: [], reason: NO_PERSON, pending: [] };
   const requests = requestsOf(statements);
   if (!requests.length) return { offered: false, destinations: [], reason: NO_GRANT, pending: [] };
@@ -157,16 +164,48 @@ function requestBodyOf(pending) {
   return { requests: [...byPrincipal.values()] };
 }
 
+// REQ-410 (Request access fallback): the Catalog Explorer page of each requestable securable. Databricks documents this page as the direct
+// URL an object's request is made from (docs: manage-privileges/access-requests); it has no documented deep link that opens the dialog.
+// A host that is not set gives no links, so the dialog shows only the copy text.
+const EXPLORE_PATH = {
+  CATALOG: (p) => `/explore/data/${p[0]}`,
+  SCHEMA: (p) => `/explore/data/${p[0]}/${p[1]}`,
+  TABLE: (p) => `/explore/data/${p[0]}/${p[1]}/${p[2]}`,
+  VOLUME: (p) => `/explore/data/volumes/${p[0]}/${p[1]}/${p[2]}`,
+};
+
+function explorerUrl(host, securable) {
+  const trimmed = String(host || '').trim().replace(/\/+$/, '');
+  const build = EXPLORE_PATH[securable.type];
+  if (!trimmed || !build) return '';
+  const base = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const parts = securable.full_name.split('.').map((p) => encodeURIComponent(p));
+  return `${base}${build(parts)}`;
+}
+
+function linksOf(statements, host) {
+  const seen = new Set();
+  const links = [];
+  for (const request of requestsOf(statements)) {
+    const url = explorerUrl(host, request.securable);
+    const key = `${request.securable.type}:${request.securable.full_name}`;
+    if (!url || seen.has(key)) continue;
+    seen.add(key);
+    links.push({ type: request.securable.type, full_name: request.securable.full_name, url });
+  }
+  return links;
+}
+
 // Sends the requests the check kept. Destinations are read first, so no request is sent where none is set.
-async function sendAccessRequest({ call, who, statements }) {
-  const check = await checkAccessRequest({ call, who, statements });
-  if (!check.offered) return { sent: false, destinations: [], reason: check.reason };
+async function sendAccessRequest({ call, who, statements, host }) {
+  const check = await checkOffer({ call, who, statements });
+  if (!check.offered) return { sent: false, destinations: [], reason: check.reason, links: linksOf(statements, host) };
   const got = await call('/api/3.0/rfa/requests', { method: 'POST', body: JSON.stringify(requestBodyOf(check.pending)) });
-  if (!got.ok) return { sent: false, destinations: [], reason: failureText(got) };
-  return { sent: true, destinations: check.destinations, reason: '' };
+  if (!got.ok) return { sent: false, destinations: [], reason: failureText(got), links: linksOf(statements, host) };
+  return { sent: true, destinations: check.destinations, reason: '', links: linksOf(statements, host) };
 }
 
 module.exports = {
   RFA_SCOPE, COMMENT, NO_DESTINATION, NO_PRINCIPAL, requestsOf, parseGrant, destinationsPath, destinationLabel, requestBodyOf,
-  checkAccessRequest, sendAccessRequest,
+  checkAccessRequest, sendAccessRequest, explorerUrl, linksOf,
 };

@@ -1,8 +1,13 @@
 const I = require('./inspireImplement');
+const { coarseGrants } = require('./grantScope');
 
 // AUTO-4: `steps` are the commands and Share steps an admin copies on their own (Copy steps); `instructions` are plain notes, shown once.
-function permissionRequired({ statements, instructions, steps, principal = '', why = '' } = {}) {
-  const list = [...new Set((Array.isArray(statements) ? statements : []).map((s) => String(s || '').trim()).filter(Boolean))];
+// REQ-408: every dialog payload passes here, so the read grants are asked at schema level (catalog level for a whole-catalog pick).
+// `exact` keeps the table-level statements: a user-authorization App's viewers get its views only, and a schema grant would open the
+// source tables that share the schema.
+function permissionRequired({ statements, instructions, steps, principal = '', why = '', wholeCatalogs = [], exact = false } = {}) {
+  const named = (Array.isArray(statements) ? statements : []).map((s) => String(s || '').trim()).filter(Boolean);
+  const list = [...new Set(exact ? named : coarseGrants(named, { wholeCatalogs }))];
   const lines = [...new Set((Array.isArray(instructions) ? instructions : []).map((s) => String(s || '').trim()).filter(Boolean))];
   const copy = [...new Set((Array.isArray(steps) ? steps : []).map((s) => String(s || '').trim()).filter(Boolean))];
   if (!list.length && !lines.length && !copy.length) return null;
@@ -44,7 +49,7 @@ function appReadStatements(table, appId) {
   return readStatements(table, appId);
 }
 
-function appReadPermissions(found, appId) {
+function appReadPermissions(found, appId, { wholeCatalogs = [] } = {}) {
   const warnings = [];
   const permissions = [];
   if (found.app_unreadable) {
@@ -52,7 +57,7 @@ function appReadPermissions(found, appId) {
     const names = offer.tables.map((t) => t.table || t).join(', ');
     const principal = offer.app.id || appId;
     const permission = permissionRequired({ statements: readStatementsFor(offer.tables.map((t) => t.table || t), principal), principal: offer.app.name || principal,
-      why: `Discover reads ${names} as the App, and the App cannot read ${offer.tables.length === 1 ? 'it' : 'them'} yet.` });
+      why: `Discover reads ${names} as the App, and the App cannot read ${offer.tables.length === 1 ? 'it' : 'them'} yet.`, wholeCatalogs });
     if (permission) permissions.push(permission);
     else warnings.push(I.discoverUnreadText(offer));
   }
@@ -60,7 +65,7 @@ function appReadPermissions(found, appId) {
     const names = found.missing.map((m) => m.table).join(', ');
     const statements = found.missing.flatMap((m) => appReadStatements(m.table, appId));
     const permission = permissionRequired({ statements, principal: appId,
-      why: `Discover reads ${names} as the App, and the App cannot read ${found.missing.length === 1 ? 'it' : 'them'} yet.` });
+      why: `Discover reads ${names} as the App, and the App cannot read ${found.missing.length === 1 ? 'it' : 'them'} yet.`, wholeCatalogs });
     if (permission) permissions.push(permission);
     else warnings.push(`Discover runs as the App, and the App cannot read ${found.missing.map((m) => `${m.table} (${m.reason})`).join(', ')}`);
   }

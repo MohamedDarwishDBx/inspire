@@ -1307,7 +1307,7 @@ function registerImplementRoutes(app, deps) {
       // REQ-300: one plain reason per grantee; the dialog says the copy line once, so no entry repeats an ask.
       const granted = (principals || []).map((p) => {
         const statements = left.flatMap((t) => t.grants.filter((g) => I.appReadGrantFor(g, p)));
-        return PM.permissionRequired({ statements, principal: p, why: I.opensAppSentence(p, record.app_name || '') });
+        return PM.permissionRequired({ statements, principal: p, exact: true, why: I.opensAppSentence(p, record.app_name || '') });
       }).filter(Boolean);
       // A user-authorization App reads a source table directly: its viewers get the App's views, never the raw table. The App must be
       // rebuilt to read through a view; nothing here is a grant to run, so the sentence is a plain step and never copied (REQ-300, REQ-301).
@@ -2195,7 +2195,7 @@ function registerImplementRoutes(app, deps) {
     if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
     try {
       const who = RP.forwardedPerson(req.headers || {});
-      return res.json(await AR.checkAccessRequest({ call: accessRequestCall(req, token), who, statements: req.body?.statements }));
+      return res.json(await AR.checkAccessRequest({ call: accessRequestCall(req, token), who, statements: req.body?.statements, host: req.dbHost }));
     } catch (err) {
       return sendError(res, err);
     }
@@ -2205,7 +2205,7 @@ function registerImplementRoutes(app, deps) {
     if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
     try {
       const who = RP.forwardedPerson(req.headers || {});
-      return res.json(await AR.sendAccessRequest({ call: accessRequestCall(req, token), who, statements: req.body?.statements }));
+      return res.json(await AR.sendAccessRequest({ call: accessRequestCall(req, token), who, statements: req.body?.statements, host: req.dbHost }));
     } catch (err) {
       return sendError(res, err);
     }

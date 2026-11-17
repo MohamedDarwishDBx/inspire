@@ -107,3 +107,16 @@ test('a new statement-less optional entry is saved by identity, and a different 
     delete globalThis.sessionStorage;
   }
 });
+
+// REQ-408 + REQ-138: the coarse statements of a dialog are one list, so a page that raises the same coarse grants again stays closed.
+test('a coarse schema-level grant list raised twice opens once, and a whole-catalog list is a different list', () => {
+  const coarse = [{ statements: ['GRANT USE CATALOG ON CATALOG `main` TO `app-sp`', 'GRANT SELECT ON SCHEMA `main`.`s` TO `app-sp`'], principal: 'app-sp' }];
+  const catalog = [{ statements: ['GRANT USE CATALOG ON CATALOG `main` TO `app-sp`', 'GRANT SELECT ON CATALOG `main` TO `app-sp`'], principal: 'app-sp' }];
+  const calls = [];
+  const off = subscribePermissions((permissions, extra, opts = {}) => calls.push({ quiet: Boolean(opts.quiet) }));
+  raisePermissions(coarse);
+  raisePermissions(coarse);
+  raisePermissions(catalog);
+  off();
+  assert.deepEqual(calls.map((c) => c.quiet), [false, true, false], 'open, quiet repeat, then the catalog list opens');
+});

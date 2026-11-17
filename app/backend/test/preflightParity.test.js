@@ -60,9 +60,9 @@ test('a source the App cannot read the metadata of is refused before the build i
   // REQ-131, REQ-260: the sentence names no GRANT; the App grant action is the check's Permission Required entry (must-keep)
   assert.doesNotMatch(detail, /GRANT /, 'no GRANT in the detail (must-exclude)');
   assert.deepEqual([...got.data.checks.sources.permission.statements].sort(), [
-    'GRANT READ METADATA ON TABLE `main`.`s`.`orders` TO `app-sp-2`', 'GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp-2`',
+    'GRANT READ METADATA ON SCHEMA `main`.`s` TO `app-sp-2`', 'GRANT SELECT ON SCHEMA `main`.`s` TO `app-sp-2`',
     'GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `app-sp-2`'],
-  'the dialog payload carries the App grant action (must-keep)');
+  'the dialog payload asks at schema level (REQ-408)');
 });
 
 test('preflight passes when the App reads the table and its policies (must-exclude control)', async () => {

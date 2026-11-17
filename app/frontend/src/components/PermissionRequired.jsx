@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import ModalDialog from './ModalDialog';
 import { copyStepsText, copyText, grantAsk, grantListKey } from '../lib/permissionBus';
 import { accessRequestResultText, checkAccessRequest, offerShown, sendAccessRequest, statementsOf } from '../lib/accessRequest';
+import { otherRequestLinks, requestFormLink, requestFormText } from '../lib/accessRequestText';
 
 const BUTTON = 'inline-flex h-8 items-center justify-center px-3 rounded-lg text-xs font-semibold border border-border bg-surface text-text-primary hover:bg-bg-subtle';
 const PRIMARY = 'inline-flex h-8 items-center justify-center px-3 rounded-lg text-xs font-semibold text-white bg-db-red-solid hover:opacity-90 disabled:opacity-60';
@@ -15,6 +16,8 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
   // REQ-311: Request for Access. The destinations are read once per grant list; the button shows only when one is set.
   const [offer, setOffer] = useState(null);
   const [requesting, setRequesting] = useState(false);
+  // REQ-406: the check promise is kept, so a click made before the check returns waits for it and never sends blind.
+  const checkRef = useRef(null);
   const [requestText, setRequestText] = useState('');
   const [advancedState, setAdvancedState] = useState(null);
   const box = useRef(null);
@@ -31,21 +34,38 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
     setOffer(null);
     setRequestText('');
     setAdvancedState(null);
+    checkRef.current = null;
     if (!asked.length) return undefined;
     let live = true;
-    checkAccessRequest(asked).then((got) => { if (live) setOffer(got); }).catch(() => { if (live) setOffer({ offered: false }); });
+    const pending = checkAccessRequest(asked).catch(() => ({ offered: false, links: [] }));
+    checkRef.current = pending;
+    pending.then((got) => { if (live) setOffer(got); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per grant list: the key stands for the statements
   }, [listKey]);
+  // REQ-406: the send goes out only when the check offers it. Any other outcome (no destination, a refused scope, an unresolved
+  // principal, a failed send) opens the Databricks request form for the first securable in a new tab, never a raw error.
   const requestAccess = async () => {
     setRequesting(true);
+    let got = {};
+    let sent = null;
     try {
-      setRequestText(accessRequestResultText(await sendAccessRequest(asked)));
-    } catch (err) {
-      setRequestText(accessRequestResultText({ sent: false, reason: err?.message || '' }));
-    } finally {
-      setRequesting(false);
+      got = (await checkRef.current) || {};
+      if (offerShown(got)) sent = await sendAccessRequest(asked);
+    } catch {
+      sent = null;
     }
+    if (sent?.sent) {
+      setRequestText(accessRequestResultText(sent));
+    } else {
+      const links = sent?.links?.length ? sent.links : (got.links || []);
+      const first = requestFormLink(links);
+      if (first) {
+        try { window.open(first.url, '_blank', 'noopener,noreferrer'); } catch { /* the browser refused the tab: the line still names the object */ }
+      }
+      setRequestText(requestFormText(first));
+    }
+    setRequesting(false);
   };
   const copySteps = async () => {
     try {
@@ -78,7 +98,7 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
   };
   const buttons = (
     <>
-      {offerShown(offer) && <button type="button" onClick={requestAccess} disabled={requesting} className={PRIMARY} data-request-access="">{requesting ? 'Requesting' : 'Request access'}</button>}
+      {asked.length > 0 && <button type="button" onClick={requestAccess} disabled={requesting} className={PRIMARY} data-request-access="">{requesting ? 'Requesting' : 'Request access'}</button>}
       {onRetry && <button type="button" onClick={onRetry} className={BUTTON}>Try again</button>}
       {onStart && <button type="button" onClick={onStart} className={BUTTON}>Start anyway</button>}
     </>
@@ -95,6 +115,14 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
         </div>
       )}
       {requestText && <p role="status" data-access-request-result="" className="text-sm text-text-primary break-words">{requestText}</p>}
+      {otherRequestLinks(offer?.links).length > 0 && (
+        <div data-request-links="" className="space-y-1">
+          <p className="text-xs text-text-secondary">Also request access on:</p>
+          {otherRequestLinks(offer.links).map((link) => (
+            <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className="text-sm text-text-primary underline break-all">{link.full_name}</a>
+          ))}
+        </div>
+      )}
       {(text || steps) && (
         <details data-permission-advanced="" open={advancedOpen} onToggle={(e) => setAdvancedState(e.currentTarget.open)} className="space-y-3">
           <summary className="cursor-pointer text-xs font-semibold text-text-primary">Advanced</summary>

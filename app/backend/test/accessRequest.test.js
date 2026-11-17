@@ -17,6 +17,8 @@ const DESTINATIONS = {
   'GET /api/3.0/rfa/destinations/schema/main.s': { ok: true, status: 200, data: EMAIL_DEST },
   'GET /api/3.0/rfa/destinations/table/main.s.orders': { ok: true, status: 200, data: EMAIL_DEST },
 };
+// The result fields the send and check tests do not assert on; the links are asserted in their own tests.
+const strip = ({ links, ...rest }) => rest;
 const scim = (resources) => ({ ok: true, status: 200, data: { Resources: resources } });
 
 // A fake of the one call the module makes. Keys are "METHOD path" (path includes any query); every call is recorded.
@@ -34,10 +36,10 @@ function fakeCall(answers) {
 
 test('the requestable grants are read per grantee and securable, privileges once each, and other securable types are left out', () => {
   const got = AR.requestsOf([...GRANTS, `GRANT SELECT ON TABLE \`main\`.\`s\`.\`orders\` TO \`${WHO}\``, `GRANT CAN_USE ON WAREHOUSE \`w\` TO \`${WHO}\``]);
+  // REQ-408: the table SELECT asks for the schema, so the request names one schema securable with its privileges.
   assert.deepEqual(got, [
     { grantee: WHO, securable: { type: 'CATALOG', full_name: 'main' }, permissions: ['USE_CATALOG'] },
-    { grantee: WHO, securable: { type: 'SCHEMA', full_name: 'main.s' }, permissions: ['USE_SCHEMA'] },
-    { grantee: WHO, securable: { type: 'TABLE', full_name: 'main.s.orders' }, permissions: ['SELECT'] },
+    { grantee: WHO, securable: { type: 'SCHEMA', full_name: 'main.s' }, permissions: ['USE_SCHEMA', 'SELECT'] },
   ]);
   assert.deepEqual(AR.requestsOf([]), []);
 });
@@ -45,14 +47,14 @@ test('the requestable grants are read per grantee and securable, privileges once
 test('success: destinations are read, then one request goes out as the person with no behalf_of, and the result names where it went', async () => {
   const { call, calls } = fakeCall({ ...DESTINATIONS, 'POST /api/3.0/rfa/requests': { ok: true, status: 200, data: { responses: [] } } });
   const got = await AR.sendAccessRequest({ call, who: WHO, statements: GRANTS });
-  assert.deepEqual(got, { sent: true, destinations: ['owner@example.com'], reason: '' });
+  assert.deepEqual(strip(got), { sent: true, destinations: ['owner@example.com'], reason: '' });
   const post = calls.find((c) => c.method === 'POST');
   assert.equal(post.path, '/api/3.0/rfa/requests');
   assert.equal(post.body.requests.length, 1, 'one request object for the one principal');
   assert.equal(Object.hasOwn(post.body.requests[0], 'behalf_of'), false, 'no behalf_of: the requester is the signed-in person');
   assert.equal(post.body.requests[0].comment, AR.COMMENT);
   assert.ok(AR.COMMENT.length <= 200 && /^[A-Za-z0-9 .,'!?-]+$/.test(AR.COMMENT), 'the comment fits the API rule');
-  assert.deepEqual(post.body.requests[0].securable_permissions.map((p) => p.securable.full_name), ['main', 'main.s', 'main.s.orders']);
+  assert.deepEqual(post.body.requests[0].securable_permissions.map((p) => p.securable.full_name), ['main', 'main.s']);
 });
 
 test('no destination set: the check says not offered with a plain reason, and no request is sent', async () => {
@@ -63,7 +65,7 @@ test('no destination set: the check says not offered with a plain reason, and no
     'GET /api/3.0/rfa/destinations/table/main.s.orders': empty,
   });
   const check = await AR.checkAccessRequest({ call, who: WHO, statements: GRANTS });
-  assert.deepEqual(check, { offered: false, destinations: [], reason: AR.NO_DESTINATION, pending: [] });
+  assert.deepEqual(strip(check), { offered: false, destinations: [], reason: AR.NO_DESTINATION, pending: [] });
   const sent = await AR.sendAccessRequest({ call, who: WHO, statements: GRANTS });
   assert.equal(sent.sent, false);
   assert.equal(sent.reason, check.reason);
@@ -76,7 +78,7 @@ test('denied: the workspace refuses the request, and the refusal is the reason',
     'POST /api/3.0/rfa/requests': { ok: false, status: 403, data: { message: 'PERMISSION_DENIED: you cannot request this securable' } },
   });
   const got = await AR.sendAccessRequest({ call, who: WHO, statements: GRANTS });
-  assert.deepEqual(got, { sent: false, destinations: [], reason: 'PERMISSION_DENIED: you cannot request this securable' });
+  assert.deepEqual(strip(got), { sent: false, destinations: [], reason: 'PERMISSION_DENIED: you cannot request this securable' });
 });
 
 test('the API is unreachable for this App (missing scope): the check is not offered and the workspace message is kept', async () => {
@@ -105,7 +107,7 @@ test('an App grant is resolved to its service principal and sent as its own requ
   assert.equal(post.body.requests.length, 2, 'the person and the App are two principals, so two request objects');
   const forApp = post.body.requests.find((r) => r.behalf_of);
   assert.deepEqual(forApp.behalf_of, { id: APP_SCIM, principal_type: 'SERVICE_PRINCIPAL' });
-  assert.deepEqual(forApp.securable_permissions.map((p) => p.securable.full_name), ['main.s.orders']);
+  assert.deepEqual(forApp.securable_permissions.map((p) => p.securable.full_name), ['main.s']);
   assert.equal(post.body.requests.find((r) => !r.behalf_of).securable_permissions[0].securable.full_name, 'main');
 });
 
@@ -158,8 +160,44 @@ test('REQ-315: a table with no destination of its own falls back to its schema, 
     'POST /api/3.0/rfa/requests': { ok: true, status: 200, data: {} },
   });
   const got = await AR.sendAccessRequest({ call, who: WHO, statements: [GRANTS[2]] });
-  assert.deepEqual(got, { sent: true, destinations: ['owner@example.com'], reason: '' });
+  assert.deepEqual(strip(got), { sent: true, destinations: ['owner@example.com'], reason: '' });
+  // REQ-408: the table read asks for its schema, so the chain starts at the schema, then the catalog.
   assert.deepEqual(calls.filter((c) => c.method === 'GET').map((c) => c.path), [
-    '/api/3.0/rfa/destinations/table/main.s.orders', '/api/3.0/rfa/destinations/schema/main.s', '/api/3.0/rfa/destinations/catalog/main',
+    '/api/3.0/rfa/destinations/schema/main.s', '/api/3.0/rfa/destinations/catalog/main',
   ]);
+});
+
+// REQ-406: the check always names the Catalog Explorer page of each securable it would ask for, so the dialog can open it when the send
+// is not offered or fails. Without a host there is no link to open.
+test('REQ-406: a check that is not offered still returns the Catalog Explorer page of each requestable securable', async () => {
+  const empty = { ok: true, status: 200, data: {} };
+  const { call } = fakeCall({
+    'GET /api/3.0/rfa/destinations/schema/main.s': empty,
+    'GET /api/3.0/rfa/destinations/catalog/main': empty,
+  });
+  const got = await AR.checkAccessRequest({ call, who: WHO, statements: GRANTS, host: 'workspace.example.com/' });
+  assert.equal(got.offered, false);
+  assert.deepEqual(got.links, [
+    { type: 'CATALOG', full_name: 'main', url: 'https://workspace.example.com/explore/data/main' },
+    { type: 'SCHEMA', full_name: 'main.s', url: 'https://workspace.example.com/explore/data/main/s' },
+  ]);
+});
+
+test('REQ-406: no host set means no link, so the dialog has nothing to open and shows the copy text', async () => {
+  const { call } = fakeCall({});
+  const got = await AR.checkAccessRequest({ call, who: WHO, statements: GRANTS, host: '' });
+  assert.deepEqual(got.links, []);
+});
+
+test('REQ-406: a send the workspace refuses still returns the links, so the dialog opens the form instead of ending at a raw error', async () => {
+  const { call } = fakeCall({ ...DESTINATIONS, 'POST /api/3.0/rfa/requests': { ok: false, status: 403, data: { message: 'PERMISSION_DENIED' } } });
+  const got = await AR.sendAccessRequest({ call, who: WHO, statements: GRANTS, host: 'https://workspace.example.com' });
+  assert.equal(got.sent, false);
+  assert.equal(got.links[0].url, 'https://workspace.example.com/explore/data/main');
+});
+
+test('REQ-406: a table or volume link names its full path, and the names are encoded', () => {
+  assert.equal(AR.explorerUrl('h.example.com', { type: 'TABLE', full_name: 'main.s.orders' }), 'https://h.example.com/explore/data/main/s/orders');
+  assert.equal(AR.explorerUrl('h.example.com', { type: 'VOLUME', full_name: 'main.s.v' }), 'https://h.example.com/explore/data/volumes/main/s/v');
+  assert.equal(AR.explorerUrl('h.example.com', { type: 'SCHEMA', full_name: 'main.my schema' }), 'https://h.example.com/explore/data/main/my%20schema');
 });

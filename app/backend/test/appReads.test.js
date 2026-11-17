@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const I = require('../lib/inspireImplement');
+const { coarseGrants } = require('../lib/grantScope');
 const { makeApp, listen } = require('./support/implementApp');
 
 const Q = 'inspire_database=main.inspire&warehouse_id=wh1&session_id=42&use_case_id=N01-U01';
@@ -301,7 +302,8 @@ test('the on-load card, Check again and Grant name the same statements, READ MET
     const context = await fetch(`${url}/api/inspire/implement/context?${Q}`).then((r) => r.json());
     const onLoad = context.app_unreadable.grants;
     const check = await call(url, `/api/inspire/implement/app-reads?${Q}`, { action: 'check' });
-    assert.deepEqual([...check.data.permissions[0].statements].sort(), [...onLoad].sort(), 'the card and Check again show the same statements');
+    // REQ-408: the dialog shows the card's grants at schema level; the card itself and Grant stay per table (least privilege).
+    assert.deepEqual([...check.data.permissions[0].statements].sort(), [...coarseGrants(onLoad)].sort(), 'the card and Check again show the same statements');
     assert.ok(onLoad.includes(METADATA), 'READ METADATA is in the card, so it is in the dialog and the Grant');
     await call(url, `/api/inspire/implement/app-reads?${Q}`, { action: 'grant' });
     assert.deepEqual(w.grants.map(([sql]) => sql).sort(), [...onLoad].sort(), 'Grant runs every statement the dialog shows');

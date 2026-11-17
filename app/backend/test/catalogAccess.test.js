@@ -161,7 +161,7 @@ test('a rerun the App cannot read refuses with the named App reason, never the s
     assert.match(got.data.error, /Ask your data owner to run the commands: the exact commands are in Permission Required$/);
     assert.doesNotMatch(got.data.error, /GRANT /, 'no GRANT in the refusal prose (REQ-260)');
     assert.deepEqual(got.data.app_unreadable.permissions[0].statements, [
-      'GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `app-sp-id`', 'GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp-id`', 'GRANT READ METADATA ON TABLE `main`.`s`.`orders` TO `app-sp-id`'], 'the dialog payload carries the exact statements (must-keep)');
+      'GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `app-sp-id`', 'GRANT SELECT ON SCHEMA `main`.`s` TO `app-sp-id`', 'GRANT READ METADATA ON SCHEMA `main`.`s` TO `app-sp-id`'], 'the dialog payload asks at schema level (REQ-408)');
     assert.doesNotMatch(got.data.error, /swap/i);
     assert.deepEqual(got.data.missing_tables, []);
     assert.equal(got.data.app_unreadable.can_grant, false);

@@ -12,7 +12,8 @@ def test_the_audience_entry_names_who_runs_and_who_receives_the_grant(agent_ns):
 
 
 def test_the_audience_entry_is_built_with_that_copy_and_the_audience_principal(agent_ns):
+    # The audience path is exact (its viewers get views only, never a schema grant), so it is built with exact=True as in production.
     entry = agent_ns["implement_permission_entry"]("admins", ["GRANT SELECT ON TABLE `c`.`s`.`t` TO `admins`"],
-                                                   agent_ns["implement_audience_grant_why"]("admins"))
+                                                   agent_ns["implement_audience_grant_why"]("admins"), exact=True)
     assert entry["principal"] == "admins" and entry["statements"] == ["GRANT SELECT ON TABLE `c`.`s`.`t` TO `admins`"]
     assert entry["why"].endswith("Then click Try again.")

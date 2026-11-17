@@ -20,3 +20,19 @@ export function accessRequestResultText(result) {
 export function statementsOf(permissions) {
   return (permissions || []).flatMap((p) => (Array.isArray(p?.statements) ? p.statements : []));
 }
+
+// REQ-406: Request access always opens the Databricks request form when the in-App send does not go through. The form is the Catalog
+// Explorer page of the first securable (the backend builds it), and the rest are listed as plain links. The person sees one plain line,
+// never a raw API error.
+export function requestFormLink(links) {
+  return (Array.isArray(links) ? links : []).find((link) => link && link.url) || null;
+}
+
+export function otherRequestLinks(links) {
+  return (Array.isArray(links) ? links : []).filter((link) => link && link.url).slice(1);
+}
+
+export function requestFormText(link) {
+  return link ? `Opened the access request form for ${link.full_name} in a new tab. Send the request there.`
+    : 'Copy the SQL under Advanced to request this access.';
+}

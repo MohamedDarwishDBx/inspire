@@ -52,7 +52,7 @@ test('a waiting App opens the Permission Required dialog: one instruction line, 
     const block = (await dialog.locator('[data-permission-statements]').textContent()).trim();
     assert.equal(block, GRANTS.map((g) => `${g};`).join('\n'), 'the block holds the GRANT statements, each ending with a semicolon, and nothing else');
     assert.equal(await dialog.getByRole('button', { name: 'Copy', exact: true }).count(), 1);
-    assert.equal(await dialog.getByRole('button', { name: 'Request access' }).count(), 0, 'no Request access without a destination');
+    assert.equal(await dialog.getByRole('button', { name: 'Request access' }).count(), 1, 'REQ-406: Request access shows without a destination too');
     await until(() => dialog.locator('details[data-permission-advanced]').evaluate((el) => el.open), 10000);
     assert.equal(await dialog.locator('details[data-permission-advanced]').evaluate((el) => el.open), true, 'no destination: Advanced opens by default');
     assert.deepEqual(seen.errors, []);
@@ -81,7 +81,7 @@ test('Request access shows only when the workspace has a destination, and sends 
   }
 });
 
-test('a refused request is shown as its plain reason in the same dialog', async () => {
+test('a refused request never shows the raw workspace error in the same dialog (REQ-406)', async () => {
   const { routes } = waitingRoutes({ check: OFFER, send: { sent: false, destinations: [], reason: 'PERMISSION_DENIED: you cannot request this securable' } });
   const { page, context } = await openApp(browser, served.base, appInfo({ unread: { [TABLE]: GRANTS }, unread_owners: { [TABLE]: 'data-eng' } }), { routes, ready: '[data-permission-dialog]' });
   try {
@@ -89,7 +89,27 @@ test('a refused request is shown as its plain reason in the same dialog', async 
     await dialog.getByRole('button', { name: 'Request access' }).click();
     const result = dialog.locator('[data-access-request-result]');
     await result.waitFor({ timeout: 15000 });
-    assert.equal((await result.textContent()).trim(), 'Request not sent: PERMISSION_DENIED: you cannot request this securable');
+    // REQ-406: a refused send never shows the raw error; with no link in the check, the dialog names the SQL under Advanced instead.
+    assert.equal((await result.textContent()).trim(), 'Copy the SQL under Advanced to request this access.');
+  } finally {
+    await context.close();
+  }
+});
+
+// REQ-406 (App shell): with no destination, Request access opens the Databricks request form for the object in a new tab, and the dialog
+// keeps one plain line (never a raw error).
+test('REQ-406: with no destination, Request access opens the Catalog Explorer page of the table in a new tab', async () => {
+  const link = { type: 'SCHEMA', full_name: 'main.pricing', url: 'https://workspace.example.com/explore/data/main/pricing' };
+  const { routes } = waitingRoutes({ check: { offered: false, destinations: [], reason: 'none', links: [link] } });
+  const { page, context } = await openApp(browser, served.base, appInfo({ unread: { [TABLE]: GRANTS }, unread_owners: { [TABLE]: 'data-eng' } }), { routes, ready: '[data-permission-dialog]' });
+  try {
+    const dialog = page.locator('[data-permission-dialog]');
+    await dialog.waitFor({ timeout: 15000 });
+    await page.evaluate(() => { window.__opened = []; window.open = (url) => { window.__opened.push(String(url)); return null; }; });
+    await dialog.getByRole('button', { name: 'Request access' }).click();
+    await dialog.locator('[data-access-request-result]').waitFor({ timeout: 15000 });
+    assert.deepEqual(await page.evaluate(() => window.__opened), [link.url]);
+    assert.equal((await dialog.locator('[data-access-request-result]').textContent()).trim(), 'Opened the access request form for main.pricing in a new tab. Send the request there.');
   } finally {
     await context.close();
   }

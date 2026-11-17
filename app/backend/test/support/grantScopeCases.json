@@ -1,0 +1,166 @@
+[
+  {
+    "name": "ten tables in one schema",
+    "input": [
+      "GRANT USE CATALOG ON CATALOG `main` TO `p@example.com`",
+      "GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t0` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t1` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t2` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t3` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t4` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t5` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t6` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t7` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t8` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t9` TO `p@example.com`"
+    ],
+    "wholeCatalogs": [],
+    "expected": [
+      "GRANT USE CATALOG ON CATALOG `main` TO `p@example.com`",
+      "GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT SELECT ON SCHEMA `main`.`s` TO `p@example.com`"
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "read metadata on tables collapses",
+    "input": [
+      "GRANT USE CATALOG ON CATALOG `main` TO `p@example.com`",
+      "GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t1` TO `p@example.com`",
+      "GRANT READ METADATA ON TABLE `main`.`s`.`t1` TO `p@example.com`",
+      "GRANT READ METADATA ON TABLE `main`.`s`.`t2` TO `p@example.com`"
+    ],
+    "wholeCatalogs": [],
+    "expected": [
+      "GRANT USE CATALOG ON CATALOG `main` TO `p@example.com`",
+      "GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT SELECT ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT READ METADATA ON SCHEMA `main`.`s` TO `p@example.com`"
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "whole catalog pick",
+    "input": [
+      "GRANT USE CATALOG ON CATALOG `main` TO `p@example.com`",
+      "GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t1` TO `p@example.com`",
+      "GRANT READ METADATA ON TABLE `main`.`s`.`t1` TO `p@example.com`",
+      "GRANT SELECT ON SCHEMA `main`.`s` TO `p@example.com`"
+    ],
+    "wholeCatalogs": [
+      "main"
+    ],
+    "expected": [
+      "GRANT USE CATALOG ON CATALOG `main` TO `p@example.com`",
+      "GRANT SELECT ON CATALOG `main` TO `p@example.com`",
+      "GRANT READ METADATA ON CATALOG `main` TO `p@example.com`"
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "whole catalog adds USE CATALOG",
+    "input": [
+      "GRANT SELECT ON TABLE `main`.`s`.`t1` TO `p@example.com`"
+    ],
+    "wholeCatalogs": [
+      "main"
+    ],
+    "expected": [
+      "GRANT USE CATALOG ON CATALOG `main` TO `p@example.com`",
+      "GRANT SELECT ON CATALOG `main` TO `p@example.com`"
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "catalog not picked whole",
+    "input": [
+      "GRANT USE CATALOG ON CATALOG `main` TO `p@example.com`",
+      "GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t1` TO `p@example.com`"
+    ],
+    "wholeCatalogs": [
+      "other"
+    ],
+    "expected": [
+      "GRANT USE CATALOG ON CATALOG `main` TO `p@example.com`",
+      "GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT SELECT ON SCHEMA `main`.`s` TO `p@example.com`"
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "modify stays exact",
+    "input": [
+      "GRANT MODIFY ON TABLE `main`.`s`.`t1` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t1` TO `p@example.com`"
+    ],
+    "wholeCatalogs": [],
+    "expected": [
+      "GRANT MODIFY ON TABLE `main`.`s`.`t1` TO `p@example.com`",
+      "GRANT SELECT ON SCHEMA `main`.`s` TO `p@example.com`"
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "write and warehouse steps pass through",
+    "input": [
+      "GRANT CREATE TABLE ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT CAN_USE ON WAREHOUSE `w` TO `p@example.com`"
+    ],
+    "wholeCatalogs": [],
+    "expected": [
+      "GRANT CREATE TABLE ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT CAN_USE ON WAREHOUSE `w` TO `p@example.com`"
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "lakebase double quotes pass through",
+    "input": [
+      "GRANT SELECT ON TABLE \"app\".\"orders\", \"app\".\"items\" TO \"client_id\""
+    ],
+    "wholeCatalogs": [],
+    "expected": [
+      "GRANT SELECT ON TABLE \"app\".\"orders\", \"app\".\"items\" TO \"client_id\""
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "principals stay separate",
+    "input": [
+      "GRANT SELECT ON TABLE `main`.`s`.`t1` TO `p@example.com`",
+      "GRANT SELECT ON TABLE `main`.`s`.`t1` TO `q@example.com`"
+    ],
+    "wholeCatalogs": [],
+    "expected": [
+      "GRANT SELECT ON SCHEMA `main`.`s` TO `p@example.com`",
+      "GRANT SELECT ON SCHEMA `main`.`s` TO `q@example.com`"
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "unquoted names and mixed case",
+    "input": [
+      "grant select on table main.sales.orders to `x`"
+    ],
+    "wholeCatalogs": [],
+    "expected": [
+      "GRANT SELECT ON SCHEMA `main`.`sales` TO `x`"
+    ],
+    "idempotent": true
+  },
+  {
+    "name": "trailing semicolons",
+    "input": [
+      "GRANT SELECT ON TABLE `main`.`s`.`t1` TO `p@example.com`;"
+    ],
+    "wholeCatalogs": [],
+    "expected": [
+      "GRANT SELECT ON SCHEMA `main`.`s` TO `p@example.com`"
+    ],
+    "idempotent": true
+  }
+]

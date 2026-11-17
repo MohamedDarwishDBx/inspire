@@ -167,6 +167,11 @@ def waiting_for_access_body(error, owners=()) -> dict:
 ACCESS_CARD_ROUTES = ("page", "defaults", "runs", "filters")
 ACCESS_STEPS = ("diagnose", "check", "copy", "grant")
 ACCESS_READS = (("USE CATALOG", "CATALOG", 1), ("USE SCHEMA", "SCHEMA", 2), ("SELECT", "TABLE", 3))
+
+
+def grant_text(privilege: str, level: str, name: str, principal: str) -> str:
+    # The one GRANT builder of the App shell: every grant the shell names or checks is built here.
+    return f"GRANT {privilege} ON {level} {name} TO {principal}"
 ACCESS_GRANT = re.compile(r"^GRANT (USE CATALOG|USE SCHEMA|SELECT) ON \w+ (\S+) TO ")
 APP_PRINCIPAL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
 NO_SCOPE = re.compile(r"scope", re.I)
@@ -497,7 +502,7 @@ def access_grants(table: str, principal: str) -> list:
         parts = shell_sql.table_name(table).split(".")
     except ValueError:
         return []
-    return [f"GRANT {privilege} ON {level} {'.'.join(parts[:depth])} TO `{principal}`" for privilege, level, depth in ACCESS_READS]
+    return [grant_text(privilege, level, ".".join(parts[:depth]), f"`{principal}`") for privilege, level, depth in ACCESS_READS]
 
 
 def access_said(statement: str) -> tuple:
@@ -517,9 +522,57 @@ RFA_NO_GRANT = "none of these grants can be requested through Request for Access
 RFA_NO_PERSON = "Inspire cannot tell who is signed in, so it cannot send the request as you"
 
 
+# REQ-408: the Python mirror of backend/lib/grantScope.js (the one rule, the same fixture in both tests). Read grants on a table collapse to
+# the schema, USE CATALOG and USE SCHEMA are named once, a whole-catalog pick asks at catalog level. Write grants and non-UC steps stay exact.
+GRANT_LINE = re.compile(r"^GRANT\s+(.+?)\s+ON\s+(CATALOG|SCHEMA|TABLE)\s+(.+?)\s+TO\s+(.+?);?$", re.I)
+UC_NAME_PART = re.compile(r"^(?:`[^`.]+`|[A-Za-z0-9_-]+)$")
+UC_NAME_SHAPE = {"CATALOG": 1, "SCHEMA": 2, "TABLE": 3}
+READ_PRIVILEGES = ("SELECT", "READ_METADATA")
+
+
+def coarse_grants(statements, whole_catalogs=()) -> list:
+    whole = {str(c or "").replace("`", "").strip().lower() for c in whole_catalogs or () if str(c or "").replace("`", "").strip()}
+    out = {}
+    for raw in statements or []:
+        statement = str(raw or "").strip()
+        if not statement:
+            continue
+        hit = GRANT_LINE.match(statement)
+        privilege = re.sub(r"\s+", "_", hit.group(1).strip().upper()) if hit else ""
+        level = hit.group(2).upper() if hit else ""
+        parts = None
+        if hit:
+            words = [p.strip() for p in hit.group(3).split(".")]
+            if len(words) == UC_NAME_SHAPE[level] and all(UC_NAME_PART.match(w) for w in words):
+                parts = [w.replace("`", "") for w in words]
+        is_read = ((privilege in READ_PRIVILEGES and level == "TABLE") or (privilege == "USE_SCHEMA" and level == "SCHEMA")
+                   or (privilege in READ_PRIVILEGES and level == "SCHEMA") or (privilege == "USE_CATALOG" and level == "CATALOG"))
+        if not hit or not parts or not is_read:
+            out.setdefault(f"raw|{statement}", statement)
+            continue
+        principal = hit.group(4).strip()
+        who = principal.replace("`", "").strip().lower()
+        catalog, schema = parts[0], (parts[1] if len(parts) > 1 else "")
+        use_catalog = f"{who}|USE_CATALOG|{catalog.lower()}"
+        label = privilege.replace("_", " ")
+        if privilege == "USE_CATALOG":
+            out.setdefault(use_catalog, grant_text("USE CATALOG", "CATALOG", f"`{catalog}`", principal))
+            continue
+        if catalog.lower() in whole:
+            out.setdefault(use_catalog, grant_text("USE CATALOG", "CATALOG", f"`{catalog}`", principal))
+            if privilege in READ_PRIVILEGES:
+                out.setdefault(f"{who}|{privilege}|catalog|{catalog.lower()}", grant_text(label, "CATALOG", f"`{catalog}`", principal))
+            continue
+        if privilege == "USE_SCHEMA":
+            out.setdefault(f"{who}|USE_SCHEMA|{catalog.lower()}.{schema.lower()}", grant_text("USE SCHEMA", "SCHEMA", f"`{catalog}`.`{schema}`", principal))
+            continue
+        out.setdefault(f"{who}|{privilege}|schema|{catalog.lower()}.{schema.lower()}", grant_text(label, "SCHEMA", f"`{catalog}`.`{schema}`", principal))
+    return list(out.values())
+
+
 def rfa_requests(statements) -> list:
     by_key = {}
-    for statement in statements or []:
+    for statement in coarse_grants(statements or []):
         hit = RFA_GRANT.match(str(statement or "").strip())
         if not hit:
             continue
@@ -587,7 +640,35 @@ def rfa_destinations_chain(ws, securable: dict) -> tuple:
     return [], ""
 
 
-def rfa_check(ws, who: str, statements) -> dict:
+def rfa_explorer_url(host: str, securable: dict) -> str:
+    # REQ-406: the Catalog Explorer page of the securable, the direct URL Databricks documents for an object's request (no deep link exists).
+    base = str(host or "").strip().rstrip("/")
+    if not base or securable["type"] not in ("CATALOG", "SCHEMA", "TABLE", "VOLUME"):
+        return ""
+    parts = "/".join(quote(p, safe="") for p in securable["full_name"].split("."))
+    path = f"/explore/data/volumes/{parts}" if securable["type"] == "VOLUME" else f"/explore/data/{parts}"
+    origin = base if base.lower().startswith(("http://", "https://")) else f"https://{base}"
+    return origin + path
+
+
+def rfa_links(host: str, statements) -> list:
+    links, seen = [], set()
+    for request in rfa_requests(statements):
+        securable = request["securable"]
+        key = (securable["type"], securable["full_name"])
+        url = rfa_explorer_url(host, securable)
+        if not url or key in seen:
+            continue
+        seen.add(key)
+        links.append({"type": securable["type"], "full_name": securable["full_name"], "url": url})
+    return links
+
+
+def rfa_check(ws, who: str, statements, host: str = "") -> dict:
+    return {**rfa_offer(ws, who, statements), "links": rfa_links(host, statements)}
+
+
+def rfa_offer(ws, who: str, statements) -> dict:
     if not who:
         return {"offered": False, "destinations": [], "reason": RFA_NO_PERSON, "pending": []}
     requests = rfa_requests(statements)
@@ -632,15 +713,16 @@ def rfa_body(pending: list) -> dict:
     return {"requests": list(by_principal.values())}
 
 
-def rfa_send(ws, who: str, statements) -> dict:
-    check = rfa_check(ws, who, statements)
+def rfa_send(ws, who: str, statements, host: str = "") -> dict:
+    check = rfa_offer(ws, who, statements)
+    links = rfa_links(host, statements)
     if not check["offered"]:
-        return {"sent": False, "destinations": [], "reason": check["reason"]}
+        return {"sent": False, "destinations": [], "reason": check["reason"], "links": links}
     try:
         ws.call("POST", "/api/3.0/rfa/requests", body=rfa_body(check["pending"]))
     except Exception as error:
-        return {"sent": False, "destinations": [], "reason": rfa_failure(error)}
-    return {"sent": True, "destinations": check["destinations"], "reason": ""}
+        return {"sent": False, "destinations": [], "reason": rfa_failure(error), "links": links}
+    return {"sent": True, "destinations": check["destinations"], "reason": "", "links": links}
 
 
 def access_owners(tables: list) -> str:
@@ -2667,7 +2749,8 @@ class Shell:
         body = waiting_for_access_body(text, self.access_owners([text]))
         body["error"] = shell_sql.error_text(text)
         person = str((headers or {}).get("x-forwarded-email") or "").strip()
-        grants = [g for table in body["tables"] for g in access_grants(table, person)]
+        # REQ-408: the dialog asks at schema level; Grant (access_grant) still runs the exact statements of access_found.
+        grants = coarse_grants([g for table in body["tables"] for g in access_grants(table, person)])
         if grants:
             body["permissions"] = [{"statements": grants, "instructions": [], "steps": [], "principal": person,
                                     "why": "Inspire wrote this with your own access, and you cannot write it yet. Ask your data owner to run these commands."}]
@@ -2974,13 +3057,16 @@ class Shell:
         who = str(headers.get("x-forwarded-email") or "").strip()
         token = headers.get("x-forwarded-access-token")
         statements = [g for t in self.access_found(headers)["tables"] for g in t["grants"]]
-        ws = self.user_factory(self.env.get("DATABRICKS_HOST", ""), token) if token else None
+        host = self.env.get("DATABRICKS_HOST", "")
+        ws = self.user_factory(host, token) if token else None
         if ws is None:
-            return {"sent": False, "destinations": [], "reason": RFA_NO_PERSON} if send else {"offered": False, "destinations": [], "reason": RFA_NO_PERSON}
+            links = rfa_links(host, statements)
+            return {"sent": False, "destinations": [], "reason": RFA_NO_PERSON, "links": links} if send else {"offered": False, "destinations": [],
+                                                                                                             "reason": RFA_NO_PERSON, "links": links}
         if send:
-            return rfa_send(ws, who, statements)
-        check = rfa_check(ws, who, statements)
-        return {"offered": check["offered"], "destinations": check["destinations"], "reason": check["reason"]}
+            return rfa_send(ws, who, statements, host)
+        check = rfa_check(ws, who, statements, host)
+        return {"offered": check["offered"], "destinations": check["destinations"], "reason": check["reason"], "links": check["links"]}
 
     def app_access(self, headers: dict, data: dict) -> dict:
         step = data.get("step")
@@ -3016,6 +3102,8 @@ class Shell:
         statements = [g for t in tables for g in t["grants"]]
         return {"tables": tables, "can_grant": bool(statements), "you_can_grant": bool(statements) and all(t["you_can_grant"] for t in tables),
                 "sql": "\n".join(f"{g};" for g in statements),
+                # REQ-408: what the dialog shows and copies, at schema level. Grant runs the exact statements above, never this text.
+                "display": "\n".join(f"{g};" for g in coarse_grants(statements)),
                 "seen": hashlib.sha256("\n".join(statements).encode("utf-8")).hexdigest()}
 
     def person_can_grant(self, ws, table: str) -> bool:

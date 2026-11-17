@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { copyText as grantText } from '../../../../../frontend/src/lib/permissionBus.js';
-import { accessRequestResultText, offerShown } from '../../../../../frontend/src/lib/accessRequestText.js';
+import { accessRequestResultText, offerShown, otherRequestLinks, requestFormLink, requestFormText } from '../../../../../frontend/src/lib/accessRequestText.js';
 import { accessRequestCheck, accessRequestSend } from './api.js';
 import { copyText } from './Draft.jsx';
 import { AccessActions } from './ui.jsx';
@@ -15,7 +15,9 @@ export default function PermissionDialog({ found: given, reason = '', title = 'P
   const found = given !== undefined ? given : own;
   const statements = (found?.tables || []).flatMap((t) => t.grants || []);
   const key = statements.join('|');
-  const text = grantText([{ statements }]);
+  // REQ-408: the copy text is the server's schema-level display; Grant still runs the exact statements of the found tables.
+  const text = found?.display || grantText([{ statements }]);
+  const checkRef = useRef(null);
   const [offer, setOffer] = useState(null);
   const [advancedState, setAdvancedState] = useState(null);
   const [requesting, setRequesting] = useState(false);
@@ -27,21 +29,38 @@ export default function PermissionDialog({ found: given, reason = '', title = 'P
     setOffer(null);
     setResult('');
     setAdvancedState(null);
+    checkRef.current = null;
     if (!statements.length) return undefined;
     let live = true;
-    accessRequestCheck().then((got) => { if (live) setOffer(got); }).catch(() => { if (live) setOffer({ offered: false }); });
+    const pending = accessRequestCheck().catch(() => ({ offered: false, links: [] }));
+    checkRef.current = pending;
+    pending.then((got) => { if (live) setOffer(got); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per grant list: the key stands for the statements
   }, [key]);
+  // REQ-406: a send goes out only when the check offers it. Any other outcome opens the Databricks request form for the first securable in
+  // a new tab, with one plain line (never a raw API error), the same rule as the Inspire App's dialog.
   const requestAccess = async () => {
     setRequesting(true);
+    let got = {};
+    let sent = null;
     try {
-      setResult(accessRequestResultText(await accessRequestSend()));
-    } catch (error) {
-      setResult(accessRequestResultText({ sent: false, reason: error?.message || '' }));
-    } finally {
-      setRequesting(false);
+      got = (await checkRef.current) || {};
+      if (offerShown(got)) sent = await accessRequestSend();
+    } catch {
+      sent = null;
     }
+    if (sent?.sent) {
+      setResult(accessRequestResultText(sent));
+    } else {
+      const links = sent?.links?.length ? sent.links : (got.links || []);
+      const first = requestFormLink(links);
+      if (first) {
+        try { window.open(first.url, '_blank', 'noopener,noreferrer'); } catch { /* the browser refused the tab: the line still names the object */ }
+      }
+      setResult(requestFormText(first));
+    }
+    setRequesting(false);
   };
   const copy = async () => setCopied((await copyText(text)) ? 'Copied' : 'Select and copy');
   return (
@@ -50,10 +69,16 @@ export default function PermissionDialog({ found: given, reason = '', title = 'P
         <h2 id="perm-dialog-title">{title}</h2>
         {reason && <p>{reason}</p>}
         <div className="perm-dialog-actions">
-          {offerShown(offer) && <button type="button" className="btn btn--sm btn--pri" onClick={requestAccess} disabled={requesting} data-request-access="">{requesting ? 'Requesting' : 'Request access'}</button>}
+          {statements.length > 0 && <button type="button" className="btn btn--sm btn--pri" onClick={requestAccess} disabled={requesting} data-request-access="">{requesting ? 'Requesting' : 'Request access'}</button>}
           {onClose && <button type="button" className="btn btn--sm" onClick={onClose} data-permission-close="">Close</button>}
         </div>
         {result && <p role="status" data-access-request-result="">{result}</p>}
+        {otherRequestLinks(offer?.links).length > 0 && (
+          <div data-request-links="">
+            <p>Also request access on:</p>
+            {otherRequestLinks(offer.links).map((link) => <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">{link.full_name}</a>)}
+          </div>
+        )}
         <details className="perm-dialog-advanced" data-permission-advanced="" open={advancedOpen} onToggle={(e) => setAdvancedState(e.currentTarget.open)}>
           <summary>Advanced</summary>
           {statements.length > 0 && <p>{ADVANCED_LINE}</p>}

@@ -50,8 +50,8 @@ def test_the_requestable_grants_group_by_grantee_and_securable_and_leave_other_s
     got = shell_core.rfa_requests(GRANTS + [f"GRANT CAN_USE ON WAREHOUSE `w` TO `{WHO}`", f"GRANT SELECT ON TABLE `main`.`s`.`orders` TO `{WHO}`"])
     assert got == [
         {"grantee": WHO, "securable": {"type": "CATALOG", "full_name": "main"}, "permissions": ["USE_CATALOG"]},
-        {"grantee": WHO, "securable": {"type": "SCHEMA", "full_name": "main.s"}, "permissions": ["USE_SCHEMA"]},
-        {"grantee": WHO, "securable": {"type": "TABLE", "full_name": "main.s.orders"}, "permissions": ["SELECT"]},
+        # REQ-408: the table SELECT asks for the schema, so the schema entry carries both of its privileges.
+        {"grantee": WHO, "securable": {"type": "SCHEMA", "full_name": "main.s"}, "permissions": ["USE_SCHEMA", "SELECT"]},
     ]
 
 
@@ -65,13 +65,13 @@ def test_check_is_offered_when_a_destination_is_set_and_no_request_is_posted_by_
 def test_send_posts_one_request_for_the_person_with_no_behalf_of_and_a_comment_the_API_accepts():
     ws = FakeWs({**DESTS, ("POST", "/api/3.0/rfa/requests"): {"responses": []}})
     got = shell_core.rfa_send(ws, WHO, GRANTS)
-    assert got == {"sent": True, "destinations": ["owner@example.com"], "reason": ""}
+    assert {k: v for k, v in got.items() if k != "links"} == {"sent": True, "destinations": ["owner@example.com"], "reason": ""}
     (post,) = ws.posts()
     assert len(post["body"]["requests"]) == 1
     request = post["body"]["requests"][0]
     assert "behalf_of" not in request
     assert request["comment"] == shell_core.RFA_COMMENT and len(request["comment"]) <= 200
-    assert [p["securable"]["full_name"] for p in request["securable_permissions"]] == ["main", "main.s", "main.s.orders"]
+    assert [p["securable"]["full_name"] for p in request["securable_permissions"]] == ["main", "main.s"]
 
 
 def test_an_App_grant_is_resolved_to_its_service_principal_and_sent_as_its_own_request():
@@ -91,7 +91,7 @@ def test_no_destination_is_not_offered_and_nothing_is_posted():
                  ("GET", f"/api/3.0/rfa/destinations/schema/{quote('main.s', safe='')}"): empty,
                  ("GET", f"/api/3.0/rfa/destinations/table/{quote('main.s.orders', safe='')}"): empty})
     got = shell_core.rfa_send(ws, WHO, GRANTS)
-    assert got == {"sent": False, "destinations": [], "reason": shell_core.RFA_NO_DESTINATION}
+    assert {k: v for k, v in got.items() if k != "links"} == {"sent": False, "destinations": [], "reason": shell_core.RFA_NO_DESTINATION}
     assert ws.posts() == []
 
 
@@ -107,7 +107,7 @@ def test_a_grantee_no_directory_entry_names_is_copy_only_with_its_reason():
 def test_a_refused_send_gives_the_workspace_reason():
     ws = FakeWs({**DESTS, ("POST", "/api/3.0/rfa/requests"): RuntimeError("PERMISSION_DENIED: you cannot request this securable")})
     got = shell_core.rfa_send(ws, WHO, GRANTS)
-    assert got == {"sent": False, "destinations": [], "reason": "PERMISSION_DENIED: you cannot request this securable"}
+    assert {k: v for k, v in got.items() if k != "links"} == {"sent": False, "destinations": [], "reason": "PERMISSION_DENIED: you cannot request this securable"}
 
 
 def test_the_route_reads_the_grants_on_the_server_and_answers_the_offer_as_the_viewer(tmp_path):
@@ -117,7 +117,7 @@ def test_the_route_reads_the_grants_on_the_server_and_answers_the_offer_as_the_v
     s.access_found = lambda headers: {"tables": [{"table": "main.s.orders", "grants": GRANTS}]}
     status, body = call(s, "POST", "access-request/check", headers={"x-forwarded-email": WHO, "x-forwarded-access-token": "viewer-token"}, body={})
     assert status == 200, (status, body)
-    assert body == {"offered": True, "destinations": ["owner@example.com"], "reason": ""}
+    assert {k: v for k, v in body.items() if k != "links"} == {"offered": True, "destinations": ["owner@example.com"], "reason": ""}
     assert ws.posts() == []
 
 
@@ -130,17 +130,16 @@ def test_the_send_route_is_a_write_and_names_no_grant_from_the_client(tmp_path):
     status, body = call(s, "POST", "access-request", headers={"x-forwarded-email": WHO, "x-forwarded-access-token": "viewer-token"},
                         body={"statements": ["GRANT SELECT ON TABLE `evil`.`x`.`y` TO `me`"]})
     assert status == 200, (status, body)
-    assert body == {"sent": False, "destinations": [], "reason": shell_core.RFA_NO_GRANT}
+    assert {k: v for k, v in body.items() if k != "links"} == {"sent": False, "destinations": [], "reason": shell_core.RFA_NO_GRANT}
     assert ws.posts() == []
 
 
 def test_REQ315_a_table_with_no_destination_of_its_own_falls_back_to_its_schema_then_its_catalog():
     empty = {}
-    ws = FakeWs({("GET", f"/api/3.0/rfa/destinations/table/{quote('main.s.orders', safe='')}"): empty,
-                 ("GET", f"/api/3.0/rfa/destinations/schema/{quote('main.s', safe='')}"): empty,
+    ws = FakeWs({("GET", f"/api/3.0/rfa/destinations/schema/{quote('main.s', safe='')}"): empty,
                  ("GET", "/api/3.0/rfa/destinations/catalog/main"): OWNER})
     got = shell_core.rfa_check(ws, WHO, [GRANTS[2]])
     assert got["offered"] is True and got["destinations"] == ["owner@example.com"]
-    assert [c["path"] for c in ws.calls] == [f"/api/3.0/rfa/destinations/table/{quote('main.s.orders', safe='')}",
-                                             f"/api/3.0/rfa/destinations/schema/{quote('main.s', safe='')}",
+    # REQ-408: the table read asks for its schema, so the chain starts at the schema, then the catalog.
+    assert [c["path"] for c in ws.calls] == [f"/api/3.0/rfa/destinations/schema/{quote('main.s', safe='')}",
                                              "/api/3.0/rfa/destinations/catalog/main"]
