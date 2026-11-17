@@ -90,12 +90,65 @@ def test_a_joined_pick_written_back_is_accepted_by_the_guard_end_to_end(agent_ns
     assert agent_ns["implement_choice_changes"]([drifted], pinned) == [], "the written-back pick is not a change (must-pass)"
 
 
-def test_a_pick_the_dropdown_cannot_hold_is_still_refused(agent_ns):
+def test_a_pick_missing_from_the_dropdown_choices_is_added_and_restored(agent_ns):
     core = [{"name": "group_by", "default": PICK}]
     pinned = agent_ns["implement_choice_pinned"](core, None)
-    no_pick = fill("all", choices=["all", "product", "paymentMethod"])
-    assert agent_ns["implement_widget_default_fixes"](no_pick, core, pinned) == [], "not restorable (must-exclude)"
-    assert agent_ns["implement_choice_changes"]([no_pick], pinned), "the swap stays refused (must-keep)"
+    drifted = fill("all", choices=["all", "product", "paymentMethod"])
+    fixes = agent_ns["implement_widget_default_fixes"](drifted, core, pinned)
+    assert [(w["name"], held, planned) for w, held, planned in fixes] == [("group_by", "all", PICK)], fixes
+    cells = cells_with('dbutils.widgets.dropdown("group_by", "all", ["all", "product", "paymentMethod"], "Grouping")')
+    assert agent_ns["implement_widget_default_patch"](cells, "group_by", "all", PICK, any_literal=True) is True
+    assert "".join(cells[0]["source"]) == (
+        'dbutils.widgets.dropdown("group_by", "accounts.segment", ["all", "product", "paymentMethod", "accounts.segment"], "Grouping")\n')
+
+
+def test_a_pick_already_in_the_dropdown_choices_is_not_listed_twice(agent_ns):
+    cells = cells_with(f'dbutils.widgets.dropdown("group_by", "all", ["all", "{PICK}"], "Grouping")')
+    assert agent_ns["implement_widget_default_patch"](cells, "group_by", "all", PICK, any_literal=True) is True
+    assert "".join(cells[0]["source"]) == f'dbutils.widgets.dropdown("group_by", "{PICK}", ["all", "{PICK}"], "Grouping")\n'
+
+
+def test_a_held_default_outside_the_choices_is_repaired_even_when_it_already_equals_the_pick(agent_ns):
+    core = [{"name": "group_by", "default": PICK}]
+    pinned = agent_ns["implement_choice_pinned"](core, None)
+    held_outside = fill(PICK, choices=["all", "product"])
+    fixes = agent_ns["implement_widget_default_fixes"](held_outside, core, pinned)
+    assert [(w["name"], held, planned) for w, held, planned in fixes] == [("group_by", PICK, PICK)], fixes
+
+
+@pytest.mark.parametrize("declaration", [
+    'dbutils.widgets.combobox("group_by", "all", ["all", "product"], "Grouping")',
+    'dbutils.widgets.multiselect("group_by", "all", ["all", "product"], "Grouping")',
+    "dbutils.widgets.dropdown(name='group_by', defaultValue='all', choices=['all', 'product'], label='Grouping')",
+])
+def test_every_choice_widget_kind_takes_the_pick_as_default_and_choice(agent_ns, declaration):
+    cells = cells_with(declaration)
+    assert agent_ns["implement_widget_default_patch"](cells, "group_by", "all", PICK, any_literal=True) is True
+    text = "".join(cells[0]["source"])
+    assert text.count(PICK) == 2, text
+
+
+def test_a_text_widget_takes_the_pick_as_default_without_choices(agent_ns):
+    cells = cells_with('dbutils.widgets.text("group_by", "all", "Grouping")')
+    assert agent_ns["implement_widget_default_patch"](cells, "group_by", "all", PICK, any_literal=True) is True
+    assert "".join(cells[0]["source"]) == f'dbutils.widgets.text("group_by", "{PICK}", "Grouping")\n'
+
+
+def test_a_choices_list_that_cannot_be_read_is_refused_and_the_reason_names_the_widget(agent_ns):
+    core = [{"name": "group_by", "default": PICK}]
+    pinned = agent_ns["implement_choice_pinned"](core, None)
+    drifted = fill("all")
+    fixes = agent_ns["implement_widget_default_fixes"](drifted, core, pinned)
+    cells = cells_with('dbutils.widgets.dropdown("group_by", "all", CHOICES, "Grouping")')
+    assert agent_ns["implement_widget_default_patch"](cells, "group_by", "all", PICK, any_literal=True) is False
+    unset = [(w, held, planned) for w, held, planned in fixes]
+    reason = agent_ns["implement_default_restore_reason"](unset)
+    assert reason.startswith("the group_by widget default is all, and Inspire could not write accounts.segment back into the notebook"), reason
+
+
+def test_a_cell_that_cannot_be_parsed_and_declares_the_widget_is_refused(agent_ns):
+    cells = cells_with('dbutils.widgets.dropdown("group_by", "all", ["all"], "Grouping")\n%pip install x')
+    assert agent_ns["implement_widget_default_patch"](cells, "group_by", "all", PICK, any_literal=True) is False
 
 
 @pytest.mark.parametrize("vibe_name,held,expected_problem", [

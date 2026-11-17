@@ -246,6 +246,7 @@ def test_a_build_with_no_grouping_chosen_starts_from_the_deep_suggestion(agent_n
     obj._implement_columns_of = lambda tables, cache: {tables[0]: [{"column_name": "region", "data_type": "string"}]}
     asked = []
     obj._implement_grouping_recommendation = lambda uc_id, table, candidates: asked.append(table) or ["region"]
+    obj._implement_one_value_columns = lambda uc_id, table, scopes, columns, joins=None: ([], [])
     uc = make_uc("N01-U01", **{"Analytics Technique": "Anomaly Detection", "suggested_group_by": "item.category"})
     spec = {"config": {"widgets": {}}, "data": {}, "outputs": {}}
     deep = obj._implement_grouping(uc, spec, ("42", "N01-U01"), {})
