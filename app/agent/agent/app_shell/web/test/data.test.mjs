@@ -752,7 +752,7 @@ test('the record panel shows the saving with its formula, why the AI flagged it,
   assert.deepEqual(await panel.locator('.panel-b > section h3').allInnerTexts(),
     ['Could save', 'Why it is flagged', 'How sure the AI is', 'Next best action', 'Action', 'Ask Genie about this', 'Details', 'History']);
   assert.match(await panel.locator('.hist-i').first().innerText(), /No value changed\./, 'a new AI reason is never shown as a business change');
-  assert.deepEqual(await footerActions(panel), ['Mark done', 'Not an issue', 'Could not fix', 'Snooze…', 'Draft Message to Someone', 'Ask Genie to fix'].sort(), 'every drawer action can be reached');
+  assert.deepEqual(await footerActions(panel), ['Mark done', 'Not an issue', 'Could not fix', 'Snooze…', 'Draft message', 'Ask Genie to fix'].sort(), 'every drawer action can be reached');
   assert.deepEqual(await panel.getByLabel('Give to someone').locator('option').allInnerTexts(),
     [`With ${PERSON}`, 'Clear the owner', `Give to ${OTHER}`, 'Someone else…'], 'an owned record can be given away or its owner cleared');
   const ask = panel.getByRole('region', { name: 'Ask Genie about this' });
@@ -879,6 +879,36 @@ test('the record panel shows the population comparison from the deterministic re
   assert.equal(await on.page.locator('dialog.drawer .compared').innerText(), population.text);
   assert.deepEqual(on.errors, []);
   await on.context.close();
+});
+
+// REQ-398: Undo in the Mark done toast sends the batch back and the record reopens in the state it had before.
+test('Undo after Mark done reopens the record in its prior state', async () => {
+  const undos = [];
+  const batch = 'b'.repeat(32);
+  const { calls, routes } = tracked({
+    'records/act': ({ route, json }) => {
+      const body = actBody(route);
+      calls.acts.push(body);
+      return json(200, { written: body.record_keys, conflicts: [], conflicts_count: 0, batch_id: batch });
+    },
+    'records/undo': ({ route, json }) => { undos.push(route.request().postDataJSON()); return json(200, { restored: ['R001'], skipped: [], left_out: 0 }); },
+  });
+  const { page, seen, context } = await open(appInfo(DECIDE, 1, TABLE), routes);
+  const panel = page.locator('dialog.drawer[open]');
+  await page.locator('.cell-t').first().click();
+  await panel.locator('.dr-act').waitFor();
+  await panel.getByRole('button', { name: 'Mark done' }).click();
+  await page.waitForFunction(() => !document.querySelector('dialog.drawer[open]'), null, { timeout: 5000 });
+  await page.locator('.toast.is-on .toast-a button', { hasText: 'Undo' }).click();
+  await until(() => undos.length === 1);
+  assert.deepEqual(undos[0], { page: 'n01_u05', batch_id: batch });
+  await page.waitForFunction(() => /^Undone: /.test(document.querySelector('.toast .toast-t')?.textContent || ''));
+  await page.locator('.cell-t').first().click();
+  await panel.locator('.dr-act').waitFor();
+  assert.equal(await panel.locator('.done').count(), 0, 'the record is open again, not closed');
+  assert.equal(await panel.getByRole('button', { name: 'Mark done' }).count(), 1, 'Mark done is back, so the record is in its prior state');
+  assert.deepEqual(seen.errors, []);
+  await context.close();
 });
 
 test('a record whose AI reasoning failed the checks shows a plain flag and still lets you ask Genie to explain it', async () => {
