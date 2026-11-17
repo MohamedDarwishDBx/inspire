@@ -2474,7 +2474,7 @@ async function discoverAppAccess(req, scope) {
   try {
     const { tables, more } = await scopeTables(dbFetch, req.dbHost, person, entries);
     if (!tables.length) return none;
-    let found = await discoverAccess.sourceAccess(req, DEFAULT_WAREHOUSE_ID, tables, 'discover');
+    let found = await discoverAccess.sourceAccess(req, DEFAULT_WAREHOUSE_ID, tables, 'discover', { wholeCatalogs: catalogs });
     const warnings = [];
     const permissions = [];
     // Run-as-me grants the App's principal nothing (REQ-113), so the grant offer runs outside run-as only.
@@ -2483,12 +2483,12 @@ async function discoverAppAccess(req, scope) {
       const { ran, failed } = await discoverAccess.runPersonGrants(req, person, DEFAULT_WAREHOUSE_ID, offer.grants);
       if (ran.length) console.log(`Discover: granted the App read access to ${plural(offer.tables.length, 'table')} with the sign-in: ${ran.join('; ')}`);
       if (failed.length) {
-        const refused = permissionRequired({ statements: readStatementsFor(offer.tables.map((t) => t.table || t), offer.app.id || SP_CLIENT_ID), principal: offer.app.id || SP_CLIENT_ID, why: 'Discover reads these tables as the App, and the grant could not run with your sign-in. Ask your workspace admin to run it.' });
+        const refused = permissionRequired({ statements: readStatementsFor(offer.tables.map((t) => t.table || t), offer.app.id || SP_CLIENT_ID), principal: offer.app.id || SP_CLIENT_ID, wholeCatalogs: catalogs, why: 'Discover reads these tables as the App, and the grant could not run with your sign-in. Ask your workspace admin to run it.' });
         if (refused) permissions.push(refused);
       }
-      found = await discoverAccess.sourceAccess(req, DEFAULT_WAREHOUSE_ID, tables, 'discover');
+      found = await discoverAccess.sourceAccess(req, DEFAULT_WAREHOUSE_ID, tables, 'discover', { wholeCatalogs: catalogs });
     }
-    const read = appReadPermissions(found, runAsPerson() ? person : SP_CLIENT_ID);
+    const read = appReadPermissions(found, runAsPerson() ? person : SP_CLIENT_ID, { wholeCatalogs: catalogs });
     warnings.push(...read.warnings);
     permissions.push(...read.permissions);
     if (more) console.log(`Discover: checked the App read access of the first ${tables.length} tables only`);

@@ -105,10 +105,10 @@ test('REQ-406: with no destination, Request access opens the Catalog Explorer pa
   try {
     const dialog = page.locator('[data-permission-dialog]');
     await dialog.waitFor({ timeout: 15000 });
-    await page.evaluate(() => { window.__opened = []; window.open = (url) => { window.__opened.push(String(url)); return null; }; });
+    await page.evaluate(() => { window.__opened = []; window.open = (url) => { window.__opened.push(String(url)); return { opener: null, close() {}, set location(v) { window.__opened.push(String(v)); } }; }; });
     await dialog.getByRole('button', { name: 'Request access' }).click();
     await dialog.locator('[data-access-request-result]').waitFor({ timeout: 15000 });
-    assert.deepEqual(await page.evaluate(() => window.__opened), [link.url]);
+    assert.deepEqual(await page.evaluate(() => window.__opened), ['about:blank', link.url]);
     assert.equal((await dialog.locator('[data-access-request-result]').textContent()).trim(), 'Opened the access request form for main.pricing in a new tab. Send the request there.');
   } finally {
     await context.close();

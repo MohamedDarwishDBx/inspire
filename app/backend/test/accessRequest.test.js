@@ -198,6 +198,7 @@ test('REQ-406: a send the workspace refuses still returns the links, so the dial
 
 test('REQ-406: a table or volume link names its full path, and the names are encoded', () => {
   assert.equal(AR.explorerUrl('h.example.com', { type: 'TABLE', full_name: 'main.s.orders' }), 'https://h.example.com/explore/data/main/s/orders');
-  assert.equal(AR.explorerUrl('h.example.com', { type: 'VOLUME', full_name: 'main.s.v' }), 'https://h.example.com/explore/data/volumes/main/s/v');
+  // REQ-406: a volume links to its schema page, the documented Catalog Explorer pattern (no documented volume path).
+  assert.equal(AR.explorerUrl('h.example.com', { type: 'VOLUME', full_name: 'main.s.v' }), 'https://h.example.com/explore/data/main/s');
   assert.equal(AR.explorerUrl('h.example.com', { type: 'SCHEMA', full_name: 'main.my schema' }), 'https://h.example.com/explore/data/main/my%20schema');
 });

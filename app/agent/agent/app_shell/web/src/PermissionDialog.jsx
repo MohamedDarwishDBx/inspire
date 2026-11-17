@@ -15,19 +15,21 @@ export default function PermissionDialog({ found: given, reason = '', title = 'P
   const found = given !== undefined ? given : own;
   const statements = (found?.tables || []).flatMap((t) => t.grants || []);
   const key = statements.join('|');
-  // REQ-408: the copy text is the server's schema-level display; Grant still runs the exact statements of the found tables.
-  const text = found?.display || grantText([{ statements }]);
+  // REQ-408: the copy text is the server's schema-level SQL; Grant still runs the exact statements of the found tables.
+  const text = found?.sql || grantText([{ statements }]);
   const checkRef = useRef(null);
   const [offer, setOffer] = useState(null);
   const [advancedState, setAdvancedState] = useState(null);
   const [requesting, setRequesting] = useState(false);
   const [result, setResult] = useState('');
+  const [formLink, setFormLink] = useState(null);
   const [copied, setCopied] = useState('');
   // Advanced opens when no destination exists, and when there are no grants to ask about (so Check again stays reachable).
   const advancedOpen = advancedState ?? (offer !== null ? !offerShown(offer) : statements.length === 0);
   useEffect(() => {
     setOffer(null);
     setResult('');
+    setFormLink(null);
     setAdvancedState(null);
     checkRef.current = null;
     if (!statements.length) return undefined;
@@ -40,8 +42,13 @@ export default function PermissionDialog({ found: given, reason = '', title = 'P
   }, [key]);
   // REQ-406: a send goes out only when the check offers it. Any other outcome opens the Databricks request form for the first securable in
   // a new tab, with one plain line (never a raw API error), the same rule as the Inspire App's dialog.
+  // The tab opens inside the click (the browser allows it), and its location is set once the check or the send answers. A blocked tab
+  // leaves the form link on the dialog instead; the line says "Opened" only for a tab that opened.
   const requestAccess = async () => {
     setRequesting(true);
+    setFormLink(null);
+    const tab = window.open('about:blank', '_blank');
+    if (tab) { try { tab.opener = null; } catch { /* the form still opens */ } }
     let got = {};
     let sent = null;
     try {
@@ -51,14 +58,18 @@ export default function PermissionDialog({ found: given, reason = '', title = 'P
       sent = null;
     }
     if (sent?.sent) {
+      if (tab) tab.close();
       setResult(accessRequestResultText(sent));
     } else {
-      const links = sent?.links?.length ? sent.links : (got.links || []);
-      const first = requestFormLink(links);
-      if (first) {
-        try { window.open(first.url, '_blank', 'noopener,noreferrer'); } catch { /* the browser refused the tab: the line still names the object */ }
+      const first = requestFormLink(sent?.links?.length ? sent.links : (got.links || []));
+      let opened = false;
+      if (first && tab) {
+        try { tab.location = first.url; opened = true; } catch { opened = false; }
+      } else if (tab) {
+        tab.close();
       }
-      setResult(requestFormText(first));
+      if (first && !opened) setFormLink(first);
+      setResult(requestFormText(first, opened));
     }
     setRequesting(false);
   };
@@ -73,6 +84,7 @@ export default function PermissionDialog({ found: given, reason = '', title = 'P
           {onClose && <button type="button" className="btn btn--sm" onClick={onClose} data-permission-close="">Close</button>}
         </div>
         {result && <p role="status" data-access-request-result="">{result}</p>}
+        {formLink && <a data-request-form-link="" href={formLink.url} target="_blank" rel="noopener noreferrer">{formLink.full_name}</a>}
         {otherRequestLinks(offer?.links).length > 0 && (
           <div data-request-links="">
             <p>Also request access on:</p>

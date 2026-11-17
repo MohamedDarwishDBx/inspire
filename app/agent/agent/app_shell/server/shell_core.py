@@ -645,8 +645,12 @@ def rfa_explorer_url(host: str, securable: dict) -> str:
     base = str(host or "").strip().rstrip("/")
     if not base or securable["type"] not in ("CATALOG", "SCHEMA", "TABLE", "VOLUME"):
         return ""
-    parts = "/".join(quote(p, safe="") for p in securable["full_name"].split("."))
-    path = f"/explore/data/volumes/{parts}" if securable["type"] == "VOLUME" else f"/explore/data/{parts}"
+    # A volume links to its schema page: the volume's own Catalog Explorer path is not in the docs.
+    names = securable["full_name"].split(".")
+    if securable["type"] == "VOLUME":
+        names = names[:2]
+    parts = "/".join(quote(p, safe="") for p in names)
+    path = f"/explore/data/{parts}"
     origin = base if base.lower().startswith(("http://", "https://")) else f"https://{base}"
     return origin + path
 
@@ -3101,9 +3105,8 @@ class Shell:
                            "you_can_grant": ws is not None and self.person_can_grant(ws, table)})
         statements = [g for t in tables for g in t["grants"]]
         return {"tables": tables, "can_grant": bool(statements), "you_can_grant": bool(statements) and all(t["you_can_grant"] for t in tables),
-                "sql": "\n".join(f"{g};" for g in statements),
-                # REQ-408: what the dialog shows and copies, at schema level. Grant runs the exact statements above, never this text.
-                "display": "\n".join(f"{g};" for g in coarse_grants(statements)),
+                # REQ-408: the copy text is schema level. Grant runs the exact per-table statements in `tables`, never this text.
+                "sql": "\n".join(f"{g};" for g in coarse_grants(statements)),
                 "seen": hashlib.sha256("\n".join(statements).encode("utf-8")).hexdigest()}
 
     def person_can_grant(self, ws, table: str) -> bool:

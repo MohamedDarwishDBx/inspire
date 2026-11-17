@@ -41,6 +41,7 @@ const { int64Id, isInt64Id, requireInt64Id, jsonWithInt64Ids } = require('./lib/
 const { parseExactJson } = require('./lib/exactJson');
 const { grantJobViewer, rememberViewer } = require('./lib/jobViewer');
 const PM = require('./lib/permissions');
+const { coarseGrants } = require('./lib/grantScope');
 const PM_ERROR = require('./lib/permissionError');
 const GC = require('./lib/genieCodeCheck');
 const SA = require('./lib/sourceAccess');
@@ -666,7 +667,7 @@ function registerImplementRoutes(app, deps) {
         widget_groups: I.groupWidgets(widgets.widgets),
         inspire_database: `${catalog}.${schema}`,
         missing_tables: missing,
-        app_unreadable: appUnreadable,
+        app_unreadable: displayOffer(appUnreadable, await wholeCatalogsOf(req, warehouseId, catalog, schema, sid)),
         own_schema: ownSchema,
       });
     } catch (err) {
@@ -1224,7 +1225,7 @@ function registerImplementRoutes(app, deps) {
         ...(appName || mergeApp ? {} : { new_app: output ? output.app : unchecked }),
         features,
         ...(moved ? { result_table_moved: moved } : {}),
-        app_unreadable: verdict.app_unreadable,
+        app_unreadable: displayOffer(verdict.app_unreadable),
       });
     } catch (err) {
       sendError(res, err);
@@ -1296,13 +1297,31 @@ function registerImplementRoutes(app, deps) {
       // A request made for one use case grants only that use case's own source tables (its saved involved tables, and the swaps its
       // build chose). A request with no use case, such as the Build page's own protections, is unchanged.
       if (q(req, 'use_case_id')) await requireBuildSources(req, warehouseId, tables, req.body && req.body.spec ? (await askedSpec(req)).asked : null);
-      return res.json({ kind, ...(await grantSourceAccess(req, token, warehouseId, tables)) });
+      const { catalog, schema } = dbOf(req, splitInspireDatabase);
+      const wholeCatalogs = await wholeCatalogsOf(req, warehouseId, catalog, schema, sessionIdOf(req));
+      return res.json({ kind, ...(await grantSourceAccess(req, token, warehouseId, tables, 'build', { wholeCatalogs })) });
     } catch (err) {
       sendError(res, err);
     }
   });
 
-  function appReadsPermissions(left, record, principals, app) {
+  // REQ-408: a copyable grant list is shaped for display at schema level (catalog level for a whole-catalog pick). Grant still runs the exact
+  // statements the route derived; this only changes the copy text the response carries.
+  function displayOffer(offer, wholeCatalogs = []) {
+    return offer && Array.isArray(offer.grants) ? { ...offer, grants: coarseGrants(offer.grants, { wholeCatalogs }) } : offer;
+  }
+
+  // REQ-408: the catalogs the run picked whole (its saved launch scope). Empty when the run has no readable scope, so the dialog asks per schema.
+  async function wholeCatalogsOf(req, warehouseId, catalog, schema, sid) {
+    try {
+      const session = await loadSession(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid);
+      return U.ucMetadataParts(notebookParamsFromSessionForGenerateRun(session, sid)['01_uc_metadata']).catalogs;
+    } catch {
+      return [];
+    }
+  }
+
+  function appReadsPermissions(left, record, principals, app, wholeCatalogs = []) {
     if (record.objects) {
       // REQ-300: one plain reason per grantee; the dialog says the copy line once, so no entry repeats an ask.
       const granted = (principals || []).map((p) => {
@@ -1320,7 +1339,7 @@ function registerImplementRoutes(app, deps) {
     // The same statements the card and Check again show: the live plan's grants, never a second list.
     const statements = [...new Set(left.flatMap((t) => t.grants))];
     const name = app?.name || record.app_name || '';
-    const permission = PM.permissionRequired({ statements, principal: name || app?.id || record.app,
+    const permission = PM.permissionRequired({ statements, principal: name || app?.id || record.app, wholeCatalogs,
       why: `The App ${name} cannot read ${left.map((t) => t.table).join(', ')}, so the build cannot show that data.`.replace('App  ', 'App ') });
     return permission ? [permission] : [];
   }
@@ -1347,9 +1366,10 @@ function registerImplementRoutes(app, deps) {
       const liveApp = app ? { id: app.id, name: record.app_name || app.name } : { id: record.app, name: record.app_name };
       // A Check shows what the App still needs, with its SQL, to anyone who can see the record: the person who cannot grant hands it
       // to the owner (REQ-042). Only a Grant changes access, and the route policy owns that rule.
+      const wholeCatalogs = await wholeCatalogsOf(req, warehouseId, catalog, schema, sid);
       res.json({ state: left.length ? 'unreadable' : 'readable', app: liveApp.id, app_name: liveApp.name, mode: record.mode || '', objects: !!record.objects, principals,
-        tables: left, ran, failed, refused: action === 'grant' && failed.length > 0, text: I.appReadsText(left, liveApp.name, failed),
-        permissions: appReadsPermissions(left, record, principals, liveApp) });
+        tables: left.map((t) => ({ ...t, grants: coarseGrants(t.grants, { wholeCatalogs }) })), ran, failed, refused: action === 'grant' && failed.length > 0, text: I.appReadsText(left, liveApp.name, failed),
+        permissions: appReadsPermissions(left, record, principals, liveApp, wholeCatalogs) });
     } catch (err) {
       sendError(res, err);
     }

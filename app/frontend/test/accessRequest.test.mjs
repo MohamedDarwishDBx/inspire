@@ -77,3 +77,11 @@ test('the form opened is the first securable with a URL, the rest are listed, an
   assert.equal(requestFormText(null), 'Copy the SQL under Advanced to request this access.');
   assert.doesNotMatch(requestFormText(null), /Request not sent|error|PERMISSION_DENIED/i, 'never a raw error');
 });
+
+// REQ-406: a blocked tab never says "Opened": the line gives the link to open instead.
+test('requestFormText says Opened only for a tab that opened, and otherwise names the link to use', () => {
+  const link = { type: 'SCHEMA', full_name: 'main.s', url: 'https://h/explore/data/main/s' };
+  assert.equal(requestFormText(link, true), 'Opened the access request form for main.s in a new tab. Send the request there.');
+  assert.equal(requestFormText(link, false), 'Open the access request form for main.s with the link below. Send the request there.');
+  assert.doesNotMatch(requestFormText(link, false), /Opened/);
+});

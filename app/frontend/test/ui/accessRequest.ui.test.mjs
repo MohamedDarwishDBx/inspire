@@ -76,11 +76,11 @@ test('REQ-406 (a, b): with no destination the button still shows, and a click op
   const { page, dialog } = await openDialog({ accessCheck: { offered: false, destinations: [], reason: 'no one has set up where access requests for these go yet', links: [FORM] } });
   const button = dialog.getByRole('button', { name: 'Request access' });
   await button.waitFor({ timeout: 15000 });
-  await page.evaluate(() => { window.__opened = []; window.open = (url) => { window.__opened.push(String(url)); return null; }; });
+  await page.evaluate(() => { window.__opened = []; window.open = (url) => { window.__opened.push(String(url)); return { opener: null, close() { window.__opened.push('closed'); }, set location(v) { window.__opened.push(String(v)); } }; }; });
   await button.click();
   const result = dialog.locator('[data-access-request-result=""]');
   await result.waitFor({ timeout: 15000 });
-  assert.deepEqual(await page.evaluate(() => window.__opened), [FORM.url], 'the form opens in a new tab');
+  assert.deepEqual(await page.evaluate(() => window.__opened), ['about:blank', FORM.url], 'the tab opens inside the click, then goes to the form');
   assert.equal((await result.textContent()).trim(), 'Opened the access request form for main.s in a new tab. Send the request there.');
   assert.equal(await page.locator('[data-permission-dialog=""]').count(), 1, 'the dialog stays open');
   assert.equal(await dialog.getByText(COPY_LINE).count(), 1, 'the copy-paste line stays');
@@ -94,11 +94,11 @@ test('REQ-406 (c): a refused send opens the form and shows one plain line, never
     accessCheck: { offered: true, destinations: ['owner@example.com'], reason: '', links: [FORM] },
     accessSend: { sent: false, destinations: [], reason: 'PERMISSION_DENIED: you cannot request this securable', links: [FORM] },
   });
-  await page.evaluate(() => { window.__opened = []; window.open = (url) => { window.__opened.push(String(url)); return null; }; });
+  await page.evaluate(() => { window.__opened = []; window.open = (url) => { window.__opened.push(String(url)); return { opener: null, close() { window.__opened.push('closed'); }, set location(v) { window.__opened.push(String(v)); } }; }; });
   await dialog.getByRole('button', { name: 'Request access' }).click();
   const result = dialog.locator('[data-access-request-result=""]');
   await result.waitFor({ timeout: 15000 });
-  assert.deepEqual(await page.evaluate(() => window.__opened), [FORM.url]);
+  assert.deepEqual(await page.evaluate(() => window.__opened), ['about:blank', FORM.url]);
   const text = (await result.textContent()).trim();
   assert.equal(text, 'Opened the access request form for main.s in a new tab. Send the request there.');
   assert.doesNotMatch(await dialog.innerText(), /Request not sent|PERMISSION_DENIED/, 'no raw error on the dialog');
@@ -111,4 +111,16 @@ test('REQ-406: several securables open the first and list the rest as plain link
   await dialog.getByRole('button', { name: 'Request access' }).waitFor({ timeout: 15000 });
   const links = dialog.locator('[data-request-links=""] a');
   assert.deepEqual(await links.evaluateAll((els) => els.map((el) => el.getAttribute('href'))), [other.url]);
+});
+
+// REQ-406: a blocked tab is not "Opened": the dialog gives the form link to open instead.
+test('REQ-406: when the browser blocks the tab, the line says to use the link and the form link is on the dialog', async () => {
+  const { page, dialog } = await openDialog({ accessCheck: { offered: false, destinations: [], reason: '', links: [FORM] } });
+  await dialog.getByRole('button', { name: 'Request access' }).waitFor({ timeout: 15000 });
+  await page.evaluate(() => { window.open = () => null; });
+  await dialog.getByRole('button', { name: 'Request access' }).click();
+  const result = dialog.locator('[data-access-request-result=""]');
+  await result.waitFor({ timeout: 15000 });
+  assert.equal((await result.textContent()).trim(), 'Open the access request form for main.s with the link below. Send the request there.');
+  assert.equal(await dialog.locator('[data-request-form-link=""]').getAttribute('href'), FORM.url);
 });

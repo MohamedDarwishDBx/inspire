@@ -16,6 +16,7 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
   // REQ-311: Request for Access. The destinations are read once per grant list; the button shows only when one is set.
   const [offer, setOffer] = useState(null);
   const [requesting, setRequesting] = useState(false);
+  const [formLink, setFormLink] = useState(null);
   // REQ-406: the check promise is kept, so a click made before the check returns waits for it and never sends blind.
   const checkRef = useRef(null);
   const [requestText, setRequestText] = useState('');
@@ -34,6 +35,7 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
     setOffer(null);
     setRequestText('');
     setAdvancedState(null);
+    setFormLink(null);
     checkRef.current = null;
     if (!asked.length) return undefined;
     let live = true;
@@ -45,8 +47,13 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
   }, [listKey]);
   // REQ-406: the send goes out only when the check offers it. Any other outcome (no destination, a refused scope, an unresolved
   // principal, a failed send) opens the Databricks request form for the first securable in a new tab, never a raw error.
+  // The tab opens inside the click, so the browser allows it; its location is set once the check or the send answers. A blocked tab
+  // leaves the form link on the dialog instead.
   const requestAccess = async () => {
     setRequesting(true);
+    setFormLink(null);
+    const tab = window.open('about:blank', '_blank');
+    if (tab) { try { tab.opener = null; } catch { /* the page keeps its opener link: the form still opens */ } }
     let got = {};
     let sent = null;
     try {
@@ -56,14 +63,18 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
       sent = null;
     }
     if (sent?.sent) {
+      if (tab) tab.close();
       setRequestText(accessRequestResultText(sent));
     } else {
-      const links = sent?.links?.length ? sent.links : (got.links || []);
-      const first = requestFormLink(links);
-      if (first) {
-        try { window.open(first.url, '_blank', 'noopener,noreferrer'); } catch { /* the browser refused the tab: the line still names the object */ }
+      const first = requestFormLink(sent?.links?.length ? sent.links : (got.links || []));
+      let opened = false;
+      if (first && tab) {
+        try { tab.location = first.url; opened = true; } catch { opened = false; }
+      } else if (tab) {
+        tab.close();
       }
-      setRequestText(requestFormText(first));
+      if (first && !opened) setFormLink(first);
+      setRequestText(requestFormText(first, opened));
     }
     setRequesting(false);
   };
@@ -115,6 +126,7 @@ export default function PermissionRequired({ permissions, onStart, onRetry, onCl
         </div>
       )}
       {requestText && <p role="status" data-access-request-result="" className="text-sm text-text-primary break-words">{requestText}</p>}
+      {formLink && <a data-request-form-link="" href={formLink.url} target="_blank" rel="noopener noreferrer" className="text-sm text-text-primary underline break-all">{formLink.full_name}</a>}
       {otherRequestLinks(offer?.links).length > 0 && (
         <div data-request-links="" className="space-y-1">
           <p className="text-xs text-text-secondary">Also request access on:</p>

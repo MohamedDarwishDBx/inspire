@@ -42,7 +42,7 @@ test('preflight offers the READ METADATA grant for a source the App cannot read 
   const offer = got.data.app_unreadable;
   assert.ok(offer, 'the preflight returns the grant offer the wizard shows');
   assert.equal(offer.can_grant, true, 'the person can grant it, so the offer carries the grants');
-  assert.ok(offer.grants.some((g) => /^GRANT READ METADATA ON TABLE .*orders` TO `app-sp-2`$/.test(g)),
+  assert.ok(offer.grants.some((g) => /^GRANT READ METADATA ON (TABLE .*orders|SCHEMA `main`\.`s`) TO `app-sp-2`$/.test(g)),
     `READ METADATA is among the grants: ${JSON.stringify(offer.grants)}`);
 });
 

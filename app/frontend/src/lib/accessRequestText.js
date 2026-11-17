@@ -32,7 +32,9 @@ export function otherRequestLinks(links) {
   return (Array.isArray(links) ? links : []).filter((link) => link && link.url).slice(1);
 }
 
-export function requestFormText(link) {
-  return link ? `Opened the access request form for ${link.full_name} in a new tab. Send the request there.`
-    : 'Copy the SQL under Advanced to request this access.';
+// `opened`: the browser let the tab open. A blocked tab leaves the link on the dialog instead, and the line never says "Opened" for it.
+export function requestFormText(link, opened = true) {
+  if (!link) return 'Copy the SQL under Advanced to request this access.';
+  return opened ? `Opened the access request form for ${link.full_name} in a new tab. Send the request there.`
+    : `Open the access request form for ${link.full_name} with the link below. Send the request there.`;
 }

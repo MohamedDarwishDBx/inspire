@@ -48,20 +48,23 @@ function workspaceFor(personRows, live) {
     if (url.pathname === '/api/2.0/workspace/get-status' && url.searchParams.get('path') === '/Shared/inspire/dbx_inspire_ai_agent') {
       return [200, { object_type: 'NOTEBOOK', path: url.searchParams.get('path') }];
     }
+    // A whole-catalog pick lists its schemas and tables (the picked catalog main holds schema s with table orders).
+    if (url.pathname === '/api/2.1/unity-catalog/schemas') return [200, { schemas: [{ name: 's', catalog_name: 'main' }] }];
+    if (url.pathname === '/api/2.1/unity-catalog/tables') return [200, { tables: [{ name: 'orders', schema_name: 's', catalog_name: 'main', table_type: 'MANAGED' }] }];
     if (url.pathname === '/api/2.1/jobs/create') return [200, { job_id: 7 }];
     if (url.pathname === '/api/2.1/jobs/run-now') return [200, { run_id: 99 }];
     return null;
   };
 }
 
-async function launchWith(personRows) {
+async function launchWith(personRows, scope = 'main.s.orders') {
   const live = { appReads: false, grants: [] };
   const workspace = await fakeWorkspace(workspaceFor(personRows, live));
   let inspire = null;
   try {
     inspire = await startInspire({ DATABRICKS_HOST: workspace.url, NOTEBOOK_PATH: '/Shared/inspire/dbx_inspire_ai_agent', ...APP_ENV });
     const resp = await fetch(`${inspire.url}/api/run`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...signedIn },
-      body: JSON.stringify({ params: { '00_business_name': 'Acme', '02_inspire_database': 'main._inspire', '01_uc_metadata': 'main.s.orders' } }) });
+      body: JSON.stringify({ params: { '00_business_name': 'Acme', '02_inspire_database': 'main._inspire', '01_uc_metadata': scope } }) });
     return { status: resp.status, data: await resp.json(), live, calls: workspace.calls };
   } finally {
     if (inspire) await inspire.stop();
@@ -92,4 +95,16 @@ test('Discover asks for the grant as a Permission Required, grants nothing, and 
   assert.ok(permissions[0].statements.some((sql) => /^GRANT .* TO `sp-app-id`$/.test(sql)), JSON.stringify(permissions[0]));
   assert.match(permissions[0].why, /Discover reads .* as the App, and the App cannot read/);
   assert.equal(permissions[0].principal, 'inspire-app');
+});
+
+// REQ-408: a whole-catalog pick asks the App's read at catalog level in the Permission Required dialog, never per schema or table.
+test('Discover of a whole-catalog pick asks for the App read at catalog level, not per schema', async () => {
+  const got = await launchWith(READS, 'main');
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  const permissions = got.data.permissions || [];
+  assert.equal(permissions.length, 1, JSON.stringify(got.data));
+  const statements = permissions[0].statements;
+  assert.ok(statements.includes('GRANT USE CATALOG ON CATALOG `main` TO `sp-app-id`'), JSON.stringify(statements));
+  assert.ok(statements.includes('GRANT SELECT ON CATALOG `main` TO `sp-app-id`'), JSON.stringify(statements));
+  assert.equal(statements.filter((sql) => /ON (SCHEMA|TABLE) /.test(sql)).length, 0, `no schema or table line under a whole-catalog pick: ${JSON.stringify(statements)}`);
 });

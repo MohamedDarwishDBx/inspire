@@ -86,7 +86,8 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
         + 'Sign in and build again, or ask your data owner to grant the App read access' };
   }
 
-  async function sourceAccess(req, warehouseId, tables, job = 'build') {
+  // REQ-408: `scope.wholeCatalogs` are the catalogs the run picked whole; the offer's dialog asks at catalog level for them.
+  async function sourceAccess(req, warehouseId, tables, job = 'build', scope = {}) {
     const app = await appTokenOf(req);
     if (!app) return { missing: [], app_unreadable: unverifiedOffer(tables) };
     const person = P.personTokenOf(req);
@@ -136,7 +137,7 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
     const offer = I.appReadGrantsOffer(grantable, grantable.map((t, i) => I.accessPlan(t, rows[i], who.id, { needs: I.IMPLEMENT_SOURCE_NEEDS })), who);
     const message = I.appUnreadableMessage(offer, job);
     // REQ-131, REQ-260: the exact GRANT statements travel as the Permission Required entry the App raises; the prose names the dialog
-    const permissions = offer.grants.length ? [permissionRequired({ statements: offer.grants, principal: who.id,
+    const permissions = offer.grants.length ? [permissionRequired({ statements: offer.grants, principal: who.id, wholeCatalogs: scope.wholeCatalogs || [],
       why: 'Inspire reads these source tables with your own access.' })] : [];
     const opener = policyLost.length ? `${I.abacUnreadableSentence(who.name || who.id, { app: true })}. ${message.charAt(0).toUpperCase()}${message.slice(1)}` : message;
     const text = opener + (builtIn.length ? `. ${I.builtInSampleMessage(builtIn)}` : '');
@@ -171,8 +172,8 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
     };
   }
 
-  async function grantSourceAccess(req, token, warehouseId, tables, job = 'build') {
-    const before = await sourceAccess(req, warehouseId, tables, job);
+  async function grantSourceAccess(req, token, warehouseId, tables, job = 'build', scope = {}) {
+    const before = await sourceAccess(req, warehouseId, tables, job, scope);
     const offer = before.app_unreadable;
     const abac = await abacGrantsOf(req, token, warehouseId, tables);
     const readGrants = offer && offer.can_grant ? offer.grants : [];
@@ -186,7 +187,7 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
       return { granted: 0, ran: [], failed: [], missing_tables: before.missing, app_unreadable: offer || null, abac_gaps: abac.gaps };
     }
     const { ran, failed } = await runPersonGrants(req, token, warehouseId, statements);
-    const after = await sourceAccess(req, warehouseId, tables, job);
+    const after = await sourceAccess(req, warehouseId, tables, job, scope);
     const left = await abacGrantsOf(req, token, warehouseId, tables);
     return { granted: ran.length, ran, failed, missing_tables: after.missing, app_unreadable: after.app_unreadable, abac_gaps: left.gaps };
   }

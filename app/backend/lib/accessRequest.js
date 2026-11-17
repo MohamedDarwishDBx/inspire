@@ -171,7 +171,8 @@ const EXPLORE_PATH = {
   CATALOG: (p) => `/explore/data/${p[0]}`,
   SCHEMA: (p) => `/explore/data/${p[0]}/${p[1]}`,
   TABLE: (p) => `/explore/data/${p[0]}/${p[1]}/${p[2]}`,
-  VOLUME: (p) => `/explore/data/volumes/${p[0]}/${p[1]}/${p[2]}`,
+  // A volume's own Catalog Explorer path is not in the docs, so a volume links to its schema page (the one documented pattern).
+  VOLUME: (p) => `/explore/data/${p[0]}/${p[1]}`,
 };
 
 function explorerUrl(host, securable) {

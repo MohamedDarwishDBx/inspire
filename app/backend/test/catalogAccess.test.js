@@ -131,7 +131,8 @@ test('context splits a table only the App cannot read from a missing table and n
     const offer = got.data.app_unreadable;
     assert.deepEqual(offer.tables, ['main.s.orders']);
     assert.deepEqual(offer.app, { name: 'inspire-manual', id: 'app-sp-id' });
-    assert.deepEqual(offer.grants, ['GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `app-sp-id`', 'GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp-id`', 'GRANT READ METADATA ON TABLE `main`.`s`.`orders` TO `app-sp-id`']);
+    // REQ-408: the offer's copy is schema level (the read grants of the schema); the table statements stay in Grant.
+    assert.deepEqual(offer.grants, ['GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `app-sp-id`', 'GRANT SELECT ON SCHEMA `main`.`s` TO `app-sp-id`', 'GRANT READ METADATA ON SCHEMA `main`.`s` TO `app-sp-id`']);
     assert.equal(offer.can_grant, true);
     assert.match(offer.text, /builds run as the App service principal inspire-manual \(application id app-sp-id\)/);
     assert.doesNotMatch(offer.text, /swap/i);
@@ -403,7 +404,7 @@ test('the preflight context offers the App read grants when only the policy read
     assert.deepEqual(before.data.app_unreadable.tables, ['main.s.orders']);
     assert.equal(before.data.app_unreadable.can_grant, true);
     assert.deepEqual(before.data.app_unreadable.grants, ['GRANT USE SCHEMA ON SCHEMA `main`.`s` TO `app-sp-id`',
-      'GRANT SELECT ON TABLE `main`.`s`.`orders` TO `app-sp-id`', 'GRANT READ METADATA ON TABLE `main`.`s`.`orders` TO `app-sp-id`']);
+      'GRANT SELECT ON SCHEMA `main`.`s` TO `app-sp-id`', 'GRANT READ METADATA ON SCHEMA `main`.`s` TO `app-sp-id`']);  // REQ-408: copy at schema level
   });
 });
 

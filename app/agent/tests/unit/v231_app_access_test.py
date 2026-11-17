@@ -19,6 +19,8 @@ TABLE = "main.pricing.items"
 CATALOG = "GRANT USE CATALOG ON CATALOG `main` TO `sp-1`"
 SCHEMA = "GRANT USE SCHEMA ON SCHEMA `main`.`pricing` TO `sp-1`"
 SELECT = "GRANT SELECT ON TABLE `main`.`pricing`.`items` TO `sp-1`"
+# REQ-408: the copy text names the schema; the tables keep the exact statement Grant runs.
+SELECT_SCHEMA = "GRANT SELECT ON SCHEMA `main`.`pricing` TO `sp-1`"
 EVIL = "GRANT ALL PRIVILEGES ON CATALOG `main` TO `attacker`"
 UNREAD = {TABLE: [SCHEMA, SELECT]}
 OWNERS = {TABLE: "data-eng"}
@@ -71,7 +73,7 @@ def test_diagnose_names_the_unreadable_table_its_owner_and_only_the_allow_listed
     status, out = access(s, "diagnose")
     assert status == 200, out
     assert out["tables"] == [{"table": TABLE, "owner": "data-eng", "grants": [SCHEMA, SELECT], "you_can_grant": True}]
-    assert out["can_grant"] is True and out["sql"] == f"{SCHEMA};\n{SELECT};"
+    assert out["can_grant"] is True and out["sql"] == f"{SCHEMA};\n{SELECT_SCHEMA};"
     assert re.fullmatch(r"[0-9a-f]{64}", out["seen"])
     assert person.grants() == [] and sp.grants() == [], "diagnosing never grants"
     assert [sql for sql, _p, _l in sp.sql] == ["SELECT 1 FROM `main`.`pricing`.`items` LIMIT 0"], "the App checks its own read live"
@@ -135,7 +137,7 @@ def test_a_refused_grant_stops_names_the_owner_and_keeps_the_sql_to_copy(tmp_pat
     assert person.grants() == [SCHEMA], "nothing runs after the first refusal"
     assert out["error"].startswith("Unity Catalog did not let you grant USE SCHEMA on main.pricing")
     assert "data-eng" in out["error"] and "Copy the grant SQL" in out["error"] and "PERMISSION_DENIED" not in out["error"]
-    assert out["access"]["sql"] == f"{SCHEMA};\n{SELECT};" and out["access"]["tables"][0]["table"] == TABLE
+    assert out["access"]["sql"] == f"{SCHEMA};\n{SELECT_SCHEMA};" and out["access"]["tables"][0]["table"] == TABLE
     assert "[APP-ACCESS-GRANT FIRED] refused" in capsys.readouterr().err
 
 
