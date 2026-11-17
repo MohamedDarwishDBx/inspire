@@ -53,7 +53,7 @@ function paramOf(body, name) {
 }
 
 const USECASE_RULE_COLUMNS = ['inspire_score', 'quality_score', 'priority_score', 'elite_status', 'business_domain'];
-const HISTORY_COLUMNS = ['session_id', 'use_case_id', 'spec_version', 'status', 'created_by', 'spec_json'];
+const HISTORY_COLUMNS = ['session_id', 'use_case_id', 'spec_version', 'status', 'created_by', 'spec_json', 'built_framing'];
 
 function answerSql(body) {
   const sql = String(body.statement || '');
@@ -236,7 +236,11 @@ function answerSql(body) {
   }
   if (/^\s*SELECT\b/i.test(sql) && sql.includes('__inspire_implement')) {
     if (state.implementReadError) return { statement_id: 's1', status: { state: 'FAILED', error: { message: state.implementReadError } } };
-    const rows = state.history.map((r) => HISTORY_COLUMNS.map((c) => (c === 'spec_json' ? JSON.stringify(r[c] || {}) : (r[c] == null ? null : String(r[c])))));
+    const rows = state.history.map((r) => HISTORY_COLUMNS.map((c) => {
+      if (c === 'spec_json') return JSON.stringify(r[c] || {});
+      if (c === 'built_framing') return r[c] == null ? null : JSON.stringify(r[c]);
+      return r[c] == null ? null : String(r[c]);
+    }));
     return sqlResult(HISTORY_COLUMNS, rows);
   }
   return sqlResult(['ok'], []);

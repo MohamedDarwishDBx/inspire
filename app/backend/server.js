@@ -65,7 +65,7 @@ const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('.
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
 const PM_ERROR = require('./lib/permissionError');
 const { apiRefusalText, logApiBody } = require('./lib/apiRefusal');
-const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, parseImplementRow, builtTableScopeOf, latestBuiltRowsSql, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
+const { samplesChoiceOfRun, isBuiltInSampleEntry, isReadDenied, liveLogPath, SAMPLE_COPY_NO_SIGN_IN, sampleCopyDestination, sampleCopyFailureKind, samplesNeedChoice, SAMPLES_CHOICE_TEXT, sampleCopyName, sampleCopyRefusal, sampleCopyStatement, sampleCopyTakenMessage, sampleSchemaMessage, sampleTableRef, schemaCreateStatement, describedColumnNames, implementTableName, parseImplementRow, builtTableScopeOf, builtFramingOf, builtTextOf, latestBuiltRowsSql, resultTableNameError, quoteTable } = require('./lib/inspireImplement');
 const { keepLongInteger, parseExactJson } = require('./lib/exactJson');
 const { int64Id, isInt64Id, jsonWithInt64Ids } = require('./lib/int64Id');
 const { dataFiltersOf, scopesOfSessions } = require('./lib/dataFilters');
@@ -2999,7 +2999,8 @@ async function tableScopesOfRows(req, warehouseId, catalog, schema, rows) {
 async function builtScopesOfRows(req, warehouseId, catalog, schema, rows) {
   const sids = [...new Set(rows.map((r) => int64Id(r.session_id)).filter(Boolean))];
   const built = new Map();
-  if (!sids.length) return { built, unread: false };
+  const framings = new Map();
+  if (!sids.length) return { built, framings, unread: false };
   try {
     const history = new Map();
     const sql = latestBuiltRowsSql(implementTableName(catalog, schema), sids);
@@ -3010,11 +3011,13 @@ async function builtScopesOfRows(req, warehouseId, catalog, schema, rows) {
     for (const [key, versions] of history) {
       const scope = builtTableScopeOf(versions);
       if (scope !== undefined) built.set(key, scope);
+      const framing = builtFramingOf(versions);
+      if (framing !== undefined) framings.set(key, framing);
     }
-    return { built, unread: false };
+    return { built, framings, unread: false };
   } catch (err) {
     console.warn(`usecases: the scope the latest build read could not be read, so the Discover run's Data Filters are shown: ${err.message}`);
-    return { built, unread: true };
+    return { built, framings, unread: true };
   }
 }
 
@@ -3105,6 +3108,8 @@ app.get('/api/inspire/usecases', requireToken, async (req, res) => {
       const scopes = chosen !== undefined ? chosen : sessionScopes.get(String(row.session_id));
       row.data_filters = scopes === undefined ? null : dataFiltersOf(row, scopes);
       row.build_scope_unread = builtScopes.unread;
+      // REQ-389 (R49): the App's use case text is the text the latest build carried; a use case no build framed keeps its Discover statement.
+      Object.assign(row, builtTextOf(builtScopes.framings.get(`${row.session_id}|${row.id}`)));
     }
     res.json({ usecases: rows, count: rows.length, all_sessions: listAll });
   } catch (err) {

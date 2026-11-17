@@ -117,3 +117,23 @@ def test_the_row_written_for_a_chosen_scope_carries_the_build_scope_and_the_row_
     assert "visa or amex" not in out["statement"], out["statement"]
     assert f"Covers only the columns `id`, `paymentMethod` of {TABLE}." in out["statement"], out["statement"]
     assert row["statement"] == DISCOVER_GOAL, "the caller's row is not changed"
+
+
+def test_the_build_record_carries_the_built_framing_with_the_discover_scope_text_taken_out(fresh_ns):
+    ns = fresh_ns
+    _set_session(ns, WHOLE)
+    built = ns["implement_built_framing"](_chosen_spec(ns, WHOLE, measures=[DISCOVER_MEASURE, OWN_MEASURE]))
+    assert "visa or amex" not in built["goal"], built
+    assert f"Covers only the columns `id`, `paymentMethod` of {TABLE}." in built["goal"], built
+    assert built["success_measures"] == ["A list of franchise pairs with shared buyers is delivered.", OWN_MEASURE], built
+
+
+def test_the_built_framing_with_no_scope_choice_is_the_spec_framing_as_written(fresh_ns):
+    ns = fresh_ns
+    _set_session(ns, WHOLE)
+    spec = _chosen_spec(ns, None, measures=[OWN_MEASURE])
+    assert ns["implement_built_framing"](spec) == {"goal": DISCOVER_GOAL, "success_measures": [OWN_MEASURE]}
+
+
+def test_the_implement_table_has_a_built_framing_column_for_the_build_record(agent_ns):
+    assert dict(agent_ns["IMPLEMENT_COLUMNS"]).get("built_framing") == "VARIANT"
