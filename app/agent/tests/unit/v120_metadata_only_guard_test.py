@@ -401,7 +401,7 @@ def violations_in(sql):
 # metadata answers that: the one-value check counts the distinct values of one column of the scoped source. It is the one aggregate
 # the Implement operation reads from a user table. The reviewed shape is one COUNT(DISTINCT) per column, read through the same scope
 # Discover uses, and nothing else; any other read in an implement_* function stays a violation.
-ONE_VALUE_FUNCTIONS = ("_implement_one_value_columns", "count")  # "count" is the nested helper that executes the statement
+ONE_VALUE_FUNCTIONS = ("implement_one_value_columns", "count")  # the reviewed reader (inlined history source; the agent method delegates to it); "count" is its nested helper that executes the statement
 ONE_VALUE_SOURCE = "{scoped_read_source(table, scopes)}"
 ONE_VALUE_SHAPE = re.compile(r"^SELECT COUNT\(DISTINCT COALESCE\(NULLIF\(TRIM\(CAST\(\{inspire_column\(column\)\} AS STRING\)\), ''\), "
                              r"'no \{column\}'\)\) AS distinct_values FROM \{scoped_read_source\(table, scopes\)\}$")
@@ -1023,9 +1023,11 @@ def test_the_joined_one_value_read_admits_only_its_one_join_of_two_scoped_source
     assert source.count(joined_head) == 1, "the reviewed joined one-value select moved; update ONE_VALUE_JOINED_SHAPE with it"
 
     def bad_in_one_value(text):
-        method = next(node for node in ast.walk(ast.parse(text)) if isinstance(node, ast.FunctionDef)
-                      and node.name == "_implement_one_value_columns")
-        return [entry for entry in audit(text, with_implement_reads=True)[2] if method.lineno <= entry[0] <= method.end_lineno]
+        # The reviewed reader lives in the inlined history source, which the generated notebook runs too, so the audit reads that code.
+        code = inlined_history_code(text)
+        method = next(node for node in ast.walk(ast.parse(code)) if isinstance(node, ast.FunctionDef)
+                      and node.name == "implement_one_value_columns")
+        return [entry for entry in audit(code, with_implement_reads=True)[2] if method.lineno <= entry[0] <= method.end_lineno]
 
     assert bad_in_one_value(source) == [], "the reviewed joined one-value read is refused"
     # MUST FAIL: a joined count that selects rows instead of COUNT(DISTINCT ...)
@@ -1038,8 +1040,26 @@ def test_the_joined_one_value_read_admits_only_its_one_join_of_two_scoped_source
     assert third != source and bad_in_one_value(third), "a joined one-value read with a third source is admitted"
 
 
+HISTORY_OPEN = "IMPLEMENT_RESULT_HISTORY_SOURCE = r'''"
+
+
+def inlined_history_code(text):
+    """The source the generated notebook inlines (IMPLEMENT_RESULT_HISTORY_SOURCE), as code. Its reads are audited like the agent's."""
+    start = text.index(HISTORY_OPEN) + len(HISTORY_OPEN)
+    return text[start:text.index("'''", start)]
+
+
+def test_guard_flags_an_unreviewed_read_inside_the_inlined_history_source():
+    # MUST FAIL: a row read added to the one-value reader that the generated notebook runs
+    source = _inject(agent_source(), ("    one, unchecked = [], []\n", "    spark.sql('SELECT * FROM main.sales.orders').collect()\n"))
+    report = runtime_audit(source)
+    assert "main.sales.orders" in _bad_targets(report), report["bad"]
+
+
 def test_implement_reads_only_its_result_tables_and_zero_row_probes():
     _, _, bad, _, implement = audit(agent_source(), with_implement_reads=True)
+    # The reviewed one-value reader is in the inlined history source, so its implement reads are listed from that code too.
+    implement = implement + audit(inlined_history_code(agent_source()), with_implement_reads=True)[4]
     assert not bad
     assert {"{inspire_table_name(result_table)}", "{inspire_table_name(table)}"} <= {target for _, _, target, _, _ in implement}
     one_value = [entry for entry in implement if entry[4] in ONE_VALUE_FUNCTIONS and entry[2] in (ONE_VALUE_SOURCE,) + ONE_VALUE_JOINED_SOURCES]
