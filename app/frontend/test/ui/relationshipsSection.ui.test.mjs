@@ -28,7 +28,7 @@ const STATE = {
 };
 const SHOTS = '/private/tmp/inspire_v15/shots/u4';
 const SHOTS_U7 = '/private/tmp/inspire_v15/shots/u7';
-const SHOTS_U13 = '/private/tmp/inspire_v15/shots/u13';
+const SHOTS_R50 = '/private/tmp/inspire_v15/shots/r50';
 
 async function openRelationships(page, extra = []) {
   await page.getByPlaceholder(BUSINESS).fill('Acme');
@@ -270,44 +270,87 @@ test('REQ-382: long names truncate, Source and Target stay equal and inside the 
   }
 });
 
-test('a link whose reverse already exists is refused at Link with one plain line, and nothing is added (REQ-394)', async () => {
+// REQ-394: a link whose reverse exists, or an exact duplicate, cannot be added. Link stays disabled and one plain line says why, beside it.
+const pickColumns = async (page, [sourceTable, sourceColumn], [targetTable, targetColumn]) => {
+  const dialog = page.locator('[data-link-dialog]');
+  await dialog.getByRole('list', { name: `Columns of ${sourceTable}` }).getByRole('button', { name: sourceColumn, exact: true }).click();
+  await dialog.getByRole('list', { name: `Columns of ${targetTable}` }).getByRole('button', { name: targetColumn, exact: true }).click();
+};
+// Link opens the dialog for the picks as they stand; the caller moves the picks first (a list cannot pick the other side's table).
+const openPairDialog = async (page, sourceTable) => {
+  await page.getByRole('button', { name: 'Link', exact: true }).click();
+  await page.locator('[data-link-dialog]').getByRole('list', { name: `Columns of ${sourceTable}` }).waitFor({ timeout: 15000 });
+};
+
+test('REQ-394: once orders.customer_id -> customers.customer_id is linked, its reverse and its exact duplicate show one plain line and Link is disabled', async () => {
   const ui = await openUi('launch', STATE_WITH_REFUNDS);
   const { page } = ui;
-  const refused = () => page.locator('[data-link-refused]');
+  const dialog = () => page.locator('[data-link-dialog]');
+  const linkButton = () => dialog().getByRole('button', { name: 'Link', exact: true });
+  const refused = () => dialog().locator('[data-link-refused]');
   try {
     await openRelationships(page, ['refunds']);
     await source(page, 'orders').click();
     await target(page, 'customers').click();
-    await page.getByRole('button', { name: 'Link', exact: true }).click();
-    const dialog = page.locator('[data-link-dialog]');
-    await dialog.getByRole('list', { name: 'Columns of orders' }).waitFor({ timeout: 15000 });
-    await dialog.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'customer_id', exact: true }).click();
-    await dialog.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'customer_id', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Link', exact: true }).click();
-    assert.equal(await page.locator('[data-relationship="orders.customer_id → customers.customer_id"]').count(), 1, 'the first direction is kept');
-    // The same pair again, in the same dialog, is refused.
-    await dialog.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'customer_id', exact: true }).click();
-    await dialog.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'customer_id', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Link', exact: true }).click();
-    assert.equal(await refused().innerText(), 'orders.customer_id and customers.customer_id are already linked.');
+    await openPairDialog(page, 'orders');
+    await pickColumns(page, ['orders', 'customer_id'], ['customers', 'customer_id']);
+    await linkButton().click();
+    assert.equal(await page.locator('[data-relationship="orders.customer_id → customers.customer_id"]').count(), 1, 'the first direction is linked');
+    await dialog().getByRole('button', { name: 'Close', exact: true }).click();
+
+    // The reverse: customers -> orders, the same two columns. The Target moves to a third table first, so Source can take customers.
+    await target(page, 'refunds').click();
+    await source(page, 'customers').click();
+    await target(page, 'orders').click();
+    await openPairDialog(page, 'customers');
+    await pickColumns(page, ['customers', 'customer_id'], ['orders', 'customer_id']);
+    assert.equal(await linkButton().isDisabled(), true, 'Link is disabled for the reverse');
+    assert.equal(await refused().innerText(), 'These tables are already linked on customer_id.', 'the reverse shows one plain line before any click');
+    assert.equal(await refused().getAttribute('role'), 'status');
     for (const [width, height] of [[1440, 900], [1280, 800]]) {
       await page.setViewportSize({ width, height });
-      await dialog.screenshot({ path: `${SHOTS_U13}/req394-refused-${width}x${height}.png` });
+      await dialog().screenshot({ path: `${SHOTS_R50}/req394-reverse-${width}x${height}.png` });
     }
-    // Move the lists to customers → orders through refunds, then try the reverse.
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    await source(page, 'refunds').click();
-    await target(page, 'orders').click();
-    await source(page, 'customers').click();
-    await page.getByRole('button', { name: 'Link', exact: true }).click();
-    const reverse = page.locator('[data-link-dialog]');
-    await reverse.getByRole('list', { name: 'Columns of customers' }).waitFor({ timeout: 15000 });
-    await reverse.getByRole('list', { name: 'Columns of customers' }).getByRole('button', { name: 'customer_id', exact: true }).click();
-    await reverse.getByRole('list', { name: 'Columns of orders' }).getByRole('button', { name: 'customer_id', exact: true }).click();
-    await reverse.getByRole('button', { name: 'Link', exact: true }).click();
-    assert.equal(await refused().innerText(), 'customers.customer_id and orders.customer_id are already linked.', 'the reverse is refused too');
+    await dialog().getByRole('button', { name: 'Close', exact: true }).click();
+
+    // An exact duplicate, same direction: the same line, Link disabled, and still one link.
+    await target(page, 'refunds').click();
+    await source(page, 'orders').click();
+    await target(page, 'customers').click();
+    await openPairDialog(page, 'orders');
+    await pickColumns(page, ['orders', 'customer_id'], ['customers', 'customer_id']);
+    assert.equal(await linkButton().isDisabled(), true, 'Link is disabled for an exact duplicate');
+    assert.equal(await refused().innerText(), 'These tables are already linked on customer_id.');
+    await dialog().getByRole('button', { name: 'Close', exact: true }).click();
     assert.equal(await page.locator('[data-relationship]').count(), 1, 'no duplicate link is listed');
     assert.equal(await page.locator('[data-links]').getByText('Links (1)', { exact: true }).count(), 1);
+  } finally {
+    await ui.close();
+  }
+});
+
+test('REQ-394: an unrelated pair shows no line and Link stays enabled', async () => {
+  const ui = await openUi('launch', STATE_WITH_REFUNDS);
+  const { page } = ui;
+  const dialog = () => page.locator('[data-link-dialog]');
+  const linkButton = () => dialog().getByRole('button', { name: 'Link', exact: true });
+  try {
+    await openRelationships(page, ['refunds']);
+    await source(page, 'orders').click();
+    await target(page, 'customers').click();
+    await openPairDialog(page, 'orders');
+    await pickColumns(page, ['orders', 'customer_id'], ['customers', 'customer_id']);
+    await linkButton().click();
+    await dialog().getByRole('button', { name: 'Close', exact: true }).click();
+
+    // refunds.customer_id -> customers.customer_id joins other tables than the saved link: no line, and it can be added.
+    await source(page, 'refunds').click();
+    await openPairDialog(page, 'refunds');
+    await pickColumns(page, ['refunds', 'customer_id'], ['customers', 'customer_id']);
+    assert.equal(await dialog().locator('[data-link-refused]').count(), 0, 'no line for an unrelated pair');
+    assert.equal(await linkButton().isDisabled(), false, 'Link is enabled for an unrelated pair');
+    await linkButton().click();
+    assert.equal(await page.locator('[data-relationship="refunds.customer_id → customers.customer_id"]').count(), 1, 'the unrelated pair is added');
   } finally {
     await ui.close();
   }
