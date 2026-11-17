@@ -186,8 +186,10 @@ def _changes(cause, items=RUN_CHANGES):
     return dict(_fill(), changes=[{**{f: "" for f in FIELDS}, **item, "cause": cause} for item in items])
 
 
-def test_the_run_s_five_rule_changes_are_not_shown_as_moves_away_from_the_design(agent_ns):
-    assert agent_ns["implement_genie_change_notes"](_changes("rule")) == []
+def test_the_run_s_five_rule_changes_are_named_not_silent(agent_ns):
+    # REQ-396 ruling (2026-11-17): a method change is named even when its cause is an Inspire rule, so the build warns about it.
+    notes = agent_ns["implement_genie_change_notes"](_changes("rule"))
+    assert [note.split(": ")[0] for note in notes] == [f"Genie used {c['method_now']} instead of {c['method_was']}" for c in RUN_CHANGES], notes
     assert agent_ns["implement_genie_rule_methods"]([_changes("rule")]) == [
         f"{c['method_now']} instead of {c['method_was']}" for c in RUN_CHANGES]
 

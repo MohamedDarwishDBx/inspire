@@ -1,10 +1,10 @@
-"""REQ-396: a repair may not loosen a threshold the use case states, and Genie's refusal says what it wanted to change.
+"""REQ-396: a repair may not change a minimum the person set, and every change Genie makes is named, never silent.
 
-Live evidence (rc7, joined segmentation use case N02-U02): the build let Genie set the per-entity minimum from 10 (or 20) to 1 and
-then pass on rule-based tiers, so the App reported a result the stated minimum would not have allowed. The stated thresholds are the
-family's readiness minimums (GENIE_READINESS_THRESHOLDS plus the person's overrides), which reach the notebook as widgets. They are
-pinned like the grouping, the scope and the measure (REQ-346): the spec's value (before) against the widget Genie filled (after).
-The text of a change is never read, and a method or technique change is not a threshold change, so it keeps its REQ-346 behaviour."""
+Live evidence (rc7, joined segmentation use case N02-U02): Genie set the per-entity minimum from 10 (or 20) to 1 and passed on rule-based
+tiers. Ruling (coordinator, 2026-11-17): only a value the PERSON set is pinned, like the grouping, scope and measure (REQ-346): a change to
+it is refused and the refusal says what Genie wanted. A family default that Genie lowers is allowed, and the build names it with the old and
+new values (implement_genie_change_notes -> warnings). A method or technique change is allowed and named. Unparseable cells go back to Genie.
+"""
 import os
 import sys
 
@@ -13,6 +13,8 @@ if TESTS not in sys.path:
     sys.path.insert(0, TESTS)
 
 from v203_kind_companion_gate_test import TABLE as SEG_TABLE, _gates  # noqa: E402
+from v140_implement_test import _inspire  # noqa: E402
+from v120_artifacts_support import FakeSpark  # noqa: E402
 
 GROUPING = {"columns": ["city"], "one_model": False}
 CORE = [{"name": "group_by", "default": "city"}, {"name": "min_entities_per_k", "default": "10"},
@@ -127,10 +129,109 @@ def test_the_left_out_helper_keeps_every_missing_table_the_layout_needs(agent_ns
     assert left_out(missing, SEG_TABLE, None, "segment_explorer") == missing, "no printed skip, no exemption (must-keep)"
 
 
-def test_the_data_shortfall_repair_keeps_the_stated_minimums_and_never_offers_to_lower_one(agent_ns):
-    # REQ-396, item 3: the shortfall repair used to offer "lower `{setting}` within its allowed range" as a way past the counts, which is
-    # how a per-city minimum of 10 or 20 became 1. The repair now keeps every stated minimum and asks for a method valid at the counts.
-    text = agent_ns["IMPLEMENT_DATA_REPAIR"]
-    assert "lower `{setting}` within its allowed range" not in text, "a stated minimum is not offered as the way past a shortfall (must-fail)"
-    assert "Keep every readiness minimum exactly as the use case states it" in text and "never lower one" in text
-    assert "the simplest technique that is valid at" in text and "Never fabricate data" in text, "the method repair stays (must-keep)"
+
+# REQ-396 follow-up: only the person's own minimums are pinned; a family default is named, not refused.
+def test_only_a_minimum_the_person_set_is_user_input(agent_ns):
+    pick = agent_ns["implement_user_thresholds"]
+    assert pick(STATED, {"min_entities_per_k": "10"}) == {"min_entities_per_k": 10}, "a family default is not user input (must-exclude)"
+    assert pick(STATED, None) == {} and pick(None, {"min_entities_per_k": "10"}) == {}
+
+
+def test_a_family_default_lowered_by_a_repair_is_not_refused_and_is_named_with_both_values(agent_ns):
+    pinned = agent_ns["implement_choice_pinned"](CORE, None, agent_ns["implement_user_thresholds"](STATED, {}))
+    assert "min_entities_per_k" not in pinned, pinned
+    lowered = {"what": "", "why": "no segment has 10 entities", "cause": "data_shortfall", "method_was": "", "method_now": "",
+               "setting": "min_entities_per_k", "value_was": "10", "value_now": "1"}
+    assert agent_ns["implement_choice_changes"]([fill(changes=[lowered], widgets=[("min_entities_per_k", "1")])], pinned) == [], \
+        "a family default may be lowered (must-pass)"
+    notes = agent_ns["implement_genie_change_notes"](fill(changes=[lowered]), None)
+    assert notes == ["Genie set Minimum entities per segment to 1, not 10: no segment has 10 entities."], notes
+
+
+def test_a_user_set_minimum_lowered_by_a_repair_is_refused_not_just_named(agent_ns):
+    pinned = agent_ns["implement_choice_pinned"](CORE, None, agent_ns["implement_user_thresholds"](STATED, {"min_entities_per_k": "10"}))
+    moved = agent_ns["implement_choice_changes"]([fill([("min_entities_per_k", "1")])], pinned)
+    assert moved == ["the threshold min_entities_per_k from 10 to 1"], moved
+
+
+def test_a_method_change_with_an_inspire_rule_cause_is_named_not_silent(agent_ns):
+    method = {"what": "the segmentation method", "why": "the grouping rule asks for it", "cause": "rule",
+              "method_was": "KMeans segmentation", "method_now": "Rule-based spend-gap tiers", "setting": "", "value_was": "", "value_now": ""}
+    assert agent_ns["implement_genie_change_notes"](fill(changes=[method]), None) == [
+        "Genie used Rule-based spend-gap tiers instead of KMeans segmentation: the grouping rule asks for it."]
+
+
+APPLIES = dict(GROUPING, applies=True)  # the guard reads only a use case whose Grouping applies
+
+
+# REQ-396 item 2: group_by must be set in a scope the call can see; the guard names the call and the fix.
+GROUP_OK = ('def _fit_step(records):\n'
+            '    group_by = dbutils.widgets.get("group_by")\n'
+            '    records = inspire_group_records(records, group_by=group_by)\n'
+            '    return records.groupby("inspire_group").size()\n')
+GROUP_SHARED_BY_ANOTHER_FUNCTION = ('def _fit_step(records):\n'
+                                    '    group_by = dbutils.widgets.get("group_by")\n'
+                                    '    return records\n'
+                                    '\n'
+                                    'def _score_step(scoring):\n'
+                                    '    grouped = inspire_group_records(scoring, group_by=group_by)\n'
+                                    '    return grouped.groupby("inspire_group").size()\n')
+GROUP_WIDGET_READ_INLINE = ('def _score_step(scoring):\n'
+                            '    grouped = inspire_group_records(scoring, group_by=dbutils.widgets.get("group_by"))\n'
+                            '    return grouped.groupby("inspire_group").size()\n')
+GROUP_MODULE_LEVEL = ('group_by = dbutils.widgets.get("group_by")\n'
+                      'def _score_step(scoring):\n'
+                      '    return inspire_group_records(scoring, group_by=group_by).groupby("inspire_group").size()\n')
+
+
+def test_a_group_by_set_in_the_same_function_passes(agent_ns):
+    assert agent_ns["implement_grouping_problems"]([("cell 2", GROUP_OK)], APPLIES) == [], "set where the call reads it (must-pass)"
+
+
+def test_a_group_by_set_only_in_another_function_is_named_with_the_line(agent_ns):
+    problems = agent_ns["implement_grouping_problems"]([("cell 2", GROUP_SHARED_BY_ANOTHER_FUNCTION)], APPLIES)
+    assert problems == ['cell 2 line 6 calls inspire_group_records with the group_by variable, but the function around the call never sets it: '
+                        'inside that function read the group_by widget into the variable, `group_by = dbutils.widgets.get("group_by")`, then '
+                        'pass group_by=group_by; a variable set in another function is not visible there'], problems
+
+
+def test_an_inline_widget_read_is_still_named_as_unread(agent_ns):
+    problems = agent_ns["implement_grouping_problems"]([("cell 3", GROUP_WIDGET_READ_INLINE)], APPLIES)
+    assert len(problems) == 1 and problems[0].startswith("cell 3 line 2 calls inspire_group_records without the group_by variable"), problems
+    assert "inside the function that makes the call, read the widget into the variable first" in problems[0], problems
+
+
+def test_a_module_level_group_by_is_visible_to_every_function(agent_ns):
+    assert agent_ns["implement_grouping_problems"]([("cell 2", GROUP_MODULE_LEVEL)], APPLIES) == [], "module scope is shared (must-keep)"
+
+
+# REQ-396 side finding: a cell that does not parse is a problem sent back to Genie, not a silent skip.
+def test_an_unparseable_python_cell_is_named_with_its_line(agent_ns):
+    problems = agent_ns["implement_unparseable_cell_problems"]([("cell 2", "x = 1\ndef f(:\n    pass\n")])
+    assert len(problems) == 1 and problems[0].startswith("cell 2 line 2 does not parse as Python ("), problems
+    assert problems[0].endswith("so Inspire cannot check the rest of the cell: fix the syntax at that line"), problems
+
+
+def test_sql_markdown_and_pip_cells_are_not_parsed_as_python(agent_ns):
+    cells = [("cell 3", "%sql\nSELECT 1 FROM\n"), ("cell 4", "%md\n# title (not python)\n"), ("cell 5", "%pip install x\nx = 1\n")]
+    assert agent_ns["implement_unparseable_cell_problems"](cells) == [], "non-Python magics and valid Python with a magic line pass (must-keep)"
+
+
+def test_the_cell_gate_reports_an_unparseable_cell_before_any_other_check(agent_ns):
+    inst = _inspire(agent_ns, FakeSpark(responder=lambda statement: []))
+    inst._implement_genie_cells = lambda path, purpose: [("cell 2", "def f(:\n    pass\n")]
+    problems = inst._implement_cell_problems("/W/nb")
+    assert problems and problems[0].startswith("cell 2 line 1 does not parse as Python"), problems
+
+
+def test_a_rule_caused_technique_change_reaches_the_build_outcome_as_a_named_change(agent_ns):
+    # REQ-396 ruling: a technique change is allowed and named. The outcome's genie_changes feed the build warnings
+    # (implement_build warnings += "Notebook: <note>" for each note).
+    from v206_genie_self_repair_test import _adapted, _family, _FakeRunner, _flow_inspire, _run
+    inst = _family(_flow_inspire(agent_ns, [({"status": "written", "rows_written": 40}, 11, 101)]), "D")
+    change = _adapted(method_was="KMeans segmentation", method_now="Rule-based spend-gap tiers",
+                      why="the grouping rule asks for it", cause="rule")
+    runner = _FakeRunner([{"exit": 0, "final": change}])
+    outcome, _job, _fill_out = _run(agent_ns, inst, runner)
+    assert outcome["status"] == "written"
+    assert outcome["genie_changes"] == ["Genie used Rule-based spend-gap tiers instead of KMeans segmentation: the grouping rule asks for it."]

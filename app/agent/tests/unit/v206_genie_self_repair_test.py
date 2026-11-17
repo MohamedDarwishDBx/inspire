@@ -48,7 +48,7 @@ def test_a_743_of_1000_interactions_stop_goes_back_with_the_counts_and_builds_an
     assert len(runner.prompts) == 2
     sent = runner.prompts[1]
     assert SHORT_D in sent and "valid at 743 past interactions" in sent and "item co-occurrence shrunk toward popularity" in sent
-    assert "never lower one, such as `min_interactions`, to make the measured 743 past interactions pass" in sent and "Never fabricate data" in sent
+    assert "lower `min_interactions` within its allowed range (whole number, at least 1)" in sent and "Never fabricate data" in sent
     build = [e for e in inst.emitted if e["step_name"] == "Genie build"]
     assert build[1]["message"].startswith("round 1 of up to 6: Genie stopped, sent back to repair it: There are too few past interactions (743)")
     assert inst.logger.matching("[GENIE-SELF-REPAIR FIRED] N01-U01: data shortfall interactions = 743 against 1,000")
