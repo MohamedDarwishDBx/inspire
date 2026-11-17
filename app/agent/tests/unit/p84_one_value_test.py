@@ -24,7 +24,7 @@ def test_a_chosen_column_with_one_value_in_scope_is_refused_with_the_reason(agen
 
 def test_a_chosen_column_with_several_values_is_not_refused(agent_ns):
     plan = agent_ns["implement_grouping_plan"]("Anomaly Detection", CANDIDATES, "product", "", [], "person", "", one_value=[])
-    assert plan["applies"] is True and plan["columns"] == CANDIDATES and "problem" not in plan, plan
+    assert plan["applies"] is True and plan["columns"] == ["product"] and "problem" not in plan, plan
 
 
 def test_a_recommended_column_with_one_value_is_dropped_not_refused(agent_ns):

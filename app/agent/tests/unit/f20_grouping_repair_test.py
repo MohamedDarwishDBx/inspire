@@ -60,15 +60,13 @@ def test_the_refusal_names_the_real_reason_it_could_not_keep_the_grouping(agent_
     assert text.endswith("change the grouping on the Run page"), text
 
 
-def test_a_grouping_that_cannot_be_put_back_is_still_refused(agent_ns):
-    # The planned value is not a dropdown choice, so no restore is possible: the real swap must stay refused (must-keep).
+def test_a_grouping_outside_the_dropdown_choices_is_added_and_restored(agent_ns):
     bad_core = [{"name": "group_by", "default": "region", "allowed": "product, paymentMethod"}]
     fixes = agent_ns["implement_widget_default_fixes"](fill([("group_by", "all")]), bad_core)
-    assert fixes == [], "a plan outside the choices is not restored (must-exclude)"
-    pinned = agent_ns["implement_choice_pinned"](bad_core, None)
-    moved = agent_ns["implement_choice_changes"]([fill([("group_by", "all")])], pinned)
-    assert moved, "a real grouping swap that cannot be restored is refused (must-keep)"
-    assert "could not group by" in agent_ns["implement_choice_refusal"](GROUPING, moved)
+    assert [(w["name"], held, planned) for w, held, planned in fixes] == [("group_by", "all", "region")], fixes
+    cells = cells_with(DROPDOWN_LINE)
+    assert agent_ns["implement_widget_default_patch"](cells, "group_by", "all", "region", any_literal=True)
+    assert 'dropdown("group_by", "region", ["all", "product", "paymentMethod", "region"]' in "".join(cells[0]["source"]), cells
 
 
 def test_a_scope_swap_is_still_refused(agent_ns):
@@ -101,14 +99,14 @@ def test_a_run_scope_default_written_away_from_the_chosen_scope_is_restored(agen
     assert agent_ns["implement_choice_changes"]([restored], pinned) == [], "the restored scope is not a change (must-pass)"
 
 
-def test_a_run_scope_the_dropdown_cannot_hold_is_still_refused(agent_ns):
-    # The chosen scope is not one of the dropdown's choices, so Inspire cannot put it back: the swap stays refused (must-keep).
+def test_a_run_scope_missing_from_the_dropdown_choices_is_added_and_restored(agent_ns):
     pinned = agent_ns["implement_choice_pinned"]([], {"chosen": {"scope": "recent", "days": 30}})
     no_recent = scope_fill("all", choices=["all", "groups", "records"])
-    assert agent_ns["implement_widget_default_fixes"](no_recent, [], pinned) == [], "not restorable (must-exclude)"
-    moved = agent_ns["implement_choice_changes"]([no_recent], pinned)
-    assert moved and moved[0].startswith("the scope from recent to all"), moved
-    assert "could not group by" in agent_ns["implement_choice_refusal"](GROUPING, moved)
+    fixes = agent_ns["implement_widget_default_fixes"](no_recent, [], pinned)
+    assert [(w["name"], held, planned) for w, held, planned in fixes] == [("run_scope", "all", "recent")], fixes
+    cells = cells_with('dbutils.widgets.dropdown("run_scope", "all", ["all", "groups", "records"], "Scope")')
+    assert agent_ns["implement_widget_default_patch"](cells, "run_scope", "all", "recent", any_literal=True)
+    assert 'dropdown("run_scope", "recent", ["all", "groups", "records", "recent"]' in "".join(cells[0]["source"]), cells
 
 
 def test_a_currency_default_written_away_from_the_plan_is_restored(agent_ns):
