@@ -4791,14 +4791,14 @@ class Shell:
             return {"count": 0, "text": ""}
         score = records.get("rank") or "rank"
         sql, params = shell_sql.current_query(page["result_table"], [record_key])
-        rows = self.execute(ws, sql, params, 1, delta=True)["rows"]
+        rows = self.execute(ws, sql, params, 1, delta=False)["rows"]
         if not rows:
             raise HttpError(404, "no current record has this key")
         row = rows[0]
         if score not in row:
             return {"count": 0, "text": ""}
         sql, params = shell_sql.population_query(page["result_table"], score, records.get("tier") or "", row.get(score))
-        stats = self.execute(ws, sql, params, 1, delta=True)["rows"][0]
+        stats = self.execute(ws, sql, params, 1, delta=False)["rows"][0]
         label = next((c.get("label") for c in records.get("columns") or [] if c.get("column") == score and c.get("label")), score)
         return population_summary(row.get(score), stats, label=str(label), against=reasons_text(row.get(records.get("reasons") or "")),
                                   quality=q_value_text(row))
