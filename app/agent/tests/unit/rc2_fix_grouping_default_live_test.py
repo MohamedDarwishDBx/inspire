@@ -64,8 +64,12 @@ def test_a_text_grouping_widget_with_another_default_is_set_to_the_planned_one_t
 def test_a_grouping_already_at_the_plan_or_a_plan_a_dropdown_cannot_hold_is_left_alone(agent_ns):
     assert agent_ns["implement_widget_default_fixes"](_grouping_fill(PLANNED), CORE) == [], "a default already at the plan is not touched"
     multi = [{"name": "group_by", "default": "region, country", "allowed": ""}]
-    assert agent_ns["implement_widget_default_fixes"](_grouping_fill("all", choices=["all", "region"]), multi) == [], (
-        "a planned Grouping that is not one of the dropdown's choices cannot be set on it")
+    fill = _grouping_fill("all", choices=["all", "region"])
+    fixes = agent_ns["implement_widget_default_fixes"](fill, multi)
+    assert [(w["name"], old, new) for w, old, new in fixes] == [("group_by", "all", "region, country")], (
+        "REQ-403: a planned Grouping missing from the dropdown's choices is added to them and set as the default, not refused")
+    widget = fixes[0][0]
+    assert "region, country" not in widget["choices"], "the planned value is absent from the dropdown, which is why it is added"
     assert agent_ns["implement_widget_default_fixes"](_grouping_fill("all"), [{"name": "group_by", "default": "", "allowed": ""}]) == [], (
         "no plan means the Grouping is not Inspire's to set")
 

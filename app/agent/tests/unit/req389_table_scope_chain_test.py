@@ -74,7 +74,7 @@ def test_a_whole_data_choice_drops_the_discover_row_filter_from_the_scope_text_a
     session = _Session()
     ns["inspire_read_source"](TABLE, session)
     assert not [entry for entry in session.log if entry[0] == "where"], session.log
-    assert "WHERE" not in ns["scoped_read_source"](TABLE)
+    assert "WHERE" not in ns["inspire_scoped_read_source"](TABLE)
 
 
 def test_a_chosen_whole_scope_replaces_the_session_scope_and_keeps_its_columns_without_rows(fresh_ns):
