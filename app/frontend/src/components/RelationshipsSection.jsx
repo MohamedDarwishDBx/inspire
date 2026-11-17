@@ -54,12 +54,12 @@ function PickList({ label, items, picked, disabledItem, onPick, filterLabel, nam
 // The Link dialog (REQ-371, REQ-376): the columns of the source table on the left, the target's on the right. One click on Link, between
 // the two lists, adds the pair at once and shows it in the dialog's list. Every link is kept as it is made, so the dialog closes with
 // Close, Esc or a click outside it and nothing is lost. Suggestions (declared keys, matching names) are added only by their own button.
-function LinkDialog({ dialog, links, suggestions, onPick, onLink, onRemove, onAddSuggested, onClose, onRetry, nameOf }) {
+function LinkDialog({ dialog, links, suggestions, linked, onPick, onLink, onRemove, onAddSuggested, onClose, onRetry, nameOf }) {
   const { source, target } = dialog;
   const boxRef = useRef(null);
   const columnsOf = (table) => dialog.columns?.[table]?.columns || [];
   const [filter, setFilter] = useState({ source: '', target: '' });
-  const ready = dialog.pickSource && dialog.pickTarget;
+  const ready = dialog.pickSource && dialog.pickTarget && !linked;
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     const onDown = (e) => {
@@ -109,12 +109,12 @@ function LinkDialog({ dialog, links, suggestions, onPick, onLink, onRemove, onAd
       {dialog.status === 'done' && (
         <>
           {dialog.note && <p data-link-note role="status" className="text-warning-fg">{dialog.note}</p>}
-          {dialog.refusal && <p data-link-refused role="status" className="text-warning-fg">{dialog.refusal}</p>}
           <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-3">
             {sideList('source', source, dialog.pickSource)}
             <div className="flex flex-col items-center gap-2 pt-8">
               <button type="button" aria-label="Link" className={BUTTON} disabled={!ready} onClick={onLink}>Link</button>
-              {!ready && <p data-link-pick-reason className="max-w-[10rem] text-center text-text-tertiary">Pick one column in each table, then Link.</p>}
+              {linked && <p data-link-refused role="status" className="max-w-[10rem] text-center text-warning-fg">{linked}</p>}
+              {!linked && !ready && <p data-link-pick-reason className="max-w-[10rem] text-center text-text-tertiary">Pick one column in each table, then Link.</p>}
             </div>
             {sideList('target', target, dialog.pickTarget)}
           </div>
@@ -195,26 +195,25 @@ export default function RelationshipsSection({ tables, relationships, onRelation
   }
   const openLink = () => setDialog({ run: run + 1, source, target, status: 'loading', columns: {}, suggestions: [], pickSource: '', pickTarget: '' });
   const closeDialog = () => setDialog(null);
-  const pickSide = (side, column) => setDialog((prev) => ({ ...prev, [side === 'source' ? 'pickSource' : 'pickTarget']: column, refusal: '' }));
+  const pickSide = (side, column) => setDialog((prev) => ({ ...prev, [side === 'source' ? 'pickSource' : 'pickTarget']: column }));
   // Every link is written at once: a link already listed is not added twice, in either direction (REQ-394).
   const commitLinks = (added) => {
     const fresh = added.filter((s, i) => !relationships.some((l) => sameLink(l, s)) && added.findIndex((x) => sameLink(x, s)) === i);
     if (fresh.length) onRelationships([...relationships, ...fresh]);
   };
   const nameOf = nameOfIn(tables);
-  // REQ-394: a pair already linked, or linked the other way round, is refused with one plain line and nothing is added.
   const linkPicked = () => {
-    const pair = { from: { table: dialog.source, column: dialog.pickSource }, to: { table: dialog.target, column: dialog.pickTarget }, source: PERSON };
-    if (relationships.some((l) => sameLink(l, pair))) {
-      setDialog((prev) => ({ ...prev, refusal: `${nameOf(dialog.source)}.${dialog.pickSource} and ${nameOf(dialog.target)}.${dialog.pickTarget} are already linked.` }));
-      return;
-    }
-    commitLinks([pair]);
-    setDialog((prev) => ({ ...prev, pickSource: '', pickTarget: '', refusal: '' }));
+    commitLinks([{ from: { table: dialog.source, column: dialog.pickSource }, to: { table: dialog.target, column: dialog.pickTarget }, source: PERSON }]);
+    setDialog((prev) => ({ ...prev, pickSource: '', pickTarget: '' }));
   };
   const linkReason = !source || !target ? 'Pick one source table and one target table to link them.' : '';
   const betweenDialog = dialog ? relationships.filter((l) => [l.from.table, l.to.table].sort().join('|') === [dialog.source, dialog.target].sort().join('|')) : [];
   const suggestions = dialog ? (dialog.suggestions || []).filter((s) => !relationships.some((l) => sameLink(l, s))) : [];
+  // REQ-394: the picked pair is already a link, or the reverse of one: Link stays disabled and this one plain line says why.
+  const linked = dialog && dialog.pickSource && dialog.pickTarget
+    && relationships.some((l) => sameLink(l, { from: { table: dialog.source, column: dialog.pickSource }, to: { table: dialog.target, column: dialog.pickTarget } }))
+    ? (dialog.pickSource === dialog.pickTarget ? `These tables are already linked on ${dialog.pickSource}.` : `These tables are already linked on ${dialog.pickSource} and ${dialog.pickTarget}.`)
+    : '';
 
   return (
     <div data-relationships className="space-y-3">
@@ -231,7 +230,7 @@ export default function RelationshipsSection({ tables, relationships, onRelation
         </div>
       </div>
       {dialog && (
-        <LinkDialog dialog={dialog} links={betweenDialog} suggestions={suggestions} onPick={pickSide} onLink={linkPicked} nameOf={nameOf}
+        <LinkDialog dialog={dialog} links={betweenDialog} suggestions={suggestions} linked={linked} onPick={pickSide} onLink={linkPicked} nameOf={nameOf}
           onRemove={(link) => onRelationships(relationships.filter((l) => l !== link))}
           onAddSuggested={(s) => commitLinks([s])} onClose={closeDialog}
           onRetry={() => setDialog((prev) => ({ ...prev, run: prev.run + 1, status: 'loading' }))} />
