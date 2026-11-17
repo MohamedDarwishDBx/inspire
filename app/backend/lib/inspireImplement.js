@@ -154,7 +154,7 @@ const IMPLEMENT_COLUMNS = [
   ['suggested_schedule', 'VARIANT'], ['asset_status', 'VARIANT'], ['created_by', 'STRING'], ['created_at', 'TIMESTAMP'],
   ['updated_at', 'TIMESTAMP'], ['alert_id', 'STRING'], ['alert_url', 'STRING'], ['implement_run_id', 'BIGINT'],
   ['asset_snapshots', 'STRING'], ['ended_by', 'STRING'],
-  ['use_case_name_tag', 'STRING'], ['warehouse_id', 'STRING'], ['lakebase_project_id', 'STRING'],
+  ['use_case_name_tag', 'STRING'], ['warehouse_id', 'STRING'], ['lakebase_project_id', 'STRING'], ['built_framing', 'VARIANT'],
 ];
 const IMPLEMENT_UNREAD_COLUMNS = ['asset_snapshots'];
 const IMPLEMENT_VARIANT_COLUMNS = IMPLEMENT_COLUMNS.filter(([, t]) => t === 'VARIANT').map(([n]) => n);
@@ -2115,9 +2115,9 @@ function previousBuilt(history) {
 // keeps the read to that row, so a session's whole build history is not read for the Results list.
 function latestBuiltRowsSql(table, sessionIds) {
   const statuses = [...IMPLEMENT_DONE_STATUSES, IMPLEMENT_UNINSTALLED].map((s) => `'${s}'`).join(', ');
-  return 'SELECT session_id, use_case_id, spec_version, status, spec_json FROM ('
+  return 'SELECT session_id, use_case_id, spec_version, status, spec_json, built_framing FROM ('
     + 'SELECT CAST(session_id AS STRING) AS session_id, use_case_id, CAST(spec_version AS STRING) AS spec_version, status, '
-    + 'to_json(spec_json) AS spec_json, ROW_NUMBER() OVER (PARTITION BY session_id, use_case_id ORDER BY spec_version DESC) AS latest '
+    + 'to_json(spec_json) AS spec_json, to_json(built_framing) AS built_framing, ROW_NUMBER() OVER (PARTITION BY session_id, use_case_id ORDER BY spec_version DESC) AS latest '
     + `FROM ${table} WHERE session_id IN (${sessionIds.join(', ')}) AND status IN (${statuses})) WHERE latest = 1`;
 }
 
@@ -2127,6 +2127,21 @@ function builtTableScopeOf(history) {
   const built = previousBuilt(history);
   const data = built && built.spec_json && built.spec_json.data;
   return data && data.table_scope && typeof data.table_scope === 'object' ? data.table_scope : undefined;
+}
+
+// REQ-389 (R49): the use case text the latest built version carries, written by the build into its own record (built_framing). The
+// Discover statement is not changed by it. undefined when no done build wrote a goal, so the caller keeps the statement.
+function builtFramingOf(history) {
+  const built = previousBuilt(history);
+  const framing = built && built.built_framing;
+  if (!framing || typeof framing !== 'object' || typeof framing.goal !== 'string' || !framing.goal) return undefined;
+  return { goal: framing.goal, success_measures: Array.isArray(framing.success_measures) ? framing.success_measures.map(String) : [] };
+}
+
+// REQ-389 (R49): the App's use case text for a framed use case: its Statement is the built goal, and its built success measures are
+// carried beside it. No framing gives no fields, so the row keeps its Discover statement.
+function builtTextOf(framing) {
+  return framing ? { Statement: framing.goal, built_success_measures: framing.success_measures } : {};
 }
 
 function withVibePreviousDefault(history, spec) {
@@ -4083,6 +4098,8 @@ module.exports = {
   withVibePreviousDefault,
   previousBuilt,
   builtTableScopeOf,
+  builtFramingOf,
+  builtTextOf,
   latestBuiltRowsSql,
   appExperienceOf,
   IMPLEMENT_OUTPUTS,

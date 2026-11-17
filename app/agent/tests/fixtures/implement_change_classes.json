@@ -7770,6 +7770,10 @@
     [
       "lakebase_project_id",
       "STRING"
+    ],
+    [
+      "built_framing",
+      "VARIANT"
     ]
   ],
   "stale_after_seconds": 14400,
