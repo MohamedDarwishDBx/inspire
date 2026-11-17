@@ -204,6 +204,7 @@ def test_the_check_counts_the_records_with_no_filter_only_when_a_minimum_is_shor
 def test_a_held_note_never_fails_the_check_and_reaches_the_build_warnings(agent_ns, tmp_path):
     class Shell:
         pages = []  # the served App's pages; an App with none has no served read (the real Shell always sets this)
+        aside = []  # the real Shell always sets this; this App sets none
 
         def __init__(self, *args, **kwargs):
             pass

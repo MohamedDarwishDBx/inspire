@@ -51,6 +51,14 @@ SHELL_ENTRY_POINTS = {
     # App shell (the same files the App build reads for a carried App) so the served App is checked by the one App check.
     ("_implement_carried_app_args", "_implement_app_shell"),
     ("_implement_app_check", "shell_core.Shell"),
+    # Set-aside pages (R48): the check reads the (page, problems) pairs load_app returns. Plain list attribute, set before any row read.
+    ("_implement_app_check", "shell_core.Shell.aside"),
+    # Set-aside split (R48): page_problems_split is a pure function over the problem text, reads no row, so no row error can pass through it.
+    ("_implement_app_host", "shell_core.page_problems_split"),
+    ("_implement_app_locked.deploy", "shell_core.page_problems_split"),
+    ("_implement_app_owner_record", "shell_core.page_problems_split"),
+    ("_implement_page_check", "shell_core.page_problems_split"),
+    ("_implement_take_out_app", "shell_core.page_problems_split"),
     # Served App read (REQ-214): the check reads the page filters and the first decision-list rows of the App it checks, through the same
     # Shell class the App runs, so each all-column and filter ask is judged against what the served App shows, not the spec alone.
     ("_implement_app_check", "shell_core.Shell.filters"),
@@ -552,6 +560,7 @@ def test_an_error_the_shell_raises_after_reading_a_row_comes_back_without_the_ro
         def __init__(self, root, **kwargs):
             self.factory = kwargs["sp_factory"]
             self.pages = []  # the real Shell always carries its pages; the App check reads them for REQ-237 page names
+            self.aside = []  # the real Shell always carries its set-aside pages (load_app); this App sets none
             if stage == "start":
                 stop(self.factory)
 
@@ -619,6 +628,7 @@ def test_the_check_reads_lakebase_rows_through_the_same_watch(agent_ns, tmp_path
 
     class Shell:
         pages = []  # the served App's pages; the real Shell always sets this, and an App with none has nothing to read
+        aside = []  # the real Shell always sets this; this App sets none
 
         def __init__(self, root, **kwargs):
             caught.update(kwargs)
