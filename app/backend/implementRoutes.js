@@ -18,7 +18,7 @@ const { specVibeAsks } = require('../frontend/src/lib/vibeLimits.js');
 const { chosenTableScopes } = require('../frontend/src/lib/tableScope.js');
 const { HOSTED_NO_TOKEN } = require('./lib/hostedRun');
 const { ownServicePrincipalId } = require('./lib/inspireSpGrants');
-const { inspireJobEnvironmentChange, inspireJobEnvironmentWarning, inspireJobTestTagChange, inspireJobTestTagWarning, parseTableScopeText, runAsPerson, launchPlanFor, withChosenTableScope, previewScopesOf } = require('./lib/inspireJobParams');
+const { inspireJobEnvironmentChange, inspireJobEnvironmentWarning, inspireJobTestTagChange, inspireJobTestTagWarning, parseTableScopeText, runAsPerson, launchPlanFor, RUN_AS_JOB_ENV, withChosenTableScope, previewScopesOf } = require('./lib/inspireJobParams');
 const R = require('./lib/reviewFigures');
 const A = require('./lib/useCaseAlerts');
 const P = require('./lib/requestPerson');
@@ -508,6 +508,14 @@ function registerImplementRoutes(app, deps) {
     return req.dbToken;
   }
 
+  // REQ-409: this session's Genie notebook run. Run-as: the installed Genie job (its id from the installer), read with the job token.
+  // Outside run-as: the job named for the session, with the person's token.
+  async function latestGenieRunOf(req, sessionId) {
+    const installedJobId = runAsPerson() ? String(process.env[RUN_AS_JOB_ENV.genie_regen] || '').trim() : '';
+    const token = installedJobId ? await installedRuns.jobToken(req.dbToken, installedJobId) : req.dbToken;
+    return latestGenieNotebookRun((path) => jsonOf(dbFetch, req.dbHost, token, path), sessionId, { installedJobId });
+  }
+
   async function genieRunState(host, token, runId, ledgerJobId) {
     if (!runId) return null;
     const got = await jsonOf(dbFetch, host, await installedRuns.runToken(host, token, runId, ledgerJobId), `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(runId)}`);
@@ -581,7 +589,7 @@ function registerImplementRoutes(app, deps) {
       const refused = await U.runReadRefusal(dbFetch, req, { tables: await useCasesTables(req, warehouse_id, catalog, schema, sidStr, safeIds) });
       if (refused) return PM_ERROR.sendFailure(res, refused.status, refused.message, { unreadable: refused.unreadable });
 
-      const lastRun = await latestGenieNotebookRun(fetchJsonFor(req), sidStr);
+      const lastRun = await latestGenieRunOf(req, sidStr);
       if (lastRun?.state === 'running') {
         return res.status(409).json({
           error: 'A Genie Code notebook for this session is already being written. Wait for that run to finish, then try again.',
@@ -748,7 +756,7 @@ function registerImplementRoutes(app, deps) {
       });
       // REQ-323: the Jobs API reads run at most HISTORY_ROW_CONCURRENCY at a time; the run summary is one warehouse statement for all rows.
       const [notebook] = await Promise.all([
-        latestGenieNotebookRun(fetchJsonFor(req), sid).then((run) => ({ run, error: '' }), (err) => ({ run: null, error: err.message })),
+        latestGenieRunOf(req, sid).then((run) => ({ run, error: '' }), (err) => ({ run: null, error: err.message })),
         mapLimit(latest, HISTORY_ROW_CONCURRENCY, async (row) => { row.stalled = await stalledOf(req, row); }),
         latestRunsOf(req, warehouseId, latest, (id) => versionsByUc[id]),
       ]);

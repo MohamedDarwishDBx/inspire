@@ -46,3 +46,35 @@ test('REQ-408 route: a build without a whole-catalog pick asks at schema level',
   const statements = got.data.app_unreadable.permissions[0].statements;
   assert.ok(statements.includes(`GRANT SELECT ON SCHEMA \`main\`.\`s\` TO \`${APP}\``), JSON.stringify(statements));
 });
+
+// REQ-408 at the preflight route (sourceCheckOf behind the submit's pre-check): the App read offer names the catalog for a whole-catalog pick.
+const PREFLIGHT_Q = `${Q}&result_table=main.inspire.churn_out`;
+async function preflightOf(ucMetadata) {
+  const made = makeApp({
+    history: HISTORY, useCase: USE_CASE, appToken: APP_TOKEN, me: { applicationId: APP, displayName: 'riverside-assets' },
+    sqlDeniedFor: { [APP_TOKEN]: { '`main`.`s`.`orders`': '[INSUFFICIENT_PERMISSIONS] User does not have SELECT on Table main.s.orders' } },
+    session: sessionRow(), ucMetadata,
+  });
+  const srv = await listen(made.app);
+  try {
+    const resp = await fetch(`${srv.url}/api/inspire/implement/preflight?${PREFLIGHT_Q}`);
+    return { status: resp.status, data: await resp.json() };
+  } finally {
+    await srv.close();
+  }
+}
+
+test('REQ-408 preflight (submit path): a whole-catalog pick asks the App read at catalog level', async () => {
+  const got = await preflightOf('main');
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  const statements = got.data.checks.sources.permission.statements;
+  assert.ok(statements.includes(`GRANT SELECT ON CATALOG \`main\` TO \`${APP}\``), JSON.stringify(statements));
+  assert.equal(statements.filter((sql) => /ON (SCHEMA|TABLE) /.test(sql)).length, 0, JSON.stringify(statements));
+});
+
+test('REQ-408 preflight (submit path): without a whole-catalog pick the App read asks at schema level', async () => {
+  const got = await preflightOf('main.s.orders');
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  const statements = got.data.checks.sources.permission.statements;
+  assert.ok(statements.includes(`GRANT SELECT ON SCHEMA \`main\`.\`s\` TO \`${APP}\``), JSON.stringify(statements));
+});
