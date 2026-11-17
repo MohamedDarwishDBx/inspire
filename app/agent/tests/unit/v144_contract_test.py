@@ -403,7 +403,8 @@ def test_a_merged_app_is_checked_as_inspire_will_write_it(agent_ns, tmp_path, mo
     inst.spark = FakeSpark(responder=lambda s: [{"me": "builder@example.com"}] if s == ME else [])
     checked = []
     core = types.SimpleNamespace(SETTINGS_FILE="inspire_app.json", PAGES_DIR="pages", SETTINGS_VERSION=7,
-                                 settings_problems=lambda settings, pages: checked.append(settings) or [])
+                                 settings_problems=lambda settings, pages: checked.append(settings) or [],
+                                 page_problems_split=lambda problems, pages, own_id=None: ([], []))
     host = inst._implement_app_host(context, core)
     assert host["merged"] is True and len(checked) == 1
     assert checked[0]["options"] == {"modify": False, "replace_edits": False, "decisions": False}
@@ -488,7 +489,8 @@ def test_an_app_built_from_the_inspire_app_names_the_person_who_asked_for_it_not
     context["requested_by"] = "person@example.com"
     checked = []
     core = types.SimpleNamespace(SETTINGS_FILE="inspire_app.json", PAGES_DIR="pages", SETTINGS_VERSION=7,
-                                 settings_problems=lambda settings, pages: checked.append(settings) or [])
+                                 settings_problems=lambda settings, pages: checked.append(settings) or [],
+                                 page_problems_split=lambda problems, pages, own_id=None: ([], []))
     assert inst._implement_app_host(context, core)["merged"] is True and checked[0]["admin"] == "person@example.com"
     merge = agent_ns["implement_app_merge"]
     for held, ours, admin in (("sp-app-id", "person@example.com", "person@example.com"), ("owner@example.com", "person@example.com", "owner@example.com"),
