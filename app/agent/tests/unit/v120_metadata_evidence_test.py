@@ -586,6 +586,8 @@ def plain_loader(agent_ns):
     loader._metadata_lock = threading.RLock()
     loader.primary_keys = {}
     loader._inferred_fk = {}
+    loader._person_relations = []  # REQ-373: set by DataLoader.__init__; a loader built with __new__ must carry it too
+    loader._person_fk = set()
     loader._join_inferred_schemas = set()
     return loader
 
@@ -679,6 +681,16 @@ def test_c05_inferred_fks_not_merged_into_tables_with_declared_fks(agent_ns):
     assert loader.foreign_key_graph[("c", "s", "orders")] == [declared]
     assert loader.foreign_key_graph[("c", "s", "invoices")] == [("c", "s", "invoices", "region_id", "c", "s", "regions", "region_id")]
     assert added == 1
+
+
+def test_c05_a_loader_from_its_constructor_merges_inferred_fks_without_person_joins(agent_ns, monkeypatch):
+    """REQ-373 regression guard: the constructor path (the only one the agent runs) initialises the person-join state, so a loader
+    that never called set_person_relationships still merges naming-inferred FKs."""
+    monkeypatch.setattr(agent_ns["SparkSession"].builder, "getOrCreate", staticmethod(lambda: object()))
+    loader = agent_ns["DataLoader"](catalogs="", schemas="", tables="", logger=CapturingLogger(), enable_two_pass=False)
+    details = cols("invoices", ("region_id", "bigint")) + cols("regions", ("region_id", "bigint"))
+    assert loader.merge_inferred_foreign_keys(details) == 1
+    assert loader._person_relations == [] and loader._person_fk == set()
 
 
 def test_c05_second_merge_pass_still_extends_inferred_only_tables(agent_ns):

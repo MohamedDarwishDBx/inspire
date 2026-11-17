@@ -112,7 +112,7 @@ def test_the_cell_check_runs_the_grouping_check_with_the_spec_grouping(agent_ns)
     inst._implement_genie_cells = lambda path, purpose: [("cell 3", "def run_use_case():\n    return 1\n")]
     assert any("no cell calls inspire_group_records" in p for p in inst._implement_cell_problems("/n", grouping=GROUPING))
     assert not any("inspire_group_records" in p for p in inst._implement_cell_problems("/n"))
-    assert agent_source().count("grouping=spec_nb.get(\"grouping\"))") == 1, "the Genie build loop passes the spec grouping"
+    assert agent_source().count("grouping=spec_nb.get(\"grouping\"), joins=spec_nb.get(\"joins\")") == 1, "the Genie build loop passes the spec grouping"
     assert agent_source().count("proof = self._implement_grouping_proof(") == 1, "the build loop runs the grouping proof"
     assert agent_source().count('use_case["_implement_grouping"] = self._implement_grouping(use_case, spec, key, tables)') == 1
 
