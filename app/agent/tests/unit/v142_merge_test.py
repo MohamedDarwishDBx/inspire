@@ -391,19 +391,19 @@ def test_a_sensitive_use_case_is_never_merged_into_a_service_principal_app(agent
     assert not any("of the App sales-desk" in w for w in fields.get("_warnings") or [])
 
 
-def test_an_old_page_that_now_fails_blocks_the_merge_and_names_it_while_this_pages_failure_goes_back_to_genie(agent_ns, tmp_path,
-                                                                                                               monkeypatch):
+def test_an_old_page_that_now_fails_is_kept_and_named_while_this_pages_failure_goes_back_to_genie(agent_ns, tmp_path, monkeypatch):
+    # REQ-404: another use case's broken page on the shared App does not stop this build; its own page still does.
     failing = ["page n01_u07: chart:by_category failed: TABLE_OR_VIEW_NOT_FOUND"]
     inst, context, seen, _calls = _merge_flow(agent_ns, tmp_path, monkeypatch,
                                               _implement_app_check=lambda work, files, modules, warehouse: list(failing))
     _straight_loop(inst)
-    with pytest.raises(_blocked(agent_ns)) as raised:
-        inst._implement_app(context, None)
-    assert str(raised.value) == ("the App sales-desk was not updated because its page 'Sales desk' of use case N01-U07 no longer works at "
-                                 "the default filters (page Sales desk: chart:by_category failed: TABLE_OR_VIEW_NOT_FOUND). Inspire "
-                                 "rebuilds only this use case's page: build that use case again with Vibe/Add/Remove Features on the Build page or remove the page, then submit again")
-    assert seen["deployed"] == []
+    fields = inst._implement_app(context, None)
+    assert seen["deployed"], "this use case publishes its own page although another page of the App no longer works"
+    kept = [w for w in fields.get("_warnings") or [] if "no longer works at the default filters" in w]
+    assert kept == ["Agentic App: page 'Sales desk' of use case N01-U07 no longer works at the default filters, so the App keeps it as it "
+                    "was. To fix it: build that use case again with Vibe/Add/Remove Features on the Build page or remove the page"], fields
     failing[:] = ["page n01_u01_s5150: kpi:revenue failed: DIVIDE_BY_ZERO"]
+    seen["deployed"].clear()
     with pytest.raises(RuntimeError) as raised:
         inst._implement_app(context, None)
     assert type(raised.value) is RuntimeError, "a failure of this use case's own page is Genie's to fix"

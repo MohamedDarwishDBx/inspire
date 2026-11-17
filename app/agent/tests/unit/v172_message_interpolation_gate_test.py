@@ -274,9 +274,7 @@ REVIEWED = {
         ('_implement_one_locked', 'key[2]'),
         ('_implement_one_locked', 'self._tracking_table_name'),
         ('_implement_one_locked', 'uc_id'),
-        ('_implement_page_check', 'app_name'),
         ('_implement_page_check', 'label'),
-        ('_implement_page_check', "page['id']"),
         ('_implement_page_file', 'label'),
         ('_implement_page_file', 'shell_sql.RECORDS_DATASET'),
         ('implement_put_back_checked', 'label'),
@@ -310,9 +308,7 @@ REVIEWED = {
         ('deploy', "implement_app_raw_block(raw, [t for t in raw if not self._implement_scope_columns(t)])"),
         # REQ-237: the chart's person name (its title, its position among shared titles, or 'one chart'), built from the App's own spec.
         ('deploy', "inspire_shell_facts.chart_names(page)[str(chart['id'])]"),
-        ('deploy', "host['name']"),
         ('deploy', 'name'),
-        ('deploy', "page['id']"),
         ('execute_with_timeout', 'context'),
         ('finalize_pipeline', 'self.session_id'),
         ('finalize_pipeline', 'self.session_table'),
@@ -394,9 +390,9 @@ REVIEWED = {
         ('_implement_one_locked', 'implement_stop_message(outcome, spec, trains_model=self._implement_trains_model(use_case))'),
         ('_implement_output_vibes_gate', "implement_vibes_missed_text(found['resend'], None, implement_asset_titles(context.get('asset_status')))"),
         ('_implement_output_vibes_gate', "implement_vibes_repair(found['resend'], IMPLEMENT_OUTPUT_VIBES_LEAD)"),
-        ('_implement_page_check', '[page]'),
-        ('_implement_page_check', 'pages'),
-        ('_implement_page_check', 'problems'),
+        # REQ-404: the problems of this build's own page (or the App as a whole), a list the App check composed; other use cases' pages
+        # that fail are kept as they are and never reach a message.
+        ('_implement_page_check', 'own'),
         ('_implement_page_file', "'; '.join(errors + drawn_errors)"),
         ('_implement_page_file', "'; '.join(problems)"),
         # REQ-181: the refusal is built only from the label and the reviewed problem list above.
@@ -440,8 +436,7 @@ REVIEWED = {
         ('deploy', "'; '.join(dated)"),
         ('deploy', "'; '.join(errors)"),
         ('deploy', "'; '.join(problems)"),
-        ('deploy', "lakebase['page_problems']"),
-        ('deploy', 'pages'),
+        ('deploy', 'own'),
         ('execute_parallel', 'msg'),
         ('implement_app_settings', "'; '.join(problems)"),
         ('read', 'problem'),
