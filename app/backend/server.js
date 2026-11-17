@@ -951,7 +951,7 @@ async function startingSessions(req, inspireDatabase, warehouseId, listed) {
     if (!launches.length) return [];
     const token = req.dbToken;
     const rows = await Promise.all(launches.map(async (launch) => {
-      const resp = await dbFetch(host, await installedRuns.runToken(host, token, launch.run_id), `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(launch.run_id)}`);
+      const resp = await dbFetch(host, await installedRuns.runToken(host, token, launch.run_id, ledgerJobIdOf(host, token)), `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(launch.run_id)}`);
       return resp.ok ? L.startingSessionRow(launch, parseExactJson(await resp.text()), inspireDatabase) : null;
     }));
     return rows.filter(Boolean);
@@ -963,6 +963,15 @@ async function startingSessions(req, inspireDatabase, warehouseId, listed) {
 
 // The record write has a bound: a warehouse that never leaves PENDING must not hold the launch open (executeSql has no deadline of its own).
 const LAUNCH_RECORD_MS = 60000;
+
+// REQ-409: the job id Inspire's launch record holds for a run, read with the caller's own token (the ledger is the App's own table).
+async function launchJobIdOf(host, token, runId) {
+  const stmt = L.runJobStatement(L.launchTableName(DEFAULT_INSPIRE_DB), runId);
+  if (!stmt || !DEFAULT_WAREHOUSE_ID) return null;
+  const rows = sqlResultToObjects(await executeSql(host, token, DEFAULT_WAREHOUSE_ID, stmt.sql, stmt.parameters));
+  return rows[0] ? rows[0].job_id : null;
+}
+const ledgerJobIdOf = (host, token) => (runId) => launchJobIdOf(host, token, runId);
 
 // Whether the ledger holds a row for the run: true or false when it could read, null when it could not say.
 async function launchRecordedFor(host, token, runId) {
@@ -2377,7 +2386,7 @@ app.post('/api/run/:runId/again', requireToken, async (req, res) => {
   const person = personTokenOf(req);
   if (!person) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
   try {
-    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, person, req.params.runId), `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, person, req.params.runId, ledgerJobIdOf(req.dbHost, person)), `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
     if (!response.ok) return await refuseRunAgain(req, res, response);
     const again = LC.runAgainOf(parseExactJson(await response.text()), req.params.runId, sessionId);
     if (again.problem) return res.status(409).json({ error: `${again.problem}.` });
@@ -2595,7 +2604,7 @@ app.param('runId', (req, res, next, runId) => (isInt64Id(runId) ? next() : next(
 
 async function taskErrorOf(req, taskRunId) {
   try {
-    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, taskRunId), `/api/2.1/jobs/runs/get-output?run_id=${encodeURIComponent(taskRunId)}`);
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, taskRunId, ledgerJobIdOf(req.dbHost, req.dbToken)), `/api/2.1/jobs/runs/get-output?run_id=${encodeURIComponent(taskRunId)}`);
     if (!response.ok) return '';
     const data = await response.json();
     return String(data.error || '').replace(/^[A-Za-z_.]*(Error|Exception):\s*/, '').trim().slice(0, 1200);
@@ -2606,7 +2615,7 @@ async function taskErrorOf(req, taskRunId) {
 
 app.get('/api/run/:runId', requireToken, async (req, res) => {
   try {
-    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, req.params.runId), `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, req.params.runId, ledgerJobIdOf(req.dbHost, req.dbToken)), `/api/2.1/jobs/runs/get?run_id=${req.params.runId}`);
     if (!response.ok) {
       const action = `read run ${req.params.runId}`;
       const refusalBody = await response.text();
@@ -2647,7 +2656,7 @@ app.get('/api/run/:runId', requireToken, async (req, res) => {
 
 app.get('/api/run/:runId/output', requireToken, async (req, res) => {
   try {
-    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, req.params.runId), `/api/2.1/jobs/runs/get-output?run_id=${req.params.runId}`);
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, req.params.runId, ledgerJobIdOf(req.dbHost, req.dbToken)), `/api/2.1/jobs/runs/get-output?run_id=${req.params.runId}`);
     if (!response.ok) {
       const action = `read the output of run ${req.params.runId}`;
       const refusalBody = await response.text();
@@ -2674,7 +2683,7 @@ app.get('/api/run/:runId/cancel', async (req, res) => {
 
 app.post('/api/run/:runId/cancel', requireToken, async (req, res) => {
   try {
-    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, req.params.runId), '/api/2.1/jobs/runs/cancel', {
+    const response = await dbFetch(req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, req.params.runId, ledgerJobIdOf(req.dbHost, req.dbToken)), '/api/2.1/jobs/runs/cancel', {
       method: 'POST',
       body: jsonWithInt64Ids({ run_id: req.params.runId }, ['run_id']),
     });
@@ -3338,7 +3347,7 @@ app.get('/api/inspire/genie-progress', requireToken, async (req, res) => {
     if (run_id && String(run_id).trim()) {
       const jr = await dbFetch(
         req.dbHost,
-        await installedRuns.runToken(req.dbHost, req.dbToken, String(run_id).trim()),
+        await installedRuns.runToken(req.dbHost, req.dbToken, String(run_id).trim(), ledgerJobIdOf(req.dbHost, req.dbToken)),
         `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(String(run_id).trim())}`,
       );
       if (jr.ok) {

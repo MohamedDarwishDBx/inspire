@@ -42,6 +42,7 @@ const { parseExactJson } = require('./lib/exactJson');
 const { grantJobViewer, rememberViewer } = require('./lib/jobViewer');
 const PM = require('./lib/permissions');
 const { coarseGrants } = require('./lib/grantScope');
+const L = require('./lib/launchLedger');
 const PM_ERROR = require('./lib/permissionError');
 const GC = require('./lib/genieCodeCheck');
 const SA = require('./lib/sourceAccess');
@@ -139,7 +140,7 @@ async function jsonOf(dbFetch, host, token, path, opts = {}) {
 
 function registerImplementRoutes(app, deps) {
   const {
-    installedRuns = { startToken: async (token) => token, runToken: async (host, token) => token },
+    installedRuns = { startToken: async (token) => token, runToken: async (host, token) => token, jobToken: async (token) => token },
     requireToken,
     executeSql,
     sqlResultToObjects,
@@ -488,9 +489,28 @@ function registerImplementRoutes(app, deps) {
    */
   const genieJobGuard = createGenieJobGuard();
 
-  async function genieRunState(host, token, runId) {
+  // REQ-409: the job id Inspire's launch record holds for a run, read with the request's own token from its inspire database.
+  function ledgerJobIdOf(req, warehouseId) {
+    return async (runId) => {
+      const { catalog, schema } = dbOf(req, splitInspireDatabase);
+      const stmt = L.runJobStatement(L.launchTableName(`${catalog}.${schema}`), runId);
+      if (!stmt) return null;
+      const rows = sqlResultToObjects(await executeSql(req.dbHost, req.dbToken, warehouseId, stmt.sql, stmt.parameters));
+      return rows[0] ? rows[0].job_id : null;
+    };
+  }
+
+  // REQ-409: the token of a control call. A build's run and an installed job are read or cancelled with the installed-run rule; any other
+  // asset keeps the person's token.
+  async function controlTokenOf(req, ctx, asset, id) {
+    if (asset === 'build') return installedRuns.runToken(req.dbHost, req.dbToken, id, ledgerJobIdOf(req, ctx.warehouseId));
+    if (asset === 'job') return installedRuns.jobToken(req.dbToken, id);
+    return req.dbToken;
+  }
+
+  async function genieRunState(host, token, runId, ledgerJobId) {
     if (!runId) return null;
-    const got = await jsonOf(dbFetch, host, await installedRuns.runToken(host, token, runId), `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(runId)}`);
+    const got = await jsonOf(dbFetch, host, await installedRuns.runToken(host, token, runId, ledgerJobId), `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(runId)}`);
     return got.ok ? got.data?.state?.life_cycle_state || null : null;
   }
 
@@ -569,7 +589,7 @@ function registerImplementRoutes(app, deps) {
           job_run_url: lastRun.url || databricksJobRunUrl(req.dbHost, lastRun.job_id, lastRun.run_id),
         });
       }
-      const claim = await genieJobGuard.claim(sidStr, (runId) => genieRunState(req.dbHost, req.dbToken, runId));
+      const claim = await genieJobGuard.claim(sidStr, (runId) => genieRunState(req.dbHost, req.dbToken, runId, ledgerJobIdOf(req, warehouseOf(req))));
       if (!claim.ok) {
         return res.status(409).json({
           error: 'Genie instructions for this session are already being generated. Wait for that run to finish, then try again.',
@@ -1478,7 +1498,7 @@ function registerImplementRoutes(app, deps) {
     if (!row || (!I.IMPLEMENT_ACTIVE_STATUSES.includes(row.status) && !I.implementEndedRecord(row))) return null;
     const runId = String(row.implement_run_id ?? '');
     const got = /^\d{1,19}$/.test(runId)
-      ? await jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, runId), `/api/2.1/jobs/runs/get?run_id=${runId}`).catch(() => null)
+      ? await jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, runId, ledgerJobIdOf(req, warehouseOf(req))), `/api/2.1/jobs/runs/get?run_id=${runId}`).catch(() => null)
       : null;
     const runState = got && got.ok && got.data && got.data.state ? got.data.state : {};
     const stopper = String(runState.result_state || '') === 'CANCELED' ? await stoppedByOf(req, row, runId) : null;
@@ -1841,17 +1861,17 @@ function registerImplementRoutes(app, deps) {
     const builtBy = I.implementBuildRunId(history[0]);
     const [appInfo, runInfo, stalled, person, buildRun] = await Promise.all([
       appName ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.0/apps/${encodeURIComponent(appName)}`) : null,
-      jobId ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/list?job_id=${jobId}&limit=10`) : null,
+      jobId ? jsonOf(dbFetch, req.dbHost, await installedRuns.jobToken(req.dbToken, jobId), `/api/2.1/jobs/runs/list?job_id=${jobId}&limit=10`) : null,
       stalledOf(req, history[0]),
       held == null && !appUpdate ? null : personOf(req),
       latestRunsOf(req, warehouseId, [history[0]], () => history),
-      builtBy ? jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, builtBy), `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
+      builtBy ? jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, builtBy, ledgerJobIdOf(req, warehouseOf(req))), `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
     ]);
     if (history[0]) {
       history[0].app_update = appUpdate && !I.appShellUpdateRefusal(history, { rollback_outputs: { app: appUpdate.version } }, person.username) ? appUpdate : null;
     }
     const listedNone = runInfo && runInfo.ok && !(Array.isArray(runInfo.data && runInfo.data.runs) && runInfo.data.runs.length);
-    const jobInfo = listedNone ? await jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/get?job_id=${jobId}`) : null;
+    const jobInfo = listedNone ? await jsonOf(dbFetch, req.dbHost, await installedRuns.jobToken(req.dbToken, jobId), `/api/2.1/jobs/get?job_id=${jobId}`) : null;
     const body = {
       latest: history[0] || null,
       stalled,
@@ -2567,7 +2587,9 @@ function registerImplementRoutes(app, deps) {
       const live = await liveCache.get(ctx.key, async () => {
         const paths = C.livePaths(ctx.targets);
         const names = Object.keys(paths);
-        const got = await Promise.all(names.map((name) => jsonOf(dbFetch, req.dbHost, req.dbToken, paths[name])));
+        // REQ-409: the job and its runs are the installed job's (run-as mode): read with the App's token when the job is an installed one.
+        const jobTok = await installedRuns.jobToken(req.dbToken, ctx.targets && ctx.targets.job);
+        const got = await Promise.all(names.map((name) => jsonOf(dbFetch, req.dbHost, name === 'job' || name === 'runs' ? jobTok : req.dbToken, paths[name])));
         let actions = [];
         if (!((missingControlLogs.get(ctx.logTable) || 0) > Date.now())) {
           try {
@@ -2625,7 +2647,7 @@ function registerImplementRoutes(app, deps) {
         throw I.badRequest(`spec v${latest.spec_version} is still ${latest.status}; ${phrase} after it finishes, or stop the build first`, 409);
       }
       // Who may cancel stays as it is (C.ownerProblem); only the read of a build's run takes the run token (REQ-409).
-      const owner = await jsonOf(dbFetch, req.dbHost, asset === 'build' ? await installedRuns.runToken(req.dbHost, req.dbToken, id) : req.dbToken, C.ownerCheckPath(asset, id));
+      const owner = await jsonOf(dbFetch, req.dbHost, await controlTokenOf(req, ctx, asset, id), C.ownerCheckPath(asset, id));
       const problem = C.ownerProblem(asset, owner, { useCaseId: ctx.useCaseId, sessionId: ctx.sid, history: ctx.history });
       if (problem) throw I.badRequest(`Inspire did not ${phrase}: ${problem}`, 409);
       const label = C.controlAction(asset, action);
@@ -2651,7 +2673,7 @@ function registerImplementRoutes(app, deps) {
         }
       }
       // REQ-409: a build's run is cancelled or read with the App's token when it is an installed job's run (run-as mode only).
-      const callToken = asset === 'build' ? await installedRuns.runToken(req.dbHost, req.dbToken, id) : req.dbToken;
+      const callToken = await controlTokenOf(req, ctx, asset, id);
       const got = await jsonOf(dbFetch, req.dbHost, callToken, request.path,
         { method: request.method, ...(request.body ? { body: jsonWithInt64Ids(request.body, request.int64 || []) } : {}) });
       const failure = got.ok ? '' : String((got.data && (got.data.message || got.data.error || got.data.raw)) || `HTTP ${got.status}`);

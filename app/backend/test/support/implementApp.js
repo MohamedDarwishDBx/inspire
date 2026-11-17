@@ -1,3 +1,4 @@
+const { createInstalledRuns } = require('../../lib/runAsRuns');
 const express = require('express');
 const { registerImplementRoutes } = require('../../implementRoutes');
 const { IMPLEMENT_COLUMNS, sampleCopyTable } = require('../../lib/inspireImplement');
@@ -98,7 +99,88 @@ function makeApp(overrides = {}, { mount } = {}) {
     state.accessSent = req.body?.statements || [];
     res.json(state.accessSend || { sent: false, destinations: [], reason: 'no destination' });
   });
+  async function dbFetchImpl(_host, token, path, opts = {}) {
+        fetches.push({ path, opts, token });
+        const routed = `${String(opts.method || 'GET').toUpperCase()} ${path.split('?')[0]}`;
+        if (state.workspace) {
+          const got = await state.workspace({ token, path, method: String(opts.method || 'GET').toUpperCase(), body: opts.body ? JSON.parse(opts.body) : null });
+          if (got !== undefined) return json(got[0], got[1] || 200);
+        }
+        if (/^\/api\/2\.1\/unity-catalog\/policies\/table\//.test(path)) {
+          const denied = typeof state.abacUnreadable === 'function' ? state.abacUnreadable(token)
+            : state.abacUnreadable && (!state.abacUnreadableAppOnly || token === (state.dbToken || 'tok'));
+          return denied ? json({ error_code: 'PERMISSION_DENIED', message: 'User does not have READ METADATA on Table' }, 403)
+            : json({ policies: [] });
+        }
+        const ucTable = /^\/api\/2\.1\/unity-catalog\/tables\/([^/?]+)$/.exec(path);
+        if (ucTable) {
+          const name = decodeURIComponent(ucTable[1]).toLowerCase();
+          const readable = !state.readableTables || (state.readableTables[token] || []).some((t) => t.toLowerCase() === name);
+          const rowFilter = (state.rowFilters || {})[name];
+          return readable ? json(rowFilter ? { full_name: name, row_filter: rowFilter } : { full_name: name }) : json({ error_code: 'PERMISSION_DENIED', message: `User does not have SELECT on Table '${name}'.` }, 403);
+        }
+        if (state.fetchThrows && Object.prototype.hasOwnProperty.call(state.fetchThrows, routed)) throw new Error(state.fetchThrows[routed]);
+        if (state.responses && Object.prototype.hasOwnProperty.call(state.responses, routed)) {
+          const [data, status = 200] = state.responses[routed];
+          return json(data, status);
+        }
+        if (path.includes('/scim/v2/Me')) return json(state.me);
+        if (path.startsWith('/api/2.0/permissions/sql/warehouses/')) {
+          return json(state.warehousePermissions, state.warehousePermissionsStatus || 200);
+        }
+        if (path.includes('/sql/warehouses')) return json(state.warehouses);
+        // The built App's record: its service principal is the one the fixtures name as the App's (the host identity by default).
+        const builtApp = /^\/api\/2\.0\/apps\/([^/?]+)$/.exec(path);
+        if (builtApp && !state.appsByName && state.builtAppSp !== undefined) return json({ name: decodeURIComponent(builtApp[1]), service_principal_client_id: state.builtAppSp, service_principal_name: 'app-sp' });
+        if (path.match(/\/api\/2\.0\/apps\/.+/) && !path.includes('page_size') && state.appsByName) {
+          const found = state.appsByName[decodeURIComponent(path.split('/').pop())];
+          return json(withServicePrincipal(found) || { error_code: 'NOT_FOUND' }, found ? found.status_code || 200 : 404);
+        }
+        if (path.match(/\/api\/2\.0\/apps\/.+/ ) && !path.includes('page_size')) return json(withServicePrincipal(state.app), state.appExists ? 200 : 404);
+        if (path.includes('/api/2.0/apps')) return json(state.appsList, state.appsOk ? 200 : 404);
+        if (path.includes('/genie/spaces')) return json({}, state.spacesOk ? 200 : 404);
+        if (path.startsWith('/api/2.0/lakeview/dashboards/') && path.endsWith('/published')) return json({}, state.dashboardPublished === false ? 404 : 200);
+        if (path.startsWith('/api/2.0/lakeview/dashboards/')) return json({ display_name: 'Dashboard', lifecycle_state: 'ACTIVE' });
+        if (path.startsWith('/api/2.0/alerts')) return json(state.alert || {}, state.alertsOk ? 200 : 403);
+        if (path.startsWith('/api/2.0/notification-destinations')) {
+          const pages = Array.isArray(state.destinations) ? state.destinations : [state.destinations];
+          const token = new URL(`https://x${path}`).searchParams.get('page_token');
+          return json(pages[token ? Number(token) : 0], state.destinationsStatus);
+        }
+        if (path === '/api/2.1/jobs/run-now') return json({ run_id: 501 });
+        if (path.startsWith('/api/2.1/jobs/runs/get')) {
+          return json(state.implementRun || { run_id: 99, state: { life_cycle_state: 'RUNNING' } }, state.implementRunStatus || 200);
+        }
+        if (path.startsWith('/api/2.1/jobs/list')) return json(state.jobsList || { jobs: [] }, state.jobsListStatus || 200);
+        if (path.startsWith('/api/2.1/jobs/runs/list')) {
+          const jobId = new URL(`https://x${path}`).searchParams.get('job_id');
+          return json((state.runsByJob && state.runsByJob[jobId]) || state.runs || { runs: [] }, state.runsStatus || 200);
+        }
+        if (path.startsWith('/api/2.1/jobs/get')) return json(state.job || { job_id: 77 }, state.jobStatus || 200);
+        if (path.includes('/serving-endpoints')) return json({ endpoints: [{ name: 'databricks-meta-llama-3-3-70b-instruct' }] });
+        if (path.includes('/fs/files') && state.liveLogs) {
+          const log = state.liveLogs[path.split('/').pop()];
+          if (log instanceof Error) return { ok: true, status: 200, text: async () => { throw log; } };
+          return log === undefined ? json('raw', 404) : json(log);
+        }
+        if (path.includes('/fs/files')) return state.liveLog === undefined ? json('raw', 404) : json(state.liveLog);
+        if (path.startsWith('/ai-gateway/')) {
+          const gateway = { codex: [], claude: [], answer: () => [{ object: 'response' }], ...(state.gateway || {}) };
+          if (routed.startsWith('GET ')) {
+            return path.startsWith('/ai-gateway/anthropic/') ? json({ data: gateway.claude.map((id) => ({ id })) })
+              : json({ models: gateway.codex.map((slug) => ({ slug })) });
+          }
+          const [data, status = 200] = gateway.answer(path, JSON.parse(opts.body || '{}').model);
+          return json(data, status);
+        }
+        return json({ message: 'not mocked ' + path }, 500);
+      }
+
+  // REQ-409: a run-as install (state.runAs) uses the same installed-run accessor as the server, over this harness's own dbFetch.
+  const installedRuns = state.runAs ? createInstalledRuns({ dbFetch: (h, t, p, o) => dbFetchImpl(h, t, p, o), appToken: async () => state.runAs.appToken,
+    runAs: () => true, env: state.runAs.env }) : undefined;
   registerImplementRoutes(app, {
+    ...(installedRuns ? { installedRuns } : {}),
     ...(state.buildStamp ? { buildStamp: () => state.buildStamp } : {}),
     requireToken: (req, _res, next) => {
       req.dbHost = 'https://workspace.example.com';
@@ -231,82 +313,7 @@ function makeApp(overrides = {}, { mount } = {}) {
       return { rows: [] };
     },
     sqlResultToObjects,
-    dbFetch: async (_host, token, path, opts = {}) => {
-      fetches.push({ path, opts, token });
-      const routed = `${String(opts.method || 'GET').toUpperCase()} ${path.split('?')[0]}`;
-      if (state.workspace) {
-        const got = await state.workspace({ token, path, method: String(opts.method || 'GET').toUpperCase(), body: opts.body ? JSON.parse(opts.body) : null });
-        if (got !== undefined) return json(got[0], got[1] || 200);
-      }
-      if (/^\/api\/2\.1\/unity-catalog\/policies\/table\//.test(path)) {
-        const denied = typeof state.abacUnreadable === 'function' ? state.abacUnreadable(token)
-          : state.abacUnreadable && (!state.abacUnreadableAppOnly || token === (state.dbToken || 'tok'));
-        return denied ? json({ error_code: 'PERMISSION_DENIED', message: 'User does not have READ METADATA on Table' }, 403)
-          : json({ policies: [] });
-      }
-      const ucTable = /^\/api\/2\.1\/unity-catalog\/tables\/([^/?]+)$/.exec(path);
-      if (ucTable) {
-        const name = decodeURIComponent(ucTable[1]).toLowerCase();
-        const readable = !state.readableTables || (state.readableTables[token] || []).some((t) => t.toLowerCase() === name);
-        const rowFilter = (state.rowFilters || {})[name];
-        return readable ? json(rowFilter ? { full_name: name, row_filter: rowFilter } : { full_name: name }) : json({ error_code: 'PERMISSION_DENIED', message: `User does not have SELECT on Table '${name}'.` }, 403);
-      }
-      if (state.fetchThrows && Object.prototype.hasOwnProperty.call(state.fetchThrows, routed)) throw new Error(state.fetchThrows[routed]);
-      if (state.responses && Object.prototype.hasOwnProperty.call(state.responses, routed)) {
-        const [data, status = 200] = state.responses[routed];
-        return json(data, status);
-      }
-      if (path.includes('/scim/v2/Me')) return json(state.me);
-      if (path.startsWith('/api/2.0/permissions/sql/warehouses/')) {
-        return json(state.warehousePermissions, state.warehousePermissionsStatus || 200);
-      }
-      if (path.includes('/sql/warehouses')) return json(state.warehouses);
-      // The built App's record: its service principal is the one the fixtures name as the App's (the host identity by default).
-      const builtApp = /^\/api\/2\.0\/apps\/([^/?]+)$/.exec(path);
-      if (builtApp && !state.appsByName && state.builtAppSp !== undefined) return json({ name: decodeURIComponent(builtApp[1]), service_principal_client_id: state.builtAppSp, service_principal_name: 'app-sp' });
-      if (path.match(/\/api\/2\.0\/apps\/.+/) && !path.includes('page_size') && state.appsByName) {
-        const found = state.appsByName[decodeURIComponent(path.split('/').pop())];
-        return json(withServicePrincipal(found) || { error_code: 'NOT_FOUND' }, found ? found.status_code || 200 : 404);
-      }
-      if (path.match(/\/api\/2\.0\/apps\/.+/ ) && !path.includes('page_size')) return json(withServicePrincipal(state.app), state.appExists ? 200 : 404);
-      if (path.includes('/api/2.0/apps')) return json(state.appsList, state.appsOk ? 200 : 404);
-      if (path.includes('/genie/spaces')) return json({}, state.spacesOk ? 200 : 404);
-      if (path.startsWith('/api/2.0/lakeview/dashboards/') && path.endsWith('/published')) return json({}, state.dashboardPublished === false ? 404 : 200);
-      if (path.startsWith('/api/2.0/lakeview/dashboards/')) return json({ display_name: 'Dashboard', lifecycle_state: 'ACTIVE' });
-      if (path.startsWith('/api/2.0/alerts')) return json(state.alert || {}, state.alertsOk ? 200 : 403);
-      if (path.startsWith('/api/2.0/notification-destinations')) {
-        const pages = Array.isArray(state.destinations) ? state.destinations : [state.destinations];
-        const token = new URL(`https://x${path}`).searchParams.get('page_token');
-        return json(pages[token ? Number(token) : 0], state.destinationsStatus);
-      }
-      if (path === '/api/2.1/jobs/run-now') return json({ run_id: 501 });
-      if (path.startsWith('/api/2.1/jobs/runs/get')) {
-        return json(state.implementRun || { run_id: 99, state: { life_cycle_state: 'RUNNING' } }, state.implementRunStatus || 200);
-      }
-      if (path.startsWith('/api/2.1/jobs/list')) return json(state.jobsList || { jobs: [] }, state.jobsListStatus || 200);
-      if (path.startsWith('/api/2.1/jobs/runs/list')) {
-        const jobId = new URL(`https://x${path}`).searchParams.get('job_id');
-        return json((state.runsByJob && state.runsByJob[jobId]) || state.runs || { runs: [] }, state.runsStatus || 200);
-      }
-      if (path.startsWith('/api/2.1/jobs/get')) return json(state.job || { job_id: 77 }, state.jobStatus || 200);
-      if (path.includes('/serving-endpoints')) return json({ endpoints: [{ name: 'databricks-meta-llama-3-3-70b-instruct' }] });
-      if (path.includes('/fs/files') && state.liveLogs) {
-        const log = state.liveLogs[path.split('/').pop()];
-        if (log instanceof Error) return { ok: true, status: 200, text: async () => { throw log; } };
-        return log === undefined ? json('raw', 404) : json(log);
-      }
-      if (path.includes('/fs/files')) return state.liveLog === undefined ? json('raw', 404) : json(state.liveLog);
-      if (path.startsWith('/ai-gateway/')) {
-        const gateway = { codex: [], claude: [], answer: () => [{ object: 'response' }], ...(state.gateway || {}) };
-        if (routed.startsWith('GET ')) {
-          return path.startsWith('/ai-gateway/anthropic/') ? json({ data: gateway.claude.map((id) => ({ id })) })
-            : json({ models: gateway.codex.map((slug) => ({ slug })) });
-        }
-        const [data, status = 200] = gateway.answer(path, JSON.parse(opts.body || '{}').model);
-        return json(data, status);
-      }
-      return json({ message: 'not mocked ' + path }, 500);
-    },
+    dbFetch: dbFetchImpl,
     fetchInspireSessionWidgetRow: async () => state.session,
     notebookParamsFromSessionForGenerateRun: (session, sid) => ({
       '15_operation': 'Generate Use Cases',
