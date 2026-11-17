@@ -1172,22 +1172,54 @@ def explain_entry(value) -> str:
     return explain_cell(value)
 
 
-def population_summary(stake, stats: dict) -> dict:
-    """REQ-400: the deterministic 'Compared to the rest' sentence. Every number comes from the aggregate read, never from the model."""
+Q_VALUE_COLUMNS = ("q_value", "qvalue", "adjusted_p_value", "adj_p_value", "p_value", "pvalue")
+
+
+def q_value_text(row: dict) -> str:
+    """REQ-400: a significance value the run wrote for this record, named as the run named it. Never invented."""
+    for name in Q_VALUE_COLUMNS:
+        value = row.get(name)
+        if value is None or value == "":
+            continue
+        try:
+            shown = shell_sql.shown_number(float(value))
+        except (TypeError, ValueError):
+            shown = explain_cell(value)
+        return f"{name.replace('_', ' ')} {shown}"
+    return ""
+
+
+def reasons_text(value) -> list:
+    """The chips the run wrote into the reasons column, split the way the drawer splits them."""
+    if value is None or value == "":
+        return []
+    items = value if isinstance(value, list) else re.split(r"\s*[;|]\s*|\s*,\s+", str(value))
+    return [explain_line(item) for item in items if str(item).strip()][:8]
+
+
+def population_summary(score, stats: dict, label: str = "ranking value", against=(), quality: str = "") -> dict:
+    """REQ-400: the deterministic 'Compared to the rest' sentence. Every number comes from the aggregate read or the run's own
+    columns, never from the model. Rank counts the records with a higher value, so rank 1 is the highest score."""
     n = int(float(stats.get("n") or 0))
     if not n:
         return {"count": 0, "text": ""}
-    if stake is None:
-        return {"count": n, "text": f"Compared to the rest: this record has no value at stake, so it cannot be placed against the {shell_sql.shown_number(n)} records on this list."}
-    x, mean, sd = float(stake), float(stats.get("mean") or 0), float(stats.get("sd") or 0)
-    above, below, flagged = (int(float(stats.get(k) or 0)) for k in ("above", "below", "flagged"))
     shown = shell_sql.shown_number
-    spread = (f"with a spread (standard deviation) of {shown(sd)}, so this record sits {shown(abs((x - mean) / sd))} sigma "
-              f"{'above' if x >= mean else 'below'} the average (z-score {(x - mean) / sd:+.2f})") if sd > 0 else "with no spread, so no sigma is shown"
+    if score is None:
+        return {"count": n, "text": f"Compared to the rest: this record has no {label}, so it cannot be placed against the {shown(n)} records on this list."}
+    x, mean, sd = float(score), float(stats.get("mean") or 0), float(stats.get("sd") or 0)
+    above, below, flagged = (int(float(stats.get(k) or 0)) for k in ("above", "below", "flagged"))
+    z = (x - mean) / sd if sd > 0 else None
+    spread = (f"{abs(z):.2f} sigma {'above' if x >= mean else 'below'} the average of {shown(mean)} "
+              f"(spread {shown(sd)}, z-score {z:+.2f})") if z is not None else "with no spread across the list, so no sigma is shown"
+    sentences = [f"Compared to the rest: its {label} is {shown(x)}, {spread}."]
     rank = above + 1
-    higher = f"ranks {shown(rank)} of {shown(n)}, above {shown(round(100 * below / n, 1))}% of them" if n > 1 else "is the only record"
-    return {"count": n, "text": (f"Compared to the rest: this record has {shown(x)} at stake. The {shown(n)} records on this list average "
-                                 f"{shown(mean)}, {spread}. It {higher}. {shown(flagged)} of {shown(n)} records are flagged.")}
+    sentences.append(f"It ranks {shown(rank)} of {shown(n)}, higher than {shown(round(100 * below / n, 1))}% of records." if n > 1 else "It is the only record on the list.")
+    if quality:
+        sentences.append(f"It has {quality}.")
+    if against:
+        sentences.append("Against: " + "; ".join(against) + ".")
+    sentences.append(f"{shown(flagged)} of {shown(n)} records are flagged.")
+    return {"count": n, "text": " ".join(sentences)}
 
 
 def record_explain_parts(title: str, context: dict) -> tuple:
@@ -4752,19 +4784,24 @@ class Shell:
         return self.population_of(ws, page, record_key)
 
     def population_of(self, ws, page: dict, record_key: str) -> dict:
-        """REQ-400: one read of the App's own results table. Returns {count, text}; text is '' when the App keeps no value at stake."""
-        if not page.get("result_table") or not page.get("records"):
+        """REQ-400: one read of the record and one aggregate over the App's own results table. The score is the column the
+        page ranks by. Returns {count, text}; text is '' when the table has no such column."""
+        records = page.get("records") or {}
+        if not page.get("result_table") or not records:
             return {"count": 0, "text": ""}
+        score = records.get("rank") or "rank"
         sql, params = shell_sql.current_query(page["result_table"], [record_key])
         rows = self.execute(ws, sql, params, 1, delta=True)["rows"]
         if not rows:
             raise HttpError(404, "no current record has this key")
-        if RECORD_STAKE not in rows[0]:
+        row = rows[0]
+        if score not in row:
             return {"count": 0, "text": ""}
-        sql, params = shell_sql.population_query(page["result_table"], RECORD_STAKE, (page.get("records") or {}).get("tier") or "",
-                                                 rows[0].get(RECORD_STAKE))
+        sql, params = shell_sql.population_query(page["result_table"], score, records.get("tier") or "", row.get(score))
         stats = self.execute(ws, sql, params, 1, delta=True)["rows"][0]
-        return population_summary(rows[0].get(RECORD_STAKE), stats)
+        label = next((c.get("label") for c in records.get("columns") or [] if c.get("column") == score and c.get("label")), score)
+        return population_summary(row.get(score), stats, label=str(label), against=reasons_text(row.get(records.get("reasons") or "")),
+                                  quality=q_value_text(row))
 
     def record_fields(self, headers: dict, ident) -> dict:
         page = self.page(ident)

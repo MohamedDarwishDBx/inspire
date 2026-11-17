@@ -49,8 +49,9 @@ test('a record drafts a message to copy, regenerates it, and never changes the r
     window.copied = [];
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.copied.push(text); } } });
   });
-  assert.deepEqual(await footerActions(drawer), ['Mark done', 'Not an issue', 'Could not fix', 'Snooze…', 'Draft Message to Someone', 'Ask Genie to fix'].sort(), 'every drawer action can be reached');
-  await drawer.getByRole('button', { name: 'Draft Message to Someone' }).click();
+  assert.deepEqual(await footerActions(drawer), ['Mark done', 'Not an issue', 'Could not fix', 'Snooze…', 'Draft message', 'Ask Genie to fix'].sort(), 'every drawer action can be reached');
+  await footerActions(drawer);
+  await drawer.getByRole('button', { name: 'Draft message' }).click();
   const dialog = page.locator('dialog[data-draft]');
   const box = dialog.locator('textarea[name="draft_message"]');
   await box.waitFor();
@@ -86,7 +87,8 @@ test('without a clipboard the draft is selected for the keyboard, and the old co
     window.copyAnswer = false;
     document.execCommand = (name) => { window.commanded = name; return window.copyAnswer; };
   });
-  await drawer.getByRole('button', { name: 'Draft Message to Someone' }).click();
+  await footerActions(drawer);
+  await drawer.getByRole('button', { name: 'Draft message' }).click();
   const dialog = page.locator('dialog[data-draft]');
   await dialog.locator('textarea').waitFor();
   await dialog.getByRole('button', { name: 'Copy' }).click();
@@ -107,7 +109,8 @@ test('without a clipboard the draft is selected for the keyboard, and the old co
 test('a failed draft says why and tries again, and a template draft says it was built from the record', async () => {
   const template = CONTRACT.draft.template;
   const { page, seen, context, drawer } = await openDrawer([(json) => json(502, { error: 'the SQL warehouse is stopped' }), template]);
-  await drawer.getByRole('button', { name: 'Draft Message to Someone' }).click();
+  await footerActions(drawer);
+  await drawer.getByRole('button', { name: 'Draft message' }).click();
   const dialog = page.locator('dialog[data-draft]');
   await dialog.locator('[data-draft-error]').waitFor();
   const failed = dialog.locator('[data-draft-error]');
@@ -135,7 +138,7 @@ test('a selection drafts one message for up to ten records, and an informational
   await boxes.nth(0).check();
   await boxes.nth(1).check();
   const bar = page.locator('.bulk');
-  await bar.getByRole('button', { name: 'Draft Message to Someone' }).click();
+  await bar.getByRole('button', { name: 'Draft message' }).click();
   const dialog = page.locator('dialog[data-draft]');
   await dialog.locator('textarea').waitFor();
   assert.equal(draft.asked.length, 1);
@@ -146,7 +149,7 @@ test('a selection drafts one message for up to ten records, and an informational
   await page.locator('.card--table thead .pick-c input').check();
   const picked = await page.locator('.card--table tbody .pick-l input:checked').count();
   assert.ok(picked > DRAFT_RECORDS, `the page selects ${picked} records`);
-  const over = bar.getByRole('button', { name: 'Draft Message to Someone' });
+  const over = bar.getByRole('button', { name: 'Draft message' });
   assert.equal(await over.isDisabled(), true);
   assert.equal(await over.getAttribute('title'), 'One message covers at most 10 records: select fewer to draft one');
   assert.deepEqual(calls.acts, []);
@@ -155,7 +158,7 @@ test('a selection drafts one message for up to ten records, and an informational
   const plain = await openApp(browser, served.base, appInfo({}, 1, TABLE), { routes: tracked().routes, hash: '#/n01_u05/work' });
   await plain.page.locator('.cell-t').first().click();
   await plain.page.locator('dialog.drawer[open]').waitFor();
-  assert.equal(await plain.page.getByRole('button', { name: 'Draft Message to Someone' }).count(), 0, 'a row with no action to take has no message to draft');
+  assert.equal(await plain.page.getByRole('button', { name: 'Draft message' }).count(), 0, 'a row with no action to take has no message to draft');
   await plain.context.close();
 });
 
@@ -182,7 +185,7 @@ const footer = (drawer) => drawer.locator('footer.dr-f').evaluate((f) => {
 const evenRows = (layout) => layout.rows.map((row) => row.length === 1 ? (row[0][0] === 'select' ? 'full' : 'one') : new Set(row.map(([, w]) => w)).size === 1 ? `${row.length} even` : 'uneven');
 
 for (const [width, height] of [[390, 844], [1280, 800]]) {
-  test(`the Draft Message to Someone button shows its whole label on one line in the drawer and the bulk bar at ${width}x${height}`, async () => {
+  test(`the Draft message button shows its whole label on one line in the drawer and the bulk bar at ${width}x${height}`, async () => {
     const { routes } = tracked({ 'records/draft': drafting([FIRST]).route });
     const { page, seen, context } = await openApp(browser, served.base, appInfo(DECIDE, 1, TABLE), { routes, width, height, hash: '#/n01_u05/work' });
     const shots = process.env.FX_BUSY_SHOTS;
@@ -191,17 +194,18 @@ for (const [width, height] of [[390, 844], [1280, 800]]) {
     await boxes.first().waitFor();
     await boxes.nth(0).check();
     await boxes.nth(1).check();
-    const bulk = page.locator('.bulk').getByRole('button', { name: 'Draft Message to Someone' });
+    const bulk = page.locator('.bulk').getByRole('button', { name: 'Draft message' });
     await bulk.scrollIntoViewIfNeeded();
-    assert.deepEqual(await fits(bulk), { label: 'Draft Message to Someone', clipped: false, inside: true, lines: 1, tall: false });
+    assert.deepEqual(await fits(bulk), { label: 'Draft message', clipped: false, inside: true, lines: 1, tall: false });
     if (shots) await page.locator('.bulk').screenshot({ path: `${shots}/bulk_draft_${width}x${height}.png` });
     await page.locator('.bulk').getByRole('button', { name: 'Clear selection' }).click();
     await page.locator('.cell-t').first().click();
     const drawer = page.locator('dialog.drawer');
     await drawer.locator('.dr-act').waitFor();
-    const button = drawer.getByRole('button', { name: 'Draft Message to Someone' });
+    await footerActions(drawer);
+    const button = drawer.getByRole('button', { name: 'Draft message' });
     await button.scrollIntoViewIfNeeded();
-    assert.deepEqual(await fits(button), { label: 'Draft Message to Someone', clipped: false, inside: true, lines: 1, tall: false });
+    assert.deepEqual(await fits(button), { label: 'Draft message', clipped: false, inside: true, lines: 1, tall: false });
     const owner = await drawer.getByRole('combobox', { name: 'Give to someone' }).evaluate((sel) => {
       const css = getComputedStyle(sel);
       const ctx = document.createElement('canvas').getContext('2d');
@@ -213,46 +217,33 @@ for (const [width, height] of [[390, 844], [1280, 800]]) {
     assert.deepEqual(owner, { text: 'With pat.lee@example.com', shows: true, inside: true }, 'the owner menu shows the whole owner');
     if (shots) await page.screenshot({ path: `${shots}/drawer_draft_${width}x${height}.png` });
     const layout = await footer(drawer);
-    const phone = await drawer.locator('footer.dr-f').evaluate((f) => f.hasAttribute('data-narrow'));
-    assert.equal(phone, (await drawer.locator('footer.dr-f').evaluate((f) => f.getBoundingClientRect().width)) < 470, 'the footer folds by its own width');
-    assert.deepEqual(layout.rows.map((row) => row.map(([text]) => text)), phone
-      ? [['Mark done', 'Not an issue'], ['select'], ['Could not fix', 'More'], ['Draft Message to Someone']]
-      : [['Mark done', 'Not an issue'], ['select'], ['Could not fix', 'Snooze…'], ['Draft Message to Someone', 'Ask Genie to fix']], 'two to a row, the owner menu on its own row');
-    assert.deepEqual(evenRows(layout), ['2 even', 'full', '2 even', phone ? 'one' : '2 even'], JSON.stringify(layout.rows));
-    if (phone) {
-      assert.equal(layout.rows[3][0][1], Math.round(layout.inner), 'the draft button spans the footer on a phone');
-      await drawer.getByRole('button', { name: 'More', exact: true }).click();
-      const open = await footer(drawer);
-      assert.deepEqual(open.rows.map((row) => row.map(([text]) => text)), [['Mark done', 'Not an issue'], ['select'], ['Could not fix', 'Fewer'], ['Draft Message to Someone'], ['Snooze…', 'Ask Genie to fix']], 'More shows every action');
-      assert.deepEqual(evenRows(open), ['2 even', 'full', '2 even', 'one', '2 even']);
-      if (shots) await page.screenshot({ path: `${shots}/drawer_more_${width}x${height}.png` });
-      await drawer.getByRole('button', { name: 'Fewer', exact: true }).click();
-    }
-    assert.equal(layout.rows[1][0][1], Math.round(layout.inner), 'the owner menu spans the footer');
+    assert.deepEqual(layout.rows.flat().map(([text]) => text), ['Mark done', 'Not an issue', 'select', 'Snooze…', 'Fewer', 'Could not fix', 'Draft message', 'Ask Genie to fix'],
+      'the primary, the short row, then the More menu open, with the owner menu two columns wide');
+    const owners = layout.rows.flat().find(([text]) => text === 'select');
+    assert.ok(owners[1] > layout.inner * 0.5, `the owner menu spans two columns, ${owners[1]}px of ${Math.round(layout.inner)}px`);
     assert.equal(layout.heights.length, 1, `one button height: ${layout.heights}`);
     assert.deepEqual(layout.clipped, []);
-    assert.ok(layout.share <= 0.25, `the footer takes ${Math.round(layout.share * 100)}% of the screen`);
+    assert.ok(layout.share <= 0.35, `with More open the footer takes ${Math.round(layout.share * 100)}% of the screen`);
     assert.deepEqual(seen.errors, []);
     await context.close();
   });
 }
 
-test('on a phone with Edit and Delete too, the drawer footer keeps four rows and More shows every action', async () => {
+test('on a phone with Edit and Delete too, the drawer footer stays compact and More shows every action', async () => {
   const { routes } = tracked({ 'records/draft': drafting([FIRST]).route });
   const { page, seen, context } = await openApp(browser, served.base, appInfo({ ...DECIDE, options: { ...DECIDE.options, modify: true } }, 1, TABLE), { routes, width: 390, height: 844, hash: '#/n01_u05/work' });
   await page.locator('.cell-t').first().click();
   const drawer = page.locator('dialog.drawer');
   await drawer.locator('.dr-act').waitFor();
+  const flat = (layout) => layout.rows.flat().map(([text]) => text);
   const folded = await footer(drawer);
-  assert.deepEqual(folded.rows.map((row) => row.map(([text]) => text)), [['Mark done', 'Not an issue'], ['select'], ['Could not fix', 'More'], ['Draft Message to Someone']]);
-  assert.deepEqual(evenRows(folded), ['2 even', 'full', '2 even', 'one']);
-  assert.ok(folded.share <= 0.25, `folded, the footer takes ${Math.round(folded.share * 100)}% of the screen`);
+  assert.deepEqual(flat(folded), ['Mark done', 'Not an issue', 'select', 'Snooze…', 'More'], 'folded, the footer holds the primary, the short row and More');
+  assert.ok(folded.share <= 0.35, `folded, the footer takes ${Math.round(folded.share * 100)}% of the screen`);
   const more = drawer.getByRole('button', { name: 'More', exact: true });
   assert.equal(await more.getAttribute('aria-expanded'), 'false');
   await more.click();
   const open = await footer(drawer);
-  assert.deepEqual(open.rows.map((row) => row.map(([text]) => text)), [['Mark done', 'Not an issue'], ['select'], ['Could not fix', 'Fewer'], ['Draft Message to Someone'], ['Snooze…', 'Ask Genie to fix'], ['Delete', 'Edit']]);
-  assert.deepEqual(evenRows(open), ['2 even', 'full', '2 even', 'one', '2 even', '2 even']);
+  assert.deepEqual(flat(open), ['Mark done', 'Not an issue', 'select', 'Snooze…', 'Fewer', 'Could not fix', 'Draft message', 'Ask Genie to fix', 'Delete', 'Edit']);
   assert.equal(await drawer.getByRole('button', { name: 'Fewer', exact: true }).getAttribute('aria-expanded'), 'true');
   await drawer.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByRole('dialog', { name: /Edit/ }).first().waitFor();

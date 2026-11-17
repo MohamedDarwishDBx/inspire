@@ -232,7 +232,7 @@ test('the record panel closes a record as fixed, not an issue or could not fix, 
   await page.locator('.cell-t').first().click();
   const drawer = page.locator('dialog.drawer');
   await drawer.locator('.dr-act').waitFor();
-  assert.deepEqual(await footerActions(drawer), ['Mark done', 'Not an issue', 'Could not fix', 'Snooze…', 'Draft Message to Someone', 'Ask Genie to fix'].sort());
+  assert.deepEqual(await footerActions(drawer), ['Mark done', 'Not an issue', 'Could not fix', 'Snooze…', 'Draft message', 'Ask Genie to fix'].sort());
   assert.equal(await drawer.locator('input[name="realized_value"]').count(), 0, 'the amount shows only for a fix');
   await drawer.locator('select[name="action_choice"]').selectOption('Done');
   await drawer.locator('input[name="realized_value"]').fill('-3');
@@ -272,6 +272,7 @@ test('closing a record from its panel reloads the things to fix, so the tab coun
   const drawer = page.locator('dialog.drawer');
   await drawer.locator('.dr-act').waitFor();
   const loads = hub.length;
+  await footerActions(drawer);
   await drawer.getByRole('button', { name: 'Could not fix' }).click();
   await until(() => calls.acts.length === 1);
   await until(() => hub.length > loads);

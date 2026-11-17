@@ -90,6 +90,8 @@
 .panel-f.dr-f{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:10px 16px}
 .dr-f > .btn{width:100%;min-width:0;padding:0 10px;justify-content:center}
 .dr-f > .btn--pri,.dr-f > .toast{grid-column:1/-1}
+.dr-f > select.btn{grid-column:span 2}
+.dr-f > [data-act=draft],.dr-f > [data-act=genie]{grid-column:1/-1}
 .dr-f > :is(.hint--box,.work-f,.undo-ask,[data-calm]){grid-column:1/-1}
 .dr-f > .sp{display:none}
 @container app (max-width: 560px){
