@@ -12,6 +12,8 @@ import { hasPlan, pageMode, performanceOn, sectionTitle } from './modes.js';
 import ModeView from './ModeView.jsx';
 import AgentPage from './AgentPage.jsx';
 import { inboxOn } from './inbox.js';
+import { asideNotice } from './setAside.js';
+import SetAside from './SetAside.jsx';
 const Admin = lazy(() => import('./Admin.jsx'));
 import { ADMIN_ROUTE } from './admin.js';
 import GeniePanel, { useGenie } from './Genie.jsx';
@@ -181,6 +183,7 @@ function Shell({ app, onRefreshSiblings }) {
   const [helping, setHelping] = useState(null);
   const admin = route === ADMIN_ROUTE;
   const page = pages.find((p) => p.id === route) || (admin ? pages.find((p) => p.id === prefs.last) || pages[0] : null);
+  const aside = asideNotice(page);
   const section = admin ? '' : (link.section === 'performance' && !performanceOn(app)) || (link.section === 'plan' && !(page && hasPlan(page)))
     || (link.section === 'agent' && !agentOn(app)) ? 'dashboard' : link.section;
   const sectionsHere = page ? railOf(app, page) : [];
@@ -250,7 +253,7 @@ function Shell({ app, onRefreshSiblings }) {
     getFilters(id).then(settle).catch((error) => settle(filtersFailure(error)));
   }, []);
   const retryMeta = useCallback((id) => { requested.current.delete(id); loadMeta(id); }, [loadMeta]);
-  useEffect(() => { if (page) loadMeta(page.id); }, [page, loadMeta]);
+  useEffect(() => { if (page && !aside) loadMeta(page.id); }, [page, aside, loadMeta]);
 
   const leave = () => { setNavOpen(false); document.querySelector('.main')?.focus(); };
   const go = (id) => { window.location.hash = `#/${encodeURIComponent(id)}`; leave(); };
@@ -332,15 +335,16 @@ function Shell({ app, onRefreshSiblings }) {
             <RetryProvider value={loadHub}>
             {admin && <Suspense fallback={null}><Admin /></Suspense>}
             {!admin && !page && hubWaiting && <WaitingForAccess waiting={hubWaiting.detail} onCheck={loadHub} />}
-            {!admin && page && section === 'performance' && (
+            {!admin && page && aside && <SetAside text={aside} />}
+            {!admin && page && !aside && section === 'performance' && (
               <GenieScope.Provider value={perfScope}>
                 <ModeView key={page.id} mode={mode.id} part="Performance" app={app} page={page} genie={genie}
                   fallback={<Performance key={page.id} app={app} page={page} summary={summaries[page.id]} onRecord={openRecord} onExplain={explain} genieBusy={genie.busy} />} />
               </GenieScope.Provider>
             )}
-            {!admin && page && section === 'agent' && <AgentPage key={page.id} app={app} page={page} onRecord={openRecord} themeKey={themeKey} />}
-            {!admin && page && section === 'plan' && <ModeView key={page.id} mode={mode.id} part="Plan" app={app} page={page} />}
-            {!admin && page && section !== 'performance' && section !== 'agent' && section !== 'plan' && (
+            {!admin && page && !aside && section === 'agent' && <AgentPage key={page.id} app={app} page={page} onRecord={openRecord} themeKey={themeKey} />}
+            {!admin && page && !aside && section === 'plan' && <ModeView key={page.id} mode={mode.id} part="Plan" app={app} page={page} />}
+            {!admin && page && !aside && section !== 'performance' && section !== 'agent' && section !== 'plan' && (
               <Page key={page.id} app={app} page={page} meta={metas[page.id]} state={states[page.id]} onState={setPageState(page.id)} look={looks[page.id] || EMPTY_LOOK}
                 onLook={setPageLook(page.id)} themeKey={themeKey} onAsk={ask} onExplain={explain} genieBusy={genie.busy} hubEntry={hub?.pages?.[page.id]}
                 summary={summaries[page.id]} view={view} onView={setView} genie={genie} section={section} tab={link.tab} focus={link.focus} chrome={chrome}

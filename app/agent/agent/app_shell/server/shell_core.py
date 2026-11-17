@@ -738,23 +738,62 @@ def settings_problems(settings: dict, pages: list) -> list:
     return problems
 
 
+def page_problems_split(problems, pages, own_id=None) -> tuple:
+    """(own, aside): the problems that refuse the App, and the (page, problems) pairs of the pages the other problems name.
+
+    A problem names a page as "page <id>: ...". One that names only pages other than own_id sets those pages aside. Any other
+    problem refuses: this page's own problem, or a problem of the App as a whole (settings, shared datasets, no page left).
+    own_id=None means no page of this build is at stake, so every page-named problem sets its page aside."""
+    own, aside = [], {}
+    for text in problems:
+        named = [p for p in pages if f"page {p.get('id')}:" in text]
+        if named and all(p.get("id") != own_id for p in named):
+            for p in named:
+                aside.setdefault(p.get("id"), (p, []))[1].append(text)
+        else:
+            own.append(text)
+    return own, list(aside.values())
+
+
 def load_app(root: str) -> tuple:
+    """(settings, pages, aside): the App's pages that start, and aside, the (page, problems) pairs of the pages set aside.
+
+    A problem that names one page sets only that page aside, so the App starts and serves every other page. An App-level
+    problem refuses the App."""
     with open(os.path.join(root, SETTINGS_FILE), encoding="utf-8") as handle:
         settings = json.load(handle)
     pages = []
     for ident in settings.get("pages") or []:
         with open(os.path.join(root, PAGES_DIR, f"{ident}.json"), encoding="utf-8") as handle:
             pages.append(json.load(handle))
-    problems = settings_problems(settings, pages)
-    if problems:
-        raise ValueError("the App files do not hold together: " + "; ".join(problems))
+    own, aside = page_problems_split(settings_problems(settings, pages), pages)
+    if own:
+        raise ValueError("the App files do not hold together: " + "; ".join(own))
+    set_aside = {p.get("id") for p, _problems in aside}
+    if aside and len(set_aside) == len(pages):
+        raise ValueError("the App files do not hold together: no page is left to show; " + "; ".join(t for _p, texts in aside for t in texts))
+    for page, problems in aside:
+        for text in problems:
+            print(f"[APP-SET-ASIDE] page={page.get('id')} {text}", file=sys.stderr, flush=True)
+    pages = [p for p in pages if p.get("id") not in set_aside]
     for page in pages:
         tour, notes = fit_tour(page)
         if tour:
             page[TOUR] = tour
         for note in notes:
             print(f"[APP-TOUR FIXED] page={page.get('id')} {note}", file=sys.stderr, flush=True)
-    return settings, pages
+    return settings, pages, aside
+
+
+def set_aside_notice(page: dict) -> str:
+    return f"{page_label(page)} needs its use case built again. The App keeps this page set aside until then."
+
+
+def set_aside_view(page: dict, notice: str) -> dict:
+    """The nav entry of a page set aside: its name and notice, no data, no Genie, no reports."""
+    out = {k: page.get(k) for k in ("id", "use_case_id", "title", "domain", "subdomain", "icon", "hue")}
+    return dict(out, set_aside=notice, genie={"enabled": False, "title": "", "url": "", "note": ""}, is_owner=False,
+                reports={"ready": False, "note": "", "where": REPORTS_WHERE})
 
 
 def click_filters(page: dict) -> dict:
@@ -2114,7 +2153,8 @@ class Shell:
     def __init__(self, root: str, env=None, sp_factory=sp_workspace_factory, user_factory=user_workspace_factory, clock=time.time,
                  timer=time.monotonic, lakebase_factory=shell_pg.Lakebase, strict: bool = False, writer_factory=None):
         self.env = dict(os.environ if env is None else env)
-        self.settings, self.pages = load_app(root)
+        self.settings, self.pages, self.aside = load_app(root)
+        self.set_aside = {str(page.get("id")): set_aside_notice(page) for page, _problems in self.aside}
         self.inside = self.settings.get("host") == INSIDE
         self.sp_factory, self.user_factory, self.writer_factory = sp_factory, user_factory, writer_factory
         self._sp, self._writer = None, None
@@ -2671,6 +2711,13 @@ class Shell:
             route = (method, path.strip("/"))
             if route == ("GET", "app"):
                 return 200, self.app_info(headers)
+            notice = self.set_aside.get(str(query.get("page") or data.get("page") or ""))
+            if notice is not None:
+                # A page set aside answers its notice on every route that names it. A read gets the notice as its answer; a write is
+                # refused with it, because nothing is changed.
+                if is_write_route(method, route[1]):
+                    return 409, error_body(notice)
+                return 200, {"set_aside": notice}
             if route == ("GET", "filters"):
                 return 200, self.filters(headers, query.get("page"))
             if route == ("GET", "filters/options"):
@@ -2856,6 +2903,9 @@ class Shell:
         pages = [dict(public_page(p, self.tour_gaps(p)), genie=self.genie_info(p, host, agent), is_owner=bool(self.signed_in(headers) & self.page_editors(p)),
                       reports=reports_view(p, self.settings.get("feedback_table", "")))
                  for p in (self.with_saved_money(page) for page in self.pages)]
+        order = {str(ident): i for i, ident in enumerate(s.get("pages") or [])}
+        pages = sorted(pages + [set_aside_view(page, self.set_aside[str(page.get("id"))]) for page, _problems in self.aside],
+                       key=lambda p: order.get(str(p.get("id")), len(order)))
         answering = agent or any(p["genie"]["enabled"] for p in pages)
         genie = (pages[0]["genie"] if len(pages) == 1 else
                  {"enabled": answering, "title": "", "url": "", "note": HUB_GENIE_NOTE if answering else HUB_GENIE_OFF})

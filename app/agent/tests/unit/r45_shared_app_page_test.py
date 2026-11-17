@@ -1,6 +1,22 @@
 """REQ-404: a page of another use case on a shared Agentic App that no longer works at the default filters does not stop this use case's
 publish. The other page is kept as it was and named in a warning. A problem with this use case's own page, or with the App as a whole,
 still refuses the build."""
+import os  # noqa: E402
+import sys  # noqa: E402
+
+SERVER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "agent", "app_shell", "server")
+if SERVER not in sys.path:
+    sys.path.insert(0, SERVER)
+
+import shell_core  # noqa: E402
+
+
+def split_check(problems, pages, own_id):
+    """The one attribution (shell_core.page_problems_split), read as (own problems, the pages kept)."""
+    own, kept = shell_core.page_problems_split(problems, pages, own_id)
+    return own, [p for p, _problems in kept]
+
+
 OWN = {"id": "n01_u01_s5150", "title": "Churn desk", "use_case_id": "N01-U01"}
 OTHER = {"id": "n01_u07", "title": "Sales desk", "use_case_id": "N01-U07"}
 OTHER_LONG = {"id": "n01_u07_s5150", "title": "Stock desk", "use_case_id": "N01-U09"}
@@ -10,22 +26,22 @@ APP_FAIL = "the App files do not hold together: the warehouse is not set"
 
 
 def test_another_use_cases_failing_page_is_kept_and_does_not_belong_to_this_build(agent_ns):
-    own, kept = agent_ns["implement_app_split_check"]([OWN_FAIL, OTHER_FAIL, APP_FAIL], [OWN, OTHER], OWN["id"])
+    own, kept = split_check([OWN_FAIL, OTHER_FAIL, APP_FAIL], [OWN, OTHER], OWN["id"])
     assert own == [OWN_FAIL, APP_FAIL], "this use case's page and the App as a whole still refuse the build"
     assert [p["id"] for p in kept] == ["n01_u07"], "only the other use case's page is kept"
 
 
 def test_a_page_id_that_prefixes_another_page_id_is_not_mixed_up(agent_ns):
     problem = "page n01_u07_s5150: kpi:stock failed: DIVIDE_BY_ZERO"
-    own, kept = agent_ns["implement_app_split_check"]([problem], [OWN, OTHER, OTHER_LONG], OWN["id"])
+    own, kept = split_check([problem], [OWN, OTHER, OTHER_LONG], OWN["id"])
     assert own == [] and [p["id"] for p in kept] == ["n01_u07_s5150"], "'page n01_u07:' must not match 'page n01_u07_s5150:'"
-    own, kept = agent_ns["implement_app_split_check"](["page n01_u07: chart:x failed: E"], [OWN, OTHER, OTHER_LONG], OWN["id"])
+    own, kept = split_check(["page n01_u07: chart:x failed: E"], [OWN, OTHER, OTHER_LONG], OWN["id"])
     assert own == [] and [p["id"] for p in kept] == ["n01_u07"]
 
 
 def test_a_problem_that_names_this_page_and_another_stays_with_this_build(agent_ns):
     both = "page n01_u01_s5150: the join reads page n01_u07: E"
-    own, kept = agent_ns["implement_app_split_check"]([both], [OWN, OTHER], OWN["id"])
+    own, kept = split_check([both], [OWN, OTHER], OWN["id"])
     assert own == [both] and kept == [], "a problem that touches this page is never waved through"
 
 
