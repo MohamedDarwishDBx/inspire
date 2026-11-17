@@ -60,7 +60,7 @@ const { withBusyRetry } = require('./lib/busyRetry');
 const { registerShowcaseRoutes, showcaseWriteGuard } = require('./lib/showcase');
 const { loadSessionList, loadSessionOverviews, sessionListCap, SESSION_LIST_CAP } = require('./lib/reviewFigures');
 const { LIVE_STEP_STATUSES, liveDomainsOf, liveUseCasesOf } = require('../frontend/src/lib/liveUseCases.js');
-const { isInspireOwnName } = require('../frontend/src/lib/inspireOwnObjects.js');
+const { isInspireOwnName, isInspireOwnSchema } = require('../frontend/src/lib/inspireOwnObjects.js');
 const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('./lib/runSummary');
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
 const PM_ERROR = require('./lib/permissionError');
@@ -1898,7 +1898,8 @@ app.get('/api/catalogs/:catalog/schemas', requireToken, async (req, res) => {
         if (!byKey.has(k)) byKey.set(k, row);
       }
     }
-    const schemas = [...byKey.values()].sort((a, b) => a.full_name.localeCompare(b.full_name));
+    // A use case's own result schema (`_inspire_<business>_<use case>`) is not the person's data (REQ-387): the one rule, inspireOwnObjects.js.
+    const schemas = [...byKey.values()].filter((s) => !isInspireOwnSchema(s.full_name)).sort((a, b) => a.full_name.localeCompare(b.full_name));
     console.log(`   📂 schemas ${catalog}: REST=${raw.length} merged=${schemas.length}`);
     if (raw.length === 0 && schemas.length === 0 && restErr) {
       return PM_ERROR.sendFailure(res, restStatus, restErr);

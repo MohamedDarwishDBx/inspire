@@ -28,6 +28,12 @@ export function isInspireOwnName(name) {
   return OWN_TABLE_RE.test(table) || OWN_SCHEMA_RE.test(schema);
 }
 
+/** True when a schema name (plain or catalog.schema) is a use case's own result schema. The Inspire database `_inspire` itself is not. */
+export function isInspireOwnSchema(name) {
+  const parts = String(name ?? '').replace(/`/g, '').split('.').map((p) => p.trim().toLowerCase());
+  return OWN_SCHEMA_RE.test(parts[parts.length - 1] || '');
+}
+
 /** The same rule as a SQL predicate: NOT (...) over the table column and, when given, the schema column. Case-insensitive via lower(). */
 export function notInspireOwnSql(tableColumn, schemaColumn) {
   const clauses = [`lower(${tableColumn}) RLIKE '${OWN_TABLE_PATTERN}'`];
