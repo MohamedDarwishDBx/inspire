@@ -19,6 +19,9 @@ from _agentload import agent_source, method_node, top_level_defs
 from v120_artifacts_support import CapturingLogger, FakeSpark, make_inspire
 from v141_app_shell_test import shell_sql as SHELL_SQL
 import shell_alerts as SHELL_ALERTS
+from _nbload import implement_output_label
+
+APP_LABEL = implement_output_label("app")
 
 FIXTURE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fixtures", "implement_change_classes.json")
 
@@ -3149,7 +3152,7 @@ def _feedback_writes(agent_ns, client="sp-1", fresh=False):
 
 
 def _feedback_refused(warnings):
-    return [w for w in warnings or [] if w.startswith("Agentic App: people cannot report issues about this use case from the App")]
+    return [w for w in warnings or [] if w.startswith(f"{APP_LABEL}: people cannot report issues about this use case from the App")]
 
 
 def test_sharing_grants_only_missing_access_and_names_what_inspire_cannot_grant(agent_ns):

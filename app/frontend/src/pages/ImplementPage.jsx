@@ -1956,7 +1956,7 @@ function UseCaseDetail({ item, sessionId, settings, qBase, apiFetch, apiPostJson
         <ConfirmDialog title={`Uninstall everything ${useCaseId} built`} confirmLabel="Uninstall all" useCaseId={useCaseId} busy={submitBusy}
           onCancel={() => setUninstalling(false)} onConfirm={uninstallAll}>
           <p>
-            Inspire deletes the MVP notebook, its job, the dashboard, the Genie Agent, the App, the alert, the App&apos;s Lakebase copy and every version kept live, in a new version of this MVP.
+            Inspire deletes the MVP notebook, its job, the build jobs of every version, the dashboard, the Genie Agent, the App, the alert, the App&apos;s Lakebase copy and every version kept live, in a new version of this MVP. A build job that is still running stays until its run ends, and Inspire says so.
           </p>
           <p>The result tables, the history and any notebook Discover wrote for this use case stay. An App, dashboard or Genie Agent that other use cases share stays for them, and Inspire takes this use case&apos;s part out of it.</p>
         </ConfirmDialog>

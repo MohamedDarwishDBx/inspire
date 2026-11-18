@@ -390,7 +390,7 @@ def test_uninstall_all_takes_this_use_case_out_of_every_shared_output_and_delete
     assert final["status"] == "uninstalled" and final["asset_status"]["dashboard"]["state"] == "released"
     assert final["asset_status"]["dashboard"]["taken_out_of"] == "d1" and final["asset_status"]["dashboard"]["stays_for"] == ["N02-U01"]
     done = [e for e in inst.emitted if e.get("step_name") == "Done"][-1]
-    assert done["message"] == ("uninstalled: the notebook, job and every output only this use case held are deleted; this use case's part "
+    assert done["message"] == ("uninstalled: the notebook, job, the build jobs of every version and every output only this use case held are deleted; this use case's part "
                                "is taken out of the dashboard d1, which other use cases share and keep; the result tables and the history "
                                "are kept")
 

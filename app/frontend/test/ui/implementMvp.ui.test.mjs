@@ -103,7 +103,7 @@ test('Uninstall all names what goes and what stays, asks for the use case id, an
     await page.getByRole('button', { name: 'Uninstall all', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Uninstall everything N01-U01 built' });
     assert.match(await dialog.getByRole('button', { name: 'Uninstall all', exact: true }).getAttribute('class'), /bg-error-solid/, 'the confirm step stays red (must-keep)');
-    await dialog.getByText(/^Inspire deletes the MVP notebook, its job, the dashboard, the Genie Agent, the App, the alert/).waitFor();
+    await dialog.getByText(/^Inspire deletes the MVP notebook, its job, the build jobs of every version, the dashboard, the Genie Agent, the App, the alert/).waitFor();
     await dialog.getByText(/^The result tables, the history and any notebook Discover wrote for this use case stay\./).waitFor();
     const confirm = dialog.getByRole('button', { name: 'Uninstall all', exact: true });
     assert.equal(await confirm.isDisabled(), true);
