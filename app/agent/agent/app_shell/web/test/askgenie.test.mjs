@@ -112,10 +112,15 @@ test('every card, key number, row, text block and the filter bar on the example 
   }
 });
 
-test('every element kind on every page in examples shows a visible Ask Genie, on a laptop and a phone, with Genie on or off', async () => {
+// One case per example page (each runs both Genie settings at both widths): the single walk of all pages took 98 to 125 s, against the 120 s
+// file timeout, and failed under load. The page list is checked once, in its own case.
+test('the examples folder holds the pages this walk covers, each with the data it draws', () => {
   assert.ok(EXAMPLE_FILES.length >= 3, `examples holds ${EXAMPLE_FILES.length} pages`);
   assert.deepEqual(EXAMPLE_FILES.filter((f) => !EXAMPLES[f]), [], 'every example page has the data it draws in exampleRoutes.mjs');
-  for (const file of EXAMPLE_FILES) {
+});
+
+for (const file of EXAMPLE_FILES) {
+  test(`every element kind on ${file} shows a visible Ask Genie, on a laptop and a phone, with Genie on or off`, async () => {
     const example = EXAMPLES[file];
     for (const settings of [example.settings, { ...example.settings, ...GENIE_OFF }]) {
       const info = appInfo(settings, 1, {}, `examples/${file}`);
@@ -129,8 +134,8 @@ test('every element kind on every page in examples shows a visible Ask Genie, on
       assert.deepEqual(seen.errors, [], file);
       await context.close();
     }
-  }
-});
+  });
+}
 
 function exampleWithGenie(file, made = EXAMPLES[file].routes) {
   const { calls, routes } = genieRoutes();
