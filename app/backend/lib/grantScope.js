@@ -40,22 +40,22 @@ function coarseGrants(statements, { wholeCatalogs = [] } = {}) {
     const schema = parts[1];
     const who = principal.replace(/`/g, '').trim().toLowerCase();
     if (privilege === 'USE_CATALOG') {
-      put(`${who}|USE_CATALOG|${catalog.toLowerCase()}`, `GRANT USE CATALOG ON CATALOG ${quoted([catalog])} TO ${principal}`);
+      put(`${who}|USE_CATALOG|${catalog.toLowerCase()}`, `GRANT USE CATALOG ON CATALOG ${quoted([catalog])} TO ${principal}`); // PERMISSION_DIALOG
       continue;
     }
     if (whole.has(catalog.toLowerCase())) {
       // A whole-catalog pick: the catalog gets USE CATALOG and the data grants, and nothing under it stays at schema or table level.
-      put(`${who}|USE_CATALOG|${catalog.toLowerCase()}`, `GRANT USE CATALOG ON CATALOG ${quoted([catalog])} TO ${principal}`);
-      if (READ.has(privilege)) put(`${who}|${privilege}|catalog|${catalog.toLowerCase()}`, `GRANT ${privilege.replace('_', ' ')} ON CATALOG ${quoted([catalog])} TO ${principal}`);
+      put(`${who}|USE_CATALOG|${catalog.toLowerCase()}`, `GRANT USE CATALOG ON CATALOG ${quoted([catalog])} TO ${principal}`); // PERMISSION_DIALOG
+      if (READ.has(privilege)) put(`${who}|${privilege}|catalog|${catalog.toLowerCase()}`, `GRANT ${privilege.replace('_', ' ')} ON CATALOG ${quoted([catalog])} TO ${principal}`); // PERMISSION_DIALOG
       continue;
     }
     if (privilege === 'USE_SCHEMA') {
-      put(`${who}|USE_SCHEMA|${catalog.toLowerCase()}.${schema.toLowerCase()}`, `GRANT USE SCHEMA ON SCHEMA ${quoted([catalog, schema])} TO ${principal}`);
+      put(`${who}|USE_SCHEMA|${catalog.toLowerCase()}.${schema.toLowerCase()}`, `GRANT USE SCHEMA ON SCHEMA ${quoted([catalog, schema])} TO ${principal}`); // PERMISSION_DIALOG
       continue;
     }
     // SELECT or READ METADATA on a table or a schema: one line per schema.
     put(`${who}|${privilege}|schema|${catalog.toLowerCase()}.${schema.toLowerCase()}`,
-      `GRANT ${privilege.replace('_', ' ')} ON SCHEMA ${quoted([catalog, schema])} TO ${principal}`);
+      `GRANT ${privilege.replace('_', ' ')} ON SCHEMA ${quoted([catalog, schema])} TO ${principal}`); // PERMISSION_DIALOG
   }
   return [...out.values()];
 }
