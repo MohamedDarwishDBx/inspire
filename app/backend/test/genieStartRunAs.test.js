@@ -22,7 +22,7 @@ const rows = (list) => {
 };
 
 // The installed Genie job is the installer's: only the App's token starts it and lists its runs. `genieRuns` are the job's runs.
-function workspaceFor(live, genieRuns, runAs) {
+function workspaceFor(live, genieRuns, runAs, recorded = null) {
   return (call) => {
     const url = new URL(`http://x${call.path}`);
     if (call.path === '/oidc/v1/token') return [200, { access_token: SP_TOKEN, expires_in: 3600 }];
@@ -39,9 +39,16 @@ function workspaceFor(live, genieRuns, runAs) {
     if (url.pathname === '/api/2.1/jobs/runs/list') {
       live.runsList.push({ token: call.token, job: url.searchParams.get('job_id') });
       if (url.searchParams.get('job_id') !== GENIE_JOB) return [200, { runs: [] }];
-      return call.token === SP_TOKEN ? [200, { runs: genieRuns }] : [403, { message: 'Permission denied: the run is not visible' }];
+      // Like the Jobs API, the page holds at most `limit` runs (default 25).
+      const limit = Number(url.searchParams.get('limit') || 25);
+      return call.token === SP_TOKEN ? [200, { runs: genieRuns.slice(0, limit) }] : [403, { message: 'Permission denied: the run is not visible' }];
     }
     if (url.pathname === '/api/2.1/jobs/create') return [200, { job_id: 700 }];
+    if (url.pathname === '/api/2.1/jobs/runs/get') {
+      live.runGets.push({ token: call.token, run: url.searchParams.get('run_id') });
+      if (!recorded || String(recorded.run.run_id) !== url.searchParams.get('run_id')) return [{ error_code: 'RESOURCE_DOES_NOT_EXIST', message: 'no run' }, 404];
+      return call.token === SP_TOKEN ? [200, recorded.run] : [403, { message: 'Permission denied: the run is not visible' }];
+    }
     if (url.pathname === '/api/2.1/jobs/list') {
       live.jobsList.push(call.token);
       return [200, { jobs: [] }];
@@ -51,13 +58,17 @@ function workspaceFor(live, genieRuns, runAs) {
       if (/__inspire_session/.test(sql)) return rows([SESSION]);
       // The launch ledger names the person who launched this session (the launcher may manage its own unbuilt session).
       if (/launched_by/.test(sql)) return rows([{ launched_by: PERSON_EMAIL }]);
+      // The launch record of this session's Genie run (read with the person's token, as Inspire reads its own record).
+      if (/__inspire_launch/.test(sql) && /genie_regen/.test(sql)) return rows(recorded && call.token === PERSON ? [{ run_id: recorded.run.run_id }] : []);
+      // The ledger row of that run names its job (the installed Genie job), which is what the guard checks before the App token.
+      if (/SELECT job_id FROM .*__inspire_launch/.test(sql)) return rows(recorded && call.token === PERSON ? [{ job_id: Number(GENIE_JOB) }] : []);
       return rows([]);
     }
     return null;
   };
 }
 
-async function startGenie({ runAs, genieRuns = [] }, fn) {
+async function startGenie({ runAs, genieRuns = [], recorded = null }, fn) {
   const saved = { run: process.env.INSPIRE_RUN_AS_PERSON, job: process.env.INSPIRE_JOB_ID_GENIE };
   if (runAs) {
     process.env.INSPIRE_RUN_AS_PERSON = '1';
@@ -66,8 +77,8 @@ async function startGenie({ runAs, genieRuns = [] }, fn) {
     delete process.env.INSPIRE_RUN_AS_PERSON;
     delete process.env.INSPIRE_JOB_ID_GENIE;
   }
-  const live = { runNow: [], runsList: [], jobsList: [] };
-  const workspace = await fakeWorkspace(workspaceFor(live, genieRuns, runAs), { folders: { '/Shared': { id: 1, writers: '*' }, '/Shared/run_out': { id: 2, writers: '*' } } });
+  const live = { runNow: [], runsList: [], jobsList: [], runGets: [] };
+  const workspace = await fakeWorkspace(workspaceFor(live, genieRuns, runAs, recorded), { folders: { '/Shared': { id: 1, writers: '*' }, '/Shared/run_out': { id: 2, writers: '*' } } });
   let inspire = null;
   try {
     inspire = await startInspire({ DATABRICKS_HOST: workspace.url, NOTEBOOK_PATH: NOTEBOOK, DATABRICKS_CLIENT_ID: 'inspire-client',
@@ -114,5 +125,29 @@ test('REQ-409 Genie start outside run-as: the job is found by its session name a
     assert.equal(got.status, 200, JSON.stringify(got.data));
     assert.ok(live.jobsList.length >= 1 && live.jobsList.every((t) => t === PERSON), 'the name lookup uses the person token');
     assert.ok(live.runNow.every((t) => t === PERSON), `outside run-as every start uses the person token: ${JSON.stringify(live.runNow)}`);
+  });
+});
+
+// 30 newer runs of other sessions fill the installed job's run list. This session's run is older than all of them: the launch record finds it.
+const OTHERS = Array.from({ length: 30 }, (_, i) => ({ run_id: 100 + i, job_id: Number(GENIE_JOB), overriding_parameters: { notebook_params: { '14_session_id': '43' } },
+  state: { life_cycle_state: 'RUNNING', result_state: null } }));
+const MINE = { run_id: 7, job_id: Number(GENIE_JOB), overriding_parameters: { notebook_params: { '14_session_id': '42' } },
+  state: { life_cycle_state: 'RUNNING', result_state: null }, start_time: 1761357600000 };
+
+test('REQ-409 Genie start in run-as mode: with 30 newer runs of other sessions, this session\'s recorded run still blocks a duplicate start', async () => {
+  await startGenie({ runAs: true, genieRuns: OTHERS, recorded: { run: MINE } }, async (got, live) => {
+    assert.equal(got.status, 409, `a duplicate Genie start must be refused: ${JSON.stringify(got.data)}`);
+    assert.equal(got.data.run_id, 7);
+    assert.deepEqual(live.runNow, [], 'a blocked start runs nothing');
+    // The guard reads the run with the person's token first (refused), then with the App token for the installed job's run.
+    assert.ok(live.runGets.some((g) => g.run === '7' && g.token === SP_TOKEN), `the recorded run is read with the guarded App token: ${JSON.stringify(live.runGets)}`);
+  });
+});
+
+test('REQ-409 Genie start in run-as mode with no launch record: the installed job\'s active runs are read in full, so a run beyond the first 25 blocks', async () => {
+  const beyond = [...OTHERS, MINE];
+  await startGenie({ runAs: true, genieRuns: beyond }, async (got) => {
+    assert.equal(got.status, 409, `the session's run past the first 25 must still block: ${JSON.stringify(got.data)}`);
+    assert.equal(got.data.run_id, 7);
   });
 });

@@ -40,6 +40,16 @@ function launchInsertStatement(table, { runId, jobId, runType, inspireDatabase, 
   };
 }
 
+// REQ-409 (Genie): the newest Genie notebook run Inspire recorded for a session (run_type genie_regen), read from the launch record.
+function sessionGenieRunStatement(table, sessionId) {
+  const sid = String(sessionId ?? '').trim();
+  if (!/^\d{1,19}$/.test(sid)) return null;
+  return {
+    sql: `SELECT run_id FROM ${table} WHERE session_id = :session_id AND run_type = 'genie_regen' ORDER BY launched_at DESC LIMIT 1`,
+    parameters: [{ name: 'session_id', value: sid, type: 'STRING' }],
+  };
+}
+
 function runLauncherStatement(table, runId) {
   if (!RUN_ID_RE.test(String(runId || ''))) return null;
   return {
@@ -156,6 +166,7 @@ module.exports = {
   launchInsertStatement,
   runLauncherStatement,
   runJobStatement,
+  sessionGenieRunStatement,
   jobIdOf,
   sessionLauncherStatement,
   sessionKnownStatements,

@@ -47,22 +47,41 @@ function notebookRunOf(run) {
   };
 }
 
-// REQ-409 (run-as mode): the Genie runs are runs of the one installed Genie job, shared by every session, so this session's run is the
-// newest run whose notebook parameters name this session (14_session_id).
-const INSTALLED_RUN_PAGE = 25;
+// REQ-409 (run-as mode): the Genie runs are runs of the one installed Genie job, shared by every session, so this session's run is found by
+// its notebook parameter (14_session_id). The active runs are read in full (every page), so the job's run count does not hide a run.
+const INSTALLED_PAGE = 100;
+const INSTALLED_MAX_PAGES = 100;
 
-async function installedGenieRunOf(fetchJson, sessionId, installedJobId) {
+function sessionOfRun(run) {
+  return String(run?.overriding_parameters?.notebook_params?.['14_session_id'] ?? '');
+}
+
+async function installedActiveGenieRunOf(fetchJson, sessionId, installedJobId) {
   const jobId = requireInt64Id(installedJobId, 'job_id');
-  const got = await fetchJson(`/api/2.1/jobs/runs/list?job_id=${jobId}&limit=${INSTALLED_RUN_PAGE}`);
-  if (!got.ok) throw apiError('Reading the Genie Code notebook runs', got);
   const sid = String(sessionId);
-  const run = (got.data.runs || []).find((r) => String(r?.overriding_parameters?.notebook_params?.['14_session_id'] ?? '') === sid);
-  return run ? notebookRunOf({ job_id: jobId, ...run }) : null;
+  let pageToken = '';
+  for (let page = 0; page < INSTALLED_MAX_PAGES; page += 1) {
+    const got = await fetchJson(`/api/2.1/jobs/runs/list?job_id=${jobId}&active_only=true&limit=${INSTALLED_PAGE}`
+      + (pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : ''));
+    if (!got.ok) throw apiError('Reading the Genie Code notebook runs', got);
+    const run = (got.data.runs || []).find((r) => sessionOfRun(r) === sid);
+    if (run) return notebookRunOf({ job_id: jobId, ...run });
+    pageToken = String(got.data.next_page_token || '');
+    if (!pageToken) break;
+  }
+  return null;
+}
+
+// One run of the Genie job, read by its id (the run Inspire recorded for the session).
+async function genieRunOf(fetchJson, runId) {
+  const got = await fetchJson(`/api/2.1/jobs/runs/get?run_id=${requireInt64Id(runId, 'run_id')}`);
+  if (!got.ok) throw apiError('Reading the Genie Code notebook run', got);
+  return notebookRunOf({ job_id: got.data.job_id, ...got.data });
 }
 
 // Outside run-as the session's job is found by its name (created for the session). In run-as mode the installed job is the one to read.
 async function latestGenieNotebookRun(fetchJson, sessionId, { installedJobId = '' } = {}) {
-  if (installedJobId) return installedGenieRunOf(fetchJson, sessionId, installedJobId);
+  if (installedJobId) return installedActiveGenieRunOf(fetchJson, sessionId, installedJobId);
   const job = await newestJobNamed(fetchJson, genieNotebookJobName(sessionId));
   if (!job) return null;
   const got = await fetchJson(`/api/2.1/jobs/runs/list?job_id=${requireInt64Id(job.job_id, 'job_id')}&limit=1`);
@@ -71,4 +90,4 @@ async function latestGenieNotebookRun(fetchJson, sessionId, { installedJobId = '
   return run ? notebookRunOf({ job_id: job.job_id, ...run }) : null;
 }
 
-module.exports = { genieNotebookJobName, latestGenieNotebookRun, newestJobNamed, notebookRunOf };
+module.exports = { genieNotebookJobName, genieRunOf, latestGenieNotebookRun, newestJobNamed, notebookRunOf };

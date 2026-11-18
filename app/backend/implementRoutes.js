@@ -8,7 +8,7 @@ const { mapLimit } = require('./lib/mapLimit');
 // REQ-323: how many history rows are enriched at once.
 const HISTORY_ROW_CONCURRENCY = 8;
 const { runWithQueryTags, lookupWithRetry } = require('./lib/sqlStatements');
-const { genieNotebookJobName, latestGenieNotebookRun } = require('./lib/genieNotebookJob');
+const { genieNotebookJobName, genieRunOf, latestGenieNotebookRun } = require('./lib/genieNotebookJob');
 const C = require('./lib/implementControl');
 const LE = require('./lib/lakebaseEnforce');
 const { appShellCatalog, bundledBuildStamp } = require('./lib/appShell');
@@ -508,12 +508,33 @@ function registerImplementRoutes(app, deps) {
     return req.dbToken;
   }
 
-  // REQ-409: this session's Genie notebook run. Run-as: the installed Genie job (its id from the installer), read with the job token.
-  // Outside run-as: the job named for the session, with the person's token.
+  // REQ-409: this session's Genie notebook run. Outside run-as: the job named for the session, with the person's token. Run-as: the run
+  // Inspire recorded for the session (read from the launch record with the person's token), then read with the guarded App token; only when
+  // no record exists, the installed Genie job's active runs are read in full (every page) and matched to the session.
   async function latestGenieRunOf(req, sessionId) {
-    const installedJobId = runAsPerson() ? String(process.env[RUN_AS_JOB_ENV.genie_regen] || '').trim() : '';
-    const token = installedJobId ? await installedRuns.jobToken(req.dbToken, installedJobId) : req.dbToken;
-    return latestGenieNotebookRun((path) => jsonOf(dbFetch, req.dbHost, token, path), sessionId, { installedJobId });
+    const warehouseId = warehouseOf(req);
+    if (!runAsPerson()) {
+      return latestGenieNotebookRun((path) => jsonOf(dbFetch, req.dbHost, req.dbToken, path), sessionId);
+    }
+    const installedJobId = String(process.env[RUN_AS_JOB_ENV.genie_regen] || '').trim();
+    const readAs = (token) => (path) => jsonOf(dbFetch, req.dbHost, token, path);
+    const recordedRunId = await recordedGenieRunIdOf(req, warehouseId, sessionId);
+    if (recordedRunId) {
+      const token = await installedRuns.runToken(req.dbHost, req.dbToken, recordedRunId, ledgerJobIdOf(req, warehouseId));
+      const run = await genieRunOf(readAs(token), recordedRunId).catch(() => null);
+      if (run) return run;
+    }
+    const token = await installedRuns.jobToken(req.dbToken, installedJobId);
+    return latestGenieNotebookRun(readAs(token), sessionId, { installedJobId });
+  }
+
+  // The run Inspire recorded for the session's Genie notebook (the launch record, read with the person's token), or '' when none exists.
+  async function recordedGenieRunIdOf(req, warehouseId, sessionId) {
+    const { catalog, schema } = dbOf(req, splitInspireDatabase);
+    const stmt = L.sessionGenieRunStatement(L.launchTableName(`${catalog}.${schema}`), sessionId);
+    if (!stmt) return '';
+    const rows = sqlResultToObjects(await executeSql(req.dbHost, req.dbToken, warehouseId, stmt.sql, stmt.parameters));
+    return rows[0] && rows[0].run_id != null ? String(rows[0].run_id) : '';
   }
 
   async function genieRunState(host, token, runId, ledgerJobId) {
