@@ -1834,12 +1834,13 @@ def agent_model_matching(notebook_text):
 
 
 def model_endpoints_to_grant(endpoints, matching):
-    """The newest endpoint of each family, in the agent's own family order: the model the agent's roster starts from."""
+    """Every chat endpoint the agent's roster can pick: all members of each family, newest first, in the agent's family order.
+    The roster's fallbacks and the vision verdict pick from the same families, so a newer-only grant leaves them refused."""
     seen, picks = set(), []
     for spec in matching["LLM_FAMILY_SPECS"]:
         members = matching["_family_endpoints"](endpoints, spec[0], spec[1], seen)
         seen.update(name for name, _version in members)
-        picks.extend(name for name, _version in members[:1])
+        picks.extend(name for name, _version in members)
     return list(dict.fromkeys(picks))
 
 
