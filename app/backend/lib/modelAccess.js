@@ -1,15 +1,14 @@
 // REQ-405: before a run starts, the identity the run uses (the App's service principal, or the signed-in person in run-as-me) must be
-// able to query a chat model. The check sends one one-word chat call to each ready chat endpoint it can see, at most three. Only a
-// refusal (HTTP 403) from every candidate is a Permission Required entry, with the grant to ask for. An answer from any candidate, or
-// an error that is not a refusal, does not block the launch.
+// able to query a chat model. The candidates are the agent's roster order (lib/modelRoster.js), at most the roster's size, each probed
+// with one one-word chat call. Any answer passes. A Permission Required entry needs a refusal (HTTP 403) from every probed candidate
+// and nothing else: an error that is not a refusal means the check could not tell, so the launch is not blocked.
+const { rosterOrder } = require('./modelRoster');
 const { permissionRequired } = require('./permissions');
 
-const CHAT_TASK = 'llm/v1/chat';
-const CANDIDATE_LIMIT = 3;
+// The agent's roster holds at most six models (TECHNICAL_CONTEXT roster size); probing stops at the first answer.
+const CANDIDATE_LIMIT = 6;
 const PROBE = { messages: [{ role: 'user', content: 'Reply with the single word OK.' }], max_tokens: 4, temperature: 0 };
-const READY = 'READY';
 
-const isReady = (endpoint) => String(endpoint.state && typeof endpoint.state === 'object' ? endpoint.state.ready : endpoint.state).toUpperCase() === READY;
 const grantCommand = (id, principal) => `databricks api patch /api/2.0/permissions/serving-endpoints/${id} --json '{"access_control_list":[{"service_principal_name":"${principal}","permission_level":"CAN_QUERY"}]}'`;
 
 function permissionFor(principal, denied) {
@@ -28,21 +27,32 @@ function permissionFor(principal, denied) {
   });
 }
 
+// The Unity Gateway serves models the agent can also pick (the roster includes its routes). A gateway that lists a model means the
+// run is not blocked by the serving endpoints alone.
+const GATEWAY_MODELS = '/ai-gateway/codex/v1/models';
+async function gatewayServes(call) {
+  const listed = await call('GET', GATEWAY_MODELS);
+  return listed.ok && ((listed.data.models || []).length + (listed.data.data || []).length) > 0;
+}
+
 // `call(method, path, body)` resolves to { ok, status, data }, the shape jsonOf gives. Returns null when the run may start.
 async function modelAccessPermission({ call, principal }) {
   const listed = await call('GET', '/api/2.0/serving-endpoints');
-  if (listed.status === 403) return permissionFor(principal, []);
-  if (!listed.ok) return null;
-  const candidates = (listed.data.endpoints || []).filter((e) => e && e.name && e.task === CHAT_TASK && isReady(e)).slice(0, CANDIDATE_LIMIT);
-  if (!candidates.length) return permissionFor(principal, []);
+  if (!listed.ok && listed.status !== 403) return null;
+  const endpoints = listed.ok ? listed.data.endpoints || [] : [];
+  const byName = new Map(endpoints.filter((e) => e && e.name).map((e) => [e.name, e]));
+  const candidates = rosterOrder(endpoints).slice(0, CANDIDATE_LIMIT).map((name) => byName.get(name));
   const denied = [];
+  let inconclusive = false;
   for (const endpoint of candidates) {
     const probe = await call('POST', `/serving-endpoints/${encodeURIComponent(endpoint.name)}/invocations`, PROBE);
     if (probe.ok) return null;
-    if (probe.status !== 403) return null;
-    denied.push(endpoint);
+    if (probe.status === 403) denied.push(endpoint);
+    else inconclusive = true;
   }
+  if (inconclusive) return null;
+  if (await gatewayServes(call)) return null;
   return permissionFor(principal, denied);
 }
 
-module.exports = { modelAccessPermission, CHAT_TASK, CANDIDATE_LIMIT };
+module.exports = { modelAccessPermission, CANDIDATE_LIMIT };

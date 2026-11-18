@@ -310,6 +310,9 @@ async function stubFetch(url, opts = {}) {
     return json({ tables: names.map((name) => ({ name })) });
   }
   if (u.pathname === '/api/2.0/sql/statements') return json(answerSql(body));
+  // REQ-405: the launch check probes a chat model the App can query; state.modelDenied refuses every probe, as a workspace does when the App lacks CAN_QUERY.
+  if (u.pathname === '/api/2.0/serving-endpoints') return json({ endpoints: [{ name: 'databricks-claude-sonnet-4-6', id: 'ep-claude-46', task: 'llm/v1/chat', state: { ready: 'READY' } }] });
+  if (/^\/serving-endpoints\/[^/]+\/invocations$/.test(u.pathname)) return state.modelDenied ? json({ error_code: 'PERMISSION_DENIED', message: 'the App cannot query this endpoint' }, 403) : json({ choices: [{ message: { content: 'OK' } }] });
   if (u.pathname === '/api/2.0/workspace/import') return json({ message: 'stubbed import refused' }, 400);
   if (u.pathname === '/api/2.0/workspace/export' && state.exportDenied) return json({ error_code: 'PERMISSION_DENIED', message: 'raw workspace detail' }, 403);
   const file = u.pathname.startsWith('/api/2.0/fs/files/') ? decodeURIComponent(u.pathname.slice('/api/2.0/fs/files'.length)) : '';

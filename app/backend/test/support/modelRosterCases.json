@@ -1,0 +1,128 @@
+{
+  "endpoints": [
+    {
+      "name": "databricks-claude-sonnet-4-5",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      }
+    },
+    {
+      "name": "databricks-claude-sonnet-4-6",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      }
+    },
+    {
+      "name": "databricks-claude-opus-4-6",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      }
+    },
+    {
+      "name": "databricks-claude-haiku-4-5",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      }
+    },
+    {
+      "name": "databricks-meta-llama-3-3-70b-instruct",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      }
+    },
+    {
+      "name": "databricks-gpt-oss-120b",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      }
+    },
+    {
+      "name": "databricks-gpt-oss-20b",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      }
+    },
+    {
+      "name": "databricks-bge-large-en",
+      "task": "llm/v1/embeddings",
+      "state": {
+        "ready": "READY"
+      }
+    },
+    {
+      "name": "databricks-claude-sonnet-4-7",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "NOT_READY"
+      }
+    },
+    {
+      "name": "acme-reasoning-pt",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      },
+      "config": {
+        "served_entities": [
+          {
+            "foundation_model": {
+              "name": "claude-sonnet-4-6"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "acme-empty",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      },
+      "config": {
+        "served_entities": []
+      }
+    },
+    {
+      "name": "acme-external-claude",
+      "task": "llm/v1/chat",
+      "state": {
+        "ready": "READY"
+      },
+      "config": {
+        "served_entities": [
+          {
+            "external_model": {
+              "name": "claude-haiku-4-5"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "acme-vision",
+      "task": "llm/v1/completions",
+      "state": {
+        "ready": "READY"
+      }
+    }
+  ],
+  "expected": [
+    "databricks-claude-opus-4-6",
+    "databricks-claude-sonnet-4-6",
+    "acme-reasoning-pt",
+    "databricks-claude-sonnet-4-5",
+    "databricks-claude-haiku-4-5",
+    "acme-external-claude",
+    "databricks-meta-llama-3-3-70b-instruct",
+    "databricks-gpt-oss-120b",
+    "databricks-gpt-oss-20b"
+  ],
+  "note": "expected = the bundled notebook own family functions (model_endpoints_to_grant) on these endpoints, generated with the installer test extractor"
+}
