@@ -139,6 +139,8 @@ async function jsonOf(dbFetch, host, token, path, opts = {}) {
 }
 
 function registerImplementRoutes(app, deps) {
+  // REQ-354 follow-up: one delete per Uninstall all run's own build job, per running App (see I.settleUninstallRunJob).
+  const uninstallJobCache = new Map();
   const {
     installedRuns = { startToken: async (token) => token, runToken: async (host, token) => token, jobToken: async (token) => token },
     requireToken,
@@ -1888,17 +1890,29 @@ function registerImplementRoutes(app, deps) {
     const held = history[0] && history[0].status === I.IMPLEMENT_VIBE_NOT_MET ? history[0].spec_version : null;
     const appUpdate = history[0] ? I.appShellUpdate(history, buildStamp()) : null;
     const builtBy = I.implementBuildRunId(history[0]);
-    const [appInfo, runInfo, stalled, person, buildRun] = await Promise.all([
+    const uninstallRun = I.uninstallRunId(history[0]);
+    // The sixth entry is the built-run read that was never bound before this change (left as it was); the seventh is the uninstall run.
+    const [appInfo, runInfo, stalled, person, buildRun, , uninstallRunInfo] = await Promise.all([
       appName ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.0/apps/${encodeURIComponent(appName)}`) : null,
       jobId ? jsonOf(dbFetch, req.dbHost, await installedRuns.jobToken(req.dbToken, jobId), `/api/2.1/jobs/runs/list?job_id=${jobId}&limit=10`) : null,
       stalledOf(req, history[0]),
       held == null && !appUpdate ? null : personOf(req),
       latestRunsOf(req, warehouseId, [history[0]], () => history),
       builtBy ? jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, builtBy, ledgerJobIdOf(req, warehouseOf(req))), `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
+      uninstallRun ? jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, uninstallRun, ledgerJobIdOf(req, warehouseOf(req))), `/api/2.1/jobs/runs/get?run_id=${uninstallRun}`).catch(() => null) : null,
     ]);
     if (history[0]) {
       history[0].app_update = appUpdate && !I.appShellUpdateRefusal(history, { rollback_outputs: { app: appUpdate.version } }, person.username) ? appUpdate : null;
     }
+    // REQ-354 follow-up: once the Uninstall all run is TERMINATED, its own build job is deleted; a refusal is the one line on the card.
+    const selfJob = history[0] && uninstallRun ? await I.settleUninstallRunJob({
+      row: history[0],
+      run: uninstallRunInfo && uninstallRunInfo.ok ? uninstallRunInfo.data : null,
+      remove: async (jobId) => jsonOf(dbFetch, req.dbHost, await installedRuns.jobToken(req.dbToken, jobId), '/api/2.2/jobs/delete',
+        { method: 'POST', body: jsonWithInt64Ids({ job_id: jobId }, ['job_id']) }),
+      cache: uninstallJobCache,
+    }) : null;
+    if (selfJob && selfJob.message) history[0].status_message = selfJob.message;
     const listedNone = runInfo && runInfo.ok && !(Array.isArray(runInfo.data && runInfo.data.runs) && runInfo.data.runs.length);
     const jobInfo = listedNone ? await jsonOf(dbFetch, req.dbHost, await installedRuns.jobToken(req.dbToken, jobId), `/api/2.1/jobs/get?job_id=${jobId}`) : null;
     const body = {

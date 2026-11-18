@@ -4066,8 +4066,40 @@ function opensAppSentence(principal, appName = '') {
     : `People in ${p} open the App${app} and read its data with their own access, so they need these grants.`;
 }
 
+// REQ-354 follow-up: an Uninstall all run deletes its own build job after the run ends. The notebook cannot delete it (the job is the
+// run that is executing), so the App does it once the run reads TERMINATED. `cache` is a Map the caller keeps: one delete per job, so
+// repeated status reads never delete twice, and a failure is remembered in the same way.
+function uninstallRunId(row) {
+  const runId = str(row && row.implement_run_id);
+  return isPlainObject(row && row.spec_json) && row.spec_json.uninstall === true && /^\d{1,19}$/.test(runId) ? runId : null;
+}
+
+async function removeBuildJob(jobId, remove) {
+  try {
+    const got = await remove(jobId);
+    if (got.ok || got.status === 404) return { state: 'deleted', job_id: jobId, message: '' };
+    const reason = str(got.data && (got.data.message || got.data.error_code)) || `HTTP ${got.status}`;
+    return { state: 'failed', job_id: jobId, message: `build job ${jobId} of this uninstall could not be deleted (${reason}), so it stays in Jobs; delete it there.` };
+  } catch (err) {
+    return { state: 'failed', job_id: jobId, message: `build job ${jobId} of this uninstall could not be deleted (${str(err && err.message)}), so it stays in Jobs; delete it there.` };
+  }
+}
+
+// Returns null while the uninstall run is not TERMINATED or is not an uninstall; otherwise { state, job_id, message }.
+async function settleUninstallRunJob({ row, run, remove, cache }) {
+  if (!uninstallRunId(row) || !run || str(run.state && run.state.life_cycle_state) !== 'TERMINATED') return null;
+  const jobId = str(run.job_id);
+  if (!/^\d{1,19}$/.test(jobId)) {
+    return { state: 'unknown', job_id: null, message: 'Inspire could not read the build job of this uninstall run, so it stays in Jobs; delete it there.' };
+  }
+  if (!cache.has(jobId)) cache.set(jobId, removeBuildJob(jobId, remove));
+  return cache.get(jobId);
+}
+
 module.exports = {
   opensAppSentence,
+  uninstallRunId,
+  settleUninstallRunJob,
   tableTypeStatement,
   implementJobName,
   IMPLEMENT_RUN_STARTED_MESSAGE,

@@ -61,6 +61,7 @@ def _not_done_space():
 
 def _locked(ns, previous_outputs=None, responder=None):
     inst = _probe_inspire(ns, responder or (lambda statement: []), {})
+    inst.implement_table = ""  # set by the notebook's __init__ on every run; empty here means no launch-record lookup (REQ-354)
     previous = dict(VALID, outputs={**ALL, **(previous_outputs or {})})
     inst._implement_previous = lambda target: {"spec_version": 2, "spec_json": previous}
     inst._implement_carried = lambda target: (dict(BUILT), _left_by(2, json.loads(json.dumps(LIVE))))

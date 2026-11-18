@@ -41,6 +41,7 @@ class _Jobs:
 def _inst(agent_ns, jobs):
     inst, _previous = _locked(agent_ns)
     inst._implement_api = jobs
+    inst.implement_table = ""  # no implement table in this harness: the launch-record lookup is empty, as when implement is off
     return inst
 
 
@@ -96,12 +97,13 @@ def test_the_job_running_this_uninstall_is_named_as_a_note_and_never_deleted(age
     warnings, notes = inst._implement_delete_build_jobs((SESSION, UC, 4))
     assert jobs.deleted == [11], "deleting the job that runs this uninstall would stop it"
     assert warnings == []
-    assert notes == ["build job 12 (v4) runs this uninstall, so it stays until the run ends; delete it in Jobs then."]
+    assert notes == ["build job 12 (v4) runs this uninstall, so it stays until the run ends; the App deletes it when it next reads this build."]
 
 
 def test_uninstall_all_deletes_the_build_jobs_and_says_so_in_the_done_message(agent_ns):
     jobs = _Jobs([[_job(31, 1), _job(32, 2), _job(33, 3, uc="N02-U01")]])
     inst, previous = _locked(agent_ns)
+    inst.implement_table = ""
     inst._implement_api = _with_app(jobs)
     inst._implement_carried = lambda target: (dict(BUILT), _left_by_two())
     inst._implement_mvp_dirs = lambda uc, key: {"use_case": "/W/impl/N01", "mvp": "/W/impl/N01/mvp", "version": f"/W/impl/N01/mvp/v{key[2]}"}
@@ -131,6 +133,7 @@ def _left_by_two():
 def test_uninstall_all_still_deletes_the_session_job_it_always_deleted(agent_ns):
     jobs = _Jobs([[_job(31, 1)]])
     inst, previous = _locked(agent_ns)
+    inst.implement_table = ""
     inst._implement_api = _with_app(jobs)
     inst._implement_carried = lambda target: (dict(BUILT), _left_by_two())
     inst._implement_mvp_dirs = lambda uc, key: {"use_case": "/W/impl/N01", "mvp": "/W/impl/N01/mvp", "version": f"/W/impl/N01/mvp/v{key[2]}"}
@@ -155,3 +158,106 @@ def test_a_job_list_the_app_cannot_read_is_reported_and_the_rest_of_the_uninstal
     warnings, notes = inst._implement_delete_build_jobs((SESSION, UC, 4))
     assert notes == [] and jobs.deleted == []
     assert len(warnings) == 1 and warnings[0].startswith("Inspire could not list the build jobs of this use case") and "PERMISSION_DENIED" in warnings[0]
+
+
+def _untagged(job_id, name):
+    return {"job_id": job_id, "settings": {"name": name}}
+
+
+def test_a_job_started_before_the_tags_is_found_through_the_launch_record_and_deleted(agent_ns):
+    jobs = _Jobs([[_untagged(22, "Inspire AI - MVP - N01-U01 - v2"), _job(11, 1)]])
+    inst = _inst(agent_ns, jobs)
+    inst._implement_build_run_jobs = lambda key: ({2: 22}, set())
+    warnings, notes = inst._implement_delete_build_jobs((SESSION, UC, 4))
+    assert warnings == [] and notes == []
+    assert sorted(jobs.deleted) == [11, 22], "the untagged job is found by its run in the launch record, not by its name"
+
+
+def test_runs_without_a_launch_record_are_counted_in_the_done_note_and_their_jobs_are_left(agent_ns):
+    jobs = _Jobs([[_job(11, 1)]])
+    inst = _inst(agent_ns, jobs)
+    inst._implement_build_run_jobs = lambda key: ({}, {3})
+    warnings, notes = inst._implement_delete_build_jobs((SESSION, UC, 4))
+    assert warnings == [] and jobs.deleted == [11]
+    assert notes == ["1 build run of this use case (v3) started before Inspire recorded their launches, so their jobs could not be found "
+                     "and stay in Jobs."]
+
+
+def test_an_unreadable_launch_record_is_reported_and_tagged_jobs_are_still_deleted(agent_ns):
+    jobs = _Jobs([[_job(11, 1)]])
+    inst = _inst(agent_ns, jobs)
+
+    def unreadable(key):
+        raise RuntimeError("PERMISSION_DENIED: cannot read __inspire_launch")
+
+    inst._implement_build_run_jobs = unreadable
+    warnings, _notes = inst._implement_delete_build_jobs((SESSION, UC, 4))
+    assert jobs.deleted == [11]
+    assert len(warnings) == 1 and warnings[0].startswith("Inspire could not read the launch record") and "PERMISSION_DENIED" in warnings[0]
+
+
+def _kept(inst_ns_key_versions):
+    return {"kept": {"state": "kept", "assets": [{"output": "dashboard", "id": f"d{v}", "version": v} for v in inst_ns_key_versions]}}
+
+
+def test_remove_kept_deletes_the_build_job_of_a_kept_version_whose_outputs_are_all_removed(agent_ns):
+    jobs = _Jobs([[_job(11, 1), _job(12, 2)]])
+    inst = _inst(agent_ns, jobs)
+    inst._implement_build_run_jobs = lambda key: ({}, set())
+    inst._implement_delete_output = lambda output, asset_id, key, **kw: {"warnings": [], "refused": False, "grants_left": None}
+    status = _kept([1, 2])
+    warnings = inst._implement_remove_kept((SESSION, UC, 4), status, [2], {})
+    assert warnings == []
+    assert jobs.deleted == [12], "v2's job goes with its outputs; v1 is still kept, so its job stays"
+    assert [a["version"] for a in status["kept"]["assets"]] == [1]
+
+
+def test_remove_kept_leaves_the_job_of_a_version_that_still_has_a_kept_output(agent_ns):
+    jobs = _Jobs([[_job(12, 2)]])
+    inst = _inst(agent_ns, jobs)
+    inst._implement_build_run_jobs = lambda key: ({}, set())
+    inst._implement_delete_output = lambda output, asset_id, key, **kw: {"warnings": [], "refused": output == "dashboard", "grants_left": None}
+    status = _kept([2])
+    inst._implement_remove_kept((SESSION, UC, 4), status, [2], {})
+    assert jobs.deleted == [], "a refused output keeps its version, so the version's job stays too"
+
+
+def test_uninstall_sweeps_kept_versions_once_so_remove_kept_with_no_versions_deletes_no_jobs(agent_ns):
+    jobs = _Jobs([[_job(12, 2)]])
+    inst = _inst(agent_ns, jobs)
+    inst._implement_build_run_jobs = lambda key: ({}, set())
+    inst._implement_delete_output = lambda output, asset_id, key, **kw: {"warnings": [], "refused": False, "grants_left": None}
+    inst._implement_remove_kept((SESSION, UC, 4), _kept([2]), None, {})
+    assert jobs.deleted == [], "Uninstall all's own sweep deletes it, once"
+
+
+class _Rows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def collect(self):
+        return self.rows
+
+
+class _Spark:
+    def __init__(self, answers):
+        self.answers, self.statements = answers, []
+
+    def sql(self, statement, args=None):
+        self.statements.append((statement, args))
+        for needle, rows in self.answers:
+            if needle in statement:
+                return _Rows(rows)
+        return _Rows([])
+
+
+def test_the_launch_record_lookup_joins_each_run_to_its_job_for_this_session_and_implement_runs_only(agent_ns):
+    inst, _previous = _locked(agent_ns)
+    inst.implement_table = "main.inspire.__inspire_implement"
+    inst.spark = _Spark([("__inspire_implement", [{"version": 2, "run": "700"}, {"version": 3, "run": "800"}]),
+                         ("__inspire_launch", [{"run": "700", "job": 22}])])
+    recorded, unrecorded = inst._implement_build_run_jobs((SESSION, UC, 4))
+    assert recorded == {2: 22} and unrecorded == {3}
+    launch_sql = [st for st, _a in inst.spark.statements if "__inspire_launch" in st]
+    assert launch_sql and "main.inspire.__inspire_launch" in launch_sql[0]
+    assert "run_type = 'implement'" in launch_sql[0] and "session_id = :sid" in launch_sql[0]
