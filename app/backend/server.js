@@ -63,6 +63,7 @@ const { LIVE_STEP_STATUSES, liveDomainsOf, liveUseCasesOf } = require('../fronte
 const { isInspireOwnName, isInspireOwnSchema } = require('../frontend/src/lib/inspireOwnObjects.js');
 const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('./lib/runSummary');
 const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
+const { modelAccessPermission } = require('./lib/modelAccess');
 const { createInstalledRuns } = require('./lib/runAsRuns');
 const PM_ERROR = require('./lib/permissionError');
 const { apiRefusalText, logApiBody } = require('./lib/apiRefusal');
@@ -2326,9 +2327,9 @@ app.post('/api/demo-data/start', requireToken, async (req, res) => {
 app.post('/api/run/check', requireToken, async (req, res) => {
   try {
     const params = (req.body && req.body.params && typeof req.body.params === 'object') ? { ...req.body.params } : {};
-    const { reads, access } = await checkLaunchReads(req, params);
+    const { reads, access, model } = await checkLaunchReads(req, params);
     if (reads.refusal) return PM_ERROR.sendFailure(res, reads.refusal.status, reads.refusal.message, { unreadable: reads.refusal.unreadable });
-    res.json({ permissions: access.permissions, warnings: access.warnings });
+    res.json({ permissions: [...model, ...access.permissions], warnings: access.warnings });
   } catch (err) {
     const code = err.statusCode && Number.isFinite(err.statusCode) ? err.statusCode : 500;
     PM_ERROR.sendFailure(res, code, err.message);
@@ -2449,11 +2450,33 @@ app.post('/api/documents', requireToken, async (req, res) => {
 
 // The read and access checks a launch or a check runs before any job exists. Both are bounded (raceLaunchCheck), so a
 // schema pick whose tables the warehouse never lists ends with a reason, not a request held open forever.
+// REQ-405: the identity a run uses (the App's service principal, or the signed-in person in run-as-me) must be able to query a chat model.
+// The check is lib/modelAccess.js; the App does not wait for the agent to fail with no_model.
+const MODEL_ACCESS_BLOCK = 'Inspire cannot start a run yet: the identity the run uses cannot query a chat model. '
+  + 'Ask a workspace admin for the permission in Permission Required, then run again.';
+
+async function discoverModelAccess(req) {
+  const runAs = runAsPerson();
+  const token = runAs ? personTokenOf(req) : await appOwnToken();
+  const principal = runAs ? RP.forwardedPerson(req.headers) : SP_CLIENT_ID;
+  if (!token || !principal) return [];
+  const call = (method, path, body) => jsonOf(dbFetch, req.dbHost, token, path,
+    body === undefined ? { method } : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const permission = await modelAccessPermission({ call, principal });
+    return permission ? [permission] : [];
+  } catch (err) {
+    console.warn(`model access check: ${err.message || err}`);
+    return [];
+  }
+}
+
 async function checkLaunchReads(req, params) {
   return raceLaunchCheck((async () => {
     const reads = await runReadPlan(dbFetch, req, discoverReads(params));
     const access = reads.refusal ? { permissions: [], warnings: [] } : await discoverAppAccess(req, reads.scope || params['01_uc_metadata']);
-    return { reads, access };
+    const model = await discoverModelAccess(req);
+    return { reads, access, model };
   })());
 }
 
@@ -2461,8 +2484,9 @@ async function launchDiscover(req, res, { params, notebook_path, cluster_id, pro
   try {
     const refused = LC.launchParamsProblem(params) || await launchSessionProblem(req, params);
     if (refused) return res.status(403).json(RP.refusalBody(req.policyKey, 'launcher', `${refused}.`));
-    const { reads, access } = await checkLaunchReads(req, params);
+    const { reads, access, model } = await checkLaunchReads(req, params);
     if (reads.refusal) return PM_ERROR.sendFailure(res, reads.refusal.status, reads.refusal.message, { unreadable: reads.refusal.unreadable });
+    if (model.length) return PM_ERROR.sendFailure(res, 403, MODEL_ACCESS_BLOCK, { permissions: model });
     if (reads.scope) params['01_uc_metadata'] = reads.scope;
     const out = await triggerInspireNotebookJob(req.dbHost, req.dbToken, {
       params,

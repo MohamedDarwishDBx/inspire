@@ -1015,7 +1015,8 @@ def step_schema_and_notebooks(ctx):
                                    "its own scopes: the Run tab cannot show pages Inside Inspire, and an App it builds may refuse a settings "
                                    "change sent from Inspire")
         print(f"  ⚠️ {ctx['USER_SCOPES_NOTE']}")
-    ctx["GENIE_CODE_SUMMARY"] = genie_code_install_check(api, base64.b64decode(b64).decode("utf-8"), ctx.get("USER_EMAIL") or "you")
+    ctx["AGENT_NOTEBOOK_TEXT"] = base64.b64decode(b64).decode("utf-8")
+    ctx["GENIE_CODE_SUMMARY"] = genie_code_install_check(api, ctx["AGENT_NOTEBOOK_TEXT"], ctx.get("USER_EMAIL") or "you")
     print(f"Genie Code: {ctx['GENIE_CODE_SUMMARY']}")
     try:
         ctx["LAKEBASE"] = agent_lakebase(base64.b64decode(b64).decode("utf-8"))
@@ -1804,6 +1805,72 @@ def _schema_mode_access(ctx):
                            "Then run this installer again.")
 
 
+# REQ-405: the App's service principal runs Discover, so it must be able to query the chat model the agent would pick. The installer
+# runs the agent's own family matching (LLM_FAMILY_SPECS and the family functions in the bundled notebook), so the two never disagree.
+MODEL_ACCESS_CONSTANTS = ("LLM_FAMILY_SPECS", "_AI_QUERY_TEXT_TASKS")
+MODEL_ACCESS_FUNCTIONS = ("_llm_endpoint_version", "_served_model_names", "_endpoint_family_name", "_endpoint_ai_query_exclusion",
+                          "_family_endpoints")
+
+
+def agent_model_matching(notebook_text):
+    import ast
+    import json as _json
+    import re as _re
+    cells = _json.loads(notebook_text).get("cells") or []
+    source = cells[1].get("source") if len(cells) > 1 else ""
+    source = "".join(source) if isinstance(source, list) else str(source or "")
+    wanted = set(MODEL_ACCESS_CONSTANTS) | set(MODEL_ACCESS_FUNCTIONS)
+    body = [node for node in ast.parse(source).body
+            if (isinstance(node, ast.FunctionDef) and node.name in wanted)
+            or (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id in wanted)]
+    found = {getattr(node, "name", None) or node.targets[0].id for node in body}
+    missing = sorted(wanted - found)
+    if missing:
+        raise ValueError(f"the bundled agent notebook defines no {', '.join(missing)}")
+    namespace = {"re": _re}
+    exec(compile(ast.Module(body=body, type_ignores=[]), "<bundled agent notebook>", "exec"), namespace)
+    return namespace
+
+
+def model_endpoints_to_grant(endpoints, matching):
+    """The newest endpoint of each family, in the agent's own family order: the model the agent's roster starts from."""
+    seen, picks = set(), []
+    for spec in matching["LLM_FAMILY_SPECS"]:
+        members = matching["_family_endpoints"](endpoints, spec[0], spec[1], seen)
+        seen.update(name for name, _version in members)
+        picks.extend(name for name, _version in members[:1])
+    return list(dict.fromkeys(picks))
+
+
+def grant_model_access(api, w, sp, notebook_text):
+    """CAN_QUERY for the App's service principal on the chat model endpoints the agent would pick. Returns the lines the install prints."""
+    try:
+        matching = agent_model_matching(notebook_text)
+    except Exception as exc:
+        return [f"⚠️ not granted: the bundled agent notebook does not say which models Inspire uses ({_error_words(exc)}); the App needs CAN_QUERY on a chat model"]
+    try:
+        endpoints = list(w.serving_endpoints.list())
+    except Exception as exc:
+        return [f"⚠️ not granted: the installer could not list the serving endpoints ({_error_words(exc)}); the App needs CAN_QUERY on a chat model"]
+    by_name = {ep.name: ep for ep in endpoints if getattr(ep, "name", None)}
+    picks = model_endpoints_to_grant(endpoints, matching)
+    if not picks:
+        return ["⚠️ not granted: no chat model endpoint is listed for the installer, so the App gets no model access from this install; "
+                "a workspace admin grants CAN_QUERY on a chat model to the App's service principal, or the App shows Permission Required"]
+    lines = []
+    for name in picks:
+        endpoint_id = getattr(by_name.get(name), "id", None)
+        if not endpoint_id:
+            lines.append(f"  ⚠️ {name}: not granted (the endpoint has no id to grant on)")
+            continue
+        resp = api("PATCH", f"/api/2.0/permissions/serving-endpoints/{endpoint_id}",
+                   {"access_control_list": [{"service_principal_name": sp, "permission_level": "CAN_QUERY"}]})
+        lines.append(f"  {name}: CAN_QUERY for the App's service principal ✅" if resp.status_code == 200
+                     else f"  ⚠️ {name}: CAN_QUERY not granted ({resp.status_code} {resp.text[:100]}); the App shows Permission Required until an admin grants it")
+    return [f"Model access for the App ({_plural(len(picks), 'endpoint')}):"] + lines
+
+
 def step_grant_permissions(ctx):
     if ctx.get("SCHEMA_MODE"):
         return _schema_mode_access(ctx)
@@ -1876,6 +1943,8 @@ def step_grant_permissions(ctx):
         print(f"  {_app_folder_access(api, ctx['APP_FOLDER'], sp)}")
         print(f"  {_assets_folder_access(api, ctx.get('ASSETS_PATH'), sp, ctx['ASSETS_PARENT'])}")
         _run_job_access(api, sp, ctx.get("JOB_IDS") or {})
+        for line in grant_model_access(api, w, sp, ctx.get("AGENT_NOTEBOOK_TEXT") or ""):
+            print(line)
         shared_ok, shared_said = _shared_output_access(api, ctx["NOTEBOOK_PATH"], sp)
         print(f"  {'' if shared_ok else '⚠️ '}{shared_said}")
         _grant_data_catalogs(ctx, sp)
