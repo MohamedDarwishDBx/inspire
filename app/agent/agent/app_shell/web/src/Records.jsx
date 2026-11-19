@@ -39,6 +39,7 @@ import { recordName, recordSentenceName,
   REOPEN, REOPEN_ASK, REOPENED, REOPENED_SAID, needsReopen, UNASSIGN, UNASSIGN_VALUES, UNASSIGNED_SAID,
 } from './records.js';
 import { SectionHelp } from './SectionHelp.jsx';
+import { approvalValues, isAwaitingApproval } from './records.js';
 import { ClusterBar, useChoices } from './KindParts.jsx';
 
 const tierClass = (t) => `tier tier--${String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
@@ -908,6 +909,14 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     if (!cursorKey) return;
     card.current?.querySelector('tr.is-cursor')?.scrollIntoView({ block: 'nearest' });
   }, [cursorKey]);
+  // REQ-414 part B: Reject asks for the reason first; an empty reason writes nothing.
+  const rejectRow = (row, name) => {
+    const reason = window.prompt(`Why reject ${name}? Give the reason.`);
+    if (reason === null) return;
+    const values = approvalValues('reject', reason);
+    if (values.error) { window.alert(values.error); return; }
+    quick(row, values, 'Rejected', `reject:${recordKeyOf(row)}`);
+  };
   const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
   const hosted = meta.sublabel && meta.sublabel !== meta.label ? { [meta.label]: [meta.sublabel] } : {};
   const metas = (columnMeta || []).flatMap((f) => (!f.action ? [f] : !tracker || (tab && f.column === 'action_status') ? []
@@ -995,6 +1004,14 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
             {String(r._inspire_owner || '').trim() && (
               <SaveButton write={`unassign:${keyOf(r)}`} className="btn btn--sm" data-row-unassign onClick={stop(() => quick(r, UNASSIGN_VALUES, UNASSIGNED_SAID, `unassign:${keyOf(r)}`))}
                 aria-label={`${UNASSIGN} ${name}`}>{UNASSIGN}</SaveButton>
+            )}
+            {isAwaitingApproval(r) && (
+              <>
+                <SaveButton write={`approve:${keyOf(r)}`} className="btn btn--sm btn--pri" data-row-approve
+                  onClick={stop(() => quick(r, approvalValues('approve'), 'Approved', `approve:${keyOf(r)}`))} aria-label={`Approve ${name}`}>Approve</SaveButton>
+                <button type="button" className="btn btn--sm" data-row-reject onClick={stop(() => rejectRow(r, name))}
+                  aria-label={`Reject ${name}`}>Reject</button>
+              </>
             )}
             {closingChoices(choices).filter((c) => c.id !== now).map((c) => {
               const label = isDefaultChoice(c) ? QUICK_CLOSE[statusKind(c.status)]?.[0] || c.label : c.label;

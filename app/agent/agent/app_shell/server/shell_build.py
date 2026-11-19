@@ -8,6 +8,8 @@ an approval step: nothing is acted on until its row is approved). Every path rea
 This module is pure: it builds request bodies and decides which path runs. The notebook makes the calls, through an `api` object
 with a `do(method, path, body=None, query=None)` method (the SDK's api_client), so the tests drive it with a stub.
 """
+
+import re
 SUPERVISOR_AGENTS_PATH = "/api/2.1/supervisor-agents"
 SUPERVISOR_TOOL_PATH = "/api/2.1/supervisor-agents/{supervisor_id}/tools"
 SUPERVISOR_AGENT_PATH = "/api/2.1/supervisor-agents/{supervisor_id}"
@@ -245,6 +247,71 @@ def run_build_paths(api, plan: dict, ask, log) -> dict:
     if path == "ai_query":
         return {"path": path, "records": [], "result": None}
     raise ValueError(f"no build path {path!r}")
+
+
+def plan_for(path: str, kind: str, name: str, space: str, question: str, result_table: str, text_column: str = "",
+             endpoint: str = "") -> tuple:
+    """(plan, skip reason) for one build path. A path without the input it needs is skipped with the reason named."""
+    plan = {"path": path, "kind": kind, "name": name, "genie_space_ids": [space] if space else [], "question": question}
+    if path in ("supervisor", "orchestrator_job") and not space:
+        return None, f"the {path} path is skipped: this build has no Genie space to route to"
+    if path == "vector_index":
+        if not text_column:
+            return None, "the AI Search index is skipped: this build names no text column to embed"
+        plan["index_spec"] = index_spec(name, endpoint, result_table, "_id", text_column)
+    if path == "agent_job":
+        table = f"{result_table}_approval"
+        plan["lakebase_table"] = table
+        plan["job_spec"] = agent_job_spec(name, "", f"SELECT * FROM {result_table}", table)
+    return plan, ""
+
+
+def delete_records(api, records, is_not_found, redact) -> list:
+    """REQ-354: deletes what a build path created. A missing asset is silent (as for the job deletes); any other failure is reported
+    with its message, so the person can remove it by hand. Returns the warnings."""
+    try:
+        calls = uninstall_requests(records or [])
+    except ValueError as error:
+        return [f"Inspire could not list the build assets to delete: {redact(error)}"]
+    warnings = []
+    for method, path, body in calls:
+        try:
+            api.do(method, path, body=body)
+        except Exception as error:
+            if not is_not_found(error):
+                warnings.append(f"{method} {path} could not be deleted: {redact(error)}")
+    return warnings
+
+
+class BuildApi:
+    """The REST client the build paths call: `call(method, path, body, query)` is the App build's retried API helper."""
+
+    def __init__(self, call):
+        self.call = call
+
+    def do(self, method, path, body=None, query=None):
+        return self.call(method, path, body, query)
+
+
+def build_for_use_case(call, kind: str, status: dict, uc_id: str, space: str, question: str, result_table: str, text_column: str,
+                       endpoint: str, ask, log, quote, run_sql) -> dict:
+    """One use case's build: choose the path from the probe status, plan it, run it, and for the agent job add the approval columns
+    (`run_sql` executes the DDL on the App's Lakebase connection; None when the build has none). Returns the path and its records."""
+    path = choose_path(kind, status.get("supervisor_agents"), status.get("vector_search"))
+    if path in ("none", "ai_query"):
+        return {"path": path, "records": []}
+    name = "inspire_" + re.sub(r"[^a-z0-9_]+", "_", str(uc_id).lower()).strip("_")
+    plan, skipped = plan_for(path, kind, name, space, question, result_table, text_column, endpoint)
+    if plan is None:
+        log(f"[BUILD-PATH FIRED] {uc_id}: {skipped}")
+        return {"path": path, "records": []}
+    out = run_build_paths(BuildApi(call), plan, ask, log)
+    if path == "agent_job":
+        if run_sql is None:
+            log(f"[BUILD-PATH FIRED] {uc_id}: the approval columns were not added: this build has no Lakebase connection")
+        else:
+            run_sql(approval_ddl(plan["lakebase_table"], quote))
+    return {"path": path, "records": out["records"]}
 
 
 def fallback_sentence(path: str) -> str:
