@@ -20,13 +20,13 @@ const SEES = {
     schemas: { main: ['s', 'secret', 'information_schema'], hr: ['p'] },
     tables: { 'main.s': ['orders', 'returns', 'salaries_view'], 'main.secret': ['ledger'], 'hr.p': ['salaries'], 'main.information_schema': ['tables'] },
     browseOnly: { 'main.s': ['salaries_view'], 'main.secret': ['ledger'] },
-    files: ['/Users/pat/strategy.json', '/Volumes/main/s/v/strategy.json'],
+    files: ['/Shared/strategy.json', '/Volumes/main/s/v/strategy.json'],
   },
   [PERSON]: {
     catalogs: ['main'],
     schemas: { main: ['s', 'information_schema'] },
     tables: { 'main.s': ['orders', 'returns'], 'main.information_schema': ['tables'] },
-    files: ['/Users/pat/strategy.json', '/Volumes/main/s/v/strategy.json'],
+    files: ['/Shared/strategy.json', '/Volumes/main/s/v/strategy.json'],
   },
 };
 const done = (column, values) => [200, { status: { state: 'SUCCEEDED' }, manifest: { schema: { columns: [{ name: column }] } },
@@ -212,14 +212,14 @@ test('a strategy or use case file the App cannot read refuses the run, and one t
     assert.deepEqual(launched(workspace), []);
     const inline = await launch(url, { ...tables, '10_strategic_context': '{"levels": []}' });
     assert.equal(inline.status, 200, 'a strategy written in the box is not a file');
-    const mine = await launch(url, { ...tables, '10_strategic_context': '/Workspace/Users/pat/strategy.json' });
+    const mine = await launch(url, { ...tables, '10_strategic_context': '/Workspace/Shared/strategy.json' });
     assert.equal(mine.status, 200, JSON.stringify(mine.data));
     const volume = await launch(url, { ...tables, '10_strategic_context': '/Volumes/main/s/v/strategy.json' });
     assert.equal(volume.status, 200, JSON.stringify(volume.data));
     const checks = workspace.calls.filter((c) => /strategy|use_cases/.test(decodeURIComponent(c.path)));
     assert.deepEqual([...new Set(checks.map((c) => c.token))], [SP_TOKEN], 'every file check is the App’s');
     assert.ok(checks.some((c) => c.method === 'HEAD' && c.path === '/api/2.0/fs/files/Volumes/main/s/v/strategy.json'));
-    assert.ok(checks.some((c) => c.path === `/api/2.0/workspace/get-status?path=${encodeURIComponent('/Users/pat/strategy.json')}`));
+    assert.ok(checks.some((c) => c.path === `/api/2.0/workspace/get-status?path=${encodeURIComponent('/Shared/strategy.json')}`));
   });
 });
 

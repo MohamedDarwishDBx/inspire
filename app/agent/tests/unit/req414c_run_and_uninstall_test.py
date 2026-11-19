@@ -335,3 +335,40 @@ def test_the_page_shape_check_accepts_the_orchestrator_answers_key():
     base = shell_sql.shape_problems(page)
     with_answers = dict(page, orchestrator_answers=[{"space": "space-a", "answer": "Sales rose."}])
     assert shell_sql.shape_problems(with_answers) == base
+
+
+class _Row(dict):
+    def asDict(self):
+        return dict(self)
+
+
+class _Spark:
+    """Records the SQL; answers with one implement row whose asset_status holds a supervisor record."""
+
+    def __init__(self):
+        self.sql_text = []
+
+    def sql(self, text, args=None):
+        self.sql_text.append((text, args))
+        spark = self
+
+        class _Result:
+            def collect(self_inner):
+                return [_Row(session_id=7, use_case_id="N01-U01", spec_version=1,
+                             asset_status='{"records": [{"kind": "supervisor", "id": "sup-1"}]}')]
+        return _Result()
+
+
+def test_the_run_reader_reads_asset_status_from_the_implement_table_not_the_use_case_table(ns):
+    """Live W1 rc.2-d (11-19 14:27): every Agentic App publish failed with UNRESOLVED_COLUMN asset_status, because the reader
+    queried the use-case tracking table, which has no asset_status. The reader must use the implement table, through _implement_select."""
+    cls = ns["DatabricksInspire"]
+    obj = cls.__new__(cls)
+    obj.spark = _Spark()
+    obj.inspire_database = "cat.db"
+    obj._tracking_table_name = "cat.db.__inspire_usecases"
+    rows = obj._implement_run_asset_rows(7)
+    assert rows == [{"records": [{"kind": "supervisor", "id": "sup-1"}]}]
+    text, args = obj.spark.sql_text[0]
+    assert "__inspire_implement" in text and "__inspire_usecases" not in text
+    assert args == {"sid": 7}
