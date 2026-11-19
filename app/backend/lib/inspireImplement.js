@@ -2254,7 +2254,7 @@ function refuseUnchanged(plan) {
   }
 }
 
-function implementJobParams(baseParams, useCaseId, specVersion, inspireClientId = '', runAs = false) {
+function implementJobParams(baseParams, useCaseId, specVersion, inspireClientId = '') {
   return {
     ...baseParams,
     '15_operation': IMPLEMENT_OPERATION,
@@ -2262,7 +2262,6 @@ function implementJobParams(baseParams, useCaseId, specVersion, inspireClientId 
     [IMPLEMENT_USE_CASE_PARAM]: String(useCaseId),
     [IMPLEMENT_SPEC_VERSION_PARAM]: String(specVersion),
     [IMPLEMENT_INSPIRE_CLIENT_PARAM]: String(inspireClientId || ''),
-    [IMPLEMENT_RUN_AS_PARAM]: runAs ? '1' : '',
     [IMPLEMENT_RUN_ID_PARAM]: IMPLEMENT_RUN_ID_REFERENCE,
   };
 }
@@ -3257,6 +3256,7 @@ const IMPLEMENT_BELOW_CATALOG_VIEWS = [
 ];
 
 const IMPLEMENT_GRANT_NO_SIGN_IN = 'Inspire grants with your own sign-in, and this request carries none, so it grants nothing';
+const IMPLEMENT_APP_TOKEN_MISSING = 'Inspire has no credential for its App to read with, so it reads nothing; reload the App and try again';
 const IMPLEMENT_GRANT_KINDS = ['new_apps', 'source_tables'];
 
 function belowCatalogStatement(catalog) {
@@ -4412,6 +4412,7 @@ module.exports = {
   appAccessMessage,
   appAccessPermission,
   IMPLEMENT_GRANT_NO_SIGN_IN,
+  IMPLEMENT_APP_TOKEN_MISSING,
   IMPLEMENT_GRANT_KINDS,
   IMPLEMENT_REAL_GRANTS_SHOWN,
   belowCatalogStatement,

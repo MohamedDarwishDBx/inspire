@@ -95,7 +95,7 @@ test('the swap lookup keeps its own no-sign-in reason', () => {
   assert.equal(I.IMPLEMENT_SWAPS_NO_SIGN_IN, NO_SIGN_IN);
 });
 
-const { RUN_NO_SIGN_IN } = require('../lib/ucReads');
+const { RUN_NO_APP_TOKEN } = require('../lib/ucReads');
 const cannotRead = (names) => `You can't read ${names}. Pick tables and files you can read, or ask your data owner for access`; // file paths
 const tableCannotRead = () => "You can't read this source table. Pick tables you can read, or ask your data owner for access";
 const insertedSpec = (made) => JSON.parse(made.sqlCalls.find((c) => /^INSERT/.test(String(c.sql)) && String(c.sql).includes('__inspire_implement'))
@@ -138,7 +138,7 @@ test('an MVP build drops a secondary table the person cannot read, says so, and 
   });
   await withApp({ history: [], ...APP_ONLY }, async (url, made) => {
     const got = await call(url, '/api/inspire/implement/submit', { method: 'POST', body: { ...DB, spec: SPEC } });
-    assert.deepEqual([got.status, got.data], [401, { unreadable: [], error: RUN_NO_SIGN_IN }]);
+    assert.deepEqual([got.status, got.data], [401, { unreadable: [], error: RUN_NO_APP_TOKEN }]);
     ruleOut(made);
     assert.deepEqual(tableChecks(made), [], 'nothing is checked as the App');
   });
@@ -175,7 +175,7 @@ test('a Genie Code notebook run checks only the chosen use cases\u2019 tables, n
   });
   await withApp({ ucMetadata: 'main.s.orders', ...APP_ONLY }, async (url, made) => {
     const got = await generate(url);
-    assert.deepEqual([got.status, got.data], [401, { error: RUN_NO_SIGN_IN, unreadable: [] }]);
+    assert.deepEqual([got.status, got.data], [401, { error: RUN_NO_APP_TOKEN, unreadable: [] }]);
     assert.deepEqual([made.flagged, made.jobs], [[], []]);
   });
   await withApp({ ucMetadata: 'main.s.orders', readableTables: { [PERSON_TOKEN]: ['main.s.orders', 'main.s.returns'] } }, async (url, made) => {

@@ -112,6 +112,7 @@ import {
   pickedSummary,
   APP_ACCESS_CHOICES,
   APP_ACCESS_NOTE,
+  APP_ACCESS_POLICY_WHY,
   APP_BACKEND_CHOICES,
   LAKEBASE_CHECKING,
   appBackendOf,
@@ -593,7 +594,9 @@ export default function ImplementWizard({
     && !(isFirstRunSetting(s) && scope.firstRun)), [everySetting]);
   const profileRead = scopeProfile.state === 'ready';
   const settingsList = useMemo(() => settingsFor(scopeSteps, profileRead), [settingsFor, scopeSteps.grouping, scopeSteps.firstRun, profileRead]); // eslint-disable-line react-hooks/exhaustive-deps
-  const stepScope = useMemo(() => ({ ...scopeSteps, settings: settingsList.length > 0 }), [scopeSteps.grouping, scopeSteps.firstRun, settingsList.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // REQ-418: the identity choice shows for a source with a row filter or column mask, and under Advanced settings once the App is built (editing).
+  const policied = (context?.app_policy_tables || []).length > 0;
+  const stepScope = useMemo(() => ({ ...scopeSteps, settings: settingsList.length > 0, policied, editing: Boolean(context?.latest) }), [scopeSteps.grouping, scopeSteps.firstRun, settingsList.length, policied, context?.latest]); // eslint-disable-line react-hooks/exhaustive-deps
   const steps = wizardSteps(mode, spec, stepScope);
   const stepIndex = stepIndexOf(steps, step);
   const stepId = steps[stepIndex].id;
@@ -2153,11 +2156,14 @@ export default function ImplementWizard({
 
         {foldLine('app_access', 'Who sees which rows', ACCESS_SHORT[spec.outputs.app_access] || 'not picked yet')}
         {shows('app_access') && isOpenSection('app_access') && (
-          <AppAccessStep
-            spec={spec}
-            onAccess={(access) => setSpec((prev) => withAppAccess(prev, access))}
-            best={{ access: best.appAccess }}
-          />
+          steps[stepIndex].advanced.includes('app_access') ? (
+            <Advanced open={advanced.app_access} onToggle={() => toggleAdvanced('app_access')} what="who sees which rows in the App"
+              summary={`Who sees which rows: ${ACCESS_SHORT[spec.outputs.app_access] || 'not picked yet'}`}>
+              <AppAccessStep spec={spec} policied={policied} onAccess={(access) => setSpec((prev) => withAppAccess(prev, access))} best={{ access: best.appAccess }} />
+            </Advanced>
+          ) : (
+            <AppAccessStep spec={spec} policied={policied} onAccess={(access) => setSpec((prev) => withAppAccess(prev, access))} best={{ access: best.appAccess }} />
+          )
         )}
 
         {foldLine('app_storage', APP_STORAGE_LABEL, `Warehouse: ${spec.outputs.app_warehouse_id || spec.config.warehouse_id || 'not picked yet'}`)}
@@ -3076,7 +3082,7 @@ function AppWarehouseField({ spec, lakebase, warehouses, warehousesError, onWare
   );
 }
 
-function AppAccessStep({ spec, onAccess, best = {} }) {
+function AppAccessStep({ spec, policied = false, onAccess, best = {} }) {
   const access = spec.outputs.app_access;
   const inside = insideInspire(spec);
   return (
@@ -3084,7 +3090,7 @@ function AppAccessStep({ spec, onAccess, best = {} }) {
       <fieldset data-choice="app-access" className="space-y-2">
         <legend className="text-sm font-semibold text-text-primary">{APP_ACCESS_QUESTION}</legend>
         <p className="text-[11px] text-text-tertiary" {...(inside ? { role: 'note', 'aria-label': 'Why each person signs in as themselves' } : {})}>
-          {inside ? `${INSIDE_ACCESS_REASON}.` : APP_ACCESS_NOTE}
+          {inside ? `${INSIDE_ACCESS_REASON}.` : (policied ? APP_ACCESS_POLICY_WHY : APP_ACCESS_NOTE)}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           {APP_ACCESS_CHOICES.map((choice) => {

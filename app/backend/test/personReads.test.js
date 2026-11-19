@@ -8,7 +8,7 @@ const SP_TOKEN = 'sp-token';
 const PERSON = 'person-token';
 const PERSON_EMAIL = ['pat.lee', 'example.com'].join('@');
 const APP_ENV = { NODE_ENV: 'production', DATABRICKS_CLIENT_ID: 'inspire-client', DATABRICKS_CLIENT_SECRET: 'inspire-secret' };
-const { RUN_NO_SIGN_IN } = require('../lib/ucReads');
+const { RUN_NO_APP_TOKEN } = require('../lib/ucReads');
 const cannotRead = (names) => `You can't read ${names}. Pick tables and files you can read, or ask your data owner for access`; // file paths
 const tableCannotRead = () => "You can't read this source table. Pick tables you can read, or ask your data owner for access";
 const scopeOf = (workspace) => launched(workspace)[0].body.tasks[0].notebook_task.base_parameters['01_uc_metadata'];
@@ -214,7 +214,7 @@ test('a strategy or use case file the person cannot read refuses the run, and on
 test('with no forwarded person token no run starts, and a check the workspace cannot answer still starts the run and says what was not checked', async () => {
   await withInspire(async (url, workspace) => {
     const none = await launch(url, { '01_uc_metadata': 'main.s.orders' }, {});
-    assert.deepEqual([none.status, none.data], [401, { error: RUN_NO_SIGN_IN, unreadable: [] }]);
+    assert.deepEqual([none.status, none.data], [401, { error: RUN_NO_APP_TOKEN, unreadable: [] }]);
     assert.deepEqual(launched(workspace), []);
   });
   await withInspire(async (url, workspace) => {
@@ -238,7 +238,7 @@ test('the run reads are parsed as the agent parses UC Metadata and the strategic
   assert.equal(U.runUnreadableText(['a.b.c']), cannotRead('a.b.c'));
   assert.equal(U.skippedTablesText(many), "Skipped 13 tables you can't read.");
   assert.equal(U.skippedTablesDetail(many), `Tables you can't read: ${many.slice(0, 10).join(', ')} and 3 more`);
-  for (const text of [U.RUN_NO_SIGN_IN, U.WRITE_NO_SIGN_IN, U.runUnreadableText(['a.b.c'])]) {
+  for (const text of [U.RUN_NO_APP_TOKEN, U.WRITE_NO_SIGN_IN, U.runUnreadableText(['a.b.c'])]) {
     assert.ok(text.split(/\s+/).length <= 20, `${text} is at most 20 words`);
   }
 });

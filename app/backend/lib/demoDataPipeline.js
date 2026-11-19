@@ -9,8 +9,6 @@ const {
   inspireJobEnvironments,
   inspireJobTags,
   inspireTaskCompute,
-  runAsPerson,
-  launchPlanFor,
 } = require('./inspireJobParams');
 
 const { DEMO_GENERATED_TABLES, DEMO_KIND_SIGNAL_TABLES, demoSchemaError, demoTablesPlanned } = require('../../frontend/src/lib/demoData.js');
@@ -194,7 +192,6 @@ function demoRunParameters(v) {
     demo_schema: v.demoSchema,
     warehouse_id: v.warehouse,
     app_sp_application_id: v.appSp,
-    run_as_person: v.runAs ? '1' : '',
     plant_kind_signals: v.plantKindSignals,
     discovery_type: v.discovery,
     generation_path: v.generationPath,
@@ -225,7 +222,6 @@ function demoPipelineSpec(values, { generateNotebookPath, inspireNotebookPath, c
           demo_schema: values.demoSchema,
           warehouse_id: values.warehouse,
           app_sp_application_id: values.appSp,
-          run_as_person: values.runAs ? '1' : '',
           plant_kind_signals: values.plantKindSignals,
         },
       },
@@ -265,12 +261,9 @@ async function triggerDemoDataPipeline(
     ensureInspireNotebookPublished,
     resolveWorkspaceNotebookObjectPath,
     launchedBy = '',
-    // REQ-409: run-as-me starts the installed demo job with the App's service principal token (the person's is refused there).
-    startToken = async (token) => token,
   },
 ) {
   const desc = String(description || '').trim();
-  const runAs = runAsPerson();
   const business = String(businessName || '').trim();
   const inspireDb = String(inspireDatabase || '').trim();
   const sid =
@@ -314,8 +307,7 @@ async function triggerDemoDataPipeline(
       sid,
       demoSchema,
       warehouse: String(warehouse_id || '').trim(),
-      appSp: runAs ? '' : String(app_sp_application_id || '').trim(),
-      runAs,
+      appSp: String(app_sp_application_id || '').trim(),
       plantKindSignals: plantKindSignals ? 'yes' : 'no',
       discovery,
       generationPath,
@@ -336,41 +328,26 @@ async function triggerDemoDataPipeline(
     max_concurrent_runs: 1,
   };
 
-  const plan = launchPlanFor({ runAs, jobType: 'demo_pipeline' });
   console.log(
-    `📋 Demo pipeline: ${generateNotebookPath} → ${inspireNotebookPath} (cluster=${resolvedClusterId || 'serverless'}, session=${sid}, ${plan.mode === 'create' ? 'new job' : `installed job ${plan.jobId}`})`,
+    `📋 Demo pipeline: ${generateNotebookPath} → ${inspireNotebookPath} (cluster=${resolvedClusterId || 'serverless'}, session=${sid})`,
   );
 
-  let jobId;
-  let viewer;
-  if (plan.mode === 'create') {
-    const createResp = await dbFetch(host, token, '/api/2.1/jobs/create', {
-      method: 'POST',
-      body: JSON.stringify(createPayload),
-    });
-    if (!createResp.ok) {
-      const refusalBody = await createResp.text();
-      logApiBody('Demo job create', createResp.status, refusalBody);
-      throw new Error(apiRefusalText('create the demo job', createResp.status, refusalBody));
-    }
-    ({ job_id: jobId } = await createResp.json());
-    viewer = await grantJobViewer(dbFetch, host, token, jobId, launchedBy);
-    if (viewer.note) console.warn(`⚠️ ${viewer.note}`);
-  } else {
-    jobId = plan.jobId;
-    viewer = { granted: false, note: 'run-as-me: the job runs as you, so it needs no viewer grant' };
-  }
-
-  const startingToken = plan.mode === 'run-now' ? await startToken(token) : token;
-  const runResp = await dbFetch(host, startingToken, '/api/2.1/jobs/run-now', {
+  const createResp = await dbFetch(host, token, '/api/2.1/jobs/create', {
     method: 'POST',
-    body: JSON.stringify(
-      plan.mode === 'create'
-        ? { job_id: jobId }
-        : { job_id: jobId, job_parameters: demoRunParameters({ description: desc, business, catalog, inspireDb, sid, demoSchema,
-          warehouse: String(warehouse_id || '').trim(), appSp: runAs ? '' : String(app_sp_application_id || '').trim(), runAs,
-          plantKindSignals: plantKindSignals ? 'yes' : 'no', discovery, generationPath: inspireParams['11_generation_path'] }) },
-    ),
+    body: JSON.stringify(createPayload),
+  });
+  if (!createResp.ok) {
+    const refusalBody = await createResp.text();
+    logApiBody('Demo job create', createResp.status, refusalBody);
+    throw new Error(apiRefusalText('create the demo job', createResp.status, refusalBody));
+  }
+  const { job_id: jobId } = await createResp.json();
+  const viewer = await grantJobViewer(dbFetch, host, token, jobId, launchedBy);
+  if (viewer.note) console.warn(`⚠️ ${viewer.note}`);
+
+  const runResp = await dbFetch(host, token, '/api/2.1/jobs/run-now', {
+    method: 'POST',
+    body: JSON.stringify({ job_id: jobId }),
   });
   if (!runResp.ok) {
     const refusalBody = await runResp.text();

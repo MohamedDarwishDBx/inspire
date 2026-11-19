@@ -1,4 +1,3 @@
-const { createInstalledRuns } = require('../../lib/runAsRuns');
 const express = require('express');
 const { registerImplementRoutes } = require('../../implementRoutes');
 const { IMPLEMENT_COLUMNS, sampleCopyTable } = require('../../lib/inspireImplement');
@@ -176,11 +175,7 @@ function makeApp(overrides = {}, { mount } = {}) {
         return json({ message: 'not mocked ' + path }, 500);
       }
 
-  // REQ-409: a run-as install (state.runAs) uses the same installed-run accessor as the server, over this harness's own dbFetch.
-  const installedRuns = state.runAs ? createInstalledRuns({ dbFetch: (h, t, p, o) => dbFetchImpl(h, t, p, o), appToken: async () => state.runAs.appToken,
-    runAs: () => true, env: state.runAs.env }) : undefined;
   registerImplementRoutes(app, {
-    ...(installedRuns ? { installedRuns } : {}),
     ...(state.buildStamp ? { buildStamp: () => state.buildStamp } : {}),
     requireToken: (req, _res, next) => {
       req.dbHost = 'https://workspace.example.com';

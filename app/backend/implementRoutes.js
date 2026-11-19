@@ -8,7 +8,7 @@ const { mapLimit } = require('./lib/mapLimit');
 // REQ-323: how many history rows are enriched at once.
 const HISTORY_ROW_CONCURRENCY = 8;
 const { runWithQueryTags, lookupWithRetry } = require('./lib/sqlStatements');
-const { genieNotebookJobName, genieRunOf, latestGenieNotebookRun } = require('./lib/genieNotebookJob');
+const { genieNotebookJobName, latestGenieNotebookRun } = require('./lib/genieNotebookJob');
 const C = require('./lib/implementControl');
 const LE = require('./lib/lakebaseEnforce');
 const { appShellCatalog, bundledBuildStamp } = require('./lib/appShell');
@@ -18,7 +18,7 @@ const { specVibeAsks } = require('../frontend/src/lib/vibeLimits.js');
 const { chosenTableScopes } = require('../frontend/src/lib/tableScope.js');
 const { HOSTED_NO_TOKEN } = require('./lib/hostedRun');
 const { ownServicePrincipalId } = require('./lib/inspireSpGrants');
-const { inspireJobEnvironmentChange, inspireJobEnvironmentWarning, inspireJobTestTagChange, inspireJobTestTagWarning, parseTableScopeText, runAsPerson, launchPlanFor, RUN_AS_JOB_ENV, withChosenTableScope, previewScopesOf } = require('./lib/inspireJobParams');
+const { inspireJobEnvironmentChange, inspireJobEnvironmentWarning, inspireJobTestTagChange, inspireJobTestTagWarning, parseTableScopeText, withChosenTableScope, previewScopesOf } = require('./lib/inspireJobParams');
 const R = require('./lib/reviewFigures');
 const A = require('./lib/useCaseAlerts');
 const P = require('./lib/requestPerson');
@@ -142,7 +142,6 @@ function registerImplementRoutes(app, deps) {
   // REQ-354 follow-up: one delete per Uninstall all run's own build job, per running App (see I.settleUninstallRunJob).
   const uninstallJobCache = new Map();
   const {
-    installedRuns = { startToken: async (token) => token, runToken: async (host, token) => token, jobToken: async (token) => token },
     requireToken,
     executeSql,
     sqlResultToObjects,
@@ -179,8 +178,9 @@ function registerImplementRoutes(app, deps) {
 
   const personOf = (req) => P.requestPerson(req, readMeFor(req));
   const nextVersionOf = (history) => Math.max(0, ...history.map((r) => Number(r.spec_version) || 0)) + 1;
-  function personReadToken(req) {
-    const token = P.personTokenOf(req);
+  // REQ-418: the App's service principal token every read uses (requireToken sets it for every route that is not a person's own action).
+  function appReadToken(req) {
+    const token = req.dbToken;
     if (token) return token;
     const { error, ...details } = RP.noPersonTokenBody(req.policyKey);
     throw Object.assign(I.badRequest(error, 401), { details });
@@ -193,7 +193,7 @@ function registerImplementRoutes(app, deps) {
   async function refuseTableTypes(req, warehouseId, tables, { unknownType = false } = {}) {
     const named = (tables || []).map((t) => String(t || '').trim()).filter(Boolean);
     if (!named.length) return;
-    const token = personReadToken(req);
+    const token = appReadToken(req);
     const looked = await Promise.all(named.map((t) => tableTypeOf(req, () => token, warehouseId, t)));
     named.forEach((table, i) => {
       const { type, transient, denied } = looked[i];
@@ -230,7 +230,7 @@ function registerImplementRoutes(app, deps) {
 
 
   async function buildsAsAnother(req) {
-    const person = P.personTokenOf(req);
+    const person = req.dbToken;
     return Boolean(person && person !== await appTokenOf(req));
   }
 
@@ -377,8 +377,6 @@ function registerImplementRoutes(app, deps) {
   }
 
   async function loadGenieCode(req) {
-    // REQ-409: in run-as mode the run checks its AI model as the installer, so this person's check reports unchecked rather than refusing.
-    if (runAsPerson()) return GC.runAsUnchecked();
     try {
       return await genieCodeCheck(req.dbHost, req.dbToken, (path, opts) => jsonOf(dbFetch, req.dbHost, req.dbToken, path, opts));
     } catch (err) {
@@ -446,7 +444,7 @@ function registerImplementRoutes(app, deps) {
       elsewhere ? sqlRows(req.dbHost, req.dbToken, warehouseId, I.outputAccessStatement(modelName)) : null,
       loadResultTableHolder(req, warehouseId, catalog, schema, table),
     ]);
-    const person = P.personTokenOf(req);
+    const person = req.dbToken;
     const [builder, createsSchema] = await Promise.all([buildsAsAnother(req),
       I.schemaNotCreated(rows) ? createsUseCaseSchema(req, warehouseId, table, useCaseId) : false]);
     const access = I.outputAccess(rows, table, { builder, createsSchema });
@@ -491,57 +489,22 @@ function registerImplementRoutes(app, deps) {
    */
   const genieJobGuard = createGenieJobGuard();
 
-  // REQ-409: the job id Inspire's launch record holds for a run, read with the request's own token from its inspire database.
-  function ledgerJobIdOf(req, warehouseId) {
-    return async (runId) => {
-      const { catalog, schema } = dbOf(req, splitInspireDatabase);
-      const stmt = L.runJobStatement(L.launchTableName(`${catalog}.${schema}`), runId);
-      if (!stmt) return null;
-      const rows = sqlResultToObjects(await executeSql(req.dbHost, req.dbToken, warehouseId, stmt.sql, stmt.parameters));
-      return rows[0] ? rows[0].job_id : null;
-    };
-  }
-
   // REQ-409: the token of a control call. A build's run and an installed job are read or cancelled with the installed-run rule; any other
   // asset keeps the person's token.
   async function controlTokenOf(req, ctx, asset, id) {
-    if (asset === 'build') return installedRuns.runToken(req.dbHost, req.dbToken, id, ledgerJobIdOf(req, ctx.warehouseId));
-    if (asset === 'job') return installedRuns.jobToken(req.dbToken, id);
+    if (asset === 'build') return req.dbToken;
+    if (asset === 'job') return req.dbToken;
     return req.dbToken;
   }
 
-  // REQ-409: this session's Genie notebook run. Outside run-as: the job named for the session, with the person's token. Run-as: the run
-  // Inspire recorded for the session (read from the launch record with the person's token), then read with the guarded App token; only when
-  // no record exists, the installed Genie job's active runs are read in full (every page) and matched to the session.
+  // The session's Genie notebook run: the job named for the session, read with the App's service principal (REQ-418).
   async function latestGenieRunOf(req, sessionId) {
-    const warehouseId = warehouseOf(req);
-    if (!runAsPerson()) {
-      return latestGenieNotebookRun((path) => jsonOf(dbFetch, req.dbHost, req.dbToken, path), sessionId);
-    }
-    const installedJobId = String(process.env[RUN_AS_JOB_ENV.genie_regen] || '').trim();
-    const readAs = (token) => (path) => jsonOf(dbFetch, req.dbHost, token, path);
-    const recordedRunId = await recordedGenieRunIdOf(req, warehouseId, sessionId);
-    if (recordedRunId) {
-      const token = await installedRuns.runToken(req.dbHost, req.dbToken, recordedRunId, ledgerJobIdOf(req, warehouseId));
-      const run = await genieRunOf(readAs(token), recordedRunId).catch(() => null);
-      if (run) return run;
-    }
-    const token = await installedRuns.jobToken(req.dbToken, installedJobId);
-    return latestGenieNotebookRun(readAs(token), sessionId, { installedJobId });
+    return latestGenieNotebookRun((path) => jsonOf(dbFetch, req.dbHost, req.dbToken, path), sessionId);
   }
 
-  // The run Inspire recorded for the session's Genie notebook (the launch record, read with the person's token), or '' when none exists.
-  async function recordedGenieRunIdOf(req, warehouseId, sessionId) {
-    const { catalog, schema } = dbOf(req, splitInspireDatabase);
-    const stmt = L.sessionGenieRunStatement(L.launchTableName(`${catalog}.${schema}`), sessionId);
-    if (!stmt) return '';
-    const rows = sqlResultToObjects(await executeSql(req.dbHost, req.dbToken, warehouseId, stmt.sql, stmt.parameters));
-    return rows[0] && rows[0].run_id != null ? String(rows[0].run_id) : '';
-  }
-
-  async function genieRunState(host, token, runId, ledgerJobId) {
+  async function genieRunState(host, token, runId) {
     if (!runId) return null;
-    const got = await jsonOf(dbFetch, host, await installedRuns.runToken(host, token, runId, ledgerJobId), `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(runId)}`);
+    const got = await jsonOf(dbFetch, host, token, `/api/2.1/jobs/runs/get?run_id=${encodeURIComponent(runId)}`);
     return got.ok ? got.data?.state?.life_cycle_state || null : null;
   }
 
@@ -620,7 +583,7 @@ function registerImplementRoutes(app, deps) {
           job_run_url: lastRun.url || databricksJobRunUrl(req.dbHost, lastRun.job_id, lastRun.run_id),
         });
       }
-      const claim = await genieJobGuard.claim(sidStr, (runId) => genieRunState(req.dbHost, req.dbToken, runId, ledgerJobIdOf(req, warehouseOf(req))));
+      const claim = await genieJobGuard.claim(sidStr, (runId) => genieRunState(req.dbHost, req.dbToken, runId));
       if (!claim.ok) {
         return res.status(409).json({
           error: 'Genie instructions for this session are already being generated. Wait for that run to finish, then try again.',
@@ -695,7 +658,7 @@ function registerImplementRoutes(app, deps) {
       if (!useCase) return res.status(404).json({ error: `No use case ${useCaseId} in this session.` });
       const latest = history[0] || null;
       const ownSchema = latest ? null : await useCaseSchemaOf(req, warehouseId, `${catalog}.${schema}`, sid, useCaseId, session.business_name);
-      const { missing, app_unreadable: appUnreadable } = await sourceVerdict(req, warehouseId, useCase, latest, q(req, 'result_table') || ownSchema?.table || '');
+      const { missing, app_unreadable: appUnreadable, policied } = await sourceVerdict(req, warehouseId, useCase, latest, q(req, 'result_table') || ownSchema?.table || '');
       const widgets = I.implementWidgets(history, useCase.genie_instruction || useCase.generate_genie_code_instruction || '');
       const assets = I.liveCarriedAssets(history);
       const goneAssets = await goneMergeAssets(req, assets);
@@ -721,6 +684,8 @@ function registerImplementRoutes(app, deps) {
         widget_groups: I.groupWidgets(widgets.widgets),
         inspire_database: `${catalog}.${schema}`,
         missing_tables: missing,
+        // REQ-418: the source tables with a row filter or column mask; only these show the per-user identity choice in the build wizard.
+        app_policy_tables: policied,
         app_unreadable: displayOffer(appUnreadable, await wholeCatalogsOf(req, warehouseId, catalog, schema, sid)),
         own_schema: ownSchema,
       });
@@ -730,7 +695,7 @@ function registerImplementRoutes(app, deps) {
   });
 
   async function useCaseSchemaRows(req, warehouseId, catalog, schemas) {
-    const person = P.personTokenOf(req);
+    const person = req.dbToken;
     if (!person) return { rows: null, unchecked: '' };
     try {
       return { rows: await sqlRows(req.dbHost, person, warehouseId, I.useCaseSchemaStatement(catalog, schemas)), unchecked: '' };
@@ -853,7 +818,7 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.columnsStatement(table);
-      const token = personReadToken(req);
+      const token = appReadToken(req);
       const [rows, read, keyRows] = await I.readPickedTable(table, () => Promise.all([sqlRows(req.dbHost, token, warehouseId, statement),
         readColumnTags(req, token, warehouseId, [table]), sqlRows(req.dbHost, token, warehouseId, I.primaryKeysStatement(table))]));
       if (!rows.length) throw I.unreadableTableError(table);
@@ -876,7 +841,7 @@ function registerImplementRoutes(app, deps) {
       const table = RL.pickedTableOf(req.body?.table);
       const scope = RL.pickedTablesOf(req.body?.tables || []);
       if (!scope.some((t) => t.toLowerCase() === table.toLowerCase())) scope.push(table);
-      const token = personReadToken(req);
+      const token = appReadToken(req);
       const looked = await tableTypeOf(req, () => token, warehouseId, table);
       if (MV.isMetricViewType(looked.type)) return res.json({ tables: {}, suggestions: [], metric_views: [table] });
       const byCatalog = new Map();
@@ -914,7 +879,7 @@ function registerImplementRoutes(app, deps) {
       const warehouseId = warehouseOf(req);
       const q = DM.queryOf(req.body?.q);
       if (!q) return res.json({ hits: [], total: 0, shown: 0, limit: DM.COLUMN_SEARCH_LIMIT });
-      const token = personReadToken(req);
+      const token = appReadToken(req);
       const statements = DM.columnSearchStatements(req.body?.scope || {}, q);
       const parts = await Promise.all(statements.map(async ({ catalog, statement }) => ({
         catalog, rows: await sqlRows(req.dbHost, token, warehouseId, statement),
@@ -933,7 +898,7 @@ function registerImplementRoutes(app, deps) {
       const required = Array.isArray(req.body?.required_columns) ? req.body.required_columns : [];
       const copyOnly = q(req, 'part') === 'copy';
       const statement = copyOnly ? I.copySwapStatement(table) : I.tableSwapStatement(table, required);
-      const token = P.personTokenOf(req);
+      const token = req.dbToken;
       if (!token) return res.json({ table, swaps: [], why: I.IMPLEMENT_SWAPS_NO_SIGN_IN });
       const search = (async () => {
         const candidates = await sqlRows(req.dbHost, token, warehouseId, statement);
@@ -973,7 +938,7 @@ function registerImplementRoutes(app, deps) {
       const warehouseId = warehouseOf(req);
       const table = q(req, 'table');
       const source = q(req, 'source');
-      const token = personReadToken(req);
+      const token = appReadToken(req);
       const { type, transient, denied } = await tableTypeOf(req, () => token, warehouseId, table);
       if (denied) throw denied;
       if (MV.isMetricViewType(type)) {
@@ -1036,7 +1001,7 @@ function registerImplementRoutes(app, deps) {
       const table = q(req, 'table');
       await refuseMetricView(req, warehouseId, table, { unknownType: true });
       const statement = I.columnValuesStatement(table, q(req, 'column'), q(req, 'limit') || 200);
-      const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
+      const rows = await sqlRows(req.dbHost, appReadToken(req), warehouseId, statement);
       res.json({ values: rows.map((r) => r.value).filter((v) => v != null && v !== '') });
     } catch (err) {
       sendError(res, err);
@@ -1057,7 +1022,7 @@ function registerImplementRoutes(app, deps) {
         window,
         periodColumn,
       });
-      const rows = await sqlRows(req.dbHost, personReadToken(req), warehouseId, statement);
+      const rows = await sqlRows(req.dbHost, appReadToken(req), warehouseId, statement);
       res.json({ skipped: false, ...I.readinessFromRow(rows[0] || {}, statement.columns), minimum_rows: I.analysisMinimumRows(req.body?.technique) });
     } catch (err) {
       sendError(res, err);
@@ -1078,7 +1043,7 @@ function registerImplementRoutes(app, deps) {
         top,
       });
       if (!statement) return res.status(400).json({ error: top ? 'name one group column to list its values' : `name between 1 and ${I.GROUP_COUNT_MAX_COLUMNS} group columns to count` });
-      const token = personReadToken(req);
+      const token = appReadToken(req);
       const rows = await sqlRows(req.dbHost, token, warehouseId, statement);
       const cap = top || I.GROUP_COUNT_LIMIT;
       const truncated = rows.length > cap;
@@ -1348,7 +1313,7 @@ function registerImplementRoutes(app, deps) {
       const warehouseId = warehouseOf(req);
       const kind = q(req, 'kind');
       if (!I.IMPLEMENT_GRANT_KINDS.includes(kind)) throw I.badRequest(`kind must be one of ${I.IMPLEMENT_GRANT_KINDS.join(', ')}`);
-      const token = P.personTokenOf(req);
+      const token = req.dbToken;
       if (!token) throw I.badRequest(I.IMPLEMENT_GRANT_NO_SIGN_IN, 401);
       if (kind === 'new_apps') {
         const table = q(req, 'table');
@@ -1443,7 +1408,7 @@ function registerImplementRoutes(app, deps) {
   app.post('/api/inspire/implement/create-schema', requireToken, async (req, res) => {
     try {
       const warehouseId = warehouseOf(req);
-      const token = P.personTokenOf(req);
+      const token = req.dbToken;
       if (!token) throw I.badRequest(I.IMPLEMENT_GRANT_NO_SIGN_IN, 401);
       const catalog = String((req.body && req.body.catalog) ?? '').trim();
       const schema = String((req.body && req.body.schema) ?? '').trim();
@@ -1529,7 +1494,7 @@ function registerImplementRoutes(app, deps) {
     if (!row || (!I.IMPLEMENT_ACTIVE_STATUSES.includes(row.status) && !I.implementEndedRecord(row))) return null;
     const runId = String(row.implement_run_id ?? '');
     const got = /^\d{1,19}$/.test(runId)
-      ? await jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, runId, ledgerJobIdOf(req, warehouseOf(req))), `/api/2.1/jobs/runs/get?run_id=${runId}`).catch(() => null)
+      ? await jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${runId}`).catch(() => null)
       : null;
     const runState = got && got.ok && got.data && got.data.state ? got.data.state : {};
     const stopper = String(runState.result_state || '') === 'CANCELED' ? await stoppedByOf(req, row, runId) : null;
@@ -1569,7 +1534,7 @@ function registerImplementRoutes(app, deps) {
     const previous = I.validateImplementSpec(before.spec_json, { legacyAccess: I.legacyAppAccess(history) }).spec;
     const changes = I.implementTableSwapChanges(previous.data, spec.data);
     const tables = I.uniqueTables(changes.flatMap((c) => [c.replaced, c.chosen]));
-    const token = P.personTokenOf(req);
+    const token = req.dbToken;
     if (tables.length && !token) throw I.badRequest(I.IMPLEMENT_TABLES_NO_SIGN_IN, 401);
     await refuseTableTypes(req, warehouseId, tables, { unknownType: true });
     const read = await Promise.all(tables.map((t) => I.readPickedTable(t, () => sqlRows(req.dbHost, token, warehouseId, I.columnsStatement(t)))));
@@ -1583,7 +1548,7 @@ function registerImplementRoutes(app, deps) {
 
   async function ownerTableChange(req, warehouseId, history, spec, useCase, person) {
     const before = I.previousBuilt(history);
-    if (!before || I.implementSettingsOwnerRefusal(before, person.username) || !P.personTokenOf(req)) return { change: null, error: '' };
+    if (!before || I.implementSettingsOwnerRefusal(before, person.username) || !req.dbToken) return { change: null, error: '' };
     try {
       const got = await tableChangeOf(req, warehouseId, history, spec, useCase);
       return { change: got && got.change.class ? got.change : null, error: '' };
@@ -1612,13 +1577,13 @@ function registerImplementRoutes(app, deps) {
     if (problems.length) throw I.badRequest(problems.join('; '));
     const verdict = await sourceCheckOf(req, warehouseId, useCase, chosen, history);
     if (verdict.refusal) throw verdict.refusal;
-    const { spec, warnings: readWarnings, details: readDetails } = await dropPersonUnreadable(req, chosen, useCase, verdict.reads);
+    const { spec, warnings: readWarnings, details: readDetails } = await dropUnreadableSources(req, chosen, useCase, verdict.reads);
     const kpiIssues = I.implementKpiTargetProblems(raw, I.implementKpiOptions(useCase, history), history);
     if (kpiIssues.length) throw I.badRequest(kpiIssues.join('; '));
     const keyRef = I.resultKeyRef(spec, useCase);
     if (keyRef) {
-      const read = P.personTokenOf(req)
-        ? await readColumnTags(req, P.personTokenOf(req), warehouseId, [keyRef.split('.').slice(0, 3).join('.')]) : { tags: {} };
+      const read = req.dbToken
+        ? await readColumnTags(req, req.dbToken, warehouseId, [keyRef.split('.').slice(0, 3).join('.')]) : { tags: {} };
       const personal = I.personalKeyOf(spec, useCase, read.tags);
       if (personal) throw I.badRequest(personal);
     }
@@ -1659,12 +1624,12 @@ function registerImplementRoutes(app, deps) {
     return err;
   }
 
-  async function refusePersonUnreadable(req, spec, useCase) {
+  async function refuseUnreadableSources(req, spec, useCase) {
     const refused = await U.runReadRefusal(dbFetch, req, { tables: I.sourceTables(spec, I.useCaseTables(useCase)) });
     if (refused) throw unreadableRefusal(refused.message, refused.status, refused.unreadable);
   }
 
-  async function dropPersonUnreadable(req, spec, useCase, reads) {
+  async function dropUnreadableSources(req, spec, useCase, reads) {
     const involved = I.useCaseTables(useCase);
     if (!reads.skipped.length) return { spec, warnings: reads.uncheckedWarnings, details: [] };
     const gone = new Set(reads.skipped.map((t) => t.toLowerCase()));
@@ -1694,11 +1659,11 @@ function registerImplementRoutes(app, deps) {
 
   async function emptyDataWarning(req, warehouseId, spec, useCase, launchScopes = {}) {
     const scope = readinessScope(spec, useCase, launchScopes);
-    if (!scope.table || !P.personTokenOf(req)) return '';
+    if (!scope.table || !req.dbToken) return '';
     const countOf = async (table, narrowing) => {
       await refuseTableTypes(req, warehouseId, [table], { unknownType: true });
       const statement = I.readinessStatement(table, narrowing);
-      const rows = await sqlRows(req.dbHost, P.personTokenOf(req), warehouseId, statement);
+      const rows = await sqlRows(req.dbHost, req.dbToken, warehouseId, statement);
       return I.readinessFromRow(rows[0] || {}, statement.columns);
     };
     try {
@@ -1750,9 +1715,8 @@ function registerImplementRoutes(app, deps) {
     const warnings = [...noted, ...outputWarnings];
     // REQ-389: the build reads the scope the person chose on the Data step, not always the Discover run's scope.
     const sessionParams = withChosenTableScope(notebookParamsFromSessionForGenerateRun(session, sid), spec.data);
-    // Run-as-me (REQ-113): the job gets no App principal and runs as the signed-in person.
-    const params = I.implementJobParams(sessionParams, useCaseId, plan.nextVersion, runAsPerson() ? '' : ownServicePrincipalId(), runAsPerson());
-    const token = P.personTokenOf(req);
+    const params = I.implementJobParams(sessionParams, useCaseId, plan.nextVersion, ownServicePrincipalId());
+    const token = req.dbToken;
     // Only a rate-table read needs the person's own sign-in; a build with typed or no rates never asks for it.
     const runSql = async (sql, parameters = null) => {
       if (!token) throw I.badRequest('Sign in again: Inspire reads the rate table with your own access.');
@@ -1894,12 +1858,12 @@ function registerImplementRoutes(app, deps) {
     // The sixth entry is the built-run read that was never bound before this change (left as it was); the seventh is the uninstall run.
     const [appInfo, runInfo, stalled, person, buildRun, , uninstallRunInfo] = await Promise.all([
       appName ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.0/apps/${encodeURIComponent(appName)}`) : null,
-      jobId ? jsonOf(dbFetch, req.dbHost, await installedRuns.jobToken(req.dbToken, jobId), `/api/2.1/jobs/runs/list?job_id=${jobId}&limit=10`) : null,
+      jobId ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/list?job_id=${jobId}&limit=10`) : null,
       stalledOf(req, history[0]),
       held == null && !appUpdate ? null : personOf(req),
       latestRunsOf(req, warehouseId, [history[0]], () => history),
-      builtBy ? jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, builtBy, ledgerJobIdOf(req, warehouseOf(req))), `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
-      uninstallRun ? jsonOf(dbFetch, req.dbHost, await installedRuns.runToken(req.dbHost, req.dbToken, uninstallRun, ledgerJobIdOf(req, warehouseOf(req))), `/api/2.1/jobs/runs/get?run_id=${uninstallRun}`).catch(() => null) : null,
+      builtBy ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${builtBy}`).catch(() => null) : null,
+      uninstallRun ? jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/runs/get?run_id=${uninstallRun}`).catch(() => null) : null,
     ]);
     if (history[0]) {
       history[0].app_update = appUpdate && !I.appShellUpdateRefusal(history, { rollback_outputs: { app: appUpdate.version } }, person.username) ? appUpdate : null;
@@ -1908,13 +1872,13 @@ function registerImplementRoutes(app, deps) {
     const selfJob = history[0] && uninstallRun ? await I.settleUninstallRunJob({
       row: history[0],
       run: uninstallRunInfo && uninstallRunInfo.ok ? uninstallRunInfo.data : null,
-      remove: async (jobId) => jsonOf(dbFetch, req.dbHost, await installedRuns.jobToken(req.dbToken, jobId), '/api/2.2/jobs/delete',
+      remove: async (jobId) => jsonOf(dbFetch, req.dbHost, req.dbToken, '/api/2.2/jobs/delete',
         { method: 'POST', body: jsonWithInt64Ids({ job_id: jobId }, ['job_id']) }),
       cache: uninstallJobCache,
     }) : null;
     if (selfJob && selfJob.message) history[0].status_message = selfJob.message;
     const listedNone = runInfo && runInfo.ok && !(Array.isArray(runInfo.data && runInfo.data.runs) && runInfo.data.runs.length);
-    const jobInfo = listedNone ? await jsonOf(dbFetch, req.dbHost, await installedRuns.jobToken(req.dbToken, jobId), `/api/2.1/jobs/get?job_id=${jobId}`) : null;
+    const jobInfo = listedNone ? await jsonOf(dbFetch, req.dbHost, req.dbToken, `/api/2.1/jobs/get?job_id=${jobId}`) : null;
     const body = {
       latest: history[0] || null,
       stalled,
@@ -2112,7 +2076,7 @@ function registerImplementRoutes(app, deps) {
       const id = FB.feedbackId(req.body?.feedback_id);
       const ctx = await feedbackContext(req);
       feedbackOwnerOnly(ctx);
-      const token = personReadToken(req);
+      const token = appReadToken(req);
       const { row: feedback } = await oneFeedback(req, ctx, id);
       const spec = ctx.before.spec_json || {};
       const listed = await jsonOf(dbFetch, req.dbHost, token, '/api/2.0/serving-endpoints');
@@ -2308,10 +2272,9 @@ function registerImplementRoutes(app, deps) {
     }
   });
 
-  // The three latest rates of a money rule's rate table, into its base currency, read with the person's own sign-in.
+  // The three latest rates of a money rule's rate table, into its base currency, read with the App's service principal (REQ-418).
   app.post('/api/money/rate-sample', requireToken, async (req, res) => {
-    const token = P.personTokenOf(req);
-    if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
+    const token = req.dbToken;
     try {
       const warehouseId = warehouseOf(req);
       const scopes = await launchScopesOf(req, warehouseId, req.body?.table_scope);
@@ -2327,8 +2290,7 @@ function registerImplementRoutes(app, deps) {
   });
 
   app.post('/api/money/currency-rates', requireToken, async (req, res) => {
-    const token = P.personTokenOf(req);
-    if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
+    const token = req.dbToken;
     const asked = String(req.body?.base || '').trim().toUpperCase();
     try {
       // A table with no currency column is read for the one code its value is written in (REQ-103): no table read, the codes come from the request.
@@ -2355,8 +2317,7 @@ function registerImplementRoutes(app, deps) {
   });
 
   app.post('/api/money/value-preview', requireToken, async (req, res) => {
-    const token = P.personTokenOf(req);
-    if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
+    const token = req.dbToken;
     try {
       const warehouseId = warehouseOf(req);
       const scopes = await launchScopesOf(req, warehouseId, req.body?.table_scope);
@@ -2370,8 +2331,7 @@ function registerImplementRoutes(app, deps) {
   });
 
   app.post('/api/money/describe-value', requireToken, async (req, res) => {
-    const token = P.personTokenOf(req);
-    if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
+    const token = req.dbToken;
     try {
       const text = String(req.body?.text ?? '').trim();
       const columns = Array.isArray(req.body?.columns) ? req.body.columns.map((c) => String(c)).slice(0, MD.COLUMN_LIMIT) : [];
@@ -2394,8 +2354,7 @@ function registerImplementRoutes(app, deps) {
   });
 
   app.post('/api/grouping/profile', requireToken, async (req, res) => {
-    const token = P.personTokenOf(req);
-    if (!token) return res.status(401).json(RP.noPersonTokenBody(req.policyKey));
+    const token = req.dbToken;
     const stop = new AbortController();
     res.on('close', () => {
       if (!res.writableEnded) stop.abort();
@@ -2590,7 +2549,7 @@ function registerImplementRoutes(app, deps) {
         throw Object.assign(new Error('this MVP names no result table in its settings, so Inspire cannot check which table its decisions belong to; '
           + 'pick the result table in Edit MVP and build it again'), { statusCode: 409 });
       }
-      const token = (await appToken()) || (runAsPerson() ? req.dbToken : '');
+      const token = (await appToken()) || '';
       if (!token) {
         throw Object.assign(new Error('Inspire has no sign-in of its own here, so it cannot record decisions for this page; '
           + 'open the page from the Inspire App in Databricks'), { statusCode: 503 });
@@ -2631,7 +2590,7 @@ function registerImplementRoutes(app, deps) {
         const paths = C.livePaths(ctx.targets);
         const names = Object.keys(paths);
         // REQ-409: the job and its runs are the installed job's (run-as mode): read with the App's token when the job is an installed one.
-        const jobTok = await installedRuns.jobToken(req.dbToken, ctx.targets && ctx.targets.job);
+        const jobTok = req.dbToken;
         const got = await Promise.all(names.map((name) => jsonOf(dbFetch, req.dbHost, name === 'job' || name === 'runs' ? jobTok : req.dbToken, paths[name])));
         let actions = [];
         if (!((missingControlLogs.get(ctx.logTable) || 0) > Date.now())) {
@@ -2781,20 +2740,14 @@ function registerImplementRoutes(app, deps) {
       const overrideIssues = I.widgetProblems(widgets, overrides);
       if (overrideIssues.length) throw I.badRequest(`widget values are out of range: ${overrideIssues.join('; ')}`);
       const useCase = await loadUseCase(req.dbHost, req.dbToken, warehouseId, catalog, schema, sid, useCaseId);
-      await refusePersonUnreadable(req, latest.spec_json, useCase);
+      await refuseUnreadableSources(req, latest.spec_json, useCase);
       await refuseMissingSources(req, warehouseId, latest.spec_json, useCase);
-      const plan = launchPlanFor({ runAs: runAsPerson(), jobType: 'implement' });
-      // Run-as-me: the shared implement job (installed as you) takes the use case as parameters; the per-use-case job is not used.
-      const jobId = plan.mode === 'create' ? requireInt64Id(latest.job_id, 'job_id') : plan.jobId;
-      const warning = plan.mode === 'create' ? await alignJobSettings(req.dbHost, req.dbToken, jobId) : '';
-      const viewer = plan.mode === 'create'
-        ? await grantJobViewer(dbFetch, req.dbHost, req.dbToken, jobId, (await personOf(req)).username)
-        : { granted: false, note: 'run-as-me: the shared job runs as you, so it needs no viewer grant' };
-      const resp = await dbFetch(req.dbHost, plan.mode === 'run-now' ? await installedRuns.startToken(req.dbToken) : req.dbToken, '/api/2.1/jobs/run-now', {
+      const jobId = requireInt64Id(latest.job_id, 'job_id');
+      const warning = await alignJobSettings(req.dbHost, req.dbToken, jobId);
+      const viewer = await grantJobViewer(dbFetch, req.dbHost, req.dbToken, jobId, (await personOf(req)).username);
+      const resp = await dbFetch(req.dbHost, req.dbToken, '/api/2.1/jobs/run-now', {
         method: 'POST',
-        body: plan.mode === 'create'
-          ? jsonWithInt64Ids({ job_id: jobId, notebook_params: notebookParams, only: [I.IMPLEMENT_NOTEBOOK_TASK_KEY] }, ['job_id'])
-          : jsonWithInt64Ids({ job_id: jobId, notebook_params: notebookParams }, ['job_id']),
+        body: jsonWithInt64Ids({ job_id: jobId, notebook_params: notebookParams, only: [I.IMPLEMENT_NOTEBOOK_TASK_KEY] }, ['job_id']),
       });
       const text = await resp.text();
       let data = {};

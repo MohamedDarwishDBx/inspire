@@ -108,11 +108,19 @@ export function contextSettings(context, spec) {
     family: context?.family || '', editing: Boolean(context?.latest) });
 }
 
+// The Where panels a scope shows: the identity choice (app_access) only when appAccessShown says so, and under Advanced settings after v1.
+function whereStepFor(scope) {
+  const access = appAccessShown(scope);
+  const panels = APP_PANELS.filter((p) => p !== 'app_access' || access);
+  return { ...WHERE_STEP, sections: panels, panels, advanced: access && scope?.editing ? ['app_access'] : WHERE_STEP.advanced };
+}
+
 export function wizardSteps(mode, spec = null, scope = NO_SCOPE_STEPS) {
   if (mode === 'mvp') {
     const app = Boolean(spec?.outputs?.app);
     const joined = joinsApp(spec);
-    const where = app ? [{ ...WHERE_STEP, sections: joined ? ['app_place'] : WHERE_STEP.sections, panels: joined ? ['app_place'] : WHERE_STEP.panels }] : [];
+    const step = whereStepFor(scope);
+    const where = app ? [{ ...step, sections: joined ? ['app_place'] : step.sections, panels: joined ? ['app_place'] : step.panels }] : [];
     return [DELIVERY_STEP, DATA_STEP, ...(scope?.grouping ? [GROUPING_STEP] : []), firstRunStepOf(scope), MEASURE_STEP,
       ...where, SUMMARY_STEP];
   }
@@ -162,13 +170,20 @@ export function withHeldApp(spec, saved = {}) {
   };
 }
 
+// REQ-418: who the App's viewers are is asked only where the data needs it. A build's source has a row filter or column mask (the App's own
+// ABAC read says so), or the App is being changed after v1 (Add/Remove/Vibe), where the choice sits under Advanced settings. Otherwise the App
+// reads with its service principal and the step does not show.
+export const appAccessShown = (scope) => Boolean(scope?.policied || scope?.editing);
+// The one plain line that says why the choice is asked: the source has a row filter or column mask (REQ-418).
+export const APP_ACCESS_POLICY_WHY = 'A source table has a row filter or column mask, so the App must say whose access decides which rows each person sees.';
+
 export const APP_ACCESS_CHOICES = [
   { id: 'user', label: 'Sensitive data: each person signs in as themselves (per-user)',
     blurb: 'Each person sees only the rows their own access allows.' },
   { id: 'sp', label: 'Internal data: everyone sees the same rows',
     blurb: 'The App reads with its own access, and Inspire lets it read the result table.' },
 ];
-export const APP_ACCESS_DEFAULT = 'user';
+export const APP_ACCESS_DEFAULT = 'sp';
 export const REMOVED_OUTPUT_DEFAULT = 'keep';
 export const APP_ACCESS_NOTE = 'Each person signs in as themselves and sees only the rows their access allows.';
 
