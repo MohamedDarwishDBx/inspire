@@ -2313,21 +2313,21 @@ async function refuseRunAgain(req, res, response) {
   logApiBody(action, response.status, refusalBody);
   if (response.status !== 403) return PM_ERROR.sendFailure(res, response.status, apiRefusalText(action, response.status, refusalBody));
   const jobId = await runJobIdOf(req, runId);
-  const who = RP.forwardedPerson(req.headers);
+  // REQ-418: Inspire reads the run as the App's service principal, so the grant is named for the App, never for the person.
+  const app = SP_CLIENT_ID;
   const job = jobId ? `job ${jobId}` : 'the job of this run';
-  const message = `Inspire could not read run ${runId} to run it again: you need CAN VIEW (or CAN MANAGE RUN) on ${job} in Databricks. `
+  const message = `Inspire could not read run ${runId} to run it again: the App needs CAN VIEW (or CAN MANAGE RUN) on ${job} in Databricks. `
     + "Ask an App manager or the job's owner to grant it, then try again.";
   const steps = jobId
-    ? [`In Databricks, open job ${jobId} > Permissions, and add ${who} with Can view`,
-      `databricks api patch /api/2.0/permissions/jobs/${jobId} --json '{"access_control_list":[{"user_name":"${who}","permission_level":"CAN_VIEW"}]}'`]
-    : [`In Databricks, find the job of run ${runId} and give ${who} Can view on it`];
-  const permission = permissionRequired({ steps, principal: who,
-    why: `Inspire reads run ${runId} with your own sign-in, and your sign-in cannot view its job.` });
+    ? [`In Databricks, open job ${jobId} > Permissions, and add the App's service principal ${app} with Can view`,
+      `databricks api patch /api/2.0/permissions/jobs/${jobId} --json '{"access_control_list":[{"service_principal_name":"${app}","permission_level":"CAN_VIEW"}]}'`]
+    : [`In Databricks, find the job of run ${runId} and give the App's service principal ${app} Can view on it`];
+  const permission = permissionRequired({ steps, principal: app,
+    why: `Inspire reads run ${runId} as the App, and the App cannot view its job.` });
   return PM_ERROR.sendFailure(res, 403, message, { permissions: [permission] });
 }
 
-// The person reads the old run with their own sign-in, so a run the person may see never fails because the App cannot view its job.
-// The launch below keeps the identity launchDiscover always uses (the App's own token).
+// REQ-418: the old run is read as the App's service principal, the same identity every launch uses, so the run is read and run again the same way for everyone.
 app.post('/api/run/:runId/again', requireToken, async (req, res) => {
   const sessionId = String((req.body || {}).session_id || '').trim();
   if (!isInt64Id(sessionId)) return res.status(400).json({ error: 'session_id must be a numeric Inspire session id' });
@@ -2554,7 +2554,7 @@ async function appWriteTokenOf() {
 
 async function outputWriteVerdict(req, writes, { preview = false } = {}) {
   const manager = await routePolicy.managerOf(req).catch(() => ({ manager: false }));
-  const plan = await outputPlan(dbFetch, req, writes, { appToken: await appWriteTokenOf(), appId: SP_CLIENT_ID, preview });
+  const plan = await outputPlan(dbFetch, req, writes, { appToken: await appWriteTokenOf(), appId: SP_CLIENT_ID, preview, manager: manager.manager });
   return { ...plan, checked: manager.manager ? 'manager' : 'passed' };
 }
 

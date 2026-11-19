@@ -71,7 +71,7 @@ const IDENTITIES = {
 const MANAGER_SCOPES = ['apps'];
 // The one user scope a run's output needs: the person's own folder is shared with the App's principal with the person's sign-in.
 const OUTPUT_WRITE_SCOPES = ['workspace.workspace'];
-const NO_PERSON_TOKEN = 'Inspire reads this with your own sign-in, and the Databricks Apps proxy sent none, so it reads nothing for you; '
+const NO_PERSON_TOKEN = 'Inspire needs your own sign-in for this, and the Databricks Apps proxy sent none, so it cannot act as you; '
   + 'ask an App manager to re-run the Inspire installer, which turns on user authorization with the scopes Inspire needs';
 const GATED = 'an action this table already limits to the people its rule names';
 const TRACKED = 'reads or writes the Inspire tracking tables in the App database, which every App user sees through the App';
@@ -217,17 +217,17 @@ const ROUTE_POLICY = {
   'POST /api/inspire/implement/feedback/status': owners('change the status of an issue reported in its App'),
   'POST /api/inspire/implement/feedback/vibe': owners('draft a vibe from an issue reported in its App'),
   'POST /api/money/currency-rates': tracked('read the currencies of the use case table and their rates to the reporting currency',
-    'reads the use case table with your own sign-in; the rates come from a public rate source or the averages saved with Inspire'),
+    'reads the use case table with the App\'s service principal; the rates come from a public rate source or the averages saved with Inspire'),
   'POST /api/money/describe-value': tracked('turn a description of a money value into a value rule with a chat model',
-    'calls the chat model with your own sign-in and reads nothing else'),
+    'calls the chat model with the App\'s service principal and reads nothing else'),
   'POST /api/money/value-preview': tracked('read three rows of the use case table through the value a money rule names',
-    'reads the use case table with your own sign-in'),
+    'reads the use case table with the App\'s service principal'),
   'POST /api/money/rate-sample': tracked('read the rates of the rate table a money rule names',
-    'reads the rate table with your own sign-in'),
+    'reads the rate table with the App\'s service principal'),
   'POST /api/access-request/check': yours('check whether Request for Access is offered for the grants you need', ['catalog.catalogs:read']),
   'POST /api/access-request': yours('send a Request for Access to the owner of the data, as you', ['catalog.catalogs:read']),
   'POST /api/grouping/profile': tracked('read the main table of a use case for its Data groups',
-    'reads the use case record from the Inspire tracking tables in the App database, and reads the use case table only with your own sign-in'),
+    'reads the use case record from the Inspire tracking tables in the App database, and reads the use case table with the App\'s service principal'),
 };
 
 function routeKey(method, path) {
@@ -284,11 +284,10 @@ function outputFolderOf(generationPath, notebookPath) {
   return canonicalPath(`${notebook.replace(/\/[^/]+$/, '')}/${gp}`);
 }
 
+// REQ-418: the routes that answer 401 without the person's sign-in are the ones that read with the person's token. App-identity routes
+// (including the App-database and output-write ones) never need the person's sign-in to answer.
 function personSignInRoutes(table = ROUTE_POLICY) {
-  return Object.keys(table).filter((key) => {
-    const entry = table[key] || {};
-    return entry.identity === 'person' || entry.appDatabase === true || entry.outputWrite === true;
-  }).sort();
+  return Object.keys(table).filter((key) => (table[key] || {}).identity === 'person').sort();
 }
 
 const READ_ONLY = ':read';

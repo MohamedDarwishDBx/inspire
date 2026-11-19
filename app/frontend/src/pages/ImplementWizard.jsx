@@ -193,7 +193,6 @@ import {
   APP_INSIDE,
   APP_INSIDE_PLACEMENT,
   APP_PLACE_WAITING,
-  INSIDE_ACCESS_REASON,
   INSIDE_WAREHOUSE_LABEL,
   INSIDE_WAREHOUSE_TOGGLE,
   INSIDE_WAREHOUSE_PROBLEM,
@@ -1475,7 +1474,7 @@ export default function ImplementWizard({
     appTarget: bestAppTarget(spec, targets, placeScope),
     heldApp: bestHeldApp(held.app || ''),
     appPolicy: bestAppPolicy(spec, targets, placeScope),
-    appAccess: bestAppAccess({ inside: insideInspire(spec), personal }),
+    appAccess: bestAppAccess({ personal }),
     appBackend: bestAppBackend(spec, lakebase),
     appOption: bestAppOption(),
     replaceEdits: bestReplaceEdits(),
@@ -3084,26 +3083,21 @@ function AppWarehouseField({ spec, lakebase, warehouses, warehousesError, onWare
 
 function AppAccessStep({ spec, policied = false, onAccess, best = {} }) {
   const access = spec.outputs.app_access;
-  const inside = insideInspire(spec);
   return (
     <section className="space-y-4" aria-label="App access">
       <fieldset data-choice="app-access" className="space-y-2">
         <legend className="text-sm font-semibold text-text-primary">{APP_ACCESS_QUESTION}</legend>
-        <p className="text-[11px] text-text-tertiary" {...(inside ? { role: 'note', 'aria-label': 'Why each person signs in as themselves' } : {})}>
-          {inside ? `${INSIDE_ACCESS_REASON}.` : (policied ? APP_ACCESS_POLICY_WHY : APP_ACCESS_NOTE)}
-        </p>
+        <p className="text-[11px] text-text-tertiary">{policied ? APP_ACCESS_POLICY_WHY : APP_ACCESS_NOTE}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           {APP_ACCESS_CHOICES.map((choice) => {
             const Icon = ACCESS_ICONS[choice.id];
             const checked = access === choice.id;
-            const locked = inside && choice.id !== 'user';
             return (
               <label
                 key={choice.id}
-                aria-disabled={locked ? 'true' : undefined}
-                className={`flex items-start gap-2.5 border rounded-lg p-3 glow-focus ${locked ? 'cursor-not-allowed bg-bg-subtle' : 'cursor-pointer'} ${checked ? 'border-db-red bg-db-red-50' : 'border-border hover:border-border-strong'}`}
+                className={`flex items-start gap-2.5 border rounded-lg p-3 glow-focus cursor-pointer ${checked ? 'border-db-red bg-db-red-50' : 'border-border hover:border-border-strong'}`}
               >
-                <input type="radio" name="app-access" value={choice.id} checked={checked} disabled={locked} onChange={() => onAccess(choice.id)} className="mt-0.5" />
+                <input type="radio" name="app-access" value={choice.id} checked={checked} onChange={() => onAccess(choice.id)} className="mt-0.5" />
                 <span className="space-y-1">
                   <span className="flex items-start gap-1.5 text-sm font-semibold text-text-primary"><Icon size={14} className="mt-0.5 shrink-0" aria-hidden="true" />{choice.label}</span>
                   <span className="block text-[12px] text-text-secondary">{choice.blurb}</span>

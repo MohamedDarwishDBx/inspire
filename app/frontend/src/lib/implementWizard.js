@@ -142,7 +142,6 @@ export const APP_PLACEMENT_DEFAULT = 'domain';
 export const APP_INSIDE = 'inspire';
 export const APP_INSIDE_PLACEMENT = APP_PLACEMENTS.find((p) => p.id === APP_INSIDE);
 export const APP_OWN_PLACEMENTS = APP_PLACEMENTS.filter((p) => p.id !== APP_INSIDE);
-export const INSIDE_ACCESS_REASON = 'Inside Inspire, each viewer signs in as themselves and sees only the data they may read';
 export const INSIDE_BACKEND_REASON = 'Fast pages need an App of its own';
 export const INSIDE_WAREHOUSE_TOGGLE = 'SQL warehouse settings';
 export const INSIDE_WAREHOUSE_LABEL = 'SQL warehouse each viewer reads with (each viewer needs CAN USE on it)';
@@ -177,15 +176,18 @@ export const appAccessShown = (scope) => Boolean(scope?.policied || scope?.editi
 // The one plain line that says why the choice is asked: the source has a row filter or column mask (REQ-418).
 export const APP_ACCESS_POLICY_WHY = 'A source table has a row filter or column mask, so the App must say whose access decides which rows each person sees.';
 
+// The default (the App's service principal, REQ-418 D-SL-11) comes first.
 export const APP_ACCESS_CHOICES = [
-  { id: 'user', label: 'Sensitive data: each person signs in as themselves (per-user)',
-    blurb: 'Each person sees only the rows their own access allows.' },
   { id: 'sp', label: 'Internal data: everyone sees the same rows',
     blurb: 'The App reads with its own access, and Inspire lets it read the result table.' },
+  { id: 'user', label: 'Sensitive data: each person signs in as themselves (per-user)',
+    blurb: 'Each person sees only the rows their own access allows.' },
 ];
 export const APP_ACCESS_DEFAULT = 'sp';
 export const REMOVED_OUTPUT_DEFAULT = 'keep';
-export const APP_ACCESS_NOTE = 'Each person signs in as themselves and sees only the rows their access allows.';
+// REQ-418 (D-SL-11): the default identity is the App's service principal, so everyone sees the same rows unless the source has a row filter or
+// column mask and the person chooses per-user (Advanced after the first version).
+export const APP_ACCESS_NOTE = 'The App reads with its own access, so everyone sees the same rows.';
 
 export const APP_BACKENDS = ['lakebase', 'delta'];
 export const APP_BACKEND_CHOICES = [
@@ -1970,7 +1972,6 @@ export function sectionErrors(section, spec, extras = {}) {
     if (!APP_ACCESS_CHOICES.some((c) => c.id === spec.outputs.app_access)) {
       errors.push('choose who sees which rows: everyone the same rows, or each person only their own');
     }
-    if (insideInspire(spec) && spec.outputs.app_access !== 'user') errors.push(`${INSIDE_ACCESS_REASON}, so pick per-user`);
   }
   if (section === 'app_storage' && spec.outputs.app) {
     if (extras.lakebase === null && spec.outputs.app_access === 'sp' && !spec.outputs.merge?.app) errors.push(LAKEBASE_CHECKING);
@@ -2195,7 +2196,6 @@ export function withOutput(spec, id, checked, assets = {}) {
 }
 
 export function withAppAccess(spec, access) {
-  if (insideInspire(spec) && access !== 'user') return spec;
   const options = { ...spec.outputs.app_options };
   if (access === 'user') for (const key of PER_USER_OFF) options[key] = false;
   return { ...spec, outputs: { ...spec.outputs, app_access: access, app_options: options } };

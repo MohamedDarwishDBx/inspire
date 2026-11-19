@@ -2641,7 +2641,6 @@ function checkedSourceTables(spec, involved) {
 }
 
 const IMPLEMENT_TABLES_NO_SIGN_IN = 'Inspire reads the new tables with your own sign-in, and this request carries none, so it cannot tell whether the change rebuilds anything';
-const IMPLEMENT_SWAPS_NO_SIGN_IN = 'Inspire looks for similar tables with your own sign-in, and this request carries none, so it suggests none';
 const IMPLEMENT_SWAPS_TOO_SLOW = 'The search for similar tables took too long. Use Search for another table to pick one.';
 
 const lowerName = (value) => str(value).trim().toLowerCase();
@@ -3346,7 +3345,6 @@ function builtInSampleMessage(tables) {
     + `copy ${one ? 'the table' : 'each table'} into a catalog you own with CREATE TABLE ... AS SELECT, and use the ${one ? 'copy' : 'copies'}`;
 }
 
-const SAMPLE_COPY_NO_SIGN_IN = 'Inspire copies with your own sign-in, and this request carries none, so it copies nothing';
 
 function isBuiltInSampleEntry(name) {
   return BUILT_IN_SAMPLE_CATALOGS.includes(plainTable(name).split('.')[0]);
@@ -3475,8 +3473,9 @@ function appUnreadableMessage(offer, job = 'build') {
   const one = offer.tables.length === 1;
   const app = offer.app.name && offer.app.name !== offer.app.id ? `${offer.app.name} (application id ${offer.app.id})` : `with application id ${offer.app.id}`;
   const count = one ? 'a source table' : `${offer.tables.length} source tables`;
-  const head = `${words.who} cannot read ${count}: ${words.runs} as the App service principal ${app}, and you can read `
-    + `${one ? 'this table' : 'these tables'} but the App cannot`;
+  // REQ-418: the App's service principal reads for every person, so the message names the App's read, never the person's own access.
+  const head = `${words.who} cannot read ${count}: ${words.runs} as the App service principal ${app}, and the App cannot read `
+    + `${one ? 'this table' : 'these tables'}`;
   if (!offer.grants.length) return `${head}, and Inspire finds no missing grant to name: ask your data owner why the App cannot read ${one ? 'it' : 'them'}`;
   return `${head}. ${offer.can_grant ? words.grant : 'Ask your data owner to run the commands'}: the exact commands are in Permission Required`;
 }
@@ -4230,7 +4229,6 @@ module.exports = {
   schemaCreateStatement,
   sampleSchemaMessage,
   sampleCopyTakenMessage,
-  SAMPLE_COPY_NO_SIGN_IN,
   abacUnreadableSentence,
   ownerLabel,
   IMPLEMENT_TRAVERSE_PRIVILEGES,
@@ -4337,7 +4335,6 @@ module.exports = {
   sourcePicks,
   checkedSourceTables,
   IMPLEMENT_TABLES_NO_SIGN_IN,
-  IMPLEMENT_SWAPS_NO_SIGN_IN,
   IMPLEMENT_SWAPS_TOO_SLOW,
   implementTableSwapChanges,
   implementTableChange,

@@ -19,10 +19,11 @@ test('data routes read with the App, and only who-did-what routes keep the perso
   }
   assert.equal(P.identityFor('GET /api/health'), 'app');
   assert.equal(P.identityFor('POST /api/setup/create-database'), 'app');
-  for (const key of ['POST /api/access-request', 'POST /api/access-request/check', 'POST /api/inspire/implement/grant-access',
-    'POST /api/inspire/implement/create-schema']) {
+  for (const key of ['POST /api/access-request', 'POST /api/access-request/check', 'POST /api/inspire/implement/grant-access']) {
     assert.equal(P.identityFor(key), 'person', key);
   }
+  // Ruling 3 (REQ-418): create-schema runs as the App; the signed-in person is recorded as the requester in Inspire's own records.
+  assert.equal(P.identityFor('POST /api/inspire/implement/create-schema'), 'app');
   assert.equal(P.identityFor('GET /api/not-declared'), 'person');
   assert.equal(P.identityFor(undefined), 'person');
 });
@@ -73,7 +74,7 @@ test('only the own-folder check writes with the person (the App writes the outpu
   assert.deepEqual(writers, ['POST /api/output-folder/check'], 'the one person route that shares the person\'s own folder with the App');
   assert.deepEqual(P.ROUTE_POLICY['POST /api/output-folder/check'].scopes, P.OUTPUT_WRITE_SCOPES);
   assert.deepEqual(personRoutes().map(([key]) => key).sort(), ['POST /api/access-request', 'POST /api/access-request/check',
-    'POST /api/inspire/implement/create-schema', 'POST /api/inspire/implement/grant-access']);
+    'POST /api/inspire/implement/grant-access']);
 });
 
 test('a path inside a recorded output folder matches only on a path boundary, after the path is made canonical', () => {

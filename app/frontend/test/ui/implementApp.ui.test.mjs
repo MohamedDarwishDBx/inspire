@@ -141,7 +141,8 @@ test('the App starts on with its Genie Agent locked on and the alert off, App ac
     await page.getByRole('region', { name: 'App pages' }).locator('[data-app-page="runs"]').getByRole('switch').uncheck();
     await startWhenReady(page);
     const spec = submittedSpec(made);
-    assert.deepEqual([spec.outputs.app, spec.outputs.genie_space, spec.outputs.app_access], [true, true, 'user']);
+    // REQ-418 (D-SL-11): a new App reads with the App's service principal by default.
+    assert.deepEqual([spec.outputs.app, spec.outputs.genie_space, spec.outputs.app_access], [true, true, 'sp']);
     assert.deepEqual(spec.outputs.app_look, { style: 'c', layout: 'home', palette: 'nordic', theme: 'dark' });
     assert.deepEqual(spec.outputs.app_options, { modify: true, replace_edits: false, decisions: true, alerts: false, experience: 'ui' }, 'per-user sends decisions on and alerts off');
     assert.deepEqual(spec.outputs.app_charts, ['trend', 'bars', 'split', 'pareto'], 'the build gets the kinds of chart picked');

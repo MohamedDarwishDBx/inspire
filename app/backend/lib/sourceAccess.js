@@ -98,12 +98,17 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
     const policied = tables.filter((_t, i) => reads[i].policied);
     if (!lost.length && !policyLost.length) return { missing: [], policied, app_unreadable: null };
     const who = await appIdentity(req, app);
-    const grantable = [...new Set([...lost.map((m) => m.table), ...policyLost])];
+    // A table that is gone is missing, never a grant the App lacks: only a read the App is denied can be offered (REQ-418).
+    const gone = lost.filter((m) => m.reason === 'not found');
+    const denied = lost.filter((m) => m.reason !== 'not found').map((m) => m.table);
+    const grantable = [...new Set([...denied, ...policyLost])];
     const builtIn = grantable.filter((t) => I.builtInSampleTable(t));
     const shareable = grantable.filter((t) => !builtIn.includes(t));
     if (!shareable.length) {
-      return { missing: lost, policied, app_unreadable: { tables: builtIn, app: { name: who.name, id: who.id }, grants: [], can_grant: false,
-        builtin: builtIn, text: I.builtInSampleMessage(builtIn) } };
+      // Only gone tables (and no denied read) leaves nothing for the App to be granted: no offer at all.
+      if (!builtIn.length) return { missing: gone, policied, app_unreadable: null };
+      return { missing: lost.filter((m) => !builtIn.includes(m.table)), policied, app_unreadable: { tables: builtIn, app: { name: who.name, id: who.id },
+        grants: [], can_grant: false, builtin: builtIn, text: I.builtInSampleMessage(builtIn) } };
     }
     // The grant rows are read with the signed-in person's own sign-in when there is one: they say whether that person may grant (can_grant),
     // which is the grant authority. The reads themselves stay the App's (REQ-418).

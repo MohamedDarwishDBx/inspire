@@ -951,8 +951,9 @@ function registerImplementRoutes(app, deps) {
       try {
         await sqlRows(req.dbHost, token, warehouseId, I.tableProbeStatement(table));
       } catch (err) {
-        const reason = I.tableAccessReason(table, err && err.message) || "Inspire cannot read this table with your sign-in";
-        return res.json({ table, readable: false, reason: `You can't read ${table}: ${reason}. Pick a table you can read` });
+        // REQ-418: the table is checked as the App, which reads every source, so the refusal names the App's read.
+        const reason = I.tableAccessReason(table, err && err.message) || 'Inspire cannot read this table as the App';
+        return res.json({ table, readable: false, reason: `The App can't read ${table}: ${reason}. Pick a table the App can read` });
       }
       const [row] = await sqlRows(req.dbHost, token, warehouseId, I.tableMatchStatement(source, table));
       return res.json({ table, readable: true, matched: Number(row?.matched) || 0, total: Number(row?.total) || 0 });
@@ -1251,7 +1252,8 @@ function registerImplementRoutes(app, deps) {
       }
       res.json({
         ok: Object.values(checks).every((c) => c.ok),
-        identity: (output && output.identity) || P.principalOf(principal).username,
+        // The App's principal is the identity a build runs as; a service principal has no user name, so the label falls back to the App's name.
+        identity: (output && output.identity) || builderLabelOf(await loadBuilderPrincipal(req)) || P.principalOf(principal).username,
         checks,
         ...(appName || mergeApp ? {} : { new_app: output ? output.app : unchecked }),
         features,
@@ -1431,6 +1433,22 @@ function registerImplementRoutes(app, deps) {
       if (!tags) return res.json({ catalog, schema });
       const warnings = [];
       const permissions = [];
+      // REQ-418 (ruling 3): the App creates the schema; the signed-in person is recorded as its requester in Inspire's own control log.
+      const sid = String(tags.inspire_session_id ?? '').trim();
+      const useCaseId = String(tags.inspire_use_case_id ?? '').trim();
+      if (isInt64Id(sid) && I.validateUseCaseId(useCaseId)) {
+        const requester = (await personOf(req)).username || '';
+        const { catalog: inspireCatalog, schema: inspireSchema } = dbOf(req, splitInspireDatabase);
+        const logTable = C.controlLogTableName(inspireCatalog, inspireSchema);
+        try {
+          await executeSql(req.dbHost, token, warehouseId, C.controlLogCreateSql(logTable));
+          const row = C.controlLogInsert(logTable, { sessionId: sid, useCaseId, asset: 'schema', assetId: `${catalog}.${schema}`, action: 'create',
+            result: 'done', message: `Schema ${catalog}.${schema} created by the App, requested by ${requester || 'no signed-in person'}`, actedBy: requester });
+          await executeSql(req.dbHost, token, warehouseId, row.sql, row.parameters);
+        } catch (err) {
+          warnings.push(`Inspire could not record who requested ${catalog}.${schema}: ${String((err && err.message) || err).slice(0, 200)}`);
+        }
+      }
       const tagged = ensure.tag ? I.useCaseSchemaTagsSql(catalog, schema, tags) : '';
       if (tagged) {
         await executeSql(req.dbHost, token, warehouseId, tagged)
@@ -1720,9 +1738,9 @@ function registerImplementRoutes(app, deps) {
     const sessionParams = withChosenTableScope(notebookParamsFromSessionForGenerateRun(session, sid), spec.data);
     const params = I.implementJobParams(sessionParams, useCaseId, plan.nextVersion, ownServicePrincipalId());
     const token = req.dbToken;
-    // Only a rate-table read needs the person's own sign-in; a build with typed or no rates never asks for it.
+    // Only a rate-table read needs a credential; a build with typed or no rates never asks for one. The read is the App's (REQ-418).
     const runSql = async (sql, parameters = null) => {
-      if (!token) throw I.badRequest('Sign in again: Inspire reads the rate table with your own access.');
+      if (!token) throw I.badRequest('Inspire has no credential for its App to read the rate table with. Reload the App and try again.');
       return sqlResultToObjects(await executeSql(req.dbHost, token, warehouseOf(req), sql, parameters,
         { rowLimit: 500, byteLimit: GP.PROFILE_BYTE_LIMIT, waitTimeout: '10s' }));
     };
@@ -2083,7 +2101,7 @@ function registerImplementRoutes(app, deps) {
       const { row: feedback } = await oneFeedback(req, ctx, id);
       const spec = ctx.before.spec_json || {};
       const listed = await jsonOf(dbFetch, req.dbHost, token, '/api/2.0/serving-endpoints');
-      if (!listed.ok) throw I.badRequest(`Inspire could not list the serving endpoints with your sign-in: ${listed.data.message || listed.data.error || `HTTP ${listed.status}`}`, listed.status);
+      if (!listed.ok) throw I.badRequest(`Inspire could not list the serving endpoints as the App: ${listed.data.message || listed.data.error || `HTTP ${listed.status}`}`, listed.status);
       const endpoint = FB.chatEndpoint(spec, (listed.data.endpoints || []).map((e) => ({ name: e.name, state: e.state, task: e.task })));
       if (!endpoint) throw I.badRequest('no chat model you can use is ready on this workspace, so Inspire cannot draft a vibe; write it yourself', 409);
       const [useCase, page] = await Promise.all([
@@ -2340,7 +2358,7 @@ function registerImplementRoutes(app, deps) {
       const columns = Array.isArray(req.body?.columns) ? req.body.columns.map((c) => String(c)).slice(0, MD.COLUMN_LIMIT) : [];
       if (!text || text.length > MD.DESCRIBE_MAX_CHARS || !columns.length) throw I.badRequest('Describe how the value of each record works, in up to ' + MD.DESCRIBE_MAX_CHARS + ' characters, and name the table.');
       const listed = await jsonOf(dbFetch, req.dbHost, token, '/api/2.0/serving-endpoints');
-      if (!listed.ok) throw I.badRequest(`Inspire could not list the serving endpoints with your sign-in: ${listed.data.message || listed.data.error || `HTTP ${listed.status}`}`, listed.status);
+      if (!listed.ok) throw I.badRequest(`Inspire could not list the serving endpoints as the App: ${listed.data.message || listed.data.error || `HTTP ${listed.status}`}`, listed.status);
       const endpoint = FB.chatEndpoint({}, (listed.data.endpoints || []).map((e) => ({ name: e.name, state: e.state, task: e.task })));
       if (!endpoint) throw I.badRequest('no chat model you can use is ready on this workspace, so Inspire cannot turn the description into a value; choose the value yourself', 409);
       const messages = MD.describeMessages({ text, columns, currencyColumn: String(req.body?.currency_column ?? '') });

@@ -448,10 +448,11 @@ async function appWrites(dbFetch, req, folder, appToken) {
   }
 }
 
-async function folderPlan(dbFetch, req, folder, { appToken }) {
-  // REQ-418: the App writes the run's output, so the App's own write check decides the folder (no person check).
+async function folderPlan(dbFetch, req, folder, { appToken, manager = false }) {
+  // REQ-418: the App writes the run's output, so the App's own write check decides the folder (no person check). An App manager skips the check.
   const shape = folderShapeVerdict(folder);
   if (shape) return { folder, refused: { status: 400, message: notAFolderText(folder, shape), unwritable: [folder] }, app: { verdict: null, unchecked: '' } };
+  if (manager) return { folder, refused: null, app: { verdict: null, unchecked: '' } };
   return { folder, refused: null, app: await appWrites(dbFetch, req, folder, appToken) };
 }
 
@@ -511,22 +512,21 @@ async function shareOwnFolder(dbFetch, req, folder, appId) {
   return { ok: true, scope: false, details: [grant(id)] };
 }
 
-async function ownFolderPlan(dbFetch, req, home, { appToken, appId }) {
-  const first = await folderPlan(dbFetch, req, home, { appToken });
+async function ownFolderPlan(dbFetch, req, home, { appToken, appId, manager }) {
+  const first = await folderPlan(dbFetch, req, home, { appToken, manager });
   if (first.refused || !first.app.verdict) return { plan: first, details: [], scope: false };
   const shared = await shareOwnFolder(dbFetch, req, home, appId);
   if (!shared.ok) {
     console.warn(`output write check: Inspire could not share ${home} with the ${IMPLEMENT_OUTPUT_LABELS.app}: ${shared.details.join('; ')}`);
     return { plan: first, details: shared.details, scope: shared.scope };
   }
-  const after = await folderPlan(dbFetch, req, home, { appToken });
+  const after = await folderPlan(dbFetch, req, home, { appToken, manager });
   if (!after.app.verdict) return { plan: after, details: [], scope: false };
   return { plan: after, details: [`${shared.details[0]} succeeded, and the App still cannot write there: ${after.app.verdict.reason}`], scope: false };
 }
 
 function folderWarnings(plan) {
   const out = [];
-  if (plan.app.verdict) out.push(appCantWriteText(plan.folder, plan.app.verdict));
   if (plan.app.unchecked) {
     console.warn(`output write check: not checked for the App on ${plan.folder}: ${plan.app.unchecked}`);
     out.push(`Inspire could not check that the App can write to ${plan.folder}. The run tries anyway.`);
@@ -536,6 +536,11 @@ function folderWarnings(plan) {
 
 function planVerdict(plan, extra = [], details = []) {
   if (plan.refused) return { refused: plan.refused, folder: plan.folder, generationPath: '', warnings: [], details: [] };
+  // REQ-418: the App writes the run's output, so a folder the App cannot write refuses the run: it would save no files there.
+  if (plan.app.verdict) {
+    return { refused: { status: 403, message: appCantWriteText(plan.folder, plan.app.verdict), unwritable: [plan.folder] }, folder: plan.folder,
+      generationPath: '', warnings: [], details: [] };
+  }
   const warnings = [...extra, ...folderWarnings(plan)];
   return { refused: null, folder: plan.folder, generationPath: '', warnings, details: warnings.length ? details : [] };
 }
@@ -551,17 +556,20 @@ async function ownFolderPreview(dbFetch, req, home, fallback, appId) {
   return { refused: null, folder: fallback, generationPath: workspaceFolderPath(fallback), warnings: [sharedFallbackText(home, fallback, ready.scope)], details: ready.details };
 }
 
-async function outputPlan(dbFetch, req, writes, { appToken = '', appId = '', preview = false } = {}) {
+async function outputPlan(dbFetch, req, writes, { appToken = '', appId = '', preview = false, manager = false } = {}) {
   const folders = ((writes && writes.folders) || []).filter(Boolean);
   if (!folders.length) return { refused: null, folder: '', generationPath: '', warnings: [], details: [] };
-  if (!writes.defaulted) return planVerdict(await folderPlan(dbFetch, req, folders[0], { appToken }));
-  const savedIn = (plan, extra, details) => ({ ...planVerdict(plan, extra, details), generationPath: plan.refused ? '' : workspaceFolderPath(plan.folder) });
+  if (!writes.defaulted) return planVerdict(await folderPlan(dbFetch, req, folders[0], { appToken, manager }));
+  const savedIn = (plan, extra, details) => {
+    const verdict = planVerdict(plan, extra, details);
+    return { ...verdict, generationPath: verdict.refused ? '' : workspaceFolderPath(plan.folder) };
+  };
   const home = ownFolderOf(RP.forwardedPerson(req.headers));
-  if (!home) return savedIn(await folderPlan(dbFetch, req, folders[0], { appToken }));
+  if (!home) return savedIn(await folderPlan(dbFetch, req, folders[0], { appToken, manager }));
   if (preview) return ownFolderPreview(dbFetch, req, home, folders[0], appId);
-  const { plan: own, details, scope } = await ownFolderPlan(dbFetch, req, home, { appToken, appId });
+  const { plan: own, details, scope } = await ownFolderPlan(dbFetch, req, home, { appToken, appId, manager });
   if (folderScore(own) === 2 || own.refused?.status === 401) return savedIn(own);
-  const shared = await folderPlan(dbFetch, req, folders[0], { appToken });
+  const shared = await folderPlan(dbFetch, req, folders[0], { appToken, manager });
   if (shared.refused) return own.refused ? planVerdict(shared) : unrunnableOwn(home, scope, details, appId);
   if (folderScore(shared) <= folderScore(own)) return unrunnableOwn(home, scope, details, appId);
   return savedIn(shared, [sharedFallbackText(home, shared.folder, scope)], own.refused ? [own.refused.message] : details);
