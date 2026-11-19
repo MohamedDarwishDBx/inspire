@@ -464,7 +464,8 @@ function registerImplementRoutes(app, deps) {
       if (offer) access.app = { ...access.app, offer };
     }
     access.app_warehouse = appWarehouse;
-    let safety = { ok: true, detail: access.exists ? `${access.table} holds only this use case's rows` : `${access.table} is new; the First run creates it` };
+    // A new table is shown as a warning (visible, never blocking): the First run creates it, so the person sees the verdict.
+    let safety = access.exists ? { ok: true, detail: `${access.table} holds only this use case's rows` } : { ok: true, warn: true, detail: `${access.table} is new; the First run creates it` };
     const held = I.resultTableHolderProblem(table, holder, sid, useCaseId);
     if (held) safety = { ok: false, detail: held };
     else if (access.exists && access.write.ok) {
@@ -1212,7 +1213,7 @@ function registerImplementRoutes(app, deps) {
           ? { ok: true, detail: `${warehouseName} ran the access check for you` }
           : { ok: !denied, detail: `${warehouseName} could not run a statement for you: ${outputError}`, ...(denied ? {} : { warn: PREFLIGHT_RECHECK }) },
         output: output
-          ? { ok: output.write.ok && output.safety.ok, detail: moved ? `${moved.detail}; ${outputDetail}` : outputDetail }
+          ? { ok: output.write.ok && output.safety.ok, ...(output.safety.warn ? { warn: true } : {}), detail: moved ? `${moved.detail}; ${outputDetail}` : outputDetail }
           : unchecked,
       };
       if (output && output.model) checks.model = output.model;

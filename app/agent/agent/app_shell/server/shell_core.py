@@ -291,7 +291,6 @@ JOB_TTL_S = 5
 INSIDE = "inspire"
 USER_JOBS = ("This page runs inside Inspire with no service principal of its own, so it never reads or starts the use case's job: it "
              "shows the runs the use case recorded, and Refresh now is off; the job's schedule still refreshes it")
-INSIDE_SP = "A page inside Inspire has no service principal, so it reads and acts only as the person signed in"
 REFUSED_WRITE = "Nothing was saved: this App cannot write this change. Ask the App owner to check its access."
 INSIDE_SETTINGS = ("Nothing was saved: settings cannot be changed from this page inside Inspire. "
                    "Open the App from its own link to change them.")
@@ -1548,7 +1547,8 @@ def _cli_step(request: dict, user_factory) -> tuple:
     if not isinstance(body, dict) or not isinstance(headers, dict):
         raise HttpError(400, "send body and headers as objects")
     shell = Shell(_cli_text(request, "root"), env={"DATABRICKS_HOST": host, "DATABRICKS_WAREHOUSE_ID": _cli_text(request, "warehouse")},
-                  sp_factory=None, user_factory=user_factory, writer_factory=lambda: OnWarehouse(user_factory(host, token), warehouse))
+                  sp_factory=lambda: user_factory(host, token), user_factory=user_factory,
+                  writer_factory=lambda: OnWarehouse(user_factory(host, token), warehouse))
     # REQ-418 (D-SL-10B): a decision on a page inside Inspire is written as the App or per-user; the person is recorded as the actor.
     if not shell.inside:
         raise HttpError(409, "Inspire records decisions only for a page inside Inspire")
@@ -2306,8 +2306,8 @@ class Shell:
         return key in SCREENS + REMOVED_SCREENS and (self.settings.get("screens") or {}).get(key) is not False
 
     def workspace(self, headers: dict) -> tuple:
-        # REQ-418 (D-SL-10B): a page inside Inspire reads as the signed-in viewer, whatever its auth; only its decisions are written as the App.
-        if self.settings["auth"] == "user" or self.inside:
+        # REQ-418 (D-SL-10B): a page inside Inspire reads as the App's service principal; the signed-in viewer is only the recorded actor.
+        if self.settings["auth"] == "user" and not self.inside:
             token = headers.get("x-forwarded-access-token")
             if not token:
                 raise HttpError(401, "sign in to the workspace to see this App; it shows each person only the data they may read")
@@ -2337,8 +2337,7 @@ class Shell:
         return viewer
 
     def service(self):
-        if self.inside:
-            raise HttpError(403, INSIDE_SP)
+        # REQ-418 (D-SL-10B): a page inside Inspire reads as the App's service principal, like every other page.
         if self._sp is None:
             self._sp = self.sp_factory()
         return self._sp

@@ -1254,8 +1254,9 @@ export function ownSchemaPickPermission(place, ownSchema) {
 }
 
 export function ownSchemaFallbackNote(catalog, me = '') {
-  const who = String(me || '').trim() ? `\`${String(me).trim()}\`` : 'you';
-  return `You cannot create schemas in ${catalog}, so this use case's tables go to the Inspire database schema. For a schema of its own, `
+  // REQ-418 (D-SL-10B): the App creates the schema, so the App's rights are the ones that decide, and the App is the one to grant.
+  const who = String(me || '').trim() ? `the App, \`${String(me).trim()}\`` : 'the Inspire App';
+  return `The Inspire App cannot create schemas in ${catalog}, so this use case's tables go to the Inspire database schema. For a schema of its own, `
     + `ask your data owner to give ${who} CREATE SCHEMA on ${catalog}, then pick Its own schema again. The exact command is in Permission Required.`;
 }
 

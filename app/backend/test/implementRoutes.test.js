@@ -622,7 +622,7 @@ test('the output check passes a new table the user can create and names what is 
     assert.equal(got.data.ok, true);
     assert.equal(got.data.identity, 'inspire-manual');
     assert.deepEqual(got.data.write, { ok: true, detail: 'inspire-manual, the identity Inspire builds as, can create main.inspire.churn_out' });
-    assert.deepEqual(got.data.safety, { ok: true, detail: 'main.inspire.churn_out is new; the First run creates it' });
+    assert.deepEqual(got.data.safety, { ok: true, warn: true, detail: 'main.inspire.churn_out is new; the First run creates it' });
   });
   await withApp({ access: NOT_MINE_SCHEMA }, async (url, made) => {
     const got = await call(url, CHECK);
