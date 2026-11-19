@@ -437,3 +437,33 @@ def test_the_readout_states_unused_reference_tables_and_lists_technical_tables_o
     assert set(coverage["reference_reasons"]) == {_fqtn("bakehouse", "ref_currency")}
     assert coverage["technical"] == [_fqtn("bakehouse", "dim_date")]
     assert "[TABLE-COVERAGE FIRED]" in caplog.text
+
+
+def _recorded_links(name):
+    with open(os.path.join(REG, f"{name}_inferred_fk.json"), encoding="utf-8") as handle:
+        return sorted(json.load(handle)["inferred_fk"])
+
+
+def test_tpch_inferred_keys_are_the_exact_recorded_set_and_each_is_a_real_tpch_key(agent_ns):
+    # Every recorded link is a real TPC-H foreign key (checked by hand against the TPC-H schema); the set is exact.
+    _graph, links = _inferred_graph(agent_ns, "tpch", _load("tpch_schema.json"))
+    assert links == _recorded_links("tpch")
+    assert len(links) == 9
+
+
+def test_nyctaxi_single_table_scope_infers_no_keys(agent_ns):
+    _graph, links = _inferred_graph(agent_ns, "nyctaxi", _load("nyctaxi_schema.json"))
+    assert links == _recorded_links("nyctaxi") == []
+
+
+def test_a_scope_with_one_prefixed_table_keeps_its_full_name_form(agent_ns):
+    # The domain-prefix rule needs a second table in the scope that shares the leading token. Alone, sales_franchises keeps
+    # only its full name forms, and media_reviews.franchiseid joins nothing. A second sales_ table turns the rule on.
+    forms = agent_ns["DataLoader"]._table_name_forms
+    alone = {"sales_franchises": ["franchiseid", "name"], "media_reviews": ["franchiseid", "review"]}
+    _graph, links = _inferred_graph(agent_ns, "scope", alone)
+    assert links == []
+    assert forms("sales_franchises", strip_affixes=True) == {"sales_franchises", "sales_franchise"}
+    shared = dict(alone, sales_customers=["customerid", "name"])
+    _graph, links = _inferred_graph(agent_ns, "scope", shared)
+    assert links == ["samples.scope.media_reviews.franchiseid -> samples.scope.sales_franchises.franchiseid"]

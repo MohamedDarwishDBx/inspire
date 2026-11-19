@@ -1,0 +1,14 @@
+{
+ "source": "samples.tpch information_schema.columns (public sample, metadata only); the inferred foreign keys the naming rules produce from the fixture, exact list",
+ "inferred_fk": [
+  "samples.tpch.customer.c_nationkey -> samples.tpch.nation.n_nationkey",
+  "samples.tpch.lineitem.l_orderkey -> samples.tpch.orders.o_orderkey",
+  "samples.tpch.lineitem.l_partkey -> samples.tpch.part.p_partkey",
+  "samples.tpch.lineitem.l_suppkey -> samples.tpch.supplier.s_suppkey",
+  "samples.tpch.nation.n_regionkey -> samples.tpch.region.r_regionkey",
+  "samples.tpch.orders.o_custkey -> samples.tpch.customer.c_custkey",
+  "samples.tpch.partsupp.ps_partkey -> samples.tpch.part.p_partkey",
+  "samples.tpch.partsupp.ps_suppkey -> samples.tpch.supplier.s_suppkey",
+  "samples.tpch.supplier.s_nationkey -> samples.tpch.nation.n_nationkey"
+ ]
+}
