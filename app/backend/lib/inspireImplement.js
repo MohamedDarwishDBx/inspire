@@ -63,8 +63,8 @@ const INSPIRE_NOT_SETTINGS = ['result_table', 'model_name', 'ai_endpoint', 'as_o
 const INSPIRE_TIER_SETTINGS = { measured: ['act_now_amount', 'review_amount'], predicted: ['act_now_share', 'review_share'] };
 const INSPIRE_FAMILY_FLAGGING = { A: ['min_probability'], B: ['alert_quantile', 'max_alerts_per_run'], C: ['flag_segments'], D: ['min_score', 'items_per_entity'],
   E: ['min_deviation'], F: [], G: [], H: [] };
-const IMPLEMENT_SETTINGS_NO_SIGN_IN = 'Inspire reaches the App\u2019s settings with your own sign-in, and this request carries none, so they show here as built. '
-  + 'Open the App to change them.';
+const IMPLEMENT_SETTINGS_NO_SIGN_IN = 'Inspire cannot reach the App\u2019s settings: the App answers only a signed-in person, and this request carries no sign-in, '
+  + 'so they show here as built. Open the App to change them.';
 const IMPLEMENT_ALL_SETTINGS = 'all settings (Vibe/Add/Remove Features, then Open all settings)';
 const IMPLEMENT_SETTINGS_NO_APP = `This MVP has no App, so its settings change in ${IMPLEMENT_ALL_SETTINGS}, where the Settings step saves them without rebuilding the notebook.`;
 const IMPLEMENT_SETTINGS_NOT_APP_URL = 'The App\u2019s address is not a Databricks App address, so Inspire does not send your sign-in to it.';
@@ -2640,7 +2640,8 @@ function checkedSourceTables(spec, involved) {
   return uniqueTables([...picks.map((p) => p.chosen), ...swappedOut.map((p) => p.original)]);
 }
 
-const IMPLEMENT_TABLES_NO_SIGN_IN = 'Inspire reads the new tables with your own sign-in, and this request carries none, so it cannot tell whether the change rebuilds anything';
+const IMPLEMENT_TABLES_NO_SIGN_IN = 'Inspire reads the new tables as its App, and this request has no App credential, so it cannot tell whether the change rebuilds anything. '
+  + 'Reload the App and try again';
 const IMPLEMENT_SWAPS_TOO_SLOW = 'The search for similar tables took too long. Use Search for another table to pick one.';
 
 const lowerName = (value) => str(value).trim().toLowerCase();

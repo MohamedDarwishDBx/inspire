@@ -97,8 +97,8 @@ test('columns and values of every table, the use case\u2019s own included, are r
 
 
 const { RUN_NO_APP_TOKEN } = require('../lib/ucReads');
-const cannotRead = (names) => `You can't read ${names}. Pick tables and files you can read, or ask your data owner for access`; // file paths
-const tableCannotRead = () => "You can't read this source table. Pick tables you can read, or ask your data owner for access";
+const cannotRead = (names) => `The App can't read ${names}. Pick tables and files the App can read, or ask your data owner for access`; // file paths
+const tableCannotRead = () => "The App can't read this source table. Pick tables the App can read, or ask your data owner for access";
 const insertedSpec = (made) => JSON.parse(made.sqlCalls.find((c) => /^INSERT/.test(String(c.sql)) && String(c.sql).includes('__inspire_implement'))
   .parameters.find((p) => p.name === 'spec').value);
 const DB = { inspire_database: 'main.inspire', warehouse_id: 'wh1', session_id: '42' };
@@ -114,11 +114,11 @@ test('an MVP build drops a secondary table the person cannot read, says so, and 
   await withApp({ history: [], ...mine }, async (url, made) => {
     const plan = await call(url, '/api/inspire/implement/plan', { method: 'POST', body: { ...DB, spec: SPEC } });
     assert.equal(plan.status, 200, JSON.stringify(plan.data));
-    assert.deepEqual(plan.data.warnings, ["Building without a table you can't read."]);
+    assert.deepEqual(plan.data.warnings, ["Building without a table the App can't read."]);
     const got = await call(url, '/api/inspire/implement/submit', { method: 'POST', body: { ...DB, spec: SPEC } });
     assert.equal(got.status, 200, JSON.stringify(got.data));
-    assert.deepEqual(got.data.warnings, ["Building without a table you can't read."]);
-    assert.deepEqual(got.data.warning_details, ["Tables you can't read: main.s.returns_v2"], 'the ids sit under Details');
+    assert.deepEqual(got.data.warnings, ["Building without a table the App can't read."]);
+    assert.deepEqual(got.data.warning_details, ["Tables the App can't read: main.s.returns_v2"], 'the ids sit under Details');
     assert.equal(made.jobs.length, 1);
     const sent = insertedSpec(made);
     assert.deepEqual(sent.data.removed_tables, ['main.s.returns'], 'the original name of the swapped table is what the build leaves out');

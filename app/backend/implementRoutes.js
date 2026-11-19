@@ -1665,8 +1665,8 @@ function registerImplementRoutes(app, deps) {
     }
     return {
       spec: next,
-      warnings: [`Building without ${notes.length === 1 ? 'a table' : `${notes.length} tables`} you can't read.`, ...reads.uncheckedWarnings],
-      details: [`Tables you can't read: ${I.joinAnd(notes)}`],
+      warnings: [`Building without ${notes.length === 1 ? 'a table' : `${notes.length} tables`} the App can't read.`, ...reads.uncheckedWarnings],
+      details: [`Tables the App can't read: ${I.joinAnd(notes)}`],
     };
   }
 

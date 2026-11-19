@@ -461,10 +461,17 @@ export async function toAppAccess(page) {
   await goToStep(page, 'App access');
 }
 
+// REQ-418: the App reads as its service principal (Internal data) by default. The access choice shows only for a policied source
+// (openUi({ policies })), so a test that only needs the shared default reaches the placement step and picks the choice only when it is shown.
 export async function toSharedAccess(page) {
-  await toAppAccess(page);
-  await page.getByRole('region', { name: 'App access' }).getByRole('radio', { name: /^Internal data/ }).check();
+  await goToStep(page, 'App placement');
+  await page.getByText('Finding the Apps Inspire built').waitFor({ state: 'detached' });
+  const access = page.getByRole('region', { name: 'App access' });
+  if (await access.count()) await access.getByRole('radio', { name: /^Internal data/ }).check();
 }
+
+// The policies of the harness source tables (main.s.orders is row-filtered): the App's ABAC read returns them, so the access choice shows.
+export const POLICIED_SOURCE = { 'main.s.orders': [{ policy_type: 'POLICY_TYPE_ROW_FILTER' }] };
 
 export async function toVibes(page) {
   await nextUntil(page, 'Vibes');

@@ -256,26 +256,26 @@ function shownNames(names) {
 }
 
 function runUnreadableText(names) {
-  return `You can't read ${shownNames(names)}. Pick tables and files you can read, or ask your data owner for access`;
+  return `The App can't read ${shownNames(names)}. Pick tables and files the App can read, or ask your data owner for access`;
 }
 
 // Table reads name no id in the sentence; the tables themselves are returned as `unreadable` for Details.
 function runUnreadableTablesText(names) {
-  return `You can't read ${names.length === 1 ? 'this source table' : `${names.length} source tables`}. `
-    + 'Pick tables you can read, or ask your data owner for access';
+  return `The App can't read ${names.length === 1 ? 'this source table' : `${names.length} source tables`}. `
+    + 'Pick tables the App can read, or ask your data owner for access';
 }
 
 function skippedTablesText(names) {
-  return `Skipped ${names.length} ${names.length === 1 ? 'table' : 'tables'} you can't read.`;
+  return `Skipped ${names.length} ${names.length === 1 ? 'table' : 'tables'} the App can't read.`;
 }
 
 // The names of skipped tables, shown under Details next to the warning.
 function skippedTablesDetail(names) {
-  return `Tables you can't read: ${shownNames(names)}`;
+  return `Tables the App can't read: ${shownNames(names)}`;
 }
 
 function uncheckedText(items) {
-  return `Inspire could not check that you can read ${shownNames(items)}, so the run reads ${items.length === 1 ? 'it' : 'them'} as picked.`;
+  return `Inspire could not check that the App can read ${shownNames(items)}, so the run reads ${items.length === 1 ? 'it' : 'them'} as picked.`;
 }
 
 async function runReadPlan(dbFetch, req, reads) {
@@ -465,12 +465,12 @@ async function folderPlan(dbFetch, req, folder, { appToken, manager = false }) {
 // Every reason names the App and gives the fix for that reason only (a hidden folder is not a missing one, a scope is not a grant).
 function appCantWriteText(folder, verdict) {
   const tail = 'so the run saves no files there';
-  const noun = folder.startsWith('/Volumes/') ? 'volume' : 'folder';
   if (verdict.kind === 'scope') return `The Inspire App can't write to ${folder}, ${tail}: ${verdict.reason}. Ask an App manager to re-run the Inspire installer, which adds the scopes Inspire needs.`;
   if (verdict.kind === 'notFolder') return `${verdict.at} is not a folder, ${tail}. Pick a folder, not a notebook or a file.`;
   if (verdict.kind === 'hidden') {
-    if (verdict.missing) return `${folder} does not exist yet, and the Inspire App cannot see ${verdict.at} to create it, ${tail}. Pick a ${noun} the App can see.`;
-    return `The Inspire App can't write to ${folder}, ${tail}: the App cannot see it. Pick a ${noun} the App can see.`;
+    const fix = `${verdict.fix.charAt(0).toUpperCase()}${verdict.fix.slice(1)}.`;
+    if (verdict.missing) return `${folder} does not exist yet, and the Inspire App cannot see ${verdict.at} to create it, ${tail}. ${fix}`;
+    return `The Inspire App can't write to ${folder}, ${tail}: the App cannot see it. ${fix}`;
   }
   if (verdict.kind === 'volumeDenied') return `The Inspire App can't write to ${folder}, ${tail}. Ask your data owner to give the App WRITE VOLUME on it.`;
   if (folder.startsWith('/Volumes/')) return `The Inspire App can't write to ${folder}, ${tail}. Ask your data owner to give the App WRITE VOLUME on it.`;

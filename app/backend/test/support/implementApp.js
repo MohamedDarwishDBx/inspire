@@ -77,7 +77,8 @@ function makeApp(overrides = {}, { mount } = {}) {
     ],
     others: 0,
     me: { userName: 'amr@x', displayName: 'Amr' },
-    warehousePermissions: { access_control_list: [{ user_name: 'amr@x', all_permissions: [{ permission_level: 'CAN_MANAGE' }] }] },
+    // REQ-418: the App reads and saves with the warehouse as its service principal, so that is the principal that holds CAN MANAGE.
+    warehousePermissions: { access_control_list: [{ service_principal_name: 'app-sp-id', all_permissions: [{ permission_level: 'CAN_MANAGE' }] }] },
     ...overrides,
   };
   const app = express();
@@ -108,8 +109,11 @@ function makeApp(overrides = {}, { mount } = {}) {
         if (/^\/api\/2\.1\/unity-catalog\/policies\/TABLE\//i.test(path)) {
           const denied = typeof state.abacUnreadable === 'function' ? state.abacUnreadable(token)
             : state.abacUnreadable && (!state.abacUnreadableAppOnly || token === (state.dbToken || 'tok'));
-          return denied ? json({ error_code: 'PERMISSION_DENIED', message: 'User does not have READ METADATA on Table' }, 403)
-            : json({ policies: [] });
+          if (denied) return json({ error_code: 'PERMISSION_DENIED', message: 'User does not have READ METADATA on Table' }, 403);
+          // REQ-418: `policies` maps a table (lower case) to its policies, e.g. { 'main.s.orders': [{ policy_type: 'POLICY_TYPE_ROW_FILTER' }] }.
+          const policied = /^\/api\/2\.1\/unity-catalog\/policies\/TABLE\/([^/?]+)/i.exec(path);
+          const listed = policied ? (state.policies || {})[decodeURIComponent(policied[1]).toLowerCase()] : null;
+          return json({ policies: listed || [] });
         }
         const ucTable = /^\/api\/2\.1\/unity-catalog\/tables\/([^/?]+)$/.exec(path);
         if (ucTable) {

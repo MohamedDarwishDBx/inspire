@@ -9,8 +9,8 @@ const PERSON = 'person-token';
 const PERSON_EMAIL = ['pat.lee', 'example.com'].join('@');
 const APP_ENV = { NODE_ENV: 'production', DATABRICKS_CLIENT_ID: 'inspire-client', DATABRICKS_CLIENT_SECRET: 'inspire-secret' };
 const { RUN_NO_APP_TOKEN } = require('../lib/ucReads');
-const cannotRead = (names) => `You can't read ${names}. Pick tables and files you can read, or ask your data owner for access`; // file paths
-const tableCannotRead = () => "You can't read this source table. Pick tables you can read, or ask your data owner for access";
+const cannotRead = (names) => `The App can't read ${names}. Pick tables and files the App can read, or ask your data owner for access`; // file paths
+const tableCannotRead = () => "The App can't read this source table. Pick tables the App can read, or ask your data owner for access";
 const scopeOf = (workspace) => launched(workspace)[0].body.tasks[0].notebook_task.base_parameters['01_uc_metadata'];
 
 const SEES = {
@@ -148,8 +148,8 @@ test('a run skips a chosen table the App cannot read and says so, is refused onl
   await withInspire(async (url, workspace) => {
     const skipped = await launch(url, { '01_uc_metadata': 'main.s.orders,main.s.missing' });
     assert.equal(skipped.status, 200, JSON.stringify(skipped.data));
-    assert.deepEqual(skipped.data.warnings, ["Skipped 1 table you can't read."]);
-    assert.deepEqual(skipped.data.warning_details, ["Tables you can't read: main.s.missing"], 'the ids sit under Details');
+    assert.deepEqual(skipped.data.warnings, ["Skipped 1 table the App can't read."]);
+    assert.deepEqual(skipped.data.warning_details, ["Tables the App can't read: main.s.missing"], 'the ids sit under Details');
     assert.deepEqual(skipped.data.skipped_tables, ['main.s.missing']);
     assert.equal(scopeOf(workspace), 'main.s.orders', 'the run reads only what the App can read');
   });
@@ -178,8 +178,8 @@ test('a whole schema or catalog runs on the tables the App can read, names the s
   await withInspire(async (url, workspace) => {
     const schema = await launch(url, { '01_uc_metadata': 'main.s' });
     assert.equal(schema.status, 200, JSON.stringify(schema.data));
-    assert.deepEqual(schema.data.warnings, ["Skipped 1 table you can't read."]);
-    assert.deepEqual(schema.data.warning_details, ["Tables you can't read: main.s.salaries_view"]);
+    assert.deepEqual(schema.data.warnings, ["Skipped 1 table the App can't read."]);
+    assert.deepEqual(schema.data.warning_details, ["Tables the App can't read: main.s.salaries_view"]);
     assert.equal(scopeOf(workspace), 'main.s.orders,main.s.returns', 'a browse-only table is left out of the run');
     const listed = workspace.calls.filter((c) => c.path.startsWith('/api/2.1/unity-catalog/tables?'));
     assert.ok(listed.some((c) => c.token === SP_TOKEN && new URL(`http://x${c.path}`).searchParams.get('include_browse') === 'true'),
@@ -189,8 +189,8 @@ test('a whole schema or catalog runs on the tables the App can read, names the s
   await withInspire(async (url, workspace) => {
     const catalog = await launch(url, { '01_uc_metadata': 'main' });
     assert.equal(catalog.status, 200, JSON.stringify(catalog.data));
-    assert.deepEqual(catalog.data.warnings, ["Skipped 2 tables you can't read."]);
-    assert.deepEqual(catalog.data.warning_details, ["Tables you can't read: main.s.salaries_view and main.secret.ledger"]);
+    assert.deepEqual(catalog.data.warnings, ["Skipped 2 tables the App can't read."]);
+    assert.deepEqual(catalog.data.warning_details, ["Tables the App can't read: main.s.salaries_view and main.secret.ledger"]);
     assert.equal(scopeOf(workspace), 'main.s.orders,main.s.returns');
     assert.ok(!workspace.calls.some((c) => c.path.includes('schema_name=information_schema')), 'the catalog’s information_schema is not a table the run reads');
   });
@@ -237,7 +237,7 @@ test('with no forwarded person token the run still starts as the App, and a chec
   await withInspire(async (url, workspace) => {
     const down = await launch(url, { '01_uc_metadata': 'main.s.orders' });
     assert.equal(down.status, 200, JSON.stringify(down.data));
-    assert.deepEqual(down.data.warnings, ['Inspire could not check that you can read main.s.orders (metastore unavailable), so the run reads it as picked.']);
+    assert.deepEqual(down.data.warnings, ['Inspire could not check that the App can read main.s.orders (metastore unavailable), so the run reads it as picked.']);
     assert.equal(scopeOf(workspace), 'main.s.orders');
   }, { '/api/2.1/unity-catalog/tables/main.s.orders': [500, { message: 'metastore unavailable' }] });
 });
@@ -253,8 +253,8 @@ test('the run reads are parsed as the agent parses UC Metadata and the strategic
   const many = Array.from({ length: 13 }, (_, i) => `main.s.t${i}`);
   assert.equal(U.runUnreadableText(many), cannotRead(`${many.slice(0, 10).join(', ')} and 3 more`));
   assert.equal(U.runUnreadableText(['a.b.c']), cannotRead('a.b.c'));
-  assert.equal(U.skippedTablesText(many), "Skipped 13 tables you can't read.");
-  assert.equal(U.skippedTablesDetail(many), `Tables you can't read: ${many.slice(0, 10).join(', ')} and 3 more`);
+  assert.equal(U.skippedTablesText(many), "Skipped 13 tables the App can't read.");
+  assert.equal(U.skippedTablesDetail(many), `Tables the App can't read: ${many.slice(0, 10).join(', ')} and 3 more`);
   for (const text of [U.RUN_NO_APP_TOKEN, U.runUnreadableText(['a.b.c']), U.runUnreadableTablesText(['a.b', 'a.c'])]) {
     assert.ok(text.split(/\s+/).length <= 20, `${text} is at most 20 words`);
   }
@@ -274,7 +274,7 @@ test('a picker list Unity Catalog cuts says it was cut, unless the warehouse lis
     assert.equal(tables.data.truncated, true);
     const cut = await launch(url, { '01_uc_metadata': 'main.s' });
     assert.equal(cut.status, 200, JSON.stringify(cut.data));
-    assert.deepEqual(cut.data.warnings, ['Inspire could not check that you can read main.s (main.s holds more tables than the 200 Inspire can list), so the run reads it as picked.']);
+    assert.deepEqual(cut.data.warnings, ['Inspire could not check that the App can read main.s (main.s holds more tables than the 200 Inspire can list), so the run reads it as picked.']);
     assert.equal(scopeOf(workspace), 'main.s', 'an unchecked schema is sent as typed, never cut down to the tables that were listed');
   }, { '/api/2.1/unity-catalog/tables': endless('tables', 'orders') });
   await withInspire(async (url) => {
@@ -310,7 +310,7 @@ test('table reads say this source table or N source tables and never name the id
   const U = require('../lib/ucReads');
   assert.equal(U.runUnreadableTablesText(['hr.p.salaries']), tableCannotRead());
   assert.equal(U.runUnreadableTablesText(['main.s.a', 'main.s.b']),
-    "You can't read 2 source tables. Pick tables you can read, or ask your data owner for access");
+    "The App can't read 2 source tables. Pick tables the App can read, or ask your data owner for access");
   assert.doesNotMatch(U.runUnreadableTablesText(['main.s.a', 'main.s.b']), /main\.s\./);
   assert.equal(U.runUnreadableText(['/Workspace/Users/someone/strategy.json']), cannotRead('/Workspace/Users/someone/strategy.json'));
 });

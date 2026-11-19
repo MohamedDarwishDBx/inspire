@@ -22,6 +22,12 @@ const WRITE_CALL = (c) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.method) 
 const APP_CANT = (folder) => `The Inspire App can't write to ${folder}, so the run saves no files there. Ask an App manager to give the App CAN MANAGE on it.`;
 const APP_CANT_CREATE = (folder) => `${folder} does not exist yet, and the Inspire App can't create it, so the run saves no files there. Create ${folder}, then give the App CAN MANAGE on it.`;
 const APP_CANT_VOLUME = (folder) => `The Inspire App can't write to ${folder}, so the run saves no files there. Ask your data owner to give the App WRITE VOLUME on it.`;
+const APP_HIDDEN = (folder, at) => `${folder} does not exist yet, and the Inspire App cannot see ${at} to create it, so the run saves no files there. Pick a folder the App can see.`;
+const APP_HIDDEN_VOLUME = (folder, at) => `${folder} does not exist yet, and the Inspire App cannot see ${at} to create it, so the run saves no files there. `
+  + 'Create the volume, or ask your data owner for access to it.';
+const APP_NOT_FOLDER = (at) => `${at} is not a folder, so the run saves no files there. Pick a folder, not a notebook or a file.`;
+const APP_SCOPE = (folder) => `The Inspire App can't write to ${folder}, so the run saves no files there: the App's sign-in lacks a scope this check needs. `
+  + 'Ask an App manager to re-run the Inspire installer, which adds the scopes Inspire needs.';
 const UNRUNNABLE_OWN = (home) => `Inspire cannot save to your own folder ${home}, and the App cannot write there yet, so Inspire will not start a run that saves no files there: `
   + `ask an App manager to give the App CAN MANAGE on ${home}, then launch again.`;
 const submitted = () => S.state.calls.filter((c) => c.path.startsWith('/api/2.1/jobs/'));
@@ -65,9 +71,9 @@ test('a folder the App cannot write refuses the launch even when the person can 
   for (const [label, seed, expected] of [
     ['a group the App is not in, though the person reaches it through parents',
       { personGroups: ['analysts'], groupParents: { analysts: ['data'], data: ['finance'] }, folders: { '/Shared/team': { id: 13, writers: ['group:finance'] } } }, APP_CANT_CREATE('/Shared/team/out')],
-    ['a folder the App cannot see', { folders: { '/Shared/team': { id: 13, hidden: true } } }, APP_CANT_CREATE('/Shared/team/out')],
-    ['a notebook where the folder would be', { folders: { '/Shared/team': { id: 13, type: 'NOTEBOOK' } } }, APP_CANT_CREATE('/Shared/team/out')],
-    ['an App check that lacks a workspace scope', { scopeless: true, folders: { '/Shared/team': { id: 13, writers: '*' } } }, APP_CANT('/Shared/team/out')],
+    ['a folder the App cannot see', { folders: { '/Shared/team': { id: 13, hidden: true } } }, APP_HIDDEN('/Shared/team/out', '/Shared/team')],
+    ['a notebook where the folder would be', { folders: { '/Shared/team': { id: 13, type: 'NOTEBOOK' } } }, APP_NOT_FOLDER('/Shared/team')],
+    ['an App check that lacks a workspace scope', { scopeless: true, folders: { '/Shared/team': { id: 13, writers: '*' } } }, APP_SCOPE('/Shared/team/out')],
   ]) {
     S.reset({ notebookPresent: true, ...seed });
     const got = await launch('/Shared/team/out');
@@ -121,17 +127,17 @@ test('a probe left behind by a failed delete is swept by the next check in that 
 });
 
 test('a volume needs a probe the App can create, read with the App token, and a grant the App does not hold is refused', async () => {
-  for (const [label, volume, status] of [
-    ['WRITE VOLUME for the App', { writers: [S.APP_SP] }, 200],
-    ['WRITE VOLUME for the person only, which the App does not hold', { writers: [ME] }, 403],
-    ['WRITE VOLUME through a group the App is not in, though the person is', { writers: ['group:lake-writers'] }, 403],
-    ['READ VOLUME only', { writers: [OWNER] }, 403],
-    ['no such volume', null, 403],
+  for (const [label, volume, status, message] of [
+    ['WRITE VOLUME for the App', { writers: [S.APP_SP] }, 200, null],
+    ['WRITE VOLUME for the person only, which the App does not hold', { writers: [ME] }, 403, APP_CANT_VOLUME('/Volumes/main/sales/files/out')],
+    ['WRITE VOLUME through a group the App is not in, though the person is', { writers: ['group:lake-writers'] }, 403, APP_CANT_VOLUME('/Volumes/main/sales/files/out')],
+    ['READ VOLUME only', { writers: [OWNER] }, 403, APP_CANT_VOLUME('/Volumes/main/sales/files/out')],
+    ['no such volume', null, 403, APP_HIDDEN_VOLUME('/Volumes/main/sales/files/out', '/Volumes/main/sales/files')],
   ]) {
     S.reset({ notebookPresent: true, personGroups: ['analysts'], groupParents: { analysts: ['lake-writers'] }, volumes: volume ? { 'main.sales.files': volume } : {} });
     const got = await launch('/Volumes/Main/Sales/Files/out');
     assert.equal(got.status, status, `${label}: ${got.text}`);
-    if (status === 403) assert.equal(got.data.error, APP_CANT_VOLUME('/Volumes/main/sales/files/out'), label);
+    if (status === 403) assert.equal(got.data.error, message, label);
     if (status === 200) assert.deepEqual([S.state.launches[0].output_folder, S.state.created.length], ['/Volumes/main/sales/files/out', 0], label);
     const fsCalls = S.state.calls.filter((c) => c.path.startsWith('/api/2.0/fs/'));
     assert.ok(fsCalls.length > 0, `${label}: the volume was checked`);
