@@ -1,0 +1,20 @@
+{
+ "source": "Column names only, taken from the shipped healthverity demo files that reference them. Each kept name appears in those files. No rows, no values. Types are not recorded.",
+ "tables": {
+  "claims_sample_synthetic": [
+   "claim_id",
+   "claim_type",
+   "patient_zip",
+   "patient_state",
+   "patient_year_of_birth",
+   "patient_gender",
+   "diagnosis_code",
+   "diagnosis_code_qual",
+   "procedure_code",
+   "procedure_code_qual",
+   "procedure_modifier_1",
+   "procedure_units_billed",
+   "place_of_service"
+  ]
+ }
+}

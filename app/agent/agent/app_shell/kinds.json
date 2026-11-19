@@ -70,6 +70,11 @@
    "label": "Text and agents",
    "color": "#4f46e5",
    "app_style": "answer"
+  },
+  {
+   "id": "ai_native",
+   "label": "AI native",
+   "color": "#be185d"
   }
  ],
  "app_styles": [
@@ -850,6 +855,21 @@
    "id": "free_text",
    "label": "Free text",
    "description": "a comment, note, description, reason or review written by people"
+  },
+  {
+   "id": "action_target",
+   "label": "Action target",
+   "description": "a column that names who or what an action is written to: team, owner, assignee, queue, route"
+  },
+  {
+   "id": "label_column",
+   "label": "Label",
+   "description": "an existing category, outcome, priority or human label that an AI result can be scored against"
+  },
+  {
+   "id": "entity_name",
+   "label": "Entity name",
+   "description": "a name string that identifies one customer, site, product or supplier, for matching"
   }
  ],
  "technique_kind": {
@@ -888,7 +908,18 @@
   "Statistical Process Control": "process_control",
   "Entity Matching": "entity_matching",
   "Lifetime Value": "lifetime_value",
-  "Data Agent": "data_agent"
+  "Data Agent": "data_agent",
+  "Watch and Act": "watch_act_agent",
+  "Exception Workflow": "exception_workflow_agent",
+  "Outreach Agent": "outreach_agent",
+  "Root-Cause Agent": "root_cause_agent",
+  "Written Commentary": "written_commentary",
+  "Taxonomy Mapping": "taxonomy_mapping",
+  "Lookalike Matching": "lookalikes",
+  "Cross-Domain Assistant": "cross_domain_assistant",
+  "AI Entity Matching": "entity_matching_ai",
+  "AI Next Best Action": "next_best_action_ai",
+  "AI Data Agent": "data_agent_ai"
  },
  "technique_records": {
   "Classification": "alone",
@@ -926,7 +957,18 @@
   "Statistical Process Control": "groups",
   "Entity Matching": "together",
   "Lifetime Value": "together",
-  "Data Agent": "together"
+  "Data Agent": "together",
+  "Watch and Act": "together",
+  "Exception Workflow": "together",
+  "Outreach Agent": "together",
+  "Root-Cause Agent": "together",
+  "Written Commentary": "together",
+  "Taxonomy Mapping": "together",
+  "Lookalike Matching": "together",
+  "Cross-Domain Assistant": "together",
+  "AI Entity Matching": "together",
+  "AI Next Best Action": "together",
+  "AI Data Agent": "together"
  },
  "kinds": [
   {
@@ -4285,6 +4327,1055 @@
     ]
    },
    "demo_signal": "clean fact and dimension tables with comments on every column"
+  },
+  {
+   "id": "watch_act_agent",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 41,
+   "family": "ai_native",
+   "label": "Watch and act agent",
+   "question": "Which open cases are slipping past their due date, who should act, and what should they do first?",
+   "informational": false,
+   "layout": "monitor_triage",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "event_time",
+     "action_target",
+     "label_column"
+    ],
+    "roles_any": [
+     "money",
+     "quantity",
+     "status_activity"
+    ],
+    "min_counts": {},
+    "fk_pattern": null
+   },
+   "techniques": [
+    "Watch and Act"
+   ],
+   "contract": "monitor",
+   "value_lever": "time",
+   "value_formula": "losses caught early: flagged anomalies confirmed × average value, from {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "Watch and act agent for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "Watch and Act": "Watch and act: an agent scans {signal_columns} for records that breach a rule, names the owner in {signal_columns}, and writes the next action back to that owner's queue."
+   },
+   "strip_must_remain": "watch and act agent rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "Which {objects} broke their expected range this week?",
+     "Why was this point flagged?",
+     "How many anomalies were confirmed?",
+     "Which rule fires most?",
+     "Are anomalies rising?"
+    ],
+    "measures": [
+     "count_if(is_anomaly)",
+     "sum(value - expected)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "Anomalies above normal",
+     "rule": "count_if(is_anomaly) on {result_table}__signal in the latest period > {threshold}",
+     "sql": "(SELECT COUNT_IF(is_anomaly) FROM {result_table}__signal WHERE period = (SELECT MAX(period) FROM {result_table}__signal)) > {threshold}",
+     "threshold": 0
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "line",
+      "source": "__signal",
+      "title": "Signal with expected band"
+     },
+     {
+      "widget": "table",
+      "source": "__signal",
+      "title": "Anomalies to triage"
+     },
+     {
+      "widget": "bar",
+      "source": "__signal",
+      "title": "Exceptions by rule"
+     },
+     {
+      "widget": "counter",
+      "source": "__signal",
+      "title": "Open anomalies"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for watch and act agent: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "agent",
+   "ai_native": true,
+   "ai_functions": [
+    "ai_detect_anomalies"
+   ]
+  },
+  {
+   "id": "exception_workflow_agent",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 42,
+   "family": "ai_native",
+   "label": "Exception workflow agent",
+   "question": "Which exceptions need a decision today, who owns each one, and what happens if nobody acts?",
+   "informational": false,
+   "layout": "decision_queue",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "case_id",
+     "action_target",
+     "label_column"
+    ],
+    "roles_any": [
+     "status_activity",
+     "event_time"
+    ],
+    "min_counts": {},
+    "fk_pattern": null
+   },
+   "techniques": [
+    "Exception Workflow"
+   ],
+   "contract": "decision_queue",
+   "value_lever": "cost",
+   "value_formula": "outcomes avoided or won: captured share at the review cutoff × value per {objects}, from {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "Exception workflow agent for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "Exception Workflow": "Exception workflow: an agent routes each exception in {signal_columns} to its owner, tracks its status and escalates the ones that stay open."
+   },
+   "strip_must_remain": "exception workflow agent rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "Which {objects} have the highest risk this {cadence}?",
+     "Why is the top entity scored so high?",
+     "How much would reviewing the top 100 capture?",
+     "Which reasons drive most of the high scores?",
+     "How has the share of high-risk {objects} changed?"
+    ],
+    "measures": [
+     "count_if(priority_tier = 'Act now')",
+     "avg(value)",
+     "sum(value_at_stake)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "Act now above normal",
+     "rule": "count of rows in {result_table} with tier 'Act now' > {threshold}"
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "table",
+      "source": "decision",
+      "title": "Ranked list"
+     },
+     {
+      "widget": "histogram",
+      "source": "__score_bins",
+      "title": "Score distribution with cutoff"
+     },
+     {
+      "widget": "line",
+      "source": "__lift",
+      "title": "Gains curve"
+     },
+     {
+      "widget": "counter",
+      "source": "decision",
+      "title": "Act now"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for exception workflow agent: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "agent",
+   "ai_native": true,
+   "ai_functions": [
+    "ai_predict_class"
+   ]
+  },
+  {
+   "id": "outreach_agent",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 43,
+   "family": "ai_native",
+   "label": "Outreach agent",
+   "question": "Which customers should we contact this week, through which team, and with which message?",
+   "informational": false,
+   "layout": "recommendation_desk",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "action_target",
+     "label_column"
+    ],
+    "roles_any": [
+     "money",
+     "quantity",
+     "event_time"
+    ],
+    "min_counts": {},
+    "fk_pattern": null
+   },
+   "techniques": [
+    "Outreach Agent"
+   ],
+   "contract": "recommendations",
+   "value_lever": "revenue",
+   "value_formula": "accepted recommendations × value per acceptance over popularity, from {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "Outreach agent for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "Outreach Agent": "Outreach: an agent drafts a message per customer from {signal_columns}, routes it to the owning team and records the outcome label."
+   },
+   "strip_must_remain": "outreach agent rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "What should we offer the top {objects}?",
+     "Why was this item recommended?",
+     "How often are recommendations taken?",
+     "Which items are never recommended?",
+     "What share of entities has a good offer?"
+    ],
+    "measures": [
+     "count(*)",
+     "avg(score)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "Coverage drops",
+     "rule": "share of entities with a recommendation in {result_table}__recs < {threshold}",
+     "sql": "(SELECT COUNT(DISTINCT entity) FROM {result_table}__recs) < {threshold} * (SELECT COUNT(DISTINCT entity_id) FROM {result_table} WHERE is_current AND change_source <> 'delete')",
+     "threshold": 0.5
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "table",
+      "source": "__recs",
+      "title": "Offers per entity"
+     },
+     {
+      "widget": "pivot",
+      "source": "__recs",
+      "title": "Item affinity"
+     },
+     {
+      "widget": "bar",
+      "source": "__recs",
+      "title": "Lift over popularity"
+     },
+     {
+      "widget": "counter",
+      "source": "__recs",
+      "title": "Entities covered"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for outreach agent: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "agent",
+   "ai_native": true,
+   "ai_functions": [
+    "ai_predict_value"
+   ]
+  },
+  {
+   "id": "root_cause_agent",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 44,
+   "family": "ai_native",
+   "label": "Root-cause agent",
+   "question": "Why did this outcome change, which factor explains most of it, and what should the owner check first?",
+   "informational": false,
+   "layout": "performance_explainer",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "label_column"
+    ],
+    "roles_any": [
+     "money",
+     "quantity",
+     "rate_probability"
+    ],
+    "min_counts": {},
+    "fk_pattern": null
+   },
+   "techniques": [
+    "Root-Cause Agent"
+   ],
+   "contract": "explainer",
+   "value_lever": "cost",
+   "value_formula": "closing half the gap to the peer median on {kpi} for the units below it, from {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "Root-cause agent for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "Root-Cause Agent": "Root cause: a classifier trained on {signal_columns} ranks the drivers of the labelled outcome, and an agent writes the likely cause for each record."
+   },
+   "strip_must_remain": "root-cause agent rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "Which {objects} are furthest below their peer group on {kpi}?",
+     "Who are the peers of the weakest unit?",
+     "How much would closing half the gap be worth?",
+     "Which peer groups have the widest spread?",
+     "Has the gap narrowed since last quarter?"
+    ],
+    "measures": [
+     "median(metric)",
+     "avg(gap)",
+     "count_if(gap < 0)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "New units below peers",
+     "rule": "count of {result_table}__peers rows with gap < 0 > {threshold}",
+     "sql": "(SELECT COUNT_IF(gap < 0) FROM {result_table}__peers) > {threshold}",
+     "threshold": 0
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "table",
+      "source": "__peers",
+      "title": "Gap to peer median"
+     },
+     {
+      "widget": "scatter",
+      "source": "__peers",
+      "title": "Units against peers"
+     },
+     {
+      "widget": "box",
+      "source": "__peers",
+      "title": "Spread by peer group"
+     },
+     {
+      "widget": "counter",
+      "source": "__peers",
+      "title": "Units below peers"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for root-cause agent: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "agent",
+   "ai_native": true,
+   "ai_functions": [
+    "ai_top_drivers"
+   ]
+  },
+  {
+   "id": "written_commentary",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 45,
+   "family": "ai_native",
+   "label": "Written commentary",
+   "question": "What changed this period, in plain words, and what does the owner need to know?",
+   "informational": true,
+   "layout": "dashboard",
+   "decision_layout": "performance_explainer",
+   "signature": {
+    "roles_all": [
+     "event_time",
+     "label_column"
+    ],
+    "roles_any": [
+     "money",
+     "quantity"
+    ],
+    "min_counts": {},
+    "fk_pattern": null
+   },
+   "techniques": [
+    "Written Commentary"
+   ],
+   "contract": "explainer",
+   "value_lever": "time",
+   "value_formula": "the share of the change in {kpi} each driver explains, from {signal_columns}; current change {value_at_stake}",
+   "serving_template": "Written commentary for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "Written Commentary": "Written commentary: a language model writes the period commentary from the figures in {signal_columns}, grouped by the label column."
+   },
+   "strip_must_remain": "written commentary rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "How much of the change in {kpi} came from price?",
+     "Which {objects} drove most of the volume change?",
+     "Did the mix shift toward lower-margin {objects}?",
+     "Which period had the largest price effect?",
+     "What is the bridge for the top region?"
+    ],
+    "measures": [
+     "sum(value)",
+     "count(distinct step_type)",
+     "sum(variance)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "Driver shift",
+     "rule": "abs(value) of the largest {result_table}__bridge step other than volume > {threshold} of the total change",
+     "sql": "(SELECT MAX(abs(value)) FROM {result_table}__bridge WHERE lower(step_type) <> 'volume') > {threshold} * (SELECT SUM(abs(value)) FROM {result_table}__bridge)",
+     "threshold": 0.5
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "waterfall",
+      "source": "__bridge",
+      "title": "Price, volume and mix bridge"
+     },
+     {
+      "widget": "bar",
+      "source": "__bridge",
+      "title": "Change by driver"
+     },
+     {
+      "widget": "pivot",
+      "source": "__variance",
+      "title": "Change by unit and period"
+     },
+     {
+      "widget": "counter",
+      "source": "__bridge",
+      "title": "Total change"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for written commentary: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "news",
+   "ai_native": true,
+   "ai_functions": []
+  },
+  {
+   "id": "taxonomy_mapping",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 46,
+   "family": "ai_native",
+   "label": "Taxonomy mapping",
+   "question": "Which label from our existing taxonomy does each free-text record belong to?",
+   "informational": false,
+   "layout": "segment_explorer",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "free_text",
+     "label_column"
+    ],
+    "roles_any": [],
+    "min_counts": {},
+    "fk_pattern": null
+   },
+   "techniques": [
+    "Taxonomy Mapping"
+   ],
+   "contract": "segments",
+   "value_lever": "time",
+   "value_formula": "value from one treatment per segment against one for all, from {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "Taxonomy mapping for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "Taxonomy Mapping": "Taxonomy mapping: a language model maps the text in {signal_columns} to one label of the existing taxonomy and the match is scored against the labelled rows."
+   },
+   "strip_must_remain": "taxonomy mapping rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "What makes the top segment different?",
+     "Which segment is shrinking?",
+     "How many {objects} moved to a lower segment?",
+     "Which treatment suits each segment?",
+     "Which segment has the most value?"
+    ],
+    "measures": [
+     "count(*)",
+     "sum(value)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "High value moving down",
+     "rule": "share of {result_table}__migration count that moves to another segment > {threshold}",
+     "sql": "(SELECT SUM(CASE WHEN from_segment <> to_segment THEN `count` ELSE 0 END) / NULLIF(SUM(`count`), 0) FROM {result_table}__migration) > {threshold}",
+     "threshold": 0.2
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "bar",
+      "source": "__segments",
+      "title": "Segments by size and value"
+     },
+     {
+      "widget": "table",
+      "source": "__segments",
+      "title": "Segment profiles"
+     },
+     {
+      "widget": "scatter",
+      "source": "__assign",
+      "title": "Segment map"
+     },
+     {
+      "widget": "sankey",
+      "source": "__migration",
+      "title": "Segment moves"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for taxonomy mapping: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "sheet",
+   "ai_native": true,
+   "ai_functions": []
+  },
+  {
+   "id": "lookalikes",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 47,
+   "family": "ai_native",
+   "label": "Lookalikes",
+   "question": "Which customers look most like the ones who already took the outcome we want?",
+   "informational": false,
+   "layout": "segment_explorer",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "label_column"
+    ],
+    "roles_any": [
+     "money",
+     "quantity",
+     "rate_probability"
+    ],
+    "min_counts": {},
+    "fk_pattern": null
+   },
+   "techniques": [
+    "Lookalike Matching"
+   ],
+   "contract": "segments",
+   "value_lever": "revenue",
+   "value_formula": "value from one treatment per segment against one for all, from {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "Lookalikes for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "Lookalike Matching": "Lookalike matching: records are compared on {signal_columns} with a similarity model against the labelled positives, and the closest ones are ranked."
+   },
+   "strip_must_remain": "lookalikes rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "What makes the top segment different?",
+     "Which segment is shrinking?",
+     "How many {objects} moved to a lower segment?",
+     "Which treatment suits each segment?",
+     "Which segment has the most value?"
+    ],
+    "measures": [
+     "count(*)",
+     "sum(value)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "High value moving down",
+     "rule": "share of {result_table}__migration count that moves to another segment > {threshold}",
+     "sql": "(SELECT SUM(CASE WHEN from_segment <> to_segment THEN `count` ELSE 0 END) / NULLIF(SUM(`count`), 0) FROM {result_table}__migration) > {threshold}",
+     "threshold": 0.2
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "bar",
+      "source": "__segments",
+      "title": "Segments by size and value"
+     },
+     {
+      "widget": "table",
+      "source": "__segments",
+      "title": "Segment profiles"
+     },
+     {
+      "widget": "scatter",
+      "source": "__assign",
+      "title": "Segment map"
+     },
+     {
+      "widget": "sankey",
+      "source": "__migration",
+      "title": "Segment moves"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for lookalikes: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "league",
+   "ai_native": true,
+   "ai_functions": [
+    "ai_similarity"
+   ]
+  },
+  {
+   "id": "cross_domain_assistant",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 48,
+   "family": "ai_native",
+   "label": "Cross-domain assistant",
+   "question": "Can people ask one question that spans two business areas and get an answer with its evidence?",
+   "informational": true,
+   "layout": "agent_chat",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "label_column"
+    ],
+    "roles_any": [
+     "money",
+     "quantity",
+     "event_time",
+     "status_activity"
+    ],
+    "min_counts": {},
+    "fk_pattern": "fact_to_dim"
+   },
+   "techniques": [
+    "Cross-Domain Assistant"
+   ],
+   "contract": null,
+   "value_lever": "time",
+   "value_formula": "analyst hours saved: questions answered × minutes saved per question, over {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "Cross-domain assistant for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "Cross-Domain Assistant": "Cross-domain assistant: an agent answers questions that join {signal_columns} across the linked tables, with the SQL it ran."
+   },
+   "strip_must_remain": "cross-domain assistant rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "What were total {kpi} last month?",
+     "Which {objects} grew most this quarter?",
+     "Show the top 10 {objects} by {kpi}.",
+     "How does this month compare with last year?",
+     "Which {objects} have no activity in 90 days?"
+    ],
+    "measures": [
+     "count(*)",
+     "sum(value)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "Answer accuracy drops",
+     "rule": "share of benchmark questions answered correctly < {threshold}"
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "table",
+      "source": "decision",
+      "title": "Benchmark questions"
+     },
+     {
+      "widget": "counter",
+      "source": "decision",
+      "title": "Accuracy"
+     },
+     {
+      "widget": "bar",
+      "source": "decision",
+      "title": "Questions by topic"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for cross-domain assistant: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "answer",
+   "ai_native": true,
+   "ai_functions": []
+  },
+  {
+   "id": "entity_matching_ai",
+   "nouns": {
+    "record": [
+     "pair",
+     "pairs"
+    ],
+    "kpi": [
+     "profile",
+     "profiles"
+    ]
+   },
+   "num": 49,
+   "family": "ai_native",
+   "label": "AI entity matching",
+   "question": "Which records describe the same customer, site or product, when names differ in spelling, language or format?",
+   "informational": false,
+   "layout": "network_explorer",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "entity_name",
+     "label_column"
+    ],
+    "roles_any": [
+     "free_text",
+     "region_code"
+    ],
+    "min_counts": {},
+    "fk_pattern": null
+   },
+   "techniques": [
+    "AI Entity Matching"
+   ],
+   "contract": "network",
+   "value_lever": "cost",
+   "value_formula": "duplicates merged × cost per duplicate record, from {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "AI entity matching for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "AI Entity Matching": "AI entity matching: language-model embeddings of the names in {signal_columns} score the candidate pairs, and the score is checked against the labelled matches."
+   },
+   "strip_must_remain": "ai entity matching rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "Which records are likely the same supplier?",
+     "How many duplicates are there?",
+     "Which matches need review?",
+     "What is the cost of duplicates?",
+     "Which source creates the most duplicates?"
+    ],
+    "measures": [
+     "count(*)",
+     "avg(weight)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "New duplicates",
+     "rule": "any {result_table}__edges link with weight > {threshold}",
+     "sql": "(SELECT COUNT_IF(weight > {threshold}) FROM {result_table}__edges) > 0",
+     "threshold": 0.9
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "table",
+      "source": "__edges",
+      "title": "Match pairs"
+     },
+     {
+      "widget": "bar",
+      "source": "__nodes",
+      "title": "Duplicates by source"
+     },
+     {
+      "widget": "histogram",
+      "source": "__edges",
+      "title": "Match scores"
+     },
+     {
+      "widget": "counter",
+      "source": "__edges",
+      "title": "Pairs to review"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for ai entity matching: see the kind check in dbx_generate_demo_data.py",
+   "undo_label": "Unmerge",
+   "group": {
+    "column": "community",
+    "choice": "merge",
+    "label": "Merge group",
+    "undo": "Unmerge group"
+   },
+   "choices": [
+    {
+     "id": "merge",
+     "label": "Merge",
+     "status": "Done"
+    },
+    {
+     "id": "review_later",
+     "label": "Needs review",
+     "status": "In progress"
+    },
+    {
+     "id": "not_duplicate",
+     "label": "Keep separate",
+     "status": "Dismissed",
+     "reasons": [
+      "Different company",
+      "Parent and subsidiary, keep both",
+      "Data error",
+      "Different location"
+     ]
+    }
+   ],
+   "app_style": "graph",
+   "ai_native": true,
+   "upgrade_of": "entity_matching",
+   "ai_functions": [
+    "ai_similarity"
+   ]
+  },
+  {
+   "id": "next_best_action_ai",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 50,
+   "family": "ai_native",
+   "label": "AI next best action",
+   "question": "For each customer, which single next action would most likely change the outcome, judged on the whole record?",
+   "informational": false,
+   "layout": "recommendation_desk",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "action_target",
+     "label_column"
+    ],
+    "roles_any": [
+     "money",
+     "quantity"
+    ],
+    "min_counts": {},
+    "fk_pattern": null
+   },
+   "techniques": [
+    "AI Next Best Action"
+   ],
+   "contract": "recommendations",
+   "value_lever": "revenue",
+   "value_formula": "accepted recommendations × value per acceptance over popularity, from {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "AI next best action for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "AI Next Best Action": "AI next best action: a model scores each candidate action on {signal_columns}, and a language model writes the reason for the top one."
+   },
+   "strip_must_remain": "ai next best action rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "What should we offer the top {objects}?",
+     "Why was this item recommended?",
+     "How often are recommendations taken?",
+     "Which items are never recommended?",
+     "What share of entities has a good offer?"
+    ],
+    "measures": [
+     "count(*)",
+     "avg(score)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "Coverage drops",
+     "rule": "share of entities with a recommendation in {result_table}__recs < {threshold}",
+     "sql": "(SELECT COUNT(DISTINCT entity) FROM {result_table}__recs) < {threshold} * (SELECT COUNT(DISTINCT entity_id) FROM {result_table} WHERE is_current AND change_source <> 'delete')",
+     "threshold": 0.5
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "table",
+      "source": "__recs",
+      "title": "Offers per entity"
+     },
+     {
+      "widget": "pivot",
+      "source": "__recs",
+      "title": "Item affinity"
+     },
+     {
+      "widget": "bar",
+      "source": "__recs",
+      "title": "Lift over popularity"
+     },
+     {
+      "widget": "counter",
+      "source": "__recs",
+      "title": "Entities covered"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for ai next best action: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "mail",
+   "ai_native": true,
+   "upgrade_of": "next_best_action",
+   "ai_functions": [
+    "ai_decide"
+   ]
+  },
+  {
+   "id": "data_agent_ai",
+   "nouns": {
+    "record": [
+     "record",
+     "records"
+    ],
+    "kpi": [
+     "record",
+     "records"
+    ]
+   },
+   "num": 51,
+   "family": "ai_native",
+   "label": "AI data agent",
+   "question": "Can people ask plain questions about these tables and get answers that name the labelled outcome they rely on?",
+   "informational": true,
+   "layout": "agent_chat",
+   "decision_layout": null,
+   "signature": {
+    "roles_all": [
+     "label_column"
+    ],
+    "roles_any": [
+     "money",
+     "quantity",
+     "event_time",
+     "status_activity"
+    ],
+    "min_counts": {},
+    "fk_pattern": "fact_to_dim"
+   },
+   "techniques": [
+    "AI Data Agent"
+   ],
+   "contract": null,
+   "value_lever": "time",
+   "value_formula": "analyst hours saved: questions answered × minutes saved per question, over {signal_columns}; current estimate {value_at_stake}",
+   "serving_template": "AI data agent for {owner} over {objects}: app, dashboard, Genie room, alert.",
+   "method_plain": {
+    "AI Data Agent": "AI data agent: a language model turns plain questions into SQL over {signal_columns}, runs it and states the labelled outcome each answer relies on."
+   },
+   "strip_must_remain": "ai data agent rows with the labelled outcome they are scored against, and an owner per row",
+   "genie": {
+    "questions": [
+     "What were total {kpi} last month?",
+     "Which {objects} grew most this quarter?",
+     "Show the top 10 {objects} by {kpi}.",
+     "How does this month compare with last year?",
+     "Which {objects} have no activity in 90 days?"
+    ],
+    "measures": [
+     "count(*)",
+     "sum(value)"
+    ]
+   },
+   "alerts": [
+    {
+     "name": "Answer accuracy drops",
+     "rule": "share of benchmark questions answered correctly < {threshold}"
+    }
+   ],
+   "dashboard": {
+    "widgets": [
+     {
+      "widget": "table",
+      "source": "decision",
+      "title": "Benchmark questions"
+     },
+     {
+      "widget": "counter",
+      "source": "decision",
+      "title": "Accuracy"
+     },
+     {
+      "widget": "bar",
+      "source": "decision",
+      "title": "Questions by topic"
+     }
+    ]
+   },
+   "demo_signal": "planted signal for ai data agent: see the kind check in dbx_generate_demo_data.py",
+   "app_style": "answer",
+   "ai_native": true,
+   "upgrade_of": "data_agent",
+   "ai_functions": []
   }
  ],
  "widget_fields": {
@@ -7415,7 +8506,18 @@
   "Controls Testing": "K",
   "Statistical Process Control": "K",
   "Entity Matching": "K",
-  "Data Agent": "L"
+  "Data Agent": "L",
+  "Watch and Act": "B",
+  "Exception Workflow": "J",
+  "Outreach Agent": "D",
+  "Root-Cause Agent": "A",
+  "Written Commentary": "F",
+  "Taxonomy Mapping": "G",
+  "Lookalike Matching": "C",
+  "Cross-Domain Assistant": "F",
+  "AI Entity Matching": "F",
+  "AI Next Best Action": "D",
+  "AI Data Agent": "F"
  },
  "readiness_thresholds": {
   "A": {"min_rows": 200, "min_join_coverage": 0.8, "min_positives": 200, "min_class_rate": 0.005, "max_class_rate": 0.95, "min_outcome_windows": 2, "min_auc": 0.6, "min_pr_auc_lift": 1.5, "min_auc_gain": 0.02, "min_c_index": 0.6},
@@ -7438,5 +8540,746 @@
  "technique_min_rows": {
   "Regression Analysis": 100,
   "Entity Matching": 2
+ },
+ "technique_guidance": {
+  "Watch and Act": "Method: a rule on the due date and the status, the owner from the action target column, and the next action written back to the owner's queue.\nBaseline: the same rule as a plain list of breaches per owner, with no agent.\nAccept: the breach count matches the rule on the planted columns and every breach names an owner.\nIf data is insufficient: no due date or no owner column, so the kind is not proposed.",
+  "Exception Workflow": "Method: route each open exception to its owner, classify its outcome with ai_predict_class when usable (ai_query otherwise), and escalate the ones past due.\nBaseline: the owner queue ordered by age.\nAccept: each exception has one owner and the escalations match the due-date rule.\nIf data is insufficient: fewer than two open exceptions with an owner, so the kind is not proposed.",
+  "Outreach Agent": "Method: score the expected response with ai_predict_value when usable (ai_query otherwise), route each message to the owning team, and record the outcome label.\nBaseline: contact the highest value tier first.\nAccept: the treated and control groups differ on the labelled outcome, and each contact has one owning team.\nIf data is insufficient: no labelled outcome with two groups, so the kind is not proposed.",
+  "Root-Cause Agent": "Method: rank the drivers of the labelled outcome with ai_top_drivers when usable (a logistic model otherwise), then an agent writes the likely cause per record.\nBaseline: the univariate difference of each driver between the labelled groups.\nAccept: the top driver agrees with the baseline on the labelled rows, and each cause names its columns.\nIf data is insufficient: fewer than 30 labelled positives, so the kind is not proposed.",
+  "Written Commentary": "Method: a language model writes the period commentary from the aggregated figures, grouped by the label column, and states each number it uses.\nBaseline: the template sentence with the same figures and no language model.\nAccept: every number in the commentary appears in the aggregated figures, and no label group is left out.\nIf data is insufficient: fewer than two label groups or fewer than twelve periods, so the kind is not proposed.",
+  "Taxonomy Mapping": "Method: a language model maps each free-text record to one label of the existing taxonomy (ai_classify when usable), and the match is scored against the labelled rows.\nBaseline: keyword rules over the same text.\nAccept: the mapped label agrees with the labelled row at the threshold on a labelled sample.\nIf data is insufficient: no free-text column or no label column, so the kind is not proposed.",
+  "Lookalike Matching": "Method: similarity of each record to the labelled positives on the signal columns, with ai_similarity when usable and a standardised distance otherwise.\nBaseline: the nearest-neighbour rule on the same columns.\nAccept: the top-ranked lookalikes hold more positives than the base rate, and the ranking is stable across seeds.\nIf data is insufficient: fewer than 20 labelled positives, so the kind is not proposed.",
+  "Cross-Domain Assistant": "Method: an agent answers questions over the joined linked tables, with ai_query for the wording and the SQL it ran shown with each answer.\nBaseline: the Genie room over the same tables.\nAccept: each answer shows its SQL, and the joins used exist in the foreign key graph.\nIf data is insufficient: no foreign key between two business tables, so the kind is not proposed.",
+  "AI Entity Matching": "Method: name embeddings with ai_similarity when usable (ai_query otherwise) score the candidate pairs, checked against the labelled matches.\nBaseline: the Entity Matching technique (fuzzy string similarity) on the same names.\nAccept: the AI pairs agree with the labelled matches at least as well as the baseline.\nIf data is insufficient: no labelled match column or no name column, so the kind is not proposed.",
+  "AI Next Best Action": "Method: score each candidate action with ai_decide when usable (ai_query otherwise), and write the reason for the top action with ai_query.\nBaseline: the Recommendation technique on the same action table.\nAccept: the top action beats the baseline on the labelled outcome, and every recommendation names its action target.\nIf data is insufficient: no action target or no labelled outcome, so the kind is not proposed.",
+  "AI Data Agent": "Method: a Genie room plus ai_query over the labelled tables turns plain questions into SQL and states the labelled outcome each answer relies on.\nBaseline: the Data Agent technique over the same tables.\nAccept: the benchmark questions pass at the accuracy threshold, and each answer names the labelled outcome it used.\nIf data is insufficient: no table with a labelled outcome, so the kind is not proposed."
+ },
+ "technique_gate_families": [
+  [
+   "text_sentiment",
+   "Sentiment Analysis",
+   [
+    "sentiment"
+   ],
+   [
+    "ai_analyze_sentiment"
+   ]
+  ],
+  [
+   "text_topic",
+   "Clustering",
+   [
+    "topic model",
+    "topic modelling",
+    "lda",
+    "bertopic"
+   ],
+   [
+    "bertopic",
+    "latent dirichlet"
+   ]
+  ],
+  [
+   "text_summarization",
+   "Document Processing",
+   [
+    "summariz",
+    "summaris"
+   ],
+   [
+    "ai_summarize"
+   ]
+  ],
+  [
+   "text_extraction",
+   "Extraction",
+   [
+    "information extraction",
+    "entity extraction",
+    "named entity",
+    "entity recognition"
+   ],
+   [
+    "ai_extract"
+   ]
+  ],
+  [
+   "text_classification",
+   "Classification",
+   [
+    "nlp classification",
+    "text classification"
+   ],
+   []
+  ],
+  [
+   "text_analytics",
+   "Document Processing",
+   [
+    "text analytics",
+    "text mining",
+    "nlp"
+   ],
+   []
+  ],
+  [
+   "anomaly",
+   "Anomaly Detection",
+   [
+    "anomal",
+    "outlier",
+    "isolation forest",
+    "change-point",
+    "change point"
+   ],
+   [
+    "isolation forest",
+    "local outlier factor",
+    "one-class svm",
+    "mahalanobis",
+    "z-score",
+    "lof"
+   ]
+  ],
+  [
+   "forecasting",
+   "Forecasting",
+   [
+    "forecast",
+    "time-series",
+    "time series",
+    "seasonality decomposition",
+    "seasonal decomposition"
+   ],
+   [
+    "prophet",
+    "arima",
+    "sarima",
+    "ai_forecast",
+    "exponential smoothing",
+    "holt-winters",
+    "lstm"
+   ]
+  ],
+  [
+   "trend",
+   "Trend Analysis",
+   [
+    "trend",
+    "period-over-period",
+    "period over period",
+    "month-over-month",
+    "year-over-year",
+    "yoy"
+   ],
+   [
+    "moving average",
+    "rolling average",
+    "stl"
+   ]
+  ],
+  [
+   "survival",
+   "Survival Analysis",
+   [
+    "survival",
+    "time-to-event",
+    "kaplan",
+    "hazard"
+   ],
+   [
+    "kaplan-meier",
+    "cox proportional",
+    "cox model",
+    "weibull"
+   ]
+  ],
+  [
+   "cohort",
+   "Cohort Analysis",
+   [
+    "cohort",
+    "vintage"
+   ],
+   []
+  ],
+  [
+   "funnel",
+   "Funnel Analysis",
+   [
+    "funnel",
+    "drop-off",
+    "dropoff",
+    "conversion path"
+   ],
+   []
+  ],
+  [
+   "association",
+   "Recommendation",
+   [
+    "market basket",
+    "basket analysis",
+    "association rule",
+    "affinity analysis"
+   ],
+   [
+    "apriori",
+    "fp-growth",
+    "fpgrowth"
+   ]
+  ],
+  [
+   "recommendation",
+   "Recommendation",
+   [
+    "recommend",
+    "collaborative filter",
+    "content-based"
+   ],
+   [
+    "alternating least squares",
+    "matrix factorization",
+    "als"
+   ]
+  ],
+  [
+   "clustering",
+   "Clustering",
+   [
+    "cluster",
+    "k-means",
+    "kmeans",
+    "segmentation",
+    "rfm"
+   ],
+   [
+    "k-means",
+    "kmeans",
+    "dbscan",
+    "hdbscan",
+    "hierarchical clustering",
+    "gaussian mixture",
+    "gmm"
+   ]
+  ],
+  [
+   "classification",
+   "Classification",
+   [
+    "classif",
+    "propensity"
+   ],
+   [
+    "xgboost",
+    "random forest",
+    "lightgbm",
+    "catboost",
+    "logistic regression",
+    "gradient boost",
+    "decision tree",
+    "ai_classify",
+    "classifier"
+   ]
+  ],
+  [
+   "predictive",
+   "Predictive Modeling",
+   [
+    "predictive model",
+    "prediction model",
+    "predictive"
+   ],
+   [
+    "xgboost",
+    "lightgbm",
+    "random forest",
+    "gradient boost",
+    "neural network"
+   ]
+  ],
+  [
+   "regression",
+   "Regression Analysis",
+   [
+    "regress"
+   ],
+   [
+    "ridge",
+    "lasso",
+    "elastic net",
+    "elasticnet",
+    "glm",
+    "linear regression",
+    "poisson regression",
+    "ols"
+   ]
+  ],
+  [
+   "correlation",
+   "Correlation Analysis",
+   [
+    "correlat"
+   ],
+   [
+    "pearson",
+    "spearman",
+    "covariance"
+   ]
+  ],
+  [
+   "decomposition",
+   "Decomposition",
+   [
+    "decomposition",
+    "variance bridge",
+    "price-volume-mix",
+    "price volume mix",
+    "variance to plan"
+   ],
+   [
+    "mix effect",
+    "volume effect"
+   ]
+  ],
+  [
+   "benchmarking",
+   "Peer Benchmarking",
+   [
+    "benchmarking",
+    "peer benchmark",
+    "peer group",
+    "peer comparison"
+   ],
+   [
+    "peer median",
+    "size-adjusted"
+   ]
+  ],
+  [
+   "process_mining",
+   "Process Mining",
+   [
+    "process mining",
+    "process discovery",
+    "rework loop",
+    "path variant"
+   ],
+   [
+    "directly-follows",
+    "event log"
+   ]
+  ],
+  [
+   "sequence",
+   "Sequence Analysis",
+   [
+    "sequence analysis",
+    "next event",
+    "next-event",
+    "path analysis",
+    "journey analysis",
+    "markov"
+   ],
+   [
+    "markov chain",
+    "transition matrix"
+   ]
+  ],
+  [
+   "causal_impact",
+   "Causal Impact",
+   [
+    "causal impact",
+    "difference-in-differences",
+    "difference in differences",
+    "interrupted time series",
+    "synthetic control",
+    "incrementality"
+   ],
+   [
+    "diff-in-diff",
+    "event study"
+   ]
+  ],
+  [
+   "uplift",
+   "Uplift Modeling",
+   [
+    "uplift",
+    "incremental response",
+    "treatment effect"
+   ],
+   [
+    "two-model learner",
+    "t-learner",
+    "qini curve"
+   ]
+  ],
+  [
+   "marketing_mix",
+   "Marketing Mix Modeling",
+   [
+    "marketing mix",
+    "media mix",
+    "channel attribution",
+    "adstock"
+   ],
+   [
+    "saturation curve",
+    "carry-over effect"
+   ]
+  ],
+  [
+   "threshold",
+   "Threshold Optimization",
+   [
+    "threshold optimization",
+    "threshold tuning",
+    "cutoff optimization",
+    "policy tuning",
+    "decision threshold"
+   ],
+   [
+    "expected cost curve",
+    "cost-weighted cutoff"
+   ]
+  ],
+  [
+   "queueing",
+   "Queueing",
+   [
+    "queueing",
+    "queuing",
+    "erlang"
+   ],
+   [
+    "erlang c",
+    "erlang-c"
+   ]
+  ],
+  [
+   "controls",
+   "Controls Testing",
+   [
+    "controls testing",
+    "control test",
+    "benford",
+    "segregation of duties",
+    "duplicate payment",
+    "three-way match"
+   ],
+   [
+    "benford's law",
+    "first-digit test"
+   ]
+  ],
+  [
+   "spc",
+   "Statistical Process Control",
+   [
+    "statistical process control",
+    "control chart",
+    "control limit",
+    "spc"
+   ],
+   [
+    "shewhart",
+    "cusum",
+    "ewma chart"
+   ]
+  ],
+  [
+   "entity_matching",
+   "Entity Matching",
+   [
+    "entity matching",
+    "entity resolution",
+    "record linkage",
+    "fuzzy match"
+   ],
+   [
+    "jaro-winkler",
+    "levenshtein"
+   ]
+  ],
+  [
+   "lifetime_value",
+   "Lifetime Value",
+   [
+    "lifetime value",
+    "clv",
+    "ltv"
+   ],
+   [
+    "bg/nbd",
+    "gamma-gamma"
+   ]
+  ],
+  [
+   "data_agent",
+   "Data Agent",
+   [
+    "data agent",
+    "conversational analytics",
+    "genie room",
+    "genie space"
+   ],
+   [
+    "text-to-sql"
+   ]
+  ],
+  [
+   "simulation",
+   "Simulation",
+   [
+    "simulat",
+    "monte carlo",
+    "scenario",
+    "what-if",
+    "what if"
+   ],
+   [
+    "monte carlo"
+   ]
+  ],
+  [
+   "optimization",
+   "Optimization",
+   [
+    "optimi"
+   ],
+   [
+    "linear program",
+    "integer program",
+    "milp",
+    "knapsack",
+    "solver",
+    "constraint program"
+   ]
+  ],
+  [
+   "network",
+   "Network Analysis",
+   [
+    "network",
+    "graph analy"
+   ],
+   [
+    "pagerank",
+    "graphframes",
+    "centrality",
+    "community detection",
+    "louvain"
+   ]
+  ],
+  [
+   "geospatial",
+   "Geospatial Analysis",
+   [
+    "geospatial",
+    "spatial",
+    "geographic"
+   ],
+   [
+    "h3",
+    "geohash",
+    "haversine",
+    "st_distance"
+   ]
+  ],
+  [
+   "pareto",
+   "Pareto Analysis",
+   [
+    "pareto",
+    "80/20",
+    "concentration"
+   ],
+   [
+    "lorenz",
+    "gini",
+    "herfindahl",
+    "cumulative share"
+   ]
+  ],
+  [
+   "ranking",
+   "Pareto Analysis",
+   [
+    "ranking",
+    "top-n",
+    "top n",
+    "score-based",
+    "rank"
+   ],
+   [
+    "ntile",
+    "percent_rank",
+    "dense_rank"
+   ]
+  ],
+  [
+   "ai_watch_act",
+   "Watch and Act",
+   [
+    "watch and act",
+    "watch-and-act"
+   ],
+   [
+    "rule engine"
+   ]
+  ],
+  [
+   "ai_exception",
+   "Exception Workflow",
+   [
+    "exception workflow",
+    "exception routing"
+   ],
+   []
+  ],
+  [
+   "ai_outreach",
+   "Outreach Agent",
+   [
+    "outreach agent",
+    "outreach campaign"
+   ],
+   []
+  ],
+  [
+   "ai_root_cause",
+   "Root-Cause Agent",
+   [
+    "root-cause agent",
+    "root cause agent"
+   ],
+   [
+    "ai_top_drivers"
+   ]
+  ],
+  [
+   "ai_commentary",
+   "Written Commentary",
+   [
+    "written commentary",
+    "period commentary"
+   ],
+   []
+  ],
+  [
+   "ai_taxonomy",
+   "Taxonomy Mapping",
+   [
+    "taxonomy mapping",
+    "label mapping"
+   ],
+   [
+    "ai_classify"
+   ]
+  ],
+  [
+   "ai_lookalike",
+   "Lookalike Matching",
+   [
+    "lookalike",
+    "look-alike"
+   ],
+   [
+    "ai_similarity"
+   ]
+  ],
+  [
+   "ai_cross_domain",
+   "Cross-Domain Assistant",
+   [
+    "cross-domain assistant"
+   ],
+   []
+  ],
+  [
+   "ai_entity",
+   "AI Entity Matching",
+   [
+    "ai entity matching",
+    "name embedding"
+   ],
+   [
+    "ai_similarity"
+   ]
+  ],
+  [
+   "ai_nba",
+   "AI Next Best Action",
+   [
+    "ai next best action"
+   ],
+   [
+    "ai_decide"
+   ]
+  ],
+  [
+   "ai_data_agent",
+   "AI Data Agent",
+   [
+    "ai data agent"
+   ],
+   []
+  ]
+ ],
+ "technique_value_keys": {
+  "Correlation Analysis": "value_correlation_analysis",
+  "Pareto Analysis": "value_pareto_analysis",
+  "Funnel Analysis": "value_funnel_analysis",
+  "Document Processing": "value_document_processing",
+  "Extraction": "value_extraction",
+  "AI Analysis": "value_ai_analysis",
+  "Simulation": "value_simulation",
+  "Geospatial Analysis": "value_geospatial_analysis",
+  "Forecasting": "value_forecasting",
+  "Classification": "value_classification",
+  "Anomaly Detection": "value_anomaly_detection",
+  "Cohort Analysis": "value_cohort_analysis",
+  "Segmentation": "value_segmentation",
+  "Sentiment Analysis": "value_sentiment_analysis",
+  "Trend Analysis": "value_trend_analysis",
+  "Prescriptive Analytics": "value_prescriptive_analytics",
+  "Root Cause Analysis": "value_root_cause_analysis",
+  "Optimization": "value_optimization",
+  "Recommendation": "value_recommendation",
+  "Time Series Analysis": "value_time_series_analysis",
+  "Predictive Analytics": "value_predictive_analytics",
+  "Descriptive Analytics": "value_descriptive_analytics",
+  "Predictive Modeling": "value_predictive_modeling",
+  "Clustering": "value_clustering",
+  "Regression Analysis": "value_regression_analysis",
+  "Survival Analysis": "value_survival_analysis",
+  "Network Analysis": "value_network_analysis",
+  "Decomposition": "value_decomposition",
+  "Peer Benchmarking": "value_peer_benchmarking",
+  "Process Mining": "value_process_mining",
+  "Sequence Analysis": "value_sequence_analysis",
+  "Causal Impact": "value_causal_impact",
+  "Uplift Modeling": "value_uplift_modeling",
+  "Marketing Mix Modeling": "value_marketing_mix_modeling",
+  "Threshold Optimization": "value_threshold_optimization",
+  "Queueing": "value_queueing",
+  "Controls Testing": "value_controls_testing",
+  "Statistical Process Control": "value_statistical_process_control",
+  "Entity Matching": "value_entity_matching",
+  "Lifetime Value": "value_lifetime_value",
+  "Data Agent": "value_data_agent",
+  "Watch and Act": "value_watch_and_act",
+  "Exception Workflow": "value_exception_workflow",
+  "Outreach Agent": "value_outreach_agent",
+  "Root-Cause Agent": "value_root_cause_agent",
+  "Written Commentary": "value_written_commentary",
+  "Taxonomy Mapping": "value_taxonomy_mapping",
+  "Lookalike Matching": "value_lookalike_matching",
+  "Cross-Domain Assistant": "value_cross_domain_assistant",
+  "AI Entity Matching": "value_ai_entity_matching",
+  "AI Next Best Action": "value_ai_next_best_action",
+  "AI Data Agent": "value_ai_data_agent"
  }
 }

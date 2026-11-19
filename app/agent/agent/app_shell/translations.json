@@ -320,7 +320,18 @@
   "key_measure_note": "المقياس الرئيسي",
   "doc_data_filters": "مرشحات البيانات",
   "doc_filter_all_except": "الكل باستثناء {values}",
-  "doc_filter_and_more": "و{count} أكثر"
+  "doc_filter_and_more": "و{count} أكثر",
+  "value_watch_and_act": "المراقبة والتنفيذ",
+  "value_exception_workflow": "سير عمل الاستثناءات",
+  "value_outreach_agent": "وكيل التواصل",
+  "value_root_cause_agent": "وكيل السبب الجذري",
+  "value_written_commentary": "التعليق المكتوب",
+  "value_taxonomy_mapping": "ربط التصنيف",
+  "value_lookalike_matching": "مطابقة الأشباه",
+  "value_cross_domain_assistant": "المساعد عبر المجالات",
+  "value_ai_entity_matching": "مطابقة الكيانات بالذكاء الاصطناعي",
+  "value_ai_next_best_action": "أفضل إجراء تالٍ بالذكاء الاصطناعي",
+  "value_ai_data_agent": "وكيل البيانات بالذكاء الاصطناعي"
  },
  "Spanish": {
   "main_title": "Generador de Casos de Uso Impulsado por Databricks Genie Code",
@@ -643,7 +654,18 @@
   "key_measure_note": "Medida clave",
   "doc_data_filters": "Filtros de Datos",
   "doc_filter_all_except": "todos excepto {values}",
-  "doc_filter_and_more": "y {count} más"
+  "doc_filter_and_more": "y {count} más",
+  "value_watch_and_act": "Vigilar y actuar",
+  "value_exception_workflow": "Flujo de excepciones",
+  "value_outreach_agent": "Agente de contacto",
+  "value_root_cause_agent": "Agente de causa raíz",
+  "value_written_commentary": "Comentario escrito",
+  "value_taxonomy_mapping": "Mapeo de taxonomía",
+  "value_lookalike_matching": "Coincidencia de perfiles similares",
+  "value_cross_domain_assistant": "Asistente entre dominios",
+  "value_ai_entity_matching": "Coincidencia de entidades con IA",
+  "value_ai_next_best_action": "Mejor siguiente acción con IA",
+  "value_ai_data_agent": "Agente de datos con IA"
  },
  "French": {
   "main_title": "Générateur de Cas d'Utilisation Propulsé par Databricks Genie Code",
@@ -966,7 +988,18 @@
   "key_measure_note": "Mesure clé",
   "doc_data_filters": "Filtres de Données",
   "doc_filter_all_except": "tout sauf {values}",
-  "doc_filter_and_more": "et {count} de plus"
+  "doc_filter_and_more": "et {count} de plus",
+  "value_watch_and_act": "Surveiller et agir",
+  "value_exception_workflow": "Flux des exceptions",
+  "value_outreach_agent": "Agent de prospection",
+  "value_root_cause_agent": "Agent de cause racine",
+  "value_written_commentary": "Commentaire rédigé",
+  "value_taxonomy_mapping": "Correspondance de taxonomie",
+  "value_lookalike_matching": "Correspondance de profils similaires",
+  "value_cross_domain_assistant": "Assistant inter-domaines",
+  "value_ai_entity_matching": "Rapprochement d'entités par IA",
+  "value_ai_next_best_action": "Meilleure action suivante par IA",
+  "value_ai_data_agent": "Agent de données IA"
  },
  "German": {
   "main_title": "Anwendungsfall-Generator Unterstützt von Databricks Genie Code",
@@ -1289,7 +1322,18 @@
   "key_measure_note": "Schlüsselkennzahl",
   "doc_data_filters": "Datenfilter",
   "doc_filter_all_except": "alle außer {values}",
-  "doc_filter_and_more": "und {count} weitere"
+  "doc_filter_and_more": "und {count} weitere",
+  "value_watch_and_act": "Beobachten und handeln",
+  "value_exception_workflow": "Ausnahme-Workflow",
+  "value_outreach_agent": "Kontakt-Agent",
+  "value_root_cause_agent": "Ursachen-Agent",
+  "value_written_commentary": "Schriftlicher Kommentar",
+  "value_taxonomy_mapping": "Taxonomie-Zuordnung",
+  "value_lookalike_matching": "Ähnlichkeitsabgleich",
+  "value_cross_domain_assistant": "Bereichsübergreifender Assistent",
+  "value_ai_entity_matching": "KI-Entitätsabgleich",
+  "value_ai_next_best_action": "KI-Nächste-beste-Aktion",
+  "value_ai_data_agent": "KI-Datenagent"
  },
  "Portuguese": {
   "main_title": "Gerador de Casos de Uso Impulsionado por Databricks Genie Code",
@@ -1612,7 +1656,18 @@
   "key_measure_note": "Medida-chave",
   "doc_data_filters": "Filtros de Dados",
   "doc_filter_all_except": "todos exceto {values}",
-  "doc_filter_and_more": "e mais {count}"
+  "doc_filter_and_more": "e mais {count}",
+  "value_watch_and_act": "Monitorar e agir",
+  "value_exception_workflow": "Fluxo de exceções",
+  "value_outreach_agent": "Agente de contato",
+  "value_root_cause_agent": "Agente de causa raiz",
+  "value_written_commentary": "Comentário escrito",
+  "value_taxonomy_mapping": "Mapeamento de taxonomia",
+  "value_lookalike_matching": "Correspondência de semelhantes",
+  "value_cross_domain_assistant": "Assistente entre domínios",
+  "value_ai_entity_matching": "Correspondência de entidades com IA",
+  "value_ai_next_best_action": "Próxima melhor ação com IA",
+  "value_ai_data_agent": "Agente de dados com IA"
  },
  "Italian": {
   "main_title": "Generatore di Casi d'Uso Alimentato da Databricks Genie Code",

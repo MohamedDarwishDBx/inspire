@@ -487,8 +487,11 @@ def _kind_signal_frames(seed=KIND_SIGNAL_SEED):
     dups["longitude"] = np.round(dups["longitude"] + rng.normal(0, 0.0005, n_dup), 5)
     dups["signup_date"] = [d + timedelta(days=int(k)) for d, k in zip(dups["signup_date"], rng.integers(30, 400, n_dup))]
     customers = pd.concat([customers, dups], ignore_index=True)
+    # REQ-414: the account team that owns each customer (the action target the outreach and next-best-action kinds write to)
+    customers["account_owner"] = "Account team " + (customers["customer_id"].astype(int) % 4 + 1).astype(str)
     tables["customers"] = _kind_signal_table(customers, "Every customer with contact details, location, home site, tier, "
                                              "the current offer test, churn status, risk score and credit position.", {
+        "account_owner": "Account team that owns the customer relationship.",
         "customer_id": "Customer identifier.", "customer_name": "Customer full name as entered at signup.",
         "street_address": "Street address as entered at signup.", "postcode": "Postal code area of the customer.",
         "latitude": "Customer home latitude in degrees.", "longitude": "Customer home longitude in degrees.",
@@ -624,12 +627,17 @@ def _kind_signal_frames(seed=KIND_SIGNAL_SEED):
                           "closed" if resolved is not None else "open", priority[k], text))
     cases = pd.DataFrame(case_rows, columns=["case_id", "customer_id", "site_id", "created_at", "due_at", "resolved_at",
                                              "case_status", "priority", "complaint_text"])
+    # REQ-414: the team holding each case now, taken from its last handling step (the action target the exception kind writes to)
+    last_team = pd.DataFrame(event_rows, columns=["case_id", "step_name", "event_at", "handled_by_team"]).sort_values("event_at") \
+        .groupby("case_id")["handled_by_team"].last()
+    cases["owner_team"] = cases["case_id"].map(last_team)
     tables["cases"] = _kind_signal_table(cases, "Every customer case opened in the last year, with its due date, resolution, "
                                          "priority and the customer's own words.", {
         "case_id": "Case identifier.", "customer_id": "Customer who raised the case.", "site_id": "Site the case is about.",
         "created_at": "Date and time the case was opened.", "due_at": "Date and time the case must be resolved by.",
         "resolved_at": "Date and time the case was resolved; empty while open.", "case_status": "open or closed.",
         "priority": "Case priority: high, normal or low.", "complaint_text": "What the customer wrote, in their own words.",
+        "owner_team": "Team that holds the case now, from its last handling step.",
     }, pk="case_id", fks={"customer_id": "customers", "site_id": "sites"})
     events = pd.DataFrame(event_rows, columns=["case_id", "step_name", "event_at", "handled_by_team"])
     events.insert(0, "event_id", np.arange(1, len(events) + 1))
@@ -797,6 +805,11 @@ def _ks_components(pairs):
         root = find(node)
         sizes[root] = sizes.get(root, 0) + 1
     return sorted(sizes.values(), reverse=True)
+
+
+def weeks_span(week):
+    """REQ-414: how many weeks the planted sales cover (first to last week index, inclusive)."""
+    return int(week.max() - week.min() + 1)
 
 
 def _kind_signal_checks(bundle):
@@ -1139,6 +1152,51 @@ def _kind_signal_checks(bundle):
                                    f"{len(specs)} tables, every column described, {sum(len(s['fks']) for s in specs.values())} "
                                    f"foreign keys resolve" + (f"; missing {missing[:3]} {no_desc[:3]} {bad_fk[:3]}" if missing or no_desc or bad_fk else ""),
                                    len(specs))
+
+    # REQ-414: one check per AI-native kind. Each reads the planted label, owner and outcome columns it needs (no new tables).
+    ev, orders = t["case_events"], t["orders"]
+    churned = cust["is_churned"].astype(str).isin(["Y", "True", "true", "1"])
+    open_cases = cases[cases["case_status"] == "open"]
+    overdue = int((open_cases["due_at"] < as_of).sum())
+    out["Watch and act agent"] = _ks_result(overdue >= 40 and 0.10 <= overdue / len(open_cases) <= 0.25,
+                                            f"{overdue} of {len(open_cases)} open cases are past their due date ({overdue / len(open_cases):.0%}), "
+                                            "each with a handling team to act", overdue)
+    open_ids = set(open_cases["case_id"])
+    teams = ev[ev["case_id"].isin(open_ids)]["handled_by_team"].nunique()
+    out["Exception workflow agent"] = _ks_result(len(open_cases) >= 100 and teams >= 2,
+                                                 f"{len(open_cases)} open exceptions routed across {teams} handling teams", len(open_cases))
+    accepted = cust["offer_outcome"].eq("accepted")
+    gap = accepted[cust["offer_variant"] == "treatment"].mean() - accepted[cust["offer_variant"] == "control"].mean()
+    out["Outreach agent"] = _ks_result(abs(gap) >= 0.02 and cust["offer_variant"].nunique() == 2,
+                                       f"accepted offer rate differs by {gap:+.1%} between the treated and control customers", int(accepted.sum()))
+    contacts = cust.assign(c=churned).groupby("c")["support_contacts_12m"].mean()
+    ratio = contacts.get(True, 0) / max(contacts.get(False, 1e-9), 1e-9)
+    out["Root-cause agent"] = _ks_result(ratio >= 1.3,
+                                         f"churned customers average {contacts.get(True, 0):.2f} support contacts against {contacts.get(False, 0):.2f} for the rest",
+                                         int(churned.sum()))
+    out["Written commentary"] = _ks_result(items["category"].nunique() >= 2 and weeks_span(week) >= 100,
+                                           f"{items['category'].nunique()} labelled categories over {weeks_span(week)} weeks of revenue against plan",
+                                           items["category"].nunique())
+    reason_known = cases["complaint_text"].str.lower().str.contains(r"late|wrong item|charged twice|billing|rude|damaged", regex=True)
+    out["Taxonomy mapping"] = _ks_result(reason_known.mean() >= 0.9 and cases["priority"].nunique() >= 2,
+                                         f"{reason_known.mean():.0%} of complaint texts map to a named reason, against {cases['priority'].nunique()} priority labels",
+                                         int(reason_known.sum()))
+    out["Lookalikes"] = _ks_result(0.05 <= churned.mean() <= 0.15 and int(churned.sum()) >= 100,
+                                   f"{int(churned.sum())} churned customers ({churned.mean():.1%}) to match lookalikes against",
+                                   int(churned.sum()))
+    joined = orders["item_id"].isin(items["item_id"]).mean()
+    out["Cross-domain assistant"] = _ks_result(joined == 1.0 and cust["customer_tier"].nunique() >= 2,
+                                               f"every order joins to an item ({joined:.0%}) and customers carry {cust['customer_tier'].nunique()} labelled tiers",
+                                               len(orders))
+    out["AI entity matching"] = _ks_result(0.04 <= near_dups / len(cust) <= 0.06 and "customer_name" in cust.columns,
+                                           f"{near_dups} near-duplicate customer names ({near_dups / len(cust):.1%}) to score against labelled matches",
+                                           near_dups)
+    out["AI next best action"] = _ks_result(0.05 <= accepted.mean() <= 0.30 and cust["customer_tier"].nunique() >= 2,
+                                           f"{accepted.mean():.1%} accept the offer, across {cust['customer_tier'].nunique()} tiers to choose the next action for",
+                                           int(accepted.sum()))
+    labelled = sum(1 for spec in specs.values() if any(col in spec["frame"].columns for col in ("offer_outcome", "category", "priority", "customer_tier", "is_churned", "case_status")))
+    out["AI data agent"] = _ks_result(out["Data agent"]["ok"] and labelled >= 3,
+                                      f"{labelled} tables carry a labelled outcome column the answers can name", len(specs))
     return out
 
 

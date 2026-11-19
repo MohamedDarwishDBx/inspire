@@ -13,17 +13,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _agentload import agent_source
 
 FAMILIES = {
-    "A": {"Classification", "Predictive Modeling", "Survival Analysis"},
-    "B": {"Anomaly Detection"},
-    "C": {"Clustering", "Segmentation"},
-    "D": {"Recommendation"},
+    # REQ-414: the eleven AI-native techniques, reviewed when added: Root-Cause Agent in A, Watch and Act in B, Lookalike Matching in C,
+    # Outreach Agent and AI Next Best Action in D, Exception Workflow in J, Taxonomy Mapping in G, Written Commentary, Cross-Domain
+    # Assistant, AI Entity Matching and AI Data Agent in F.
+    "A": {"Classification", "Predictive Modeling", "Survival Analysis", "Root-Cause Agent"},
+    "B": {"Anomaly Detection", "Watch and Act"},
+    "C": {"Clustering", "Segmentation", "Lookalike Matching"},
+    "D": {"Recommendation", "Outreach Agent", "AI Next Best Action"},
     "E": {"Forecasting", "Lifetime Value"},
     "F": {"Trend Analysis", "Correlation Analysis", "Pareto Analysis", "Cohort Analysis", "Funnel Analysis", "Regression Analysis",
-          "Geospatial Analysis", "Network Analysis", "AI Analysis", "Decomposition", "Peer Benchmarking"},
-    "G": {"Sentiment Analysis", "Document Processing", "Extraction"},
+          "Geospatial Analysis", "Network Analysis", "AI Analysis", "Decomposition", "Peer Benchmarking",
+          "Written Commentary", "Cross-Domain Assistant", "AI Entity Matching", "AI Data Agent"},
+    "G": {"Sentiment Analysis", "Document Processing", "Extraction", "Taxonomy Mapping"},
     "H": {"Optimization", "Simulation", "Threshold Optimization"},
     "I": {"Causal Impact", "Uplift Modeling", "Marketing Mix Modeling"},
-    "J": {"Process Mining", "Sequence Analysis", "Queueing"},
+    "J": {"Process Mining", "Sequence Analysis", "Queueing", "Exception Workflow"},
     "K": {"Controls Testing", "Statistical Process Control", "Entity Matching"},
     "L": {"Data Agent"},
 }
@@ -31,7 +35,7 @@ FAMILIES = {
 
 def test_registry_keys_equal_the_guidance_keys(agent_ns):
     assert set(agent_ns["TECHNIQUE_EXECUTION_FAMILY"]) == set(agent_ns["TECHNIQUE_IMPLEMENTATION_GUIDANCE"])
-    assert len(agent_ns["TECHNIQUE_EXECUTION_FAMILY"]) == 36
+    assert len(agent_ns["TECHNIQUE_EXECUTION_FAMILY"]) == 47  # 36 reviewed before REQ-414, plus 11 AI-native techniques
 
 
 def test_every_technique_maps_to_the_reviewed_family(agent_ns):

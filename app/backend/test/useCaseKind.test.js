@@ -15,7 +15,7 @@ const STORED = {
 };
 
 test('every family in kinds.json carries a color the chips read', () => {
-  assert.equal(REGISTRY.families.length, 10);
+  assert.equal(REGISTRY.families.length, 11); // ten before REQ-414, plus ai_native
   for (const family of REGISTRY.families) assert.match(family.color || '', /^#[0-9a-f]{6}$/, family.id);
   assert.equal(new Set(REGISTRY.families.map((f) => f.color)).size, REGISTRY.families.length, 'each family has its own color');
 });

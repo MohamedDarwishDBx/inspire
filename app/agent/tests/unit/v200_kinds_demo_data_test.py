@@ -54,7 +54,7 @@ def test_the_generator_cell_needs_no_spark_to_build_and_check(gen):
 
 def test_every_registry_kind_has_exactly_one_data_check(checks, registry):
     assert sorted(checks) == sorted(k["label"] for k in registry["kinds"])
-    assert len(checks) == 40
+    assert len(checks) == len(registry["kinds"]) == 51  # 40 kinds before REQ-414, plus 11 AI-native kinds
 
 
 @pytest.mark.parametrize("label", _kind_labels())
