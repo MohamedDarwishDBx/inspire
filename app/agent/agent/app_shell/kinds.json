@@ -14,52 +14,138 @@
   {
    "id": "measure_explain",
    "label": "Measure and explain",
-   "color": "#2563eb"
+   "color": "#2563eb",
+   "app_style": "news"
   },
   {
    "id": "predict",
    "label": "Predict",
-   "color": "#7c3aed"
+   "color": "#7c3aed",
+   "app_style": "cockpit"
   },
   {
    "id": "decide_optimize",
    "label": "Decide and optimize",
-   "color": "#059669"
+   "color": "#059669",
+   "app_style": "sheet"
   },
   {
    "id": "simulate_plan",
    "label": "Simulate and plan",
-   "color": "#0891b2"
+   "color": "#0891b2",
+   "app_style": "lab"
   },
   {
    "id": "measure_impact",
    "label": "Measure impact",
-   "color": "#ca8a04"
+   "color": "#ca8a04",
+   "app_style": "news"
   },
   {
    "id": "detect_protect",
    "label": "Detect and protect",
-   "color": "#dc2626"
+   "color": "#dc2626",
+   "app_style": "cockpit"
   },
   {
    "id": "know_entities",
    "label": "Know customers, products and suppliers",
-   "color": "#db2777"
+   "color": "#db2777",
+   "app_style": "league"
   },
   {
    "id": "run_processes",
    "label": "Run processes",
-   "color": "#ea580c"
+   "color": "#ea580c",
+   "app_style": "flow"
   },
   {
    "id": "place_relationships",
    "label": "Place and relationships",
-   "color": "#65a30d"
+   "color": "#65a30d",
+   "app_style": "graph"
   },
   {
    "id": "text_agents",
    "label": "Text and agents",
-   "color": "#4f46e5"
+   "color": "#4f46e5",
+   "app_style": "answer"
+  }
+ ],
+ "app_styles": [
+  {
+   "id": "news",
+   "label": "Morning briefing",
+   "lead": ["kpis"],
+   "theme": "paper"
+  },
+  {
+   "id": "league",
+   "label": "League table",
+   "lead": ["records", "plan"],
+   "theme": "dense"
+  },
+  {
+   "id": "mail",
+   "label": "Decision inbox",
+   "lead": ["records", "plan"],
+   "theme": "client"
+  },
+  {
+   "id": "kanban",
+   "label": "Triage board",
+   "lead": ["records", "plan"],
+   "theme": "board"
+  },
+  {
+   "id": "sheet",
+   "label": "Plan grid",
+   "lead": ["plan", "records"],
+   "theme": "sheet"
+  },
+  {
+   "id": "lab",
+   "label": "Scenario lab",
+   "lead": ["levers", "scenario", "target"],
+   "theme": "lab"
+  },
+  {
+   "id": "cockpit",
+   "label": "Cockpit",
+   "lead": ["kpis", "todo"],
+   "theme": "dark"
+  },
+  {
+   "id": "map",
+   "label": "Map first",
+   "lead": ["records", "plan"],
+   "theme": "map",
+   "needs": {"coordinates": true},
+   "fallback": "league"
+  },
+  {
+   "id": "flow",
+   "label": "Flow map",
+   "lead": ["process_map", "allocation_flow", "migration_flow", "plan"],
+   "theme": "flow"
+  },
+  {
+   "id": "graph",
+   "label": "Network explorer",
+   "lead": ["graph", "centrality_list"],
+   "theme": "dark"
+  },
+  {
+   "id": "answer",
+   "label": "Answer engine",
+   "lead": ["conversation", "suggested_questions", "cited_sql"],
+   "theme": "chat"
+  },
+  {
+   "id": "agent",
+   "label": "Agent console",
+   "lead": ["todo"],
+   "theme": "dark"
   }
  ],
  "layouts": [
@@ -852,6 +938,7 @@
    "question": "Which units are off plan beyond tolerance, why, and who acts on each one?",
    "informational": false,
    "layout": "performance_explainer",
+   "app_style": "news",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -938,6 +1025,7 @@
    "question": "How much of the change in the measure came from price, volume and mix?",
    "informational": true,
    "layout": "dashboard",
+   "app_style": "news",
    "decision_layout": "performance_explainer",
    "signature": {
     "roles_all": [
@@ -1023,6 +1111,7 @@
    "question": "Which units fall short of size-adjusted peers, and by how much?",
    "informational": false,
    "layout": "performance_explainer",
+   "app_style": "league",
    "decision_layout": null,
    "signature": {
     "roles_all": [],
@@ -1106,6 +1195,7 @@
    "question": "Which measures move ahead of the outcome, and what do they say about next period?",
    "informational": true,
    "layout": "dashboard",
+   "app_style": "cockpit",
    "decision_layout": "forecast_cockpit",
    "signature": {
     "roles_all": [
@@ -1192,6 +1282,7 @@
    "question": "What will the measure be per series next periods, with what range, and where is the forecast worse than a naive one?",
    "informational": false,
    "layout": "forecast_cockpit",
+   "app_style": "cockpit",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -1281,6 +1372,7 @@
    "question": "Which entities are most likely to have the outcome, and who should act on them first?",
    "informational": false,
    "layout": "decision_queue",
+   "app_style": "mail",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -1361,6 +1453,7 @@
    "question": "When is each entity likely to reach the event, and which ones need action before then?",
    "informational": false,
    "layout": "decision_queue",
+   "app_style": "cockpit",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -1438,6 +1531,7 @@
    "question": "What is each entity likely to do next, and what should we offer or prepare?",
    "informational": false,
    "layout": "recommendation_desk",
+   "app_style": "mail",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -1520,6 +1614,7 @@
    "question": "How should a limited budget, stock or capacity be split across entities for the best result?",
    "informational": false,
    "layout": "planner",
+   "app_style": "sheet",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -1601,6 +1696,7 @@
    "question": "What price or discount should each item get to hit margin and volume?",
    "informational": false,
    "layout": "planner",
+   "app_style": "lab",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -1684,6 +1780,7 @@
    "question": "How much should we order per item and location so we neither run out nor overstock?",
    "informational": false,
    "layout": "planner",
+   "app_style": "sheet",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -1769,6 +1866,7 @@
    "question": "How many people do we need per shift to meet the service target?",
    "informational": false,
    "layout": "planner",
+   "app_style": "cockpit",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -1855,6 +1953,7 @@
    "question": "Where should we open, close or reassign sites and territories?",
    "informational": false,
    "layout": "location_view",
+   "app_style": "map",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -1937,6 +2036,7 @@
    "question": "Where should the cutoff or policy limit sit to catch the most value for the review effort?",
    "informational": false,
    "layout": "decision_queue",
+   "app_style": "lab",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2014,6 +2114,7 @@
    "question": "Which items should we add, keep or drop, counting what they take from each other?",
    "informational": false,
    "layout": "planner",
+   "app_style": "sheet",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2098,6 +2199,7 @@
    "question": "What happens to the outcome if the business drivers move, and what has to be true to hit target?",
    "informational": false,
    "layout": "scenario_lab",
+   "app_style": "lab",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2182,6 +2284,7 @@
    "question": "How does the portfolio hold up under severe but plausible shocks?",
    "informational": false,
    "layout": "scenario_lab",
+   "app_style": "lab",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2262,6 +2365,7 @@
    "question": "When will demand outgrow capacity, and how much do we need to add?",
    "informational": false,
    "layout": "forecast_cockpit",
+   "app_style": "cockpit",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2346,6 +2450,7 @@
    "question": "What did each promotion really add, net of cost, and should we keep, scale or stop it?",
    "informational": false,
    "layout": "lift_readout",
+   "app_style": "news",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2428,6 +2533,7 @@
    "question": "Did the change work, by how much, and can we trust the result?",
    "informational": false,
    "layout": "lift_readout",
+   "app_style": "news",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2510,6 +2616,7 @@
    "question": "What did each channel drive, and where should the next dollar go?",
    "informational": false,
    "layout": "lift_readout",
+   "app_style": "lab",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2592,6 +2699,7 @@
    "question": "Which entities change their behavior because of the treatment, so we target only them?",
    "informational": false,
    "layout": "decision_queue",
+   "app_style": "mail",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2669,6 +2777,7 @@
    "question": "Which values break their expected range, and which ones need someone to look?",
    "informational": false,
    "layout": "monitor_triage",
+   "app_style": "cockpit",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2749,6 +2858,7 @@
    "question": "Where do two records of the same money disagree, and how much leaks?",
    "informational": false,
    "layout": "monitor_triage",
+   "app_style": "sheet",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2834,6 +2944,7 @@
    "question": "Which transactions fail a control test, such as duplicates, Benford's law or segregation of duties?",
    "informational": false,
    "layout": "monitor_triage",
+   "app_style": "kanban",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2913,6 +3024,7 @@
    "question": "Which processes are out of control against their limits, and since when?",
    "informational": false,
    "layout": "monitor_triage",
+   "app_style": "cockpit",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -2993,6 +3105,7 @@
    "question": "Which connected groups of accounts act together, and which ones should we block or investigate?",
    "informational": false,
    "layout": "network_explorer",
+   "app_style": "graph",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -3074,6 +3187,7 @@
    "question": "Which groups of entities behave alike, and what treatment does each group get?",
    "informational": false,
    "layout": "segment_explorer",
+   "app_style": "league",
    "decision_layout": null,
    "signature": {
     "roles_all": [],
@@ -3154,6 +3268,7 @@
    "question": "What is each entity worth over time, and where should we invest to keep or grow it?",
    "informational": false,
    "layout": "segment_explorer",
+   "app_style": "league",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -3235,6 +3350,7 @@
    "question": "Which customers, products or channels cost more to serve than they earn?",
    "informational": false,
    "layout": "segment_explorer",
+   "app_style": "league",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -3318,6 +3434,7 @@
    "question": "What should we offer or do next for each entity?",
    "informational": false,
    "layout": "recommendation_desk",
+   "app_style": "mail",
    "decision_layout": null,
    "signature": {
     "roles_all": [],
@@ -3396,6 +3513,7 @@
    "question": "Which records describe the same customer, product or supplier?",
    "informational": false,
    "layout": "network_explorer",
+   "app_style": "sheet",
    "decision_layout": null,
    "signature": {
     "roles_all": [],
@@ -3498,6 +3616,7 @@
    "question": "Which paths do entities take, and where do they drop out?",
    "informational": true,
    "layout": "dashboard",
+   "app_style": "flow",
    "decision_layout": "process_flow",
    "signature": {
     "roles_all": [
@@ -3581,6 +3700,7 @@
    "question": "How does the process really run, where does work wait, and which cases need help?",
    "informational": false,
    "layout": "process_flow",
+   "app_style": "flow",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -3660,6 +3780,7 @@
    "question": "Which open items will breach their SLA, and what should we do first?",
    "informational": false,
    "layout": "monitor_triage",
+   "app_style": "kanban",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -3750,6 +3871,7 @@
    "question": "Which invoices or payables should we chase or time first to free cash?",
    "informational": false,
    "layout": "decision_queue",
+   "app_style": "mail",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -3833,6 +3955,7 @@
    "question": "How does the measure vary by place, and which areas stand out?",
    "informational": true,
    "layout": "dashboard",
+   "app_style": "map",
    "decision_layout": "location_view",
    "signature": {
     "roles_all": [],
@@ -3911,6 +4034,7 @@
    "question": "Which nodes does the network depend on, and what breaks if one fails?",
    "informational": false,
    "layout": "network_explorer",
+   "app_style": "graph",
    "decision_layout": null,
    "signature": {
     "roles_all": [
@@ -4012,6 +4136,7 @@
    "question": "What reasons do people give in comments, and which ones are growing?",
    "informational": true,
    "layout": "dashboard",
+   "app_style": "news",
    "decision_layout": "performance_explainer",
    "signature": {
     "roles_all": [
@@ -4095,6 +4220,7 @@
    "question": "Can people ask plain questions about this data and get trusted answers?",
    "informational": true,
    "layout": "agent_chat",
+   "app_style": "answer",
    "decision_layout": null,
    "signature": {
     "roles_all": [],

@@ -921,7 +921,7 @@ def served_filter_problem(item: dict) -> str:
 def public_page(page: dict, gaps=frozenset()) -> dict:
     by_column = click_filters(page)
     out = {k: page.get(k) for k in ("id", "use_case_id", "title", "question", "sponsor", "domain", "subdomain", "icon", "hue",
-                                    "story", "questions", "promised")}
+                                    "story", "questions", "promised", "kind")}
     out["review"] = page.get("review") or ""
     out["filters"] = [dict({k: f.get(k) for k in ("id", "type", "label", "grain", "default")}, datasets=sorted(f.get("columns") or {}))
                       for f in page.get("filters") or []]

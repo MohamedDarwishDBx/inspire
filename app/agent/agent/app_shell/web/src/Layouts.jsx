@@ -15,6 +15,7 @@ import { KIND_PARTS, KindReady } from './KindLayouts.jsx';
 import { reducedMotion } from './theme.js';
 import { DEFAULT_PREFS, windowParams } from './prefs.js';
 import { DEFAULT_LAYOUT, hasPlan, hasWork, isLaidOut, isQueue, layoutOf } from './modes.js';
+import { leadSections, styleOfPage } from './kinds.js';
 
 const ScenarioPanel = lazy(() => import('./Scenario.jsx'));
 
@@ -286,7 +287,7 @@ export function PlanTable({ page, app, filters, ready, nonce, onChanged, planId 
 const SCENARIO_HOLDS = ['levers', 'scenario', 'target'];
 
 export function LayoutSections({ page, app, ready, nonce, filters, onChanged, kpisOf, records, chartCards, zeroPanel = null, tableCard, data, onPick, genie, onRun, running }) {
-  const sections = page.layout?.sections || [];
+  const sections = leadSections(styleOfPage(page), page.layout?.sections || [], page.layout?.holds || {});
   // a zero-state page shows its one panel where the first chart group would draw, and no flat chart after it
   let zeroShown = false;
   const chartsOut = (charts) => {

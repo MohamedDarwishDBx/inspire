@@ -34,7 +34,7 @@ import Dashboard, { NO_SLOTS, TableCard, chartSlots, hubChartsOnTop } from './Da
 import { RetryProvider, Skeleton } from './ui.jsx';
 import ModeView from './ModeView.jsx';
 import { pageMode, sectionTitle } from './modes.js';
-import { contractOf } from './kinds.js';
+import { contractOf, styleOfPage } from './kinds.js';
 import { tourFacts } from './tourStart.js';
 import { KPI_TARGET, MEASURES, kpiGap, kpiGapText, promisedView, valueLine } from './impact.js';
 
@@ -268,8 +268,10 @@ export default function Page({ app, page, meta, state, onState, look = EMPTY_LOO
   const kpiTarget = kpiTargetSetting?.value ?? '';
   const kpiGapLine = kpiRun?.kpi_name ? `${kpiRun.kpi_name}: ${kpiGapText(kpiGap({ latest: kpiRun.kpi_latest, target: kpiTarget, direction: kpiRun.kpi_direction }), kpiRun.kpi_unit)}` : '';
   const report = { section: feedbackSectionOf(shown), filters: describeFilters(state, meta?.filters, meta?.columns), recordKey: opened };
+  const style = styleOfPage(page);
   const head = (
     <header className="ph" data-tour="decision">
+      {style && <p className="style-kicker" data-app-style-label>{style.label}</p>}
       <div className={freshness.busy ? 'pg-h is-refreshing' : 'pg-h'}>
         <h1>{page.title}</h1>
         <div className="ph-tools" data-section-tools>
@@ -308,7 +310,7 @@ export default function Page({ app, page, meta, state, onState, look = EMPTY_LOO
     return <Suspense fallback={null}><WaitingForAccess waiting={waitingFor} onCheck={() => { recheck(); setNonce((n) => n + 1); }} /></Suspense>;
   }
   const body = (
-    <div className={`page ${busy && data ? 'is-busy' : ''}`} style={hueVars(page.hue || 'blue')} aria-busy={busy} data-page-section={shown}>
+    <div className={`page ${busy && data ? 'is-busy' : ''}`} style={hueVars(page.hue || 'blue')} aria-busy={busy} data-page-section={shown} data-app-style={style?.id}>
       {head}
       {shown === 'dashboard' && (
         <Dashboard app={app} page={page} meta={meta} state={state} onState={onState} view={view} onView={onView} hubPage={hubPage} laidOut={laidOut} work={work}
