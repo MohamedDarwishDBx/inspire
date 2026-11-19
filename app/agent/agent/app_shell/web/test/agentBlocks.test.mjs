@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { stakeCurrency, stakeText, AGENT_ACTION_IDS, askBody, askText, briefingBlocks, columnHeads, copyText, multiAsk, multiValid, valuesFor, actionLabel, chartOf, kpiName } from '../src/agentBlocks.js';
 
 test('the Agent page offers every registry action, and an action without a label shows its id', () => {
-  assert.deepEqual([...AGENT_ACTION_IDS].sort(), ['add_note', 'assign', 'done', 'not_an_issue', 'override', 'reopen', 'run_again', 'set_target', 'skip', 'snooze']);
+  assert.deepEqual([...AGENT_ACTION_IDS].sort(), ['add_note', 'approve', 'assign', 'done', 'not_an_issue', 'override', 'reject', 'reopen', 'run_again', 'set_target', 'skip', 'snooze']);
   assert.equal(actionLabel('done'), 'Mark done');
   assert.equal(actionLabel('nope'), 'nope', 'an action without an agent label shows its id, never a made-up name');
 });

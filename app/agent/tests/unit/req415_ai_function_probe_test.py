@@ -108,7 +108,8 @@ def test_the_result_of_the_minimal_call_classifies_the_function(fresh, error, st
 def test_every_call_that_returns_makes_its_function_available_and_each_is_called_once(fresh):
     spark = FakeSpark()
     result = fresh["probe_ai_functions"](spark, Log(), workspace_key="ws-a")
-    assert set(result.values()) == {"available"}
+    functions = {k: v for k, v in result.items() if k != "supervisor_agents"}  # the supervisor list call has no api here: unknown
+    assert set(functions.values()) == {"available"}
     assert sorted(spark.call_log) == sorted(fresh["AI_BETA_FUNCTIONS"])
     assert fresh["TECHNICAL_CONTEXT"]["ai_function_status"] == result
 
