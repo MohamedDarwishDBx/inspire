@@ -250,8 +250,11 @@ def test_a_master_with_no_join_path_gets_one_standalone_retry_and_is_never_silen
 
     calls.clear()
     obj._retry_missing_table_coverage(ucs, universe, include_business_catchall=True)
-    retried_again = set().union(*calls) if calls else set()
-    assert _fqtn("bakehouse", "sales_calendar") not in retried_again, "the retry is one per table"
+    assert _fqtn("bakehouse", "sales_calendar") in set().union(*calls), "the second targeted retry is allowed"
+    calls.clear()
+    obj._retry_missing_table_coverage(ucs, universe, include_business_catchall=True)
+    assert _fqtn("bakehouse", "sales_calendar") not in (set().union(*calls) if calls else set()), \
+        "the cap is two targeted retries per table, the third call retries nothing"
 
 
 # --- R6: a high-signal column that no use case names is flagged for the same one retry ---
@@ -278,3 +281,159 @@ def test_naming_every_signal_column_clears_the_gap(agent_ns):
     gaps = obj._signal_column_gap_tables(ucs, details)
     assert _fqtn("bakehouse", "sales_suppliers") not in gaps
     assert _fqtn("bakehouse", "sales_customers") not in gaps
+
+
+# --- REQ-413 coordinator follow-up: FK inference, join relation, section 3e sites, fail-before per root cause ---
+
+def _inferred_graph(ns, schema, tables):
+    """FK graph in the `_kind_fk_graph` shape, from the naming rules the loader really runs (no stubbed inference)."""
+    import threading
+    cls = ns["DataLoader"]
+    loader = cls.__new__(cls)
+    loader.logger = logging.getLogger("req413_table_coverage")
+    loader._metadata_lock = threading.RLock()
+    loader.foreign_key_graph = {}
+    loader._inferred_fk = {}
+    loader._person_fk = set()
+    loader._join_inferred_schemas = set()
+    loader.primary_keys = {}
+    inferred = loader._infer_foreign_keys(_details("samples", schema, tables))
+    graph, links = {}, []
+    for scored in inferred.values():
+        for rel, _confidence in scored:
+            child = f"{rel[0]}.{rel[1]}.{rel[2]}".lower()
+            graph.setdefault(child, []).append((rel[3], f"{rel[4]}.{rel[5]}.{rel[6]}".lower(), rel[7]))
+            links.append(f"{rel[0]}.{rel[1]}.{rel[2]}.{rel[3]} -> {rel[4]}.{rel[5]}.{rel[6]}.{rel[7]}")
+    return graph, sorted(links)
+
+
+BAKE_EDGES = [
+    "samples.bakehouse.media_customer_reviews.franchiseID -> samples.bakehouse.sales_franchises.franchiseID",
+    "samples.bakehouse.media_gold_reviews_chunked.franchiseID -> samples.bakehouse.sales_franchises.franchiseID",
+    "samples.bakehouse.sales_franchises.supplierID -> samples.bakehouse.sales_suppliers.supplierID",
+    "samples.bakehouse.sales_transactions.customerID -> samples.bakehouse.sales_customers.customerID",
+    "samples.bakehouse.sales_transactions.franchiseID -> samples.bakehouse.sales_franchises.franchiseID",
+]
+
+
+def test_fk_inference_links_each_bakehouse_master_through_its_domain_prefixed_name(agent_ns):
+    # Root cause R2: `sales_franchises` never matched `franchiseID` before (only affix names were stripped), so the graph was empty.
+    _graph, links = _inferred_graph(agent_ns, "bakehouse", _load("bakehouse_schema.json"))
+    assert links == BAKE_EDGES
+    parents = {l.split(" -> ")[1].rsplit(".", 1)[0] for l in links}
+    assert parents == {_fqtn("bakehouse", t) for t in BAKE_MASTERS}
+
+
+def test_tpcds_inferred_keys_are_the_exact_recorded_set_with_no_new_wrong_link(agent_ns):
+    _graph, links = _inferred_graph(agent_ns, "tpcds_sf1", _load("tpcds_sf1_schema.json"))
+    with open(os.path.join(REG, "tpcds_sf1_inferred_fk.json"), encoding="utf-8") as handle:
+        expected = json.load(handle)["inferred_fk"]
+    assert links == sorted(expected), "the inferred set changed: review each new or dropped link before updating the fixture"
+
+
+def test_a_domain_prefixed_decoy_with_no_key_match_infers_nothing(agent_ns):
+    decoy = {"sales_customers": ["name", "city"], "sales_orders": ["orderid", "customerid", "amount"]}
+    _graph, links = _inferred_graph(agent_ns, "decoy", decoy)
+    assert links == []
+
+
+def test_a_generic_stem_never_joins_even_when_a_table_is_named_for_it(agent_ns):
+    # `codeid` must not join on the generic stem `code` (old rule: forms of table `codes` include `code`).
+    tables = {"codes": ["codeid", "label"], "orders": ["orderid", "codeid"]}
+    _graph, links = _inferred_graph(agent_ns, "codes", tables)
+    assert links == []
+
+
+def test_the_join_relation_uses_the_fk_graph_first_and_shared_keys_only_for_isolated_tables(agent_ns):
+    cls = agent_ns["DatabricksInspire"]
+    cols = {"c.s.a": [("c", "s", "a", "id_x", "bigint", ""), ("c", "s", "a", "regionid", "bigint", "")],
+            "c.s.b": [("c", "s", "b", "regionid", "bigint", "")],
+            "c.s.c": [("c", "s", "c", "regionid", "bigint", "")],
+            "c.s.d": [("c", "s", "d", "custid", "bigint", "")],
+            "c.s.e": [("c", "s", "e", "custid", "bigint", "")]}
+    graph = {"c.s.a": [("regionid", "c.s.b", "regionid")]}
+    adjacency, sources = cls._join_adjacency(list(cols), cols, graph)
+    assert sources[frozenset(("c.s.a", "c.s.b"))] == "graph"
+    # a and b are joined by the graph, so only the isolated table c takes the shared-key fallback (edges to a and b).
+    assert adjacency["c.s.a"] == {"c.s.b", "c.s.c"}, "a's own shared key adds nothing; c's fallback edge reaches a"
+    assert adjacency["c.s.c"] == {"c.s.a", "c.s.b"} and sources[frozenset(("c.s.b", "c.s.c"))] == "shared_key"
+    assert adjacency["c.s.d"] == {"c.s.e"} and sources[frozenset(("c.s.d", "c.s.e"))] == "shared_key"
+
+
+def test_a_reference_table_rides_along_as_context_inside_the_budget(agent_ns):
+    # Section 3e site (a): augment excluded REFERENCE tables; they must ride along when reachable, within the budget.
+    class _Loader:
+        enable_column_sampling = False
+        foreign_key_graph = {("c", "s", "fact"): [("c", "s", "fact", "dim_id", "c", "s", "dim_ref", "id")]}
+
+        def _get_table_details(self, cat, sch, tab, apply_sampling=False):
+            return [(cat, sch, tab, "id", "bigint", ""), (cat, sch, tab, "label", "string", "")]
+
+    obj = _obj(agent_ns, data_loader=_Loader(), data_category_map={"c.s.fact": "TRANSACTIONAL", "c.s.dim_ref": "REFERENCE"})
+    obj._get_reverse_foreign_key_graph = lambda: {}
+    fact = [("c", "s", "fact", "dim_id", "bigint", "")]
+    out = obj._augment_columns_with_related_tables(fact)
+    assert {(c[2], c[3]) for c in out} == {("fact", "dim_id"), ("dim_ref", "id"), ("dim_ref", "label")}
+    runtime = agent_ns["TECHNICAL_CONTEXT"]["runtime"]
+    original = runtime["join_context_column_budget"]
+    runtime["join_context_column_budget"] = 1
+    try:
+        assert obj._augment_columns_with_related_tables(fact) == fact, "a reference table over the budget is left to the gate"
+    finally:
+        runtime["join_context_column_budget"] = original
+
+
+def _gate_obj(ns, categories, scores, retried):
+    obj = _obj(ns, data_category_map=categories, business_scores=scores)
+    obj.max_parallelism = 1
+    obj._generation_context = lambda: {}
+    obj._plan_progress_batches = lambda *a, **k: None
+
+    def fake_batch(column_details, batch_id, **kwargs):
+        retried.append({f"{c[0]}.{c[1]}.{c[2]}" for c in column_details})
+        return []
+
+    obj._process_batch_with_retry = fake_batch
+    return obj
+
+
+def test_the_gate_retries_a_covered_table_whose_signal_column_no_use_case_names(agent_ns):
+    # Root cause R6: a table that a use case already cites was never retried for a signal column nothing names.
+    details = _bakehouse()
+    tables = BAKE_TX | BAKE_MASTERS
+    categories = {_fqtn("bakehouse", t): ("TRANSACTIONAL" if t in BAKE_TX else "MASTER") for t in tables}
+    scores = {f: 1.0 for f in categories}
+    ucs = [_uc([_fqtn("bakehouse", t) for t in tables], text="Rank the franchises by totalPrice and dateTime.")]
+    retried = []
+    obj = _gate_obj(agent_ns, categories, scores, retried)
+    obj._retry_missing_table_coverage(ucs, details, include_business_catchall=True)
+    assert any(_fqtn("bakehouse", "sales_suppliers") in batch for batch in retried), "approved, latitude, longitude are named nowhere"
+
+
+def test_the_gate_never_retries_a_technical_table(agent_ns):
+    # Section 3e site (c): a technical table is not a business table; it must not be retried.
+    details = _bakehouse() + [("samples", "bakehouse", "dim_date", "day", "string", "")]
+    tables = BAKE_TX | BAKE_MASTERS
+    categories = {_fqtn("bakehouse", t): ("TRANSACTIONAL" if t in BAKE_TX else "MASTER") for t in tables}
+    categories[_fqtn("bakehouse", "dim_date")] = "TECHNICAL"
+    scores = {f: 1.0 for f in categories if categories[f] != "TECHNICAL"}
+    ucs = [_uc([_fqtn("bakehouse", t) for t in tables], text="Total totalPrice by franchiseID.")]
+    retried = []
+    obj = _gate_obj(agent_ns, categories, scores, retried)
+    obj._retry_missing_table_coverage(ucs, details, include_business_catchall=True)
+    assert not any(_fqtn("bakehouse", "dim_date") in batch for batch in retried)
+
+
+def test_the_readout_states_unused_reference_tables_and_lists_technical_tables_once(agent_ns, caplog):
+    # Section 3e sites (b) and (c): reference tables are never silently gone; technical tables are listed once.
+    details = _bakehouse()
+    references = [("samples", "bakehouse", "ref_currency", "code", "string", "")]
+    technical = [("samples", "bakehouse", "dim_date", "day", "string", ""), ("samples", "bakehouse", "dim_date", "month", "string", "")]
+    obj = _obj(agent_ns)
+    ucs = [_uc([_fqtn("bakehouse", t) for t in BAKE_TX | BAKE_MASTERS])]
+    with caplog.at_level(logging.WARNING, logger="req413_table_coverage"):
+        obj._record_table_coverage(details, ucs, references, technical)
+    coverage = obj.processing_honesty["table_coverage"]
+    assert set(coverage["reference_reasons"]) == {_fqtn("bakehouse", "ref_currency")}
+    assert coverage["technical"] == [_fqtn("bakehouse", "dim_date")]
+    assert "[TABLE-COVERAGE FIRED]" in caplog.text

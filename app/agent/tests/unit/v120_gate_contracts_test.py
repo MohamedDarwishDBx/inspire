@@ -310,8 +310,10 @@ class TestFindJoinPathContract:
     def test_shared_identifier_column_is_a_weak_edge(self, ns):
         o = graph_inspire(ns)
         r = o._find_join_path(["main.shop.web_events", "main.shop.web_sessions"])
-        assert r["connected"] is True and r["strength"] == "shared_column"
-        assert r["path"] == ["main.shop.web_events.session_id = main.shop.web_sessions.session_id"]
+        # REQ-413: web_sessions is a domain-prefixed table whose key session_id the naming rules now infer as the target, so
+        # the graph (inferred) is used first; the shared-column fallback is no longer the strength for this pair.
+        assert r["connected"] is True and r["strength"] == "inferred"
+        assert r["path"] == ["main.shop.web_events.session_id -> main.shop.web_sessions.session_id"]
 
     def test_generic_id_column_is_not_a_join_edge(self, ns):
         o = graph_inspire(ns)
