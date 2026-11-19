@@ -8,6 +8,7 @@ Nothing else builds a write body for these actions.
 import re
 from dataclasses import dataclass
 
+import shell_build
 import shell_sql
 
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -41,7 +42,13 @@ REGISTRY = {a.id: a for a in (
     Action("set_target", "Set target", ("value",), route="settings/save", scope=APP),
     Action("create_alert", "Create alert", ("watch", "schedule"), route="alerts/save", scope=APP),
     Action("run_again", "Run again", (), route="settings/run", scope=APP),
+    # REQ-414 part B: the approval step for the agent job's rows. A person's click only: the agent never offers these (see APPROVAL_ACTIONS).
+    Action("approve", "Approve", agent=False),
+    Action("reject", "Reject", ("reason",), agent=False),
 )}
+
+# Approval is a person's click on a pending row in the Work queue. The agent never offers it, so it cannot approve for the person.
+APPROVAL_ACTIONS = ("approve", "reject")
 
 RECORD_ACTIONS = tuple(a.id for a in REGISTRY.values() if a.scope == RECORD and a.agent)
 WRITE_ACTIONS = tuple(a.id for a in REGISTRY.values() if a.scope == RECORD and a.writes)
@@ -112,6 +119,11 @@ def record_values(name: str, raw: dict, today) -> dict:
         return {"action_owner": _text(raw, "owner", "assigning records needs the person to assign them to")}
     if name == "not_an_issue":
         return {"action_status": shell_sql.DISMISSED, "dismiss_reason": _text(raw, "reason", "marking records not an issue needs the person's reason; ask them for it")}
+    if name == "approve":
+        return {shell_build.APPROVAL_COLUMN: shell_build.APPROVED}
+    if name == "reject":
+        return {shell_build.APPROVAL_COLUMN: shell_build.REJECTED,
+                shell_build.APPROVAL_NOTE_COLUMN: _text(raw, "reason", "rejecting a row needs the approver's reason; ask them for it")}
     if name == "override":
         status = raw.get("status")
         if status not in shell_sql.ACTION_STATUSES:

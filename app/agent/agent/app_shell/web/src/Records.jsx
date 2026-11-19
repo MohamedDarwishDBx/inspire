@@ -39,6 +39,7 @@ import { recordName, recordSentenceName,
   REOPEN, REOPEN_ASK, REOPENED, REOPENED_SAID, needsReopen, UNASSIGN, UNASSIGN_VALUES, UNASSIGNED_SAID,
 } from './records.js';
 import { SectionHelp } from './SectionHelp.jsx';
+import { approvalValues, isAwaitingApproval } from './records.js';
 import { ClusterBar, useChoices } from './KindParts.jsx';
 
 const tierClass = (t) => `tier tier--${String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
@@ -178,6 +179,25 @@ function SnoozeButton({ action, tomorrow }) {
 }
 
 /** REQ-223 P52: a row or drawer action that asks first. The trigger and its confirm read the same word (D-UNDO). */
+// REQ-414 part B: the reject reason is asked in the row, the way AskFirst asks; Reject stays off until a reason is typed.
+function RejectAsk({ name, write, run }) {
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState('');
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+  if (!asking) {
+    return <button type="button" className="btn btn--sm" data-row-reject onClick={stop(() => setAsking(true))} aria-label={`Reject ${name}`}>Reject</button>;
+  }
+  const blank = !!approvalValues('reject', reason).error;
+  return (
+    <span className="row-ask" role="group" aria-label={`Reject ${name}`} onClick={(e) => e.stopPropagation()}>
+      <label><span>Why reject {name}?</span>
+        <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} aria-label={`Reason for rejecting ${name}`} data-row-reject-reason /></label>
+      <SaveButton write={write} className="btn btn--sm btn--pri" disabled={blank} onClick={async () => { if (await run(reason)) setAsking(false); }}>Reject</SaveButton>
+      <button type="button" className="btn btn--sm" onClick={stop(() => setAsking(false))}>Keep it</button>
+    </span>
+  );
+}
+
 function AskFirst({ word, ask, name, write, run, ...rest }) {
   const [asking, setAsking] = useState(false);
   const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
@@ -995,6 +1015,13 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
             {String(r._inspire_owner || '').trim() && (
               <SaveButton write={`unassign:${keyOf(r)}`} className="btn btn--sm" data-row-unassign onClick={stop(() => quick(r, UNASSIGN_VALUES, UNASSIGNED_SAID, `unassign:${keyOf(r)}`))}
                 aria-label={`${UNASSIGN} ${name}`}>{UNASSIGN}</SaveButton>
+            )}
+            {isAwaitingApproval(r) && (
+              <>
+                <SaveButton write={`approve:${keyOf(r)}`} className="btn btn--sm btn--pri" data-row-approve
+                  onClick={stop(() => quick(r, approvalValues('approve'), 'Approved', `approve:${keyOf(r)}`))} aria-label={`Approve ${name}`}>Approve</SaveButton>
+                <RejectAsk name={name} write={`reject:${keyOf(r)}`} run={(reason) => quick(r, approvalValues('reject', reason), 'Rejected', `reject:${keyOf(r)}`)} />
+              </>
             )}
             {closingChoices(choices).filter((c) => c.id !== now).map((c) => {
               const label = isDefaultChoice(c) ? QUICK_CLOSE[statusKind(c.status)]?.[0] || c.label : c.label;

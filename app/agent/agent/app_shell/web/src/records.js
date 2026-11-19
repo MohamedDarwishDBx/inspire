@@ -688,3 +688,19 @@ export function watchBreakdown(counts) {
 }
 
 export const recordSentenceName = (row, meta) => entityName(row, meta?.label, { sentence: true }) || 'This record';
+
+// REQ-414 part B: the approval step of an agent kind's pending rows. Only the agent job writes these columns; a person clicks Approve or
+// Reject on the Work page, and the agent never offers either (shell_actions.APPROVAL_ACTIONS).
+export const APPROVAL_COLUMN = 'approval_status';
+export const APPROVAL_NOTE_COLUMN = 'approval_note';
+export const AWAITING_APPROVAL = 'awaiting approval';
+export const isAwaitingApproval = (row) => String(row?.[APPROVAL_COLUMN] ?? '').trim() === AWAITING_APPROVAL;
+export function approvalValues(decision, reason = '') {
+  if (decision === 'approve') return { [APPROVAL_COLUMN]: 'approved' };
+  if (decision === 'reject') {
+    const why = String(reason ?? '').trim();
+    if (!why) return { error: 'Give the reason for rejecting this row.' };
+    return { [APPROVAL_COLUMN]: 'rejected', [APPROVAL_NOTE_COLUMN]: why };
+  }
+  return { error: 'Not an approval decision.' };
+}

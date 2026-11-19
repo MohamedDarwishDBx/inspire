@@ -952,6 +952,8 @@ def public_page(page: dict, gaps=frozenset()) -> dict:
     out["records"] = dict(records, filters=by_column.get(shell_sql.RECORDS_DATASET, {})) if records else None
     out["history"] = bool(page.get("result_table"))
     out["similar_by"] =[{"filter": f["id"], "label": f.get("label")} for f in shell_sql.similar_filters(page)]
+    out["orchestrator_answers"] = [{"space": str(a.get("space") or ""), "answer": str(a.get("answer") or "")} for a in page.get("orchestrator_answers") or []
+                                   if isinstance(a, dict) and str(a.get("answer") or "").strip()]  # REQ-414 part B (b): the cross-domain answers
     out[shell_sql.BLOCKS] = shell_sql.public_blocks(page)
     out[TOUR] = public_tour(page, gaps)
     return out

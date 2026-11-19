@@ -70,6 +70,14 @@ function Conversation({ page, app, genie }) {
       </header>
       <div className="chat-log" ref={log} role="log" aria-live="polite" aria-label="Genie conversation">
         {chat.on && !chat.thread.length && <p className="empty">Ask a question, or pick one below. Genie writes the SQL, runs it {who}, and shows its work.</p>}
+        {(page.orchestrator_answers || []).map((a) => (
+          // REQ-414 part B (b): the cross-domain answers of the run, through the same Answer component as a Genie answer.
+          <div key={`stored-${a.space}`} className="msg msg--genie" data-chat="done" data-stored-answer={a.space}>
+            <span className="msg-av"><GenieMark size={14} /></span>
+            <Answer message={{ n: `stored-${a.space}`, who: 'genie', state: 'done', shown: Number.MAX_SAFE_INTEGER, steps: [], answer: { text: a.answer, sql: '', columns: [], rows: [], truncated: false } }}
+              url={chat.info.url} onTick={tick} genie={genie} rating={false} />
+          </div>
+        ))}
         {chat.thread.map((m) => (m.who === 'you' ? (
           <div key={m.n} className="msg msg--you" data-chat="you"><p>{m.text}</p></div>
         ) : (

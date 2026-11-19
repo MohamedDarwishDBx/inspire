@@ -45,7 +45,8 @@ def test_every_registry_app_action_is_reachable_through_the_agent():
 
 def test_the_agent_offers_the_full_registry_and_nothing_else():
     internal = {a.id for a in shell_actions.REGISTRY.values() if not a.agent}
-    assert internal == {"update"}, "the record panel's free edit is the only internal action, and the Work page uses it"
+    # Exemption (REQ-414 part B, governance): approve and reject are a person's click on a pending row, never offered to the agent.
+    assert internal == {"update"} | set(shell_actions.APPROVAL_ACTIONS), "the record panel's free edit and the approval clicks are internal"
     assert set(shell_agent.ACTIONS) | set(shell_agent.ACTIONS_APP) == set(shell_actions.REGISTRY) - internal
 
 
