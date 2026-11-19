@@ -1862,14 +1862,39 @@ def grant_model_access(api, w, sp, notebook_text):
     lines = []
     for name in picks:
         endpoint_id = getattr(by_name.get(name), "id", None)
-        if not endpoint_id:
-            lines.append(f"  ⚠️ {name}: not granted (the endpoint has no id to grant on)")
-            continue
-        resp = api("PATCH", f"/api/2.0/permissions/serving-endpoints/{endpoint_id}",
-                   {"access_control_list": [{"service_principal_name": sp, "permission_level": "CAN_QUERY"}]})
-        lines.append(f"  {name}: CAN_QUERY for the App's service principal ✅" if resp.status_code == 200
-                     else f"  ⚠️ {name}: CAN_QUERY not granted ({resp.status_code} {resp.text[:100]}); the App shows Permission Required until an admin grants it")
+        if endpoint_id:
+            resp = api("PATCH", f"/api/2.0/permissions/serving-endpoints/{endpoint_id}",
+                       {"access_control_list": [{"service_principal_name": sp, "permission_level": "CAN_QUERY"}]})
+            lines.append(f"  {name}: CAN_QUERY for the App's service principal ✅" if resp.status_code == 200
+                         else f"  ⚠️ {name}: CAN_QUERY not granted ({resp.status_code} {resp.text[:100]}); the App shows Permission Required until an admin grants it")
+        else:
+            lines.append(_grant_system_model(api, sp, name))
+    if any("admin action" in line or "Permission Required" in line for line in lines):
+        lines.append("⚠️ admin action: the model grants above need a metastore admin; the App shows Permission Required until they are run")
     return [f"Model access for the App ({_plural(len(picks), 'endpoint')}):"] + lines
+
+
+def system_model_service(endpoint_name):
+    """The Unity Catalog model service behind a pay-per-token foundation endpoint: databricks-<model> is served by system.ai.<model>.
+    Such endpoints have no id, so there is no serving-endpoint ACL to write; their query access is EXECUTE on the model service."""
+    prefix = "databricks-"
+    if not endpoint_name.startswith(prefix) or len(endpoint_name) == len(prefix):
+        return ""
+    return f"system.ai.{endpoint_name[len(prefix):]}"
+
+
+def _grant_system_model(api, sp, name):
+    service = system_model_service(name)
+    if not service:
+        return (f"  ⚠️ {name}: not granted (the endpoint has no id and no system model service to grant on); "
+                "a workspace admin grants CAN_QUERY on it, or the App shows Permission Required")
+    resp = api("PATCH", f"/api/2.1/unity-catalog/permissions/model_service/{service}", {"changes": [{"principal": sp, "add": ["EXECUTE"]}]})
+    if resp.status_code == 200:
+        return f"  {name}: EXECUTE on {service} for the App's service principal ✅"
+    command = f"databricks grants update model_service {service} --json '{{\"changes\": [{{\"principal\": \"{sp}\", \"add\": [\"EXECUTE\"]}}]}}'"
+    return (f"  ⚠️ {name}: EXECUTE on {service} not granted ({resp.status_code} {resp.text[:100]}); "
+            f"Permission Required: a metastore admin runs `{command}`. Account users already hold EXECUTE on system.ai models by default, "
+            "so the App may be covered already.")
 
 
 def step_grant_permissions(ctx):

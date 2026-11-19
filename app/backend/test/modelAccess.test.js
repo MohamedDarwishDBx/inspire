@@ -104,3 +104,26 @@ test('serving endpoints that all refuse do not block a run while the Unity Gatew
   assert.equal(await modelAccessPermission({ call, principal: PRINCIPAL }), null);
   assert.ok(calls.some(([, p]) => p === '/ai-gateway/codex/v1/models'), 'the gateway list is consulted before a permission is raised');
 });
+
+// Live shape (2026-11-19): databricks-* foundation endpoints have no id. Their access object is the Unity Gateway model service.
+test('a refused foundation endpoint with no id is named as its system model service, never as an endpoint id', async () => {
+  const endpoints = [chat('databricks-claude-sonnet-4-6', undefined)];
+  const probes = { [invocations('databricks-claude-sonnet-4-6')]: 403 };
+  const { call } = fakeCall({ listing: listed(endpoints), probes });
+  const permission = await modelAccessPermission({ call, principal: PRINCIPAL });
+  assert.ok(permission, 'a refusal from every candidate is a Permission Required');
+  const all = permission.steps.join('\n');
+  assert.ok(!all.includes('undefined') && !all.includes('serving-endpoints/'), all);
+  assert.ok(permission.steps.includes(`databricks grants update model_service system.ai.claude-sonnet-4-6 --json '{"changes":[{"principal":"${PRINCIPAL}","add":["EXECUTE"]}]}'`), all);
+  assert.ok(permission.steps.some((s) => s.includes('system.ai.claude-sonnet-4-6') && s.includes('Can execute')), all);
+});
+
+test('a refused foundation endpoint and a refused endpoint with an id are each named by their own grant path', async () => {
+  const endpoints = [chat('databricks-claude-sonnet-4-6', undefined), chat('databricks-gpt-oss-120b', 'id-gpt')];
+  const probes = { [invocations('databricks-claude-sonnet-4-6')]: 403, [invocations('databricks-gpt-oss-120b')]: 403 };
+  const { call } = fakeCall({ listing: listed(endpoints), probes });
+  const permission = await modelAccessPermission({ call, principal: PRINCIPAL });
+  assert.ok(permission.steps.includes(`databricks api patch /api/2.0/permissions/serving-endpoints/id-gpt --json '{"access_control_list":[{"service_principal_name":"${PRINCIPAL}","permission_level":"CAN_QUERY"}]}'`));
+  assert.ok(permission.steps.some((s) => s.includes('system.ai.claude-sonnet-4-6')));
+  assert.ok(!permission.steps.join('\n').includes('undefined'));
+});
