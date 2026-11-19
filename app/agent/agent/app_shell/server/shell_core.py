@@ -2306,7 +2306,8 @@ class Shell:
         return key in SCREENS + REMOVED_SCREENS and (self.settings.get("screens") or {}).get(key) is not False
 
     def workspace(self, headers: dict) -> tuple:
-        if self.settings["auth"] == "user":
+        # REQ-418 (D-SL-10B): a page inside Inspire reads as the signed-in viewer, whatever its auth; only its decisions are written as the App.
+        if self.settings["auth"] == "user" or self.inside:
             token = headers.get("x-forwarded-access-token")
             if not token:
                 raise HttpError(401, "sign in to the workspace to see this App; it shows each person only the data they may read")
@@ -2343,9 +2344,11 @@ class Shell:
         return self._sp
 
     def decision_writer(self, ws):
-        if self.settings["auth"] != "user" or self.settings.get("protected"):
+        # REQ-418 (D-SL-10B): a decision the CLI records is written by its writer (the App's token) whatever the page's auth; the actor is the viewer.
+        cli = self.writer_factory is not None
+        if self.settings.get("protected") or (self.settings["auth"] != "user" and not cli):
             return ws
-        if self.writer_factory is not None:
+        if cli:
             if self._writer is None:
                 self._writer = self.writer_factory()
             return self._writer

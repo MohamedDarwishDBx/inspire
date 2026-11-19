@@ -184,7 +184,8 @@ export async function dumpFor(page, reason) {
 
 export async function openUi(open, overrides = {}, query = '', { mount, init } = {}) {
   if (!browser) browser = await chromium.launch();
-  const made = makeApp({ useCase: HARNESS_USE_CASE, buildStamp: UNKNOWN_BUILD, ...overrides }, { mount });
+  // REQ-418: the Apps proxy forwards the signed-in person (x-forwarded-email); the harness forwards the same person as the overridden `me`.
+  const made = makeApp({ useCase: HARNESS_USE_CASE, buildStamp: UNKNOWN_BUILD, forwardedEmail: overrides.me?.userName, ...overrides }, { mount });
   const opened = [];
   let record = null;
   const close = async () => {

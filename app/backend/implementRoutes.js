@@ -1436,7 +1436,8 @@ function registerImplementRoutes(app, deps) {
       // REQ-418 (ruling 3): the App creates the schema; the signed-in person is recorded as its requester in Inspire's own control log.
       const sid = String(tags.inspire_session_id ?? '').trim();
       const useCaseId = String(tags.inspire_use_case_id ?? '').trim();
-      if (isInt64Id(sid) && I.validateUseCaseId(useCaseId)) {
+      // Recorded only when the App creates the schema now; an existing schema was created by an earlier run, and the log says so.
+      if (ensure.create && isInt64Id(sid) && I.IMPLEMENT_USE_CASE_ID_RE.test(useCaseId)) {
         const requester = (await personOf(req)).username || '';
         const { catalog: inspireCatalog, schema: inspireSchema } = dbOf(req, splitInspireDatabase);
         const logTable = C.controlLogTableName(inspireCatalog, inspireSchema);

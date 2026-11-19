@@ -3840,7 +3840,7 @@ function useCaseSchemaOwner(held, { inspireDatabase, useCaseId, sessionId }) {
 // REQ-131, REQ-260: the CREATE SCHEMA grant the own-schema fallback needs. The route carries it as the Permission Required entry; the prose names the dialog.
 function ownSchemaPermission(catalog, me) {
   return permissionRequired({ statements: [`GRANT CREATE SCHEMA ON CATALOG \`${catalog}\` TO \`${me}\``], // PERMISSION_DIALOG
-    principal: me, why: `Inspire cannot create the use case schema in ${catalog} with your sign-in.` });
+    principal: me, why: `The Inspire App cannot create the use case schema in ${catalog}, and the App creates it at the Results step.` });
 }
 
 function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessName, rows = null, unchecked = '' }) {

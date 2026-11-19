@@ -215,18 +215,30 @@ def test_the_decision_step_refuses_a_request_it_cannot_trust_before_any_sql(tmp_
     assert reader.sql == [] and writer.sql == []
 
 
-def test_the_decision_step_runs_for_a_page_inside_inspire_on_either_identity_and_answers_as_json(tmp_path):
+def test_a_decision_on_an_sp_page_inside_inspire_is_written_as_the_app_token_with_the_viewer_recorded_as_actor(tmp_path):
+    # REQ-418 ruling 3 (D-SL-10B): the viewer's read runs on the viewer's token; the write runs on the App's token (writer.token);
+    # the viewer is the recorded actor. Fails before the fix: the CLI answered 403 "has no service principal".
     reader, writer, asked = Warehoused(current=[current("k1", "run", "run 7")]), Warehoused(), []
     own = app_dir(tmp_path, dict(_inside(options=dict(DECIDE["options"])), auth="sp"), [edit_page()])
-    # REQ-418 (D-SL-10B): a page inside Inspire that reads as the App may record decisions too; the guard never refuses it for its auth.
     status, body = shell_core.cli_answer(_step(own), user_factory=_factory(reader, writer, asked))
-    assert "records decisions only" not in json.dumps(body), (status, body)
+    assert status == 200 and body["written"] == ["k1"], (status, body)
+    assert asked == [(HOST, "tok-dana"), (HOST, "tok-inspire")], "the read is the viewer's; the one write is the App's token"
+    assert len(writer.sql) == 1 and reader.sql and all(p != "tok-dana" for h, p in asked[1:]), "no write on the viewer's token"
+    _sql, params, *_rest = writer.sql[0]
+    assert DANA in [p.get("value") if isinstance(p, dict) else p for p in params], "the viewer is the recorded actor"
     out = io.StringIO()
     assert shell_core.cli(io.StringIO("not json"), out) == 0
     assert json.loads(out.getvalue())["status"] == 400
-    out = io.StringIO()
-    shell_core.cli(io.StringIO(json.dumps(_step(own))), out)
-    assert "records decisions only" not in out.getvalue(), out.getvalue()
+
+
+def test_the_decision_step_refuses_an_empty_app_token_before_any_read_or_write(tmp_path):
+    # Deterministic identity: no App token means no decision, never a write with an empty bearer (must-exclude).
+    reader, writer, asked = Warehoused(current=[current("k1", "run", "run 7")]), Warehoused(), []
+    own = app_dir(tmp_path, dict(_inside(options=dict(DECIDE["options"])), auth="sp"), [edit_page()])
+    request = _step(own, writer={"token": "", "warehouse": "wh-inspire"})
+    status, body = shell_core.cli_answer(request, user_factory=_factory(reader, writer, asked))
+    assert (status, body) == (400, {"error": "send token as text"}), (status, body)
+    assert asked == [] and writer.sql == []
 
 
 @pytest.mark.parametrize("changes,problem", [

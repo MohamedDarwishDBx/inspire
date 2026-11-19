@@ -4,7 +4,7 @@ import { buildAgainHint, DATA_STOP_HINT, GENIE_CODE_OFF_TITLE, lostTablesText, V
 import {
   HARNESS_USE_CASE, HARNESS_SETTINGS, HARNESS_SESSION_ID, MVP_JOB, OWNER, RESULT_TABLE, STUDIO_STATE, built, builtSpec,
 } from './implementFixtures.js';
-import { BUILD_IT, closeAsset, closeBrowser, closeBuild, dataToResults, openAdvanced, openDetails, openRow, expandBuild, FAKE_CLOCK, lowContrast, onStep, openAsset, openFeatures, openSettings, openUi, painted, pollNow, setDark, settled, shot, startMvp, stepsAre, toAppAccess, toVibes, until, goToStep, toSummary, openFolded, nextUntil } from './uiSupport.mjs';
+import { POLICIED_SOURCE, BUILD_IT, closeAsset, closeBrowser, closeBuild, dataToResults, openAdvanced, openDetails, openRow, expandBuild, FAKE_CLOCK, lowContrast, onStep, openAsset, openFeatures, openSettings, openUi, painted, pollNow, setDark, settled, shot, startMvp, stepsAre, toAppAccess, toVibes, until, goToStep, toSummary, openFolded, nextUntil } from './uiSupport.mjs';
 import { wheelReads } from './wheelScroll.mjs';
 
 const gone = (table) => `[TABLE_OR_VIEW_NOT_FOUND] The table or view ${table} cannot be found. Verify the spelling. SQLSTATE: 42P01`;
@@ -72,7 +72,7 @@ function submittedSpec(made) {
 }
 
 test('the wizard opens on Use case with no MVP or notebook choice, Deliver ticks the App and Genie Agent, drops the App step while the App is unticked, and All Good, Build it Now launches one run', async () => {
-  const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' } });
+  const ui = await openUi('wizard', { me: { userName: OWNER, displayName: 'Owner' }, policies: POLICIED_SOURCE });
   const { page, made } = ui;
   const withApp = ['1. What to deliver', '2. Data & results', '3. First run', '4. Measure', '5. Where it lives', '6. Review & build'];
   try {
@@ -399,7 +399,7 @@ test('roles an older wizard guessed come back with the version, and one click se
     status: 'failed', spec_json: JSON.stringify(guessed), result_rows: null, asset_status: null,
     dashboard_id: null, dashboard_url: null, genie_space_id: null, genie_space_url: null, app_name: null, app_url: null, alert_id: null, alert_url: null,
   });
-  const ui = await openUi('wizard', { columns, me: { userName: OWNER, displayName: 'Owner' }, history: [failed] });
+  const ui = await openUi('wizard', { columns, me: { userName: OWNER, displayName: 'Owner' }, history: [failed], policies: POLICIED_SOURCE }); // D-SL-11: the access choice shows for a row-filtered source
   const { page, made } = ui;
   const role = (name) => page.locator('label').filter({ has: page.locator('span', { hasText: new RegExp(`^${name}$`) }) }).locator('select');
   const reset = page.getByRole('button', { name: "Reset roles to Inspire's choice", exact: true });
@@ -550,7 +550,7 @@ test('what blocks a step shows in the footer, opens Advanced on the field to fix
 });
 
 test('an App name another App already uses is changed to the next free name, and a name the person types back is fixed on the last step', async () => {
-  const ui = await openUi('wizard', {
+  const ui = await openUi('wizard', { policies: POLICIED_SOURCE,
     me: { userName: OWNER, displayName: 'Owner' },
     appsByName: { 'inspire-hub-acme': { name: 'inspire-hub-acme', description: 'Sales forecasting tool' } },
   });
@@ -1924,7 +1924,7 @@ test('a version stopped by notebook edits offers a rebuild that overwrites them,
 });
 
 test('Edit after notebook edits asks on Summary whether to overwrite them, and only a ticked box confirms', async () => {
-  const ui = await openUi('wizard', { ...STUDIO_STATE, history: [editedVersion(), built()], me: { userName: OWNER, displayName: 'Owner' } });
+  const ui = await openUi('wizard', { ...STUDIO_STATE, history: [editedVersion(), built()], me: { userName: OWNER, displayName: 'Owner' }, policies: POLICIED_SOURCE });
   const { page, made } = ui;
   try {
     await toSummary(page);
