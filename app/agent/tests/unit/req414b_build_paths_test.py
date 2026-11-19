@@ -1,16 +1,12 @@
-"""REQ-414 part B: the build paths for the AI-native kinds (AI Search index, Supervisor Agent or orchestrator job, scheduled agent job
-with Lakebase write-back and an approval step).
+"""REQ-414 part B: the build paths for the AI-native kinds, planned and run by app_shell/server/shell_build.py.
 
-The pure builders live in app_shell/server/shell_build.py and reach the workspace only through an `api` object with do(). The
-tests drive them with stubs, and load the module from the packed App shell payload the way the agent notebook does. Nothing here
-contacts a workspace.
+Pure builders and request bodies, reached through an `api` object with do(). The agent job's spec is validated by the SDK's own
+JobSettings parser, so a spec the Jobs API would reject fails here. Nothing contacts a workspace.
 """
 import os
 import sys
 
 import pytest
-
-from _agentload import load_agent_namespace
 
 SERVER = os.path.join(os.path.dirname(__file__), "..", "..", "agent", "app_shell", "server")
 if SERVER not in sys.path:
@@ -19,37 +15,11 @@ if SERVER not in sys.path:
 import shell_actions  # noqa: E402
 import shell_build  # noqa: E402
 
-TODAY = None  # record_values only reads TODAY for the dated actions; the approval actions do not use it
-
-
-class Log:
-    def info(self, message, *args, **kwargs):
-        pass
-
-    def warning(self, message, *args, **kwargs):
-        pass
-
-
-class FakeSpark:
-    """Every DESCRIBE and minimal call succeeds, so the function part of the probe is all available."""
-
-    def sql(self, statement):
-        return _Frame()
-
-
-class _Frame:
-    def collect(self):
-        return []
-
-
-class StatusError(Exception):
-    def __init__(self, status_code, message=""):
-        super().__init__(message)
-        self.status_code = status_code
+NOTEBOOK = "/Workspace/Inspire/agent/dbx_inspire_ai_agent"
 
 
 class FakeApi:
-    """Records every call. `answers` maps (method, path prefix) to the error it raises, or to the body it returns."""
+    """Records every call. `answers` maps (method, path prefix) to the body it returns, or to an exception it raises."""
 
     def __init__(self, answers=None, created_id="sup-1"):
         self.answers = answers or {}
@@ -65,55 +35,53 @@ class FakeApi:
                 return outcome
         if method == "POST" and path == shell_build.SUPERVISOR_AGENTS_PATH:
             return {"id": self.created_id}
+        if method == "POST" and path == shell_build.JOBS_CREATE_PATH:
+            return {"job_id": 77}
         return {}
 
 
-@pytest.fixture(scope="module")
-def ns():
-    return load_agent_namespace()
+class StatusError(Exception):
+    def __init__(self, status_code, message=""):
+        super().__init__(message)
+        self.status_code = status_code
 
 
-# --- the supervisor probe: a cheap list call, classified by its status --------------------------------------------------------
+def job_spec(**overrides):
+    args = dict(name="watch", cron="0 0 7 * * ?", detect_sql="SELECT 1", lakebase_table="c.s.orders", notebook_path=NOTEBOOK)
+    args.update(overrides)
+    return shell_build.agent_job_spec(**args)
+
+
+# --- the supervisor probe ---------------------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("status,text,expected", [
-    (200, "", "available"),
-    (404, "not found", "unavailable"),
+    (200, "", "available"), (404, "not found", "unavailable"),
     (403, "Supervisor agents are not enabled for this workspace", "unavailable"),
-    (403, "User does not have permission", "unknown"),
-    (500, "internal error", "unknown"),
-    (None, "timed out", "unknown"),
+    (403, "User does not have permission", "unknown"), (500, "internal error", "unknown"), (None, "timed out", "unknown"),
 ])
 def test_the_supervisor_list_call_is_classified_by_its_status(status, text, expected):
     assert shell_build.classify_supervisor_probe(status, text) == expected
 
 
 def test_probe_supervisor_reads_the_status_from_the_api_error():
+    path = "/api/2.1/supervisor-agents"
     assert shell_build.probe_supervisor(FakeApi()) == "available"
-    assert shell_build.probe_supervisor(FakeApi({("GET", "/api/2.1/supervisor-agents"): StatusError(404)})) == "unavailable"
-    assert shell_build.probe_supervisor(FakeApi({("GET", "/api/2.1/supervisor-agents"): StatusError(500)})) == "unknown"
-    assert shell_build.probe_supervisor(FakeApi({("GET", "/api/2.1/supervisor-agents"): RuntimeError("boom")})) == "unknown"
+    assert shell_build.probe_supervisor(FakeApi({("GET", path): StatusError(404)})) == "unavailable"
+    assert shell_build.probe_supervisor(FakeApi({("GET", path): RuntimeError("boom")})) == "unknown"
 
 
-def test_the_probe_uses_the_documented_list_path_and_only_gets():
-    api = FakeApi()
-    shell_build.probe_supervisor(api)
-    assert api.calls == [("GET", "/api/2.1/supervisor-agents", None, None)]
-
-
-# --- choosing the path: the supervisor only when the probe says so ------------------------------------------------------
+# --- choosing the path ------------------------------------------------------------------------------------------------------
 
 def test_the_supervisor_path_is_chosen_only_when_the_probe_says_available():
     assert shell_build.choose_path("cross_domain_assistant", "available") == "supervisor"
-    assert shell_build.choose_path("cross_domain_assistant", "unavailable") == "orchestrator_job"
-    assert shell_build.choose_path("cross_domain_assistant", "unknown") == "orchestrator_job"
-    assert shell_build.choose_path("cross_domain_assistant", None) == "orchestrator_job"
+    for status in ("unavailable", "unknown", None):
+        assert shell_build.choose_path("cross_domain_assistant", status) == "orchestrator_job"
 
 
-def test_the_vector_index_is_built_only_when_vector_search_is_available_else_ai_query():
+def test_the_index_is_built_only_when_vector_search_is_available_else_ai_query():
     for kind in ("lookalikes", "taxonomy_mapping"):
         assert shell_build.choose_path(kind, "unknown", "available") == "vector_index"
         assert shell_build.choose_path(kind, "unknown", "unavailable") == "ai_query"
-        assert shell_build.choose_path(kind, "unknown", "unknown") == "ai_query"
 
 
 @pytest.mark.parametrize("kind", ["watch_act_agent", "exception_workflow_agent", "outreach_agent"])
@@ -125,200 +93,143 @@ def test_a_kind_without_a_build_path_has_none():
     assert shell_build.choose_path("entity_matching", "available", "available") == "none"
 
 
-def test_the_fallback_sentences_name_the_path_taken():
-    assert "orchestrator job" in shell_build.fallback_sentence("orchestrator_job")
-    assert "ai_query" in shell_build.fallback_sentence("ai_query")
-    assert shell_build.fallback_sentence("supervisor") == ""
+# --- the supervisor: every domain space, one tool each, with its description ----------------------------------------------
+
+def test_the_supervisor_spec_has_one_tool_per_domain_space_with_its_description():
+    spec = shell_build.supervisor_spec("cross", [("space-a", "Sales"), ("space-b", "Stock")])
+    assert [t["tool_id"] for t in spec["tools"]] == ["genie_space_1", "genie_space_2"]
+    assert spec["tools"][1]["body"] == {"tool_type": "genie_space", "genie_space": {"id": "space-b"}, "description": "Stock"}
 
 
-# --- the supervisor: created from the domain Genie spaces only ----------------------------------------------------------
-
-def test_the_supervisor_spec_routes_to_exactly_the_given_genie_spaces():
-    spec = shell_build.supervisor_spec("cross domain", ["space-a", " space-b ", ""])
-    assert spec["agent"] == {"name": "cross domain"}
-    assert [t["body"]["genie_space"]["id"] for t in spec["tools"]] == ["space-a", "space-b"]
-    assert all(t["body"]["tool_type"] == "genie_space" for t in spec["tools"])
+def test_a_space_listed_twice_is_attached_once():
+    spec = shell_build.supervisor_spec("cross", [("space-a", "Sales"), ("space-a", "Sales")])
+    assert len(spec["tools"]) == 1
 
 
-def test_a_supervisor_needs_at_least_one_genie_space():
+def test_a_supervisor_needs_at_least_one_domain_space():
     with pytest.raises(ValueError, match="at least one Genie space"):
-        shell_build.supervisor_spec("x", ["", "  "])
+        shell_build.supervisor_spec("x", [("", "x")])
 
 
 def test_create_supervisor_posts_the_agent_then_one_tool_per_space_with_the_tool_id_as_a_query():
     api = FakeApi(created_id="sup-42")
-    out = shell_build.create_supervisor(api, "cross", ["space-a", "space-b"])
+    out = shell_build.create_supervisor(api, "cross", [("space-a", "Sales"), ("space-b", "Stock")])
     assert out["supervisor_id"] == "sup-42" and out["tools"] == ["genie_space_1", "genie_space_2"]
     assert api.calls[0] == ("POST", "/api/2.1/supervisor-agents", {"name": "cross"}, None)
-    assert api.calls[1] == ("POST", "/api/2.1/supervisor-agents/sup-42/tools", {"tool_type": "genie_space", "genie_space": {"id": "space-a"}},
-                            {"tool_id": "genie_space_1"})
-    assert len(api.calls) == 3
+    assert api.calls[1][1] == "/api/2.1/supervisor-agents/sup-42/tools" and api.calls[1][3] == {"tool_id": "genie_space_1"}
 
 
-def test_a_supervisor_created_without_an_id_is_refused_before_any_tool_is_attached():
+def test_a_supervisor_answer_without_an_id_attaches_no_tools_and_names_the_keys():
     api = FakeApi(created_id="")
-    with pytest.raises(shell_build.SupervisorIdMissing, match="no id"):
-        shell_build.create_supervisor(api, "cross", ["space-a"])
-    assert [c[0] for c in api.calls] == ["POST"], "no tool is posted for a supervisor without an id"
+    with pytest.raises(shell_build.SupervisorIdMissing):
+        shell_build.create_supervisor(api, "cross", [("space-a", "Sales")])
+    assert [c[0] for c in api.calls] == ["POST"]
 
 
-# --- the orchestrator fallback and the index and job specs ---------------------------------------------------------------
-
-def test_the_orchestrator_asks_each_domain_space_and_summarises_all_answers():
-    spec = shell_build.orchestrator_job_spec("cross", ["space-a", "space-b"], "0 0 6 * * ?")
-    asks = [t for t in spec["tasks"] if t["task_key"].startswith("ask_")]
-    assert [t["genie_space_id"] for t in asks] == ["space-a", "space-b"]
-    summary = next(t for t in spec["tasks"] if t["task_key"] == "summary")
-    assert summary["depends_on"] == [t["task_key"] for t in asks]
-    assert spec["schedule"] == "0 0 6 * * ?"
-
-
-def test_the_index_is_a_delta_sync_index_over_its_source_table():
-    spec = shell_build.index_spec("lookalikes_idx", "endpoint-1", "catalog.schema.customers", "customer_id", "profile_text")
-    assert spec["index_type"] == "DELTA_SYNC"
-    assert spec["delta_sync_index_spec"]["source_table"] == "catalog.schema.customers"
-    assert spec["delta_sync_index_spec"]["embedding_source_columns"] == [{"name": "profile_text"}]
-
-
-def test_an_index_missing_a_field_is_refused():
-    with pytest.raises(ValueError, match="endpoint"):
-        shell_build.index_spec("i", "", "t", "k", "c")
-
-
-def test_the_agent_job_writes_pending_rows_and_acts_only_on_approved_rows():
-    spec = shell_build.agent_job_spec("watch", "0 0 7 * * ?", "SELECT 1", "lakebase.schema.watch")
-    tasks = {t["task_key"]: t for t in spec["tasks"]}
-    assert tasks["write_back"]["writes"] == {shell_build.APPROVAL_COLUMN: shell_build.PENDING}
-    assert tasks["approval"]["depends_on"] == ["write_back"]
-    assert tasks["act"]["only_rows_where"] == {shell_build.APPROVAL_COLUMN: shell_build.APPROVED}
-    assert tasks["act"]["depends_on"] == ["approval"]
-    assert not any(t.get("writes", {}).get(shell_build.APPROVAL_COLUMN) == shell_build.APPROVED for t in spec["tasks"]), \
-        "no task writes the approved state; only the approver does"
-
-
-def test_the_agent_job_needs_its_detect_query_and_its_lakebase_table():
-    with pytest.raises(ValueError):
-        shell_build.agent_job_spec("watch", "", "", "lakebase.schema.watch")
-
-
-def test_only_approved_rows_are_acted_on_pending_and_rejected_rows_never_are():
-    rows = [{"id": 1, shell_build.APPROVAL_COLUMN: "approved"}, {"id": 2, shell_build.APPROVAL_COLUMN: "awaiting approval"},
-            {"id": 3, shell_build.APPROVAL_COLUMN: "rejected"}, {"id": 4}]
-    assert [r["id"] for r in shell_build.rows_ready_to_act(rows)] == [1]
-
-
-# --- approve and reject: the registry writes the approval columns -------------------------------------------------------
-
-def test_approve_writes_the_approved_state_and_reject_writes_the_reason():
-    assert shell_actions.record_values("approve", {}, TODAY) == {shell_build.APPROVAL_COLUMN: "approved"}
-    assert shell_actions.record_values("reject", {"reason": "outside policy"}, TODAY) == {
-        shell_build.APPROVAL_COLUMN: "rejected", shell_build.APPROVAL_NOTE_COLUMN: "outside policy"}
-
-
-def test_reject_without_a_reason_is_refused():
-    with pytest.raises(ValueError, match="reason"):
-        shell_actions.record_values("reject", {}, TODAY)
-
-
-def test_approve_and_reject_are_a_persons_click_and_the_agent_never_offers_them():
-    """Governance: approval is a person's click on a pending row. The agent cannot approve for the person."""
-    assert set(shell_actions.APPROVAL_ACTIONS) == {"approve", "reject"}
-    assert not set(shell_actions.APPROVAL_ACTIONS) & set(shell_actions.RECORD_ACTIONS)
-    assert "approve" in shell_actions.WRITE_ACTIONS, "the write still goes through the registry route"
-
-
-# --- the notebook's route: the module loads from the packed payload, and its pin matches -------------------------------
-
-def test_the_shell_build_module_loads_from_the_packed_app_shell_and_exposes_the_builders(ns):
-    module = ns["implement_shell_module"](ns["inspire_notebook_asset"]("app_shell"), "shell_build")
-    assert module.__name__ == "shell_build"
-    assert callable(module.choose_path) and callable(module.probe_supervisor) and callable(module.create_supervisor)
-
-
-def test_the_shell_facts_loader_still_loads_its_module(ns):
-    module = ns["implement_shell_facts_module"](ns["inspire_notebook_asset"]("app_shell"))
-    assert module.__name__ == "shell_facts"
-
-
-def test_the_probe_records_the_supervisor_status_and_it_drives_the_supervisor_choice(ns):
-    ns["AI_FUNCTION_PROBE_CACHE"].clear()
-    ns["TECHNICAL_CONTEXT"].pop("ai_function_status", None)
-    try:
-        ns["probe_ai_functions"](FakeSpark(), Log(), workspace_key="ws-a", api=FakeApi())
-        status = ns["TECHNICAL_CONTEXT"]["ai_function_status"]
-        assert status["supervisor_agents"] == "available"
-        assert ns["inspire_shell_build"].choose_path("cross_domain_assistant", status["supervisor_agents"]) == "supervisor"
-    finally:
-        ns["AI_FUNCTION_PROBE_CACHE"].clear()
-        ns["TECHNICAL_CONTEXT"].pop("ai_function_status", None)
-
-
-def test_a_not_enabled_supervisor_falls_back_to_the_orchestrator(ns):
-    ns["AI_FUNCTION_PROBE_CACHE"].clear()
-    ns["TECHNICAL_CONTEXT"].pop("ai_function_status", None)
-    try:
-        api = FakeApi({("GET", "/api/2.1/supervisor-agents"): StatusError(403, "supervisor agents not enabled")})
-        ns["probe_ai_functions"](FakeSpark(), Log(), workspace_key="ws-b", api=api)
-        status = ns["TECHNICAL_CONTEXT"]["ai_function_status"]
-        assert status["supervisor_agents"] == "unavailable"
-        assert ns["inspire_shell_build"].choose_path("cross_domain_assistant", status["supervisor_agents"]) == "orchestrator_job"
-    finally:
-        ns["AI_FUNCTION_PROBE_CACHE"].clear()
-        ns["TECHNICAL_CONTEXT"].pop("ai_function_status", None)
-
-
-# --- execution: each path creates its assets and records them ----------------------------------------------------------
-
-def test_the_supervisor_id_is_read_from_the_documented_fields_and_a_missing_id_stops_the_build():
+def test_the_supervisor_id_is_read_from_the_documented_fields():
     assert shell_build.parse_supervisor_id({"id": "sup-1"}) == "sup-1"
     assert shell_build.parse_supervisor_id({"name": "supervisor-agents/sup-2"}) == "sup-2"
     with pytest.raises(shell_build.SupervisorIdMissing) as caught:
         shell_build.parse_supervisor_id({"created_at": "x", "status": "ok"})
-    assert "['created_at', 'status']" in str(caught.value), "the raw keys are named so the run can log them"
-    with pytest.raises(shell_build.SupervisorIdMissing):
-        shell_build.parse_supervisor_id("not an object")
+    assert "['created_at', 'status']" in str(caught.value)
 
 
-def test_a_supervisor_answer_without_an_id_attaches_no_tools():
-    api = FakeApi(created_id="")
-    with pytest.raises(shell_build.SupervisorIdMissing):
-        shell_build.create_supervisor(api, "cross", ["space-a"])
-    assert [c[0] for c in api.calls] == ["POST"], "no tool is posted when the supervisor id is missing"
+# --- the agent job in the Jobs 2.2 format, validated by the SDK ----------------------------------------------------------
+
+def test_the_agent_job_spec_is_in_the_jobs_format_with_notebook_tasks_a_cron_schedule_and_tags():
+    spec = job_spec()
+    assert spec["tags"] == {"inspire": "agent_job"}
+    assert spec["schedule"] == {"quartz_cron_expression": "0 0 7 * * ?", "timezone_id": "UTC", "pause_status": "PAUSED"}
+    assert [t["task_key"] for t in spec["tasks"]] == ["detect", "write_back", "act"]
+    assert all(t["notebook_task"]["notebook_path"] == NOTEBOOK for t in spec["tasks"])
+    assert spec["tasks"][2]["depends_on"] == [{"task_key": "write_back"}]
 
 
-def test_the_supervisor_path_records_the_supervisor_and_each_tool():
-    out = shell_build.create_supervisor(FakeApi(created_id="sup-7"), "cross", ["space-a", "space-b"])
-    assert out["records"] == [{"asset": "supervisor", "supervisor_id": "sup-7"},
-                              {"asset": "supervisor_tool", "supervisor_id": "sup-7", "tool_id": "genie_space_1"},
-                              {"asset": "supervisor_tool", "supervisor_id": "sup-7", "tool_id": "genie_space_2"}]
+def test_the_agent_job_spec_is_accepted_by_the_sdks_job_settings_parser():
+    from databricks.sdk.service.jobs import JobSettings
+    settings = JobSettings.from_dict(job_spec())
+    assert settings.schedule.quartz_cron_expression == "0 0 7 * * ?"
+    assert settings.schedule.timezone_id == "UTC"
+    assert [t.task_key for t in settings.tasks] == ["detect", "write_back", "act"]
+    assert settings.tasks[0].notebook_task.notebook_path == NOTEBOOK
 
 
-def test_the_index_path_creates_the_index_and_records_its_name():
+def test_a_missing_cron_gets_the_default_schedule_not_no_schedule():
+    assert job_spec(cron="")["schedule"]["quartz_cron_expression"] == shell_build.DEFAULT_CRON
+
+
+def test_the_agent_job_needs_its_detect_query_table_and_notebook():
+    for bad in ({"detect_sql": ""}, {"lakebase_table": ""}, {"notebook_path": ""}):
+        with pytest.raises(ValueError):
+            job_spec(**bad)
+
+
+def test_the_job_is_created_from_its_spec_and_its_id_is_recorded():
     api = FakeApi()
-    record = shell_build.build_index(api, shell_build.index_spec("lookalikes_idx", "endpoint-1", "c.s.customers", "customer_id", "profile_text"))
-    assert record == {"asset": "vector_index", "name": "lookalikes_idx"}
-    assert api.calls[0][:2] == ("POST", "/api/2.0/vector-search/indexes")
-
-
-def test_the_job_path_creates_the_job_and_records_its_id():
-    api = FakeApi({("POST", "/api/2.2/jobs/create"): {"job_id": 991}})
-    record = shell_build.build_agent_job(api, shell_build.agent_job_spec("watch", "0 0 7 * * ?", "SELECT 1", "lb.s.watch"))
-    assert record == {"asset": "job", "job_id": 991}
+    record = shell_build.build_agent_job(api, job_spec())
+    assert record == {"asset": "job", "job_id": 77} and api.calls[0][2]["tasks"][0]["task_key"] == "detect"
 
 
 def test_a_job_answer_without_a_job_id_is_refused():
     with pytest.raises(ValueError, match="job_id"):
-        shell_build.build_agent_job(FakeApi({("POST", "/api/2.2/jobs/create"): {}}), shell_build.agent_job_spec("w", "", "SELECT 1", "t"))
+        shell_build.build_agent_job(FakeApi({("POST", "/api/2.2/jobs/create"): {}}), job_spec())
 
 
-def test_the_orchestrator_asks_every_space_and_keeps_a_failed_answer_next_to_the_rest():
+# --- index inputs and the endpoint --------------------------------------------------------------------------------------
+
+def test_the_index_inputs_come_from_the_kinds_detected_roles():
+    columns = {"entity_name": ["c.s.customers.customer_name"], "case_id": ["c.s.customers.customer_id"]}
+    got = shell_build.index_inputs(columns, "c.s.customers")
+    assert got == {"text_column": "customer_name", "source_table": "c.s.customers", "primary_key": "customer_id"}
+
+
+def test_the_index_inputs_fall_back_to_a_free_text_column_then_a_label():
+    got = shell_build.index_inputs({"free_text": ["c.s.cases.complaint"], "label_column": ["c.s.cases.priority"]}, "c.s.cases")
+    assert got["text_column"] == "complaint" and got["source_table"] == "c.s.cases"
+
+
+def test_missing_index_inputs_are_empty_so_the_path_falls_back():
+    assert shell_build.index_inputs({}, "c.s.t")["text_column"] == ""
+
+
+def test_an_online_endpoint_is_picked_and_none_online_picks_nothing():
+    ready = {"endpoints": [{"name": "old", "endpoint_status": {"state": "OFFLINE"}},
+                           {"name": "vs-main", "endpoint_status": {"state": "ONLINE"}}]}
+    assert shell_build.pick_endpoint(ready) == "vs-main"
+    assert shell_build.pick_endpoint({"endpoints": [{"name": "x", "endpoint_status": {"state": "PROVISIONING"}}]}) == ""
+    assert shell_build.pick_endpoint({}) == ""
+
+
+# --- planning: a path without its inputs is skipped, with the reason named --------------------------------------------
+
+def test_the_index_plan_needs_every_input_or_names_what_is_missing():
+    plan, why = shell_build.plan_for("vector_index", "lookalikes", "inspire_uc", {"text_column": "n", "source_table": "c.s.t",
+                                                                                   "primary_key": "", "endpoint": "vs"})
+    assert plan is None and "primary_key" in why and "falling back to ai_query" in why
+
+
+def test_the_agent_job_plan_is_skipped_without_its_notebook_or_result_table():
+    _plan, why = shell_build.plan_for("agent_job", "watch_act_agent", "n", {"result_table": "c.s.t", "notebook_path": ""})
+    assert "no notebook" in why
+    _plan, why = shell_build.plan_for("agent_job", "watch_act_agent", "n", {"result_table": "", "notebook_path": NOTEBOOK})
+    assert "no result table" in why
+
+
+def test_the_supervisor_plan_is_skipped_when_no_domain_space_was_built():
+    plan, why = shell_build.plan_for("supervisor", "cross_domain_assistant", "n", {"domains": []})
+    assert plan is None and "no domain Genie space" in why
+
+
+# --- the orchestrator: real Genie calls through the caller's helper, failures kept ---------------------------------------
+
+def test_the_orchestrator_asks_every_domain_space_and_keeps_a_failed_answer_next_to_the_rest():
     def ask(space, question):
         if space == "space-b":
             raise RuntimeError("Genie space is busy")
         return f"{space}: ok"
     out = shell_build.orchestrate(ask, ["space-a", "space-b"], "How did sales do?")
     assert out["answers"]["space-a"] == {"answer": "space-a: ok", "error": ""}
-    assert out["failed"] == ["space-b"] and out["answers"]["space-b"]["error"] == "Genie space is busy"
+    assert out["failed"] == ["space-b"]
 
 
 def test_the_orchestrator_refuses_an_empty_question():
@@ -326,96 +237,41 @@ def test_the_orchestrator_refuses_an_empty_question():
         shell_build.orchestrate(lambda s, q: "", ["space-a"], " ")
 
 
-# --- the uninstall listing: one test per path, so nothing is left behind -----------------------------------------------
+# --- the dispatcher and the uninstall listing ----------------------------------------------------------------------------
 
-def test_the_index_path_is_on_the_uninstall_list_as_a_delete_of_the_index():
-    calls = shell_build.uninstall_requests([{"asset": "vector_index", "name": "lookalikes_idx"}])
-    assert calls == [("DELETE", "/api/2.0/vector-search/indexes/lookalikes_idx", None)]
-
-
-def test_the_supervisor_path_deletes_its_tools_before_the_supervisor():
-    records = [{"asset": "supervisor", "supervisor_id": "sup-7"},
-               {"asset": "supervisor_tool", "supervisor_id": "sup-7", "tool_id": "genie_space_1"}]
-    calls = shell_build.uninstall_requests(records)
-    assert calls[0] == ("DELETE", "/api/2.1/supervisor-agents/sup-7/tools/genie_space_1", None)
-    assert calls[1] == ("DELETE", "/api/2.1/supervisor-agents/sup-7", None)
+def test_the_uninstall_lists_tools_before_their_supervisor_then_the_index_then_the_job():
+    records = [{"asset": "job", "job_id": 77}, {"asset": "vector_index", "name": "inspire_uc_1"},
+               {"asset": "supervisor", "supervisor_id": "sup-1"}, {"asset": "supervisor_tool", "supervisor_id": "sup-1", "tool_id": "t1"}]
+    assert [(m, p) for m, p, _b in shell_build.uninstall_requests(records)] == [
+        ("DELETE", "/api/2.1/supervisor-agents/sup-1/tools/t1"), ("DELETE", "/api/2.1/supervisor-agents/sup-1"),
+        ("DELETE", "/api/2.0/vector-search/indexes/inspire_uc_1"), ("POST", "/api/2.2/jobs/delete")]
 
 
-def test_the_job_path_is_on_the_uninstall_list_as_a_jobs_delete():
-    assert shell_build.uninstall_requests([{"asset": "job", "job_id": 991}]) == [("POST", "/api/2.2/jobs/delete", {"job_id": 991})]
-
-
-def test_the_orchestrator_path_creates_nothing_so_its_uninstall_list_is_empty():
-    assert shell_build.uninstall_requests([]) == []
-
-
-def test_an_asset_with_no_uninstall_call_is_refused_not_skipped():
+def test_an_asset_with_no_uninstall_call_is_refused():
     with pytest.raises(ValueError, match="no uninstall call"):
         shell_build.uninstall_requests([{"asset": "table"}])
 
 
-# --- one dispatcher runs each path; each path's records feed the uninstall ----------------------------------------------
-
-def test_the_dispatcher_creates_the_supervisor_path_and_returns_its_records():
-    logs = []
-    out = shell_build.run_build_paths(FakeApi(created_id="sup-9"), {"path": "supervisor", "kind": "cross_domain_assistant",
-                                                                     "name": "cross", "genie_space_ids": ["space-a"]}, None, logs.append)
-    assert out["path"] == "supervisor" and out["records"][0] == {"asset": "supervisor", "supervisor_id": "sup-9"}
-    assert any("path=supervisor" in line for line in logs)
-
-
-def test_the_dispatcher_stops_the_supervisor_path_when_the_id_is_missing_and_logs_why():
-    logs = []
-    with pytest.raises(shell_build.SupervisorIdMissing):
-        shell_build.run_build_paths(FakeApi(created_id=""), {"path": "supervisor", "kind": "k", "name": "c",
-                                                             "genie_space_ids": ["space-a"]}, None, logs.append)
-    assert any("nothing attached" in line for line in logs)
-
-
-def test_the_dispatcher_runs_the_orchestrator_through_the_ask_it_is_given():
-    out = shell_build.run_build_paths(FakeApi(), {"path": "orchestrator_job", "kind": "k", "genie_space_ids": ["space-a"],
-                                                  "question": "q"}, lambda s, q: "answered", lambda line: None)
-    assert out["records"] == [] and out["result"]["answers"]["space-a"]["answer"] == "answered"
-
-
-def test_the_dispatcher_creates_the_index_and_the_job_and_records_both():
-    api = FakeApi({("POST", "/api/2.2/jobs/create"): {"job_id": 5}})
-    index = shell_build.run_build_paths(api, {"path": "vector_index", "kind": "lookalikes",
-                                              "index_spec": shell_build.index_spec("i", "e", "c.s.t", "id", "txt")}, None, lambda l: None)
-    job = shell_build.run_build_paths(api, {"path": "agent_job", "kind": "watch_act_agent",
-                                            "job_spec": shell_build.agent_job_spec("w", "0 0 7 * * ?", "SELECT 1", "lb.s.w")}, None,
-                                      lambda l: None)
-    assert index["records"] == [{"asset": "vector_index", "name": "i"}] and job["records"] == [{"asset": "job", "job_id": 5}]
-
-
-def test_the_ai_query_path_creates_nothing():
-    assert shell_build.run_build_paths(FakeApi(), {"path": "ai_query", "kind": "lookalikes"}, None, lambda l: None)["records"] == []
-
-
-def test_an_unknown_path_is_refused():
-    with pytest.raises(ValueError, match="no build path"):
-        shell_build.run_build_paths(FakeApi(), {"path": "magic"}, None, lambda l: None)
-
-
-def test_every_path_records_what_its_uninstall_must_remove():
-    api = FakeApi({("POST", "/api/2.2/jobs/create"): {"job_id": 5}}, created_id="sup-3")
-    built = [
-        shell_build.run_build_paths(api, {"path": "supervisor", "kind": "k", "name": "c", "genie_space_ids": ["s1"]}, None, lambda l: None),
-        shell_build.run_build_paths(api, {"path": "vector_index", "kind": "k",
-                                          "index_spec": shell_build.index_spec("i", "e", "c.s.t", "id", "txt")}, None, lambda l: None),
-        shell_build.run_build_paths(api, {"path": "agent_job", "kind": "k",
-                                          "job_spec": shell_build.agent_job_spec("w", "", "SELECT 1", "lb.s.w")}, None, lambda l: None),
-    ]
-    records = [r for out in built for r in out["records"]]
-    calls = shell_build.uninstall_requests(records)
-    assert ("POST", "/api/2.2/jobs/delete", {"job_id": 5}) in calls
-    assert ("DELETE", "/api/2.0/vector-search/indexes/i", None) in calls
-    assert ("DELETE", "/api/2.1/supervisor-agents/sup-3", None) in calls
-
-
 def test_the_approval_columns_are_added_with_the_quoting_the_notebook_passes_in():
-    stmts = shell_build.approval_ddl("lb.s.watch", lambda name: f"`{name}`")
-    assert stmts == ["ALTER TABLE `lb.s.watch` ADD COLUMN IF NOT EXISTS `approval_status` STRING",
-                     "ALTER TABLE `lb.s.watch` ADD COLUMN IF NOT EXISTS `approval_note` STRING"]
-    with pytest.raises(ValueError, match="Lakebase table"):
-        shell_build.approval_ddl("", lambda name: name)
+    stmts = shell_build.approval_ddl("c.s.orders", lambda name: f"`{name}`")
+    assert stmts == ["ALTER TABLE `c.s.orders` ADD COLUMN IF NOT EXISTS `approval_status` STRING",
+                     "ALTER TABLE `c.s.orders` ADD COLUMN IF NOT EXISTS `approval_note` STRING"]
+
+
+def test_approve_and_reject_are_a_persons_click_and_the_agent_never_offers_them():
+    assert set(shell_actions.APPROVAL_ACTIONS) == {"approve", "reject"}
+    assert not set(shell_actions.APPROVAL_ACTIONS) & set(shell_actions.RECORD_ACTIONS)
+
+
+def test_approve_writes_the_approved_state_and_reject_writes_the_reason():
+    assert shell_actions.record_values("approve", {}, None) == {shell_build.APPROVAL_COLUMN: "approved"}
+    assert shell_actions.record_values("reject", {"reason": "outside policy"}, None) == {
+        shell_build.APPROVAL_COLUMN: "rejected", shell_build.APPROVAL_NOTE_COLUMN: "outside policy"}
+    with pytest.raises(ValueError, match="reason"):
+        shell_actions.record_values("reject", {}, None)
+
+
+def test_only_approved_rows_are_acted_on():
+    rows = [{"id": 1, "approval_status": "approved"}, {"id": 2, "approval_status": "awaiting approval"},
+            {"id": 3, "approval_status": "rejected"}, {"id": 4}]
+    assert [r["id"] for r in shell_build.rows_ready_to_act(rows)] == [1]

@@ -179,6 +179,25 @@ function SnoozeButton({ action, tomorrow }) {
 }
 
 /** REQ-223 P52: a row or drawer action that asks first. The trigger and its confirm read the same word (D-UNDO). */
+// REQ-414 part B: the reject reason is asked in the row, the way AskFirst asks; Reject stays off until a reason is typed.
+function RejectAsk({ name, write, run }) {
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState('');
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+  if (!asking) {
+    return <button type="button" className="btn btn--sm" data-row-reject onClick={stop(() => setAsking(true))} aria-label={`Reject ${name}`}>Reject</button>;
+  }
+  const blank = !!approvalValues('reject', reason).error;
+  return (
+    <span className="row-ask" role="group" aria-label={`Reject ${name}`} onClick={(e) => e.stopPropagation()}>
+      <label><span>Why reject {name}?</span>
+        <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} aria-label={`Reason for rejecting ${name}`} data-row-reject-reason /></label>
+      <SaveButton write={write} className="btn btn--sm btn--pri" disabled={blank} onClick={async () => { if (await run(reason)) setAsking(false); }}>Reject</SaveButton>
+      <button type="button" className="btn btn--sm" onClick={stop(() => setAsking(false))}>Keep it</button>
+    </span>
+  );
+}
+
 function AskFirst({ word, ask, name, write, run, ...rest }) {
   const [asking, setAsking] = useState(false);
   const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
@@ -909,14 +928,6 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
     if (!cursorKey) return;
     card.current?.querySelector('tr.is-cursor')?.scrollIntoView({ block: 'nearest' });
   }, [cursorKey]);
-  // REQ-414 part B: Reject asks for the reason first; an empty reason writes nothing.
-  const rejectRow = (row, name) => {
-    const reason = window.prompt(`Why reject ${name}? Give the reason.`);
-    if (reason === null) return;
-    const values = approvalValues('reject', reason);
-    if (values.error) { window.alert(values.error); return; }
-    quick(row, values, 'Rejected', `reject:${recordKeyOf(row)}`);
-  };
   const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
   const hosted = meta.sublabel && meta.sublabel !== meta.label ? { [meta.label]: [meta.sublabel] } : {};
   const metas = (columnMeta || []).flatMap((f) => (!f.action ? [f] : !tracker || (tab && f.column === 'action_status') ? []
@@ -1009,8 +1020,7 @@ export default function Records({ meta, app, pageId, filters, ai, onFilter, hist
               <>
                 <SaveButton write={`approve:${keyOf(r)}`} className="btn btn--sm btn--pri" data-row-approve
                   onClick={stop(() => quick(r, approvalValues('approve'), 'Approved', `approve:${keyOf(r)}`))} aria-label={`Approve ${name}`}>Approve</SaveButton>
-                <button type="button" className="btn btn--sm" data-row-reject onClick={stop(() => rejectRow(r, name))}
-                  aria-label={`Reject ${name}`}>Reject</button>
+                <RejectAsk name={name} write={`reject:${keyOf(r)}`} run={(reason) => quick(r, approvalValues('reject', reason), 'Rejected', `reject:${keyOf(r)}`)} />
               </>
             )}
             {closingChoices(choices).filter((c) => c.id !== now).map((c) => {

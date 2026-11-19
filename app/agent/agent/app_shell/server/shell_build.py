@@ -15,6 +15,9 @@ SUPERVISOR_TOOL_PATH = "/api/2.1/supervisor-agents/{supervisor_id}/tools"
 SUPERVISOR_AGENT_PATH = "/api/2.1/supervisor-agents/{supervisor_id}"
 SUPERVISOR_TOOL_ITEM_PATH = "/api/2.1/supervisor-agents/{supervisor_id}/tools/{tool_id}"
 VECTOR_INDEXES_PATH = "/api/2.0/vector-search/indexes"
+VECTOR_ENDPOINTS_PATH = "/api/2.0/vector-search/endpoints"
+DEFAULT_CRON = "0 0 7 * * ?"
+DEFAULT_TIMEZONE = "UTC"
 JOBS_CREATE_PATH = "/api/2.2/jobs/create"
 JOBS_DELETE_PATH = "/api/2.2/jobs/delete"
 PROBE_STATUSES = ("available", "unavailable", "unknown")
@@ -77,16 +80,21 @@ def choose_path(kind_id: str, supervisor_status: str, index_status: str = "unkno
     return "agent_job"
 
 
-def supervisor_spec(name: str, genie_space_ids) -> dict:
-    """Request bodies for a Supervisor Agent over the domain Genie spaces: the agent, then one genie_space tool per space."""
-    spaces = [str(s).strip() for s in genie_space_ids if str(s or "").strip()]
-    if not spaces:
+def supervisor_spec(name: str, domains) -> dict:
+    """Request bodies for a Supervisor Agent over the domain Genie spaces. `domains` is a list of (space id, description); a plain
+    space id is accepted with the space's own id as its description. One genie_space tool per space, with its description."""
+    rows = []
+    for item in domains or []:
+        space, description = (item if isinstance(item, (tuple, list)) else (item, item))
+        space = str(space or "").strip()
+        if space and space not in [r[0] for r in rows]:
+            rows.append((space, str(description or space).strip() or space))
+    if not rows:
         raise ValueError("a supervisor needs at least one Genie space to route to")
-    agent = {"name": str(name)}
-    tools = []
-    for index, space in enumerate(spaces, start=1):
-        tools.append({"tool_id": f"genie_space_{index}", "body": {"tool_type": "genie_space", "genie_space": {"id": space}}})
-    return {"agent": agent, "tools": tools}
+    tools = [{"tool_id": f"genie_space_{i}", "description": desc,
+              "body": {"tool_type": "genie_space", "genie_space": {"id": space}, "description": desc}}
+             for i, (space, desc) in enumerate(rows, start=1)]
+    return {"agent": {"name": str(name)}, "tools": tools}
 
 
 class SupervisorIdMissing(ValueError):
@@ -108,9 +116,9 @@ def parse_supervisor_id(created) -> str:
     raise SupervisorIdMissing(f"the supervisor answer is a {type(created).__name__}, not an object")
 
 
-def create_supervisor(api, name: str, genie_space_ids) -> dict:
-    """POST the supervisor, then one tool per Genie space. Returns the supervisor id and the records of what was created."""
-    spec = supervisor_spec(name, genie_space_ids)
+def create_supervisor(api, name: str, domains) -> dict:
+    """POST the supervisor, then one tool per domain Genie space. Returns the supervisor id and the records of what was created."""
+    spec = supervisor_spec(name, domains)
     supervisor_id = parse_supervisor_id(api.do("POST", SUPERVISOR_AGENTS_PATH, body=spec["agent"]))
     records = [{"asset": "supervisor", "supervisor_id": supervisor_id}]
     for tool in spec["tools"]:
@@ -126,8 +134,8 @@ def build_index(api, spec: dict) -> dict:
 
 
 def build_agent_job(api, spec: dict) -> dict:
-    """Create the scheduled agent job. The record holds the job id the service returns."""
-    created = api.do("POST", JOBS_CREATE_PATH, body={"name": spec["name"], "schedule": spec["schedule"], "tasks": spec["tasks"]})
+    """Create the scheduled agent job from its Jobs 2.2 spec. The record holds the job id the service returns."""
+    created = api.do("POST", JOBS_CREATE_PATH, body=spec)
     job_id = (created or {}).get("job_id")
     if job_id is None:
         raise ValueError(f"the job create answer has no job_id; its keys are {sorted(created or {})}")
@@ -195,20 +203,24 @@ def index_spec(name: str, endpoint: str, source_table: str, primary_key: str, te
     }
 
 
-def agent_job_spec(name: str, cron: str, detect_sql: str, lakebase_table: str) -> dict:
-    """The scheduled agent job: detect, write the flagged rows to Lakebase as awaiting approval, then act on approved rows only."""
-    if not str(detect_sql or "").strip() or not str(lakebase_table or "").strip():
-        raise ValueError("the agent job needs its detect query and its Lakebase table")
-    return {
-        "name": str(name), "schedule": str(cron or ""),
-        "tasks": [
-            {"task_key": "detect", "sql": detect_sql},
-            {"task_key": "write_back", "depends_on": ["detect"], "lakebase_table": lakebase_table,
-             "writes": {APPROVAL_COLUMN: PENDING}},
-            {"task_key": "approval", "depends_on": ["write_back"], "gate": {APPROVAL_COLUMN: APPROVED}},
-            {"task_key": "act", "depends_on": ["approval"], "only_rows_where": {APPROVAL_COLUMN: APPROVED}},
-        ],
-    }
+def agent_job_spec(name: str, cron: str, detect_sql: str, lakebase_table: str, notebook_path: str, timezone: str = DEFAULT_TIMEZONE) -> dict:
+    """The scheduled agent job in the Jobs 2.2 create format (the launcher's shape): notebook tasks with task_key, a quartz cron
+    schedule with its timezone (created paused, so nothing runs before a person resumes it), and tags. The tasks run detect, then
+    write-back of the flagged rows as awaiting approval, then act, which reads only approved rows (the task parameters name the step)."""
+    if not str(detect_sql or "").strip() or not str(lakebase_table or "").strip() or not str(notebook_path or "").strip():
+        raise ValueError("the agent job needs its detect query, its Lakebase table and the notebook it runs")
+    if not str(cron or "").strip():
+        cron = DEFAULT_CRON
+    def task(key, step, depends=()):
+        out = {"task_key": key, "notebook_task": {"notebook_path": str(notebook_path),
+                                                  "base_parameters": {"step": step, "sql": detect_sql, "table": str(lakebase_table),
+                                                                      "approval_column": APPROVAL_COLUMN, "approved_value": APPROVED}}}
+        if depends:
+            out["depends_on"] = [{"task_key": d} for d in depends]
+        return out
+    return {"name": str(name), "tags": {"inspire": "agent_job"},
+            "tasks": [task("detect", "detect"), task("write_back", "write_back", ("detect",)), task("act", "act", ("write_back",))],
+            "schedule": {"quartz_cron_expression": str(cron), "timezone_id": str(timezone or DEFAULT_TIMEZONE), "pause_status": "PAUSED"}}
 
 
 def rows_ready_to_act(rows) -> list:
@@ -227,19 +239,20 @@ def approval_ddl(table: str, quote) -> list:
 
 
 def run_build_paths(api, plan: dict, ask, log) -> dict:
-    """Execute one kind's build path. `plan` holds the chosen path and the inputs that path needs; the result lists every asset
-    created (records) so the uninstall can remove each one. A supervisor whose id cannot be read stops here with its keys logged."""
+    """Execute one kind's build path from its plan. The result lists every asset created (records) so the uninstall can remove each one.
+    A supervisor whose id cannot be read stops here with its keys logged."""
     path = plan.get("path")
+    domains = plan.get("domains") or []
     log(f"[BUILD-PATH FIRED] {plan.get('kind', '?')}: path={path}")
     if path == "supervisor":
         try:
-            created = create_supervisor(api, plan["name"], plan["genie_space_ids"])
+            created = create_supervisor(api, plan["name"], domains)
         except SupervisorIdMissing as exc:
             log(f"[BUILD-PATH FIRED] supervisor stopped, nothing attached: {exc}")
             raise
         return {"path": path, "records": created["records"], "result": created}
     if path == "orchestrator_job":
-        return {"path": path, "records": [], "result": orchestrate(ask, plan["genie_space_ids"], plan["question"])}
+        return {"path": path, "records": [], "result": orchestrate(ask, [d for d, _desc in domains], plan["question"])}
     if path == "vector_index":
         return {"path": path, "records": [build_index(api, plan["index_spec"])], "result": None}
     if path == "agent_job":
@@ -249,21 +262,50 @@ def run_build_paths(api, plan: dict, ask, log) -> dict:
     raise ValueError(f"no build path {path!r}")
 
 
-def plan_for(path: str, kind: str, name: str, space: str, question: str, result_table: str, text_column: str = "",
-             endpoint: str = "") -> tuple:
-    """(plan, skip reason) for one build path. A path without the input it needs is skipped with the reason named."""
-    plan = {"path": path, "kind": kind, "name": name, "genie_space_ids": [space] if space else [], "question": question}
-    if path in ("supervisor", "orchestrator_job") and not space:
-        return None, f"the {path} path is skipped: this build has no Genie space to route to"
+def plan_for(path: str, kind: str, name: str, inputs: dict) -> tuple:
+    """(plan, skip reason) for one build path. `inputs` carries what the path needs; a path without it is skipped with the reason named."""
+    space_rows = inputs.get("domains") or []
+    plan = {"path": path, "kind": kind, "name": name, "domains": space_rows, "question": inputs.get("question") or ""}
+    if path == "supervisor" and not space_rows:
+        return None, "the supervisor path is skipped: no domain Genie space was built in this run"
+    if path == "orchestrator_job" and not space_rows:
+        return None, "the orchestrator path is skipped: no domain Genie space was built in this run"
     if path == "vector_index":
-        if not text_column:
-            return None, "the AI Search index is skipped: this build names no text column to embed"
-        plan["index_spec"] = index_spec(name, endpoint, result_table, "_id", text_column)
+        missing = [k for k in ("text_column", "source_table", "primary_key", "endpoint") if not str(inputs.get(k) or "").strip()]
+        if missing:
+            return None, f"the AI Search index is skipped, falling back to ai_query: no {', '.join(missing)} for this build"
+        plan["index_spec"] = index_spec(name, inputs["endpoint"], inputs["source_table"], inputs["primary_key"], inputs["text_column"])
     if path == "agent_job":
-        table = f"{result_table}_approval"
+        table = str(inputs.get("result_table") or "")
+        if not table:
+            return None, "the agent job is skipped: this build has no result table to write approvals to"
+        if not str(inputs.get("notebook_path") or "").strip():
+            return None, "the agent job is skipped: this build names no notebook for the job to run"
         plan["lakebase_table"] = table
-        plan["job_spec"] = agent_job_spec(name, "", f"SELECT * FROM {result_table}", table)
+        plan["job_spec"] = agent_job_spec(name, inputs.get("cron") or "", f"SELECT * FROM {table}", table, inputs["notebook_path"])
     return plan, ""
+
+
+def index_inputs(kind_columns: dict, result_table: str) -> dict:
+    """The index's inputs from the kind's detected roles: the text column is an entity name, else a free-text column, else a label; the
+    source table is that column's table; the primary key is the table's id column. Anything missing stays empty and the path falls back."""
+    for role in ("entity_name", "free_text", "label_column"):
+        cols = [c for c in (kind_columns or {}).get(role) or [] if "." in str(c)]
+        if cols:
+            table, column = cols[0].rsplit(".", 1)
+            ids = [c.rsplit(".", 1)[1] for c in (kind_columns or {}).get("case_id") or [] if c.rsplit(".", 1)[0] == table]
+            ids = ids or [c.rsplit(".", 1)[1] for c in cols if c.rsplit(".", 1)[0] == table and c.rsplit(".", 1)[1].endswith("_id")]
+            return {"text_column": column, "source_table": table, "primary_key": ids[0] if ids else ""}
+    return {"text_column": "", "source_table": "", "primary_key": ""}
+
+
+def pick_endpoint(listed) -> str:
+    """The name of a vector search endpoint that is ONLINE, read from the endpoint list answer; "" when none is ready."""
+    for endpoint in (listed or {}).get("endpoints") or []:
+        state = str(((endpoint or {}).get("endpoint_status") or {}).get("state") or "").upper()
+        if state == "ONLINE" and str((endpoint or {}).get("name") or "").strip():
+            return str(endpoint["name"]).strip()
+    return ""
 
 
 def delete_records(api, records, is_not_found, redact) -> list:
@@ -293,24 +335,43 @@ class BuildApi:
         return self.call(method, path, body, query)
 
 
-def build_for_use_case(call, kind: str, status: dict, uc_id: str, space: str, question: str, result_table: str, text_column: str,
-                       endpoint: str, ask, log, quote, run_sql) -> dict:
-    """One use case's build: choose the path from the probe status, plan it, run it, and for the agent job add the approval columns
-    (`run_sql` executes the DDL on the App's Lakebase connection; None when the build has none). Returns the path and its records."""
-    path = choose_path(kind, status.get("supervisor_agents"), status.get("vector_search"))
+def build_for_context(api, context: dict, status: dict, ask, log, quote, run_sql, domains: dict) -> dict:
+    """One use case's build, from the App build's context. The path comes from the probe status. The index takes its inputs from the
+    kind's detected roles and an ONLINE endpoint; the agent job takes the approval columns on the use case's own result table (it exists
+    after the run) through `run_sql` (None when the build has no Lakebase connection). `domains` collects the domain Genie spaces built
+    so far in this run; a supervisor attaches them all. Records of what was created go on the asset status for uninstall."""
+    kind = (context.get("kind_spec") or {}).get("kind") or {}
+    uc_id = str(context.get("uc_id") or "")
+    space = str(((context.get("asset_status") or {}).get("genie_space") or {}).get("id") or "")
+    if space:
+        domains.setdefault(space, f"{kind.get('label') or 'domain'} ({uc_id})")
+    path = choose_path(kind.get("id") or "", status.get("supervisor_agents"), status.get("vector_search"))
     if path in ("none", "ai_query"):
         return {"path": path, "records": []}
-    name = "inspire_" + re.sub(r"[^a-z0-9_]+", "_", str(uc_id).lower()).strip("_")
-    plan, skipped = plan_for(path, kind, name, space, question, result_table, text_column, endpoint)
+    inputs = {"domains": sorted(domains.items()), "question": kind.get("question") or "", "result_table": context.get("result_table") or "",
+              "notebook_path": context.get("notebook_path") or ""}
+    if path == "vector_index":
+        inputs.update(index_inputs((context.get("kind_spec") or {}).get("columns") or {}, context.get("result_table") or ""))
+        try:
+            inputs["endpoint"] = pick_endpoint(api.do("GET", VECTOR_ENDPOINTS_PATH))
+        except Exception:
+            inputs["endpoint"] = ""
+        if not inputs["endpoint"]:
+            path_note = "no ONLINE vector search endpoint is available to build the index on, so the match uses ai_query"
+            log(f"[BUILD-PATH FIRED] {uc_id}: {path_note}")
+            return {"path": "ai_query", "records": []}
+    name = "inspire_" + re.sub(r"[^a-z0-9_]+", "_", uc_id.lower()).strip("_")
+    plan, skipped = plan_for(path, kind.get("id") or "", name, inputs)
     if plan is None:
         log(f"[BUILD-PATH FIRED] {uc_id}: {skipped}")
         return {"path": path, "records": []}
-    out = run_build_paths(BuildApi(call), plan, ask, log)
+    out = run_build_paths(api, plan, ask, log)
     if path == "agent_job":
         if run_sql is None:
             log(f"[BUILD-PATH FIRED] {uc_id}: the approval columns were not added: this build has no Lakebase connection")
         else:
             run_sql(approval_ddl(plan["lakebase_table"], quote))
+    context.setdefault("asset_status", {})["build_records"] = list(out["records"])
     return {"path": path, "records": out["records"]}
 
 
@@ -321,3 +382,110 @@ def fallback_sentence(path: str) -> str:
     if path == "ai_query":
         return "The AI Search index is not available in this workspace, so the match uses ai_query over the text columns."
     return ""
+
+
+# REQ-415: each Beta or preview function gets one minimal call from its documentation page. A DESCRIBE pre-check skips the call when the
+# function does not exist. The call's result decides the status: it returned = available; a not-found, not-enabled or region answer =
+# unavailable; a timeout or any other error = unknown, and unknown is never cached. Calls the page describes as model-backed cost one
+# tiny request each; the rest are compute only. The one status record is TECHNICAL_CONTEXT["ai_function_status"].
+AI_FUNCTION_PROBE_TIMEOUT_S = 30
+AI_BETA_FUNCTIONS = ("ai_top_drivers", "ai_decide", "ai_predict_class", "ai_predict_value", "ai_detect_anomalies", "ai_enrich",
+                     "ai_similarity", "ai_forecast", "vector_search")
+# name -> (minimal call, True when the page says the function calls a model). ai_decide's call is built from its required arguments.
+# No real index exists under this name: the expected answer is "index not found", which proves vector_search resolved and ran.
+AI_PROBE_INDEX = "__inspire_probe_index__"
+AI_FUNCTION_PROBE_CALLS = {
+    "ai_similarity": ("SELECT ai_similarity('a', 'a')", True),
+    "ai_decide": ("SELECT ai_decide('x', '{\"o\": {\"type\": \"noul\", \"instructions\": \"Is this an outage?\"}}')", True),
+    "ai_enrich": ("SELECT ai_enrich('a', '[\"industry\"]')", True),
+    "ai_top_drivers": ("SELECT * FROM ai_top_drivers(input => TABLE(SELECT 1.0 AS m, true AS t), metric => 'm', is_test => 't')", False),
+    "ai_predict_class": ("SELECT * FROM ai_predict_class(input => TABLE(SELECT 1.0 AS x, 'a' AS y), target_col => 'y', feature_cols => ARRAY('x'))", False),
+    "ai_predict_value": ("SELECT * FROM ai_predict_value(input => TABLE(SELECT 1.0 AS x, 1.0 AS y), target_col => 'y', feature_cols => ARRAY('x'))", False),
+    "ai_detect_anomalies": ("SELECT * FROM ai_detect_anomalies(TABLE(SELECT DATE'2024-01-01' AS ds, 1.0 AS v), time_col => 'ds', value_col => 'v')", False),
+    "ai_forecast": ("SELECT * FROM AI_FORECAST(TABLE(SELECT DATE'2024-01-01' AS ds, 1.0 AS v), horizon => '2024-01-02', time_col => 'ds', value_col => 'v')", False),
+    "vector_search": (f"SELECT * FROM vector_search(index => '{AI_PROBE_INDEX}', query_text => 'a', num_results => 1)", False),
+}
+AI_FUNCTION_PROBE_CACHE = {}
+_AI_FUNCTION_UNAVAILABLE_MARKERS = ("routine_not_found", "unresolved_routine", "cannot resolve routine", "not enabled",
+                                    "not available on", "only available in some regions", "not available in this region")
+# REQ-415 rule: a routine that resolved and ran far enough to reject our arguments or data is available.
+_AI_FUNCTION_RAN_MARKERS = ("ai_predict_invalid_parameter", "ai_predict_insufficient_training_data", "index not found",
+                            "insufficient history", "not enough history")
+
+
+def classify_ai_function_result(error=None) -> str:
+    """available when the call returned, or failed with an error only a running function raises; unavailable for a not-found,
+    not-enabled or region answer; unknown for anything else, including a timeout."""
+    if error is None:
+        return "available"
+    low = str(error).lower()
+    if any(marker in low for marker in _AI_FUNCTION_UNAVAILABLE_MARKERS):
+        return "unavailable"
+    if any(marker in low for marker in _AI_FUNCTION_RAN_MARKERS) or ("index" in low and "not found" in low):
+        return "available"
+    return "unknown"
+
+
+def describe_says_missing(spark_session, name) -> bool:
+    """True when DESCRIBE FUNCTION shows the function does not exist, so its call is skipped."""
+    try:
+        spark_session.sql(f"DESCRIBE FUNCTION {name}").collect()
+        return False
+    except Exception as exc:
+        return classify_ai_function_result(exc) == "unavailable"
+
+
+def _workspace_api_client():
+    """REQ-414 part B: the SDK's REST client for the Supervisor Agents list call; None when the SDK or its credentials are missing."""
+    try:
+        from databricks.sdk import WorkspaceClient
+        return WorkspaceClient().api_client
+    except Exception:
+        return None
+
+
+def probe_ai_functions(spark_session, logger, workspace_key: str = "default", api=None, run_work=None, record=None) -> dict:
+    """Status per function for one workspace: available, unavailable or unknown. Available and unavailable are cached per workspace."""
+    record = {} if record is None else record
+    results, calls, model_calls = {}, 0, 0
+    for name in AI_BETA_FUNCTIONS:
+        key = (workspace_key, name)
+        if key in AI_FUNCTION_PROBE_CACHE:
+            status = AI_FUNCTION_PROBE_CACHE[key]
+        elif spark_session is None:
+            status = "unknown"
+        elif describe_says_missing(spark_session, name):
+            status = "unavailable"
+        else:
+            sql, model_backed = AI_FUNCTION_PROBE_CALLS[name]
+            calls += 1
+            model_calls += 1 if model_backed else 0
+            try:
+                run_work(spark_session, lambda: spark_session.sql(sql).collect(),
+                                       timeout_seconds=AI_FUNCTION_PROBE_TIMEOUT_S, tag_prefix="inspire_probe",
+                                       label=f"function probe {name}", logger=logger)
+                status = classify_ai_function_result(None)
+            except Exception as exc:
+                status = classify_ai_function_result(exc)
+        if status != "unknown":
+            AI_FUNCTION_PROBE_CACHE[key] = status
+        results[name] = status
+        record[name] = status
+    # REQ-414 part B: the Supervisor Agents list call (a GET, no tokens). Unknown is not cached.
+    sup_key = (workspace_key, "supervisor_agents")
+    if sup_key in AI_FUNCTION_PROBE_CACHE:
+        sup = AI_FUNCTION_PROBE_CACHE[sup_key]
+    elif api is None:
+        sup = "unknown"
+    else:
+        sup = probe_supervisor(api)
+        if sup != "unknown":
+            AI_FUNCTION_PROBE_CACHE[sup_key] = sup
+    results["supervisor_agents"] = sup
+    record["supervisor_agents"] = sup
+    available = [n for n in AI_BETA_FUNCTIONS if results[n] == "available"]
+    fallback = [n for n in AI_BETA_FUNCTIONS if results[n] != "available"]
+    logger.info(f"[AI-FUNCTION-PROBE FIRED] workspace={workspace_key} supervisor_agents={sup} calls={calls} (model-backed, one tiny request each: {model_calls}; "
+                f"the rest are compute only, no token cost); available: {', '.join(available) or 'none'}; "
+                f"ai_query fallback: {', '.join(fallback) or 'none'}")
+    return results
