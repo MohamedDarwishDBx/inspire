@@ -760,8 +760,8 @@ def settings_problems(settings: dict, pages: list) -> list:
     host = settings.get("host")
     if host is not None and host != INSIDE:
         problems.append(f"the App host must be {INSIDE} when it is set, for a page inside Inspire")
-    elif host == INSIDE and settings.get("auth") != "user":
-        problems.append("a page inside Inspire signs each viewer in as themselves, so its auth must be user")
+    elif host == INSIDE and settings.get("auth") not in ("sp", "user"):
+        problems.append("a page inside Inspire reads as the App's service principal (sp) or, when chosen, each viewer (user)")
     problems += protected_problems(settings)
     if host == INSIDE and isinstance(settings.get("backend"), dict) and settings["backend"].get("kind") == shell_pg.LAKEBASE:
         problems.append("a page inside Inspire reads Delta tables, so its backend must be delta")
@@ -1549,8 +1549,9 @@ def _cli_step(request: dict, user_factory) -> tuple:
         raise HttpError(400, "send body and headers as objects")
     shell = Shell(_cli_text(request, "root"), env={"DATABRICKS_HOST": host, "DATABRICKS_WAREHOUSE_ID": _cli_text(request, "warehouse")},
                   sp_factory=None, user_factory=user_factory, writer_factory=lambda: OnWarehouse(user_factory(host, token), warehouse))
-    if not shell.inside or shell.settings["auth"] != "user":
-        raise HttpError(409, "Inspire records decisions only for a page inside Inspire that signs viewers in as themselves")
+    # REQ-418 (D-SL-10B): a decision on a page inside Inspire is written as the App or per-user; the person is recorded as the actor.
+    if not shell.inside:
+        raise HttpError(409, "Inspire records decisions only for a page inside Inspire")
     page = shell.page(body.get("page"))
     problem = decision_table_problem(page, route, _cli_text(request, "result_table"))
     if problem:

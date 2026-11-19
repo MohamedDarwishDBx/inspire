@@ -1617,7 +1617,7 @@ function mergeProblems(spec, targets, held = {}) {
     }
     if (str(held[name]) === id) continue;
     if (!target) {
-      problems.push(`${id} is not ${IMPLEMENT_MERGE_NOUNS[name]} Inspire built that you can open: pick one Inspire lists, or create a new one`);
+      problems.push(`${id} is not ${IMPLEMENT_MERGE_NOUNS[name]} Inspire built that Inspire can open: pick one Inspire lists, or create a new one`);
     } else if (name === 'app' && appMergeBlock(target, outputs.app_access)) {
       problems.push(appMergeBlock(target, outputs.app_access));
     }
@@ -2533,7 +2533,7 @@ function groupReasonStatement(name, column, { filters = [], window = {} } = {}) 
 function groupEmptyReason(row, column) {
   const rowsRead = Number(row && row.rows_read) || 0;
   const withValue = Number(row && row.with_value) || 0;
-  if (!rowsRead) return 'The table has no rows you can read';
+  if (!rowsRead) return 'The table has no rows the App can read';
   if (!withValue) return `${column} is empty in all ${rowsRead.toLocaleString('en-US')} rows`;
   return '';
 }
@@ -3325,7 +3325,7 @@ function newAppsAccessText(catalog, decision, real) {
     return `Inspire did not grant USE CATALOG on ${catalog} to account users: they already hold ${joinAnd(more ? [...shown, `${more} more`] : shown)}, `
       + 'which USE CATALOG would open to every account user. Ask your data owner to grant MANAGE on it to Inspire, or to choose which of them to keep';
   }
-  return `you cannot grant on ${catalog}: you need to own it or hold MANAGE on it`;
+  return `Inspire cannot grant on ${catalog}: its owner or a MANAGE holder must grant it`;
 }
 
 function builtInSampleTable(name) {
@@ -3871,7 +3871,7 @@ function useCaseSchemaPlace({ inspireDatabase, useCaseId, sessionId, businessNam
   const note = table === own ? '' : ownSchemaClashNote(tableParts(own).schema, of(own), tableParts(table).schema, who);
   if (rows != null && facts.canCreate) return { ...base, own_table: table, table, place: 'own', create: true, note };
   const why = unchecked
-    ? `Inspire could not check whether you can create schemas in ${base.catalog} (${unchecked}), so this use case's tables go to the Inspire database schema; pick Its own schema to try.`
+    ? `Inspire could not check whether the App can create schemas in ${base.catalog} (${unchecked}), so this use case's tables go to the Inspire database schema; pick Its own schema to try.`
     : ownSchemaFallbackNote(base.catalog, facts.me);
   const permission = facts.me ? ownSchemaPermission(base.catalog, facts.me) : null;
   return { ...base, own_table: table, table: fallback, place: 'inspire', create: false, note: joinSentences(note, why), permission };

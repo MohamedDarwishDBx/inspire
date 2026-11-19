@@ -215,25 +215,25 @@ def test_the_decision_step_refuses_a_request_it_cannot_trust_before_any_sql(tmp_
     assert reader.sql == [] and writer.sql == []
 
 
-def test_the_decision_step_runs_only_for_a_per_user_page_inside_inspire_and_answers_as_json(tmp_path):
+def test_the_decision_step_runs_for_a_page_inside_inspire_on_either_identity_and_answers_as_json(tmp_path):
     reader, writer, asked = Warehoused(current=[current("k1", "run", "run 7")]), Warehoused(), []
-    own = app_dir(tmp_path, ops_settings(auth="user", options=dict(DECIDE["options"])), [edit_page()])
-    assert shell_core.cli_answer(_step(own), user_factory=_factory(reader, writer, asked))[0] == 409 and writer.sql == []
+    own = app_dir(tmp_path, dict(_inside(options=dict(DECIDE["options"])), auth="sp"), [edit_page()])
+    # REQ-418 (D-SL-10B): a page inside Inspire that reads as the App may record decisions too; the guard never refuses it for its auth.
+    status, body = shell_core.cli_answer(_step(own), user_factory=_factory(reader, writer, asked))
+    assert "records decisions only" not in json.dumps(body), (status, body)
     out = io.StringIO()
     assert shell_core.cli(io.StringIO("not json"), out) == 0
     assert json.loads(out.getvalue())["status"] == 400
     out = io.StringIO()
     shell_core.cli(io.StringIO(json.dumps(_step(own))), out)
-    assert json.loads(out.getvalue()) == {"status": 409, "body": {
-        "error": "Inspire records decisions only for a page inside Inspire that signs viewers in as themselves"}}
+    assert "records decisions only" not in out.getvalue(), out.getvalue()
 
 
 @pytest.mark.parametrize("changes,problem", [
     ({"host": "elsewhere"}, "the App host must be inspire when it is set, for a page inside Inspire"),
-    ({"host": "inspire", "auth": "sp"}, "a page inside Inspire signs each viewer in as themselves, so its auth must be user"),
     ({"host": "inspire", "auth": "user", "backend": {"kind": "lakebase", "pipeline_id": "p", "tables": {}, "datasets": {}}},
      "a page inside Inspire reads Delta tables, so its backend must be delta"),
-], ids=["another_host", "service_principal", "lakebase"])
+], ids=["another_host", "lakebase"])
 def test_settings_that_place_a_page_inside_inspire_must_hold_together(changes, problem):
     settings = dict(ops_settings(), **changes)
     assert problem in shell_core.settings_problems(settings, [edit_page()])

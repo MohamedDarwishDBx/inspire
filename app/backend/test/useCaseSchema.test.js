@@ -64,7 +64,7 @@ test('without the right to create a schema the default switches to the Inspire d
   }
   const unchecked = place(null, { unchecked: 'warehouse stopped' });
   assert.equal(unchecked.table, INSPIRE);
-  assert.match(unchecked.note, /could not check whether you can create schemas in main \(warehouse stopped\)/);
+  assert.match(unchecked.note, /could not check whether the App can create schemas in main \(warehouse stopped\)/);
 });
 
 const tagged = (schema, tags) => [{ kind: 'exists', schema_name: schema, value: '' },

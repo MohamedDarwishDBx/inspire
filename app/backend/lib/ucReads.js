@@ -364,7 +364,7 @@ async function probeIn({ at, make, remove, list, denied }) {
 }
 
 async function workspaceVerdict(dbFetch, host, token, path) {
-  const fix = 'choose a folder you can manage, such as one under your own user folder, or ask its owner for CAN MANAGE on it, '
+  const fix = 'choose a folder the App can manage, such as one under a user folder the App can reach, or ask its owner for CAN MANAGE on it, '
     + 'which Databricks needs before anyone can create something in a folder';
   const call = (p, options) => answer(dbFetch, host, token, p, options);
   const { at, got } = await nearestExisting((p) => call(`/api/2.0/workspace/get-status?path=${encodeURIComponent(p)}`), path, '/');
@@ -442,7 +442,7 @@ async function folderVerdict(dbFetch, host, token, folder) {
 function runUnwritableText(unwritable) {
   const named = unwritable.map((u) => `${u.folder} (${u.reason})`);
   const fixes = [...new Set(unwritable.map((u) => u.fix))];
-  return `You cannot write to ${I.joinAnd(named)} with your own sign-in, and Inspire never writes for you where you cannot write: ${fixes.join('; ')}.`;
+  return `The App cannot write to ${I.joinAnd(named)}, and Inspire never writes where the App cannot write: ${fixes.join('; ')}.`;
 }
 
 async function appWrites(dbFetch, req, folder, appToken) {
