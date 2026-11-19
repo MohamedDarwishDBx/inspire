@@ -253,11 +253,15 @@ class _Spark:
 
 def test_the_launch_record_lookup_joins_each_run_to_its_job_for_this_session_and_implement_runs_only(agent_ns):
     inst, _previous = _locked(agent_ns)
-    inst.implement_table = "main.inspire.__inspire_implement"
+    # Live W1 rc.2-e (11-19 17:05): the agent has no implement_table attribute (only the step writer does), so the lookup raised
+    # AttributeError. The test used to set the attribute by hand, which hid it; the agent's own table helper is the source now.
+    inst.__dict__.pop("implement_table", None)  # the offline harness sets it; the real agent object never has it
+    assert not hasattr(inst, "implement_table")
+    inst.inspire_database = "main.inspire"
     inst.spark = _Spark([("__inspire_implement", [{"version": 2, "run": "700"}, {"version": 3, "run": "800"}]),
                          ("__inspire_launch", [{"run": "700", "job": 22}])])
     recorded, unrecorded = inst._implement_build_run_jobs((SESSION, UC, 4))
     assert recorded == {2: 22} and unrecorded == {3}
     launch_sql = [st for st, _a in inst.spark.statements if "__inspire_launch" in st]
-    assert launch_sql and "main.inspire.__inspire_launch" in launch_sql[0]
+    assert launch_sql and "`main`.`inspire`.__inspire_launch" in launch_sql[0].replace("`__inspire_launch`", "__inspire_launch")
     assert "run_type = 'implement'" in launch_sql[0] and "session_id = :sid" in launch_sql[0]
