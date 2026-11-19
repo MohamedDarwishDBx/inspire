@@ -11,13 +11,25 @@ const PROBE = { messages: [{ role: 'user', content: 'Reply with the single word 
 
 const grantCommand = (id, principal) => `databricks api patch /api/2.0/permissions/serving-endpoints/${id} --json '{"access_control_list":[{"service_principal_name":"${principal}","permission_level":"CAN_QUERY"}]}'`;
 
+// A workspace endpoint has an id and an ACL. A pay-per-token foundation endpoint (databricks-<model>) has no id; its query access is
+// EXECUTE on the Unity Gateway model service system.ai.<model> (account users hold it by default). Mirrors system_model_service in the installer.
+const FOUNDATION_PREFIX = 'databricks-';
+const systemModelService = (name) => (name.startsWith(FOUNDATION_PREFIX) && name.length > FOUNDATION_PREFIX.length ? `system.ai.${name.slice(FOUNDATION_PREFIX.length)}` : '');
+const serviceGrantCommand = (service, principal) => `databricks grants update model_service ${service} --json '{"changes":[{"principal":"${principal}","add":["EXECUTE"]}]}'`;
+
+function denialSteps(endpoint, principal) {
+  if (endpoint.id) {
+    return [`In Databricks, open serving endpoint ${endpoint.name} > Permissions, and add ${principal} with Can query`, grantCommand(endpoint.id, principal)];
+  }
+  const service = systemModelService(endpoint.name);
+  if (!service) return [`In Databricks, ask a workspace admin to give ${principal} Can query on ${endpoint.name}`];
+  return [`In AI Gateway, open model service ${service} > Permissions, and add ${principal} with Can execute`, serviceGrantCommand(service, principal)];
+}
+
 function permissionFor(principal, denied) {
   if (denied.length) {
     const names = denied.map((e) => e.name).join(', ');
-    const steps = denied.flatMap((e) => [
-      `In Databricks, open serving endpoint ${e.name} > Permissions, and add ${principal} with Can query`,
-      grantCommand(e.id, principal),
-    ]);
+    const steps = denied.flatMap((e) => denialSteps(e, principal));
     return permissionRequired({ steps, principal, why: `Inspire runs the chat model ${names} as ${principal}, and that identity cannot query it yet.` });
   }
   return permissionRequired({
@@ -55,4 +67,4 @@ async function modelAccessPermission({ call, principal }) {
   return permissionFor(principal, denied);
 }
 
-module.exports = { modelAccessPermission, CANDIDATE_LIMIT };
+module.exports = { modelAccessPermission, systemModelService, CANDIDATE_LIMIT };

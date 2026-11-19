@@ -82,6 +82,32 @@ class ModelAccessTest(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertTrue(lines[0].startswith("⚠️ not granted: no chat model endpoint is listed"), lines)
 
+    def test_a_foundation_endpoint_with_no_id_is_granted_execute_on_its_system_model_service(self):
+        # Live shape (2026-11-19, one workspace): databricks-* pay-per-token endpoints have id None; the access object is system.ai.<model>.
+        api, calls = recording()
+        only = [endpoint("databricks-claude-sonnet-4-6", None)]
+        lines = setup.grant_model_access(api, workspace(only), SP, self.notebook)
+        self.assertEqual(calls, [("PATCH", "/api/2.1/unity-catalog/permissions/model_service/system.ai.claude-sonnet-4-6",
+                                  {"changes": [{"principal": SP, "add": ["EXECUTE"]}]})])
+        self.assertTrue(any("EXECUTE on system.ai.claude-sonnet-4-6 for the App's service principal" in line for line in lines), lines)
+        self.assertFalse(any("has no id" in line for line in lines), "no endpoint is reported as ungrantable when a system model service exists")
+
+    def test_a_refused_system_model_grant_names_the_exact_admin_command_and_the_summary_says_so(self):
+        api, calls = recording(status=403)
+        only = [endpoint("databricks-claude-sonnet-4-6", None)]
+        lines = setup.grant_model_access(api, workspace(only), SP, self.notebook)
+        command = ("databricks grants update model_service system.ai.claude-sonnet-4-6 --json "
+                   f"'{{\"changes\": [{{\"principal\": \"{SP}\", \"add\": [\"EXECUTE\"]}}]}}'")
+        self.assertTrue(any("not granted (403" in line and command in line for line in lines), lines)
+        self.assertTrue(lines[-1].startswith("⚠️ admin action:") and "Permission Required" in lines[-1], lines)
+
+    def test_a_no_id_endpoint_with_no_known_system_model_is_logged_as_having_no_grant_path(self):
+        api, calls = recording()
+        odd = [endpoint("claude-sonnet-4-6", None)]
+        lines = setup.grant_model_access(api, workspace(odd), SP, self.notebook)
+        self.assertEqual(calls, [], "nothing is sent for an endpoint with no model service name")
+        self.assertTrue(any("not granted (the endpoint has no id and no system model service" in line for line in lines), lines)
+
     def test_the_family_matching_is_the_notebook_own_and_a_missing_definition_is_named(self):
         matching = setup.agent_model_matching(self.notebook)
         self.assertEqual(setup.model_endpoints_to_grant(self.endpoints, matching),

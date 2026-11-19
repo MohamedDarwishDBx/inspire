@@ -59,8 +59,9 @@ test('every helper the App exports has a caller in the App, and the check catche
     ['extra.js: lonely']);
   assert.deepEqual(unusedExports({ ...files, 'kinds.js': `${files['kinds.js']}export const nobodyReads = 1;\n` }, callers), ['kinds.js: nobodyReads'],
     'a shared helper still needs a caller in the App or the Inspire App, not only the line that passes it on');
+  // familyOf has a caller inside the App itself since REQ-416 (styleOfKind), so only kindForTechnique depends on the Inspire App's callers.
   assert.deepEqual(unusedExports(files, { ...callers, 'kinds.js': callers['kinds.js'].replace(/\b(familyOf|kindForTechnique)\b/g, 'x') }).sort(),
-    ['kinds.js: familyOf', 'kinds.js: kindForTechnique']);
+    ['kinds.js: kindForTechnique']);
   const twin = { 'a.js': 'export const pick = (id) => id;\n', 'b.js': 'export const pick = (page) => page.id;\nconst both = (p) => pick(p);\n' };
   assert.deepEqual(unusedExports(twin), ['a.js: pick'], 'a helper of the same name in another file is not a caller');
   assert.deepEqual(unusedExports({ ...twin, 'c.js': "import { pick as choose } from './a.js';\nexport const one = choose(1);\nconst again = one;\n" }), [],
