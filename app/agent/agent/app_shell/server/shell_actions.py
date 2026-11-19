@@ -42,10 +42,13 @@ REGISTRY = {a.id: a for a in (
     Action("set_target", "Set target", ("value",), route="settings/save", scope=APP),
     Action("create_alert", "Create alert", ("watch", "schedule"), route="alerts/save", scope=APP),
     Action("run_again", "Run again", (), route="settings/run", scope=APP),
-    # REQ-414 part B: the approval step for the agent job's rows. The agent offers them only when the person asks it to approve or reject.
-    Action("approve", "Approve"),
-    Action("reject", "Reject", ("reason",)),
+    # REQ-414 part B: the approval step for the agent job's rows. A person's click only: the agent never offers these (see APPROVAL_ACTIONS).
+    Action("approve", "Approve", agent=False),
+    Action("reject", "Reject", ("reason",), agent=False),
 )}
+
+# Approval is a person's click on a pending row in the Work queue. The agent never offers it, so it cannot approve for the person.
+APPROVAL_ACTIONS = ("approve", "reject")
 
 RECORD_ACTIONS = tuple(a.id for a in REGISTRY.values() if a.scope == RECORD and a.agent)
 WRITE_ACTIONS = tuple(a.id for a in REGISTRY.values() if a.scope == RECORD and a.writes)
