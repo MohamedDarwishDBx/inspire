@@ -2060,7 +2060,7 @@ paths:
       summary: Check or grant the read access of an App Inspire built
       description: |
         Reads the tables the latest built version recorded its App could not read (asset_status.app.unread) and checks them again.
-        With action=grant it runs, with the signed-in person's own token, only the recorded GRANT USE CATALOG, USE SCHEMA and SELECT
+        With action=grant it runs, with the signed-in person's own token, only the recorded GRANT USE CATALOG, USE SCHEMA, SELECT and READ METADATA
         statements to the App's service principal that are still missing, then checks again and updates the version's record.
         It never runs SQL sent in the request.
       parameters:
@@ -2102,7 +2102,8 @@ paths:
         `kind=new_apps` grants USE CATALOG on the result table's catalog to account users, only when the person
         owns the catalog or holds MANAGE and account users hold no schema, table, volume or function grant below it
         (the information_schema schema and BROWSE do not count). `kind=source_tables` grants the App service
-        principal USE CATALOG, USE SCHEMA and SELECT on the listed tables the person can read but the App cannot,
+        principal USE CATALOG, USE SCHEMA, SELECT and READ METADATA (the ABAC policy read, which BROWSE does not give) on the listed tables
+        the person can read but the App cannot,
         then probes them again. The context, plan, submit and rerun responses return the same `app_unreadable` offer.
       parameters:
         - $ref: '#/components/parameters/DatabricksHost'

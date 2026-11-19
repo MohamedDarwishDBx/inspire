@@ -16,10 +16,10 @@ import support
 import test_setup as ts
 
 setup = support.load_setup()
-READ = "GRANT USE CATALOG, USE SCHEMA, SELECT, BROWSE ON CATALOG `{0}` TO `SP`"
+READ = "GRANT USE CATALOG, USE SCHEMA, SELECT, BROWSE, READ METADATA ON CATALOG `{0}` TO `SP`"
 DATA_KEY = "02_data_catalogs_inspire_may_read"
 ALL = "All catalogs you can use (default)"
-CONSENT = "Inspire's App will get read access (USE CATALOG, USE SCHEMA, SELECT, BROWSE) on: {0}\n"
+CONSENT = "Inspire's App will get read access (USE CATALOG, USE SCHEMA, SELECT, BROWSE, READ METADATA) on: {0}\n"
 
 
 def cat(name, kind="MANAGED_CATALOG"):
@@ -151,7 +151,7 @@ class ConsentAndGrantTest(unittest.TestCase):
 
     def test_each_picked_catalog_gets_one_read_grant_to_the_app_and_the_inspire_catalog_is_not_granted_twice(self):
         grants, _, _, _ = self.grant_read(["main", "ops", "sales"], listed=("ops", "main", "sales"))
-        read = [g for g in grants if g.startswith("GRANT USE CATALOG, USE SCHEMA, SELECT, BROWSE ON CATALOG ")]
+        read = [g for g in grants if g.startswith("GRANT USE CATALOG, USE SCHEMA, SELECT, BROWSE, READ METADATA ON CATALOG ")]
         self.assertEqual(read, [READ.format("main"), READ.format("sales")])
 
     def test_the_consent_line_names_the_catalogs_and_the_read_privileges_in_one_line(self):

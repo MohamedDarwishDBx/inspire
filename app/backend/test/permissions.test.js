@@ -13,7 +13,7 @@ test('a permission carries its statements once, its principal and its reason, an
   assert.equal(PM.permissionRequired({}), null);
 });
 
-test('a table the App cannot read yields its three grants as structured statements, never as warning text', () => {
+test('a table the App cannot read yields its source needs, READ METADATA included, as structured statements, never as warning text', () => {
   const found = { missing: [{ table: 'main.sales.orders', reason: 'no SELECT' }], app_unreadable: undefined };
   const got = PM.appReadPermissions(found, APP);
   assert.deepEqual(got.warnings, []);
@@ -24,19 +24,16 @@ test('a table the App cannot read yields its three grants as structured statemen
     `GRANT USE CATALOG ON CATALOG \`main\` TO \`${APP}\``,
     `GRANT USE SCHEMA ON SCHEMA \`main\`.\`sales\` TO \`${APP}\``,
     `GRANT SELECT ON SCHEMA \`main\`.\`sales\` TO \`${APP}\``,
+    `GRANT READ METADATA ON SCHEMA \`main\`.\`sales\` TO \`${APP}\``,
   ]);
   assert.match(permission.why, /Discover reads main\.sales\.orders as the App, and the App cannot read it yet/);
 });
 
-test('an App that cannot read a table the person can grants nothing itself: its full read set becomes the permission', () => {
-  const offer = { tables: [{ table: 'main.sales.orders' }], app: { name: 'inspire-app', id: APP }, grants: ['GRANT SELECT ON TABLE `main`.`sales`.`orders` TO `app`'],
-    can_grant: false };
+test('an App that cannot read a table the person can grants nothing itself: the permission names the grant its plan lacks, at schema level', () => {
+  const offer = { tables: [{ table: 'main.sales.orders' }], app: { name: 'inspire-app', id: APP },
+    grants: [`GRANT SELECT ON TABLE \`main\`.\`sales\`.\`orders\` TO \`${APP}\``], can_grant: false };
   const got = PM.appReadPermissions({ app_unreadable: offer, missing: [] }, APP);
-  assert.deepEqual(got.permissions.map((p) => p.statements), [[
-    `GRANT USE CATALOG ON CATALOG \`main\` TO \`${APP}\``,
-    `GRANT USE SCHEMA ON SCHEMA \`main\`.\`sales\` TO \`${APP}\``,
-    `GRANT SELECT ON SCHEMA \`main\`.\`sales\` TO \`${APP}\``,
-  ]]);
+  assert.deepEqual(got.permissions.map((p) => p.statements), [[`GRANT SELECT ON SCHEMA \`main\`.\`sales\` TO \`${APP}\``]]);
   assert.equal(got.permissions[0].principal, 'inspire-app');
   assert.deepEqual(got.warnings, []);
 });
@@ -68,12 +65,11 @@ test('several tables sharing a schema send the shared USE grants once', () => {
   assert.equal(got.filter((s) => s.startsWith('GRANT SELECT')).length, 2);
 });
 
-test('the App read grant offered as a permission carries the full read set, never only the missing part', () => {
+test('the App read grant offered as a permission carries the grants its plan lacks, and repeats no grant the App holds', () => {
   const offer = { tables: [{ table: 'main.s.orders' }], app: { name: 'inspire-app', id: APP },
     grants: [`GRANT SELECT ON TABLE \`main\`.\`s\`.\`orders\` TO \`${APP}\``], can_grant: false };
   const [permission] = PM.appReadPermissions({ app_unreadable: offer, missing: [] }, APP).permissions;
-  assert.ok(permission.statements.includes(`GRANT USE SCHEMA ON SCHEMA \`main\`.\`s\` TO \`${APP}\``));
-  assert.ok(permission.statements.includes(`GRANT USE CATALOG ON CATALOG \`main\` TO \`${APP}\``));
+  assert.deepEqual(permission.statements, [`GRANT SELECT ON SCHEMA \`main\`.\`s\` TO \`${APP}\``]);
   assert.equal(permission.principal, 'inspire-app');
 });
 

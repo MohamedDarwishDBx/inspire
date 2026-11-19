@@ -32,6 +32,13 @@ function workspaceFor(personRows, live) {
     const url = new URL(`http://x${call.path}`);
     const sql = String((call.body && call.body.statement) || '');
     if (call.path === '/oidc/v1/token') return [200, { access_token: SP_TOKEN, expires_in: 3600 }];
+    // ABAC policy read as the App: `refused` is the live 403 of a service principal without READ METADATA (the exact text Unity Catalog returns).
+    if (/^\/api\/2\.1\/unity-catalog\/policies\/table\//.test(url.pathname) && live.policy === 'refused') {
+      if (call.token !== SP_TOKEN) return null;
+      if (live.readMetadata) return [200, {}];
+      const table = decodeURIComponent(url.pathname.split('/').pop());
+      return [403, { error_code: 'PERMISSION_DENIED', message: `Principal 'sp-app-id inspire-app' does not have READ METADATA on Table '${table}'.` }];
+    }
     if (url.pathname.startsWith('/api/2.0/preview/scim/v2/Me')) {
       return [200, call.token === SP_TOKEN ? { userName: 'sp-app-id', applicationId: 'sp-app-id', displayName: 'inspire-app' } : { userName: PERSON_EMAIL }];
     }
@@ -41,6 +48,7 @@ function workspaceFor(personRows, live) {
       if (/^GRANT /.test(sql)) {
         live.grants.push([sql, call.token]);
         if (call.token === PERSON && sql.includes('`sp-app-id`')) live.appReads = true;
+        if (call.token === PERSON && /^GRANT READ METADATA ON (CATALOG|SCHEMA|TABLE) .* TO `sp-app-id`$/.test(sql)) live.readMetadata = true;
         return rows([]);
       }
       if (/information_schema/.test(sql)) return rows(call.token === PERSON ? personRows : []);
@@ -57,8 +65,8 @@ function workspaceFor(personRows, live) {
   };
 }
 
-async function launchWith(personRows, scope = 'main.s.orders') {
-  const live = { appReads: false, grants: [] };
+async function launchWith(personRows, scope = 'main.s.orders', { policy = '', appReads = false } = {}) {
+  const live = { appReads, grants: [], policy, readMetadata: false };
   const workspace = await fakeWorkspace(workspaceFor(personRows, live));
   let inspire = null;
   try {
@@ -107,4 +115,31 @@ test('Discover of a whole-catalog pick asks for the App read at catalog level, n
   assert.ok(statements.includes('GRANT USE CATALOG ON CATALOG `main` TO `sp-app-id`'), JSON.stringify(statements));
   assert.ok(statements.includes('GRANT SELECT ON CATALOG `main` TO `sp-app-id`'), JSON.stringify(statements));
   assert.equal(statements.filter((sql) => /ON (SCHEMA|TABLE) /.test(sql)).length, 0, `no schema or table line under a whole-catalog pick: ${JSON.stringify(statements)}`);
+});
+
+// A live case: the App reads the table through its catalog grants, and its ABAC policy read is refused for
+// READ METADATA. BROWSE on the catalog is the only other grant it holds. The dialog must name READ METADATA, at schema level.
+const LIVE_APP_HOLDS = [
+  { level: 'catalog', privilege: 'USE_CATALOG', principal: 'sp-app-id', mine: 'false', me: PERSON_EMAIL },
+  { level: 'schema', privilege: 'USE_SCHEMA', principal: 'sp-app-id', mine: 'false', me: PERSON_EMAIL },
+  { level: 'catalog', privilege: 'SELECT', principal: 'sp-app-id', mine: 'false', me: PERSON_EMAIL },
+  { level: 'catalog', privilege: 'BROWSE', principal: 'sp-app-id', mine: 'false', me: PERSON_EMAIL },
+];
+
+test('SELECT works but the App ABAC policy read is refused: Permission Required asks for READ METADATA at schema level, nothing the App already holds (must fail before the fix)', async () => {
+  const got = await launchWith([...READS, ...LIVE_APP_HOLDS], 'main.s.orders', { policy: 'refused', appReads: true });
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  assert.deepEqual(got.live.grants, [], 'the person cannot grant here, so nothing runs with the sign-in');
+  const permissions = got.data.permissions || [];
+  assert.equal(permissions.length, 1, JSON.stringify(got.data));
+  assert.deepEqual(permissions[0].statements, ['GRANT READ METADATA ON SCHEMA `main`.`s` TO `sp-app-id`'], JSON.stringify(permissions[0]));
+});
+
+test('the printed READ METADATA grant, run with the sign-in, makes the App policy read pass and Discover shows no Permission Required (must fail before the fix)', async () => {
+  const got = await launchWith([...OWNS, ...LIVE_APP_HOLDS], 'main.s.orders', { policy: 'refused', appReads: true });
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  assert.ok(got.live.grants.some(([sql, token]) => sql === 'GRANT READ METADATA ON TABLE `main`.`s`.`orders` TO `sp-app-id`' && token === PERSON),
+    `the person runs the READ METADATA grant: ${JSON.stringify(got.live.grants)}`);
+  assert.equal(got.live.readMetadata, true);
+  assert.deepEqual((got.data.permissions || []).map((p) => p.statements), [], JSON.stringify(got.data));
 });

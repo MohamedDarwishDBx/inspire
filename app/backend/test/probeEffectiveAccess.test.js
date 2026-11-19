@@ -5,11 +5,10 @@ const I = require('../lib/inspireImplement');
 const SP = 'fd5bc9c6-5c93-4266-9dc4-71c1eb3b12d7';
 const ROW = (level, privilege, principal = SP) => ({ level, privilege, principal, mine: 'false', me: 'owner@example.com' });
 
-test('a catalog-level BROWSE, USE CATALOG, USE SCHEMA and SELECT the App inherits means it reads the table: no READ METADATA grant is issued', () => {
+test('a catalog-level BROWSE, USE CATALOG, USE SCHEMA and SELECT the App inherits still needs READ METADATA on the table: BROWSE does not expose policies, so the probe asks for it', () => {
   const rows = [ROW('catalog', 'USE CATALOG'), ROW('catalog', 'USE SCHEMA'), ROW('catalog', 'SELECT'), ROW('catalog', 'BROWSE')];
   const plan = I.accessPlan('sample_catalog.sales.customer', rows, SP, { needs: I.IMPLEMENT_SOURCE_NEEDS });
-  assert.deepEqual(plan.grants, [], 'no grant is issued for an App that already reads through the catalog');
-  assert.deepEqual(plan.gaps, []);
+  assert.deepEqual(plan.grants.concat(plan.gaps).map((g) => g.privilege), ['READ METADATA'], 'only the policy read is missing');
 });
 
 test('without BROWSE and without MANAGE the App still needs READ METADATA on the table (the probe is not silenced)', () => {

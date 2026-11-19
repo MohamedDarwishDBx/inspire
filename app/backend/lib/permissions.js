@@ -1,4 +1,4 @@
-const I = require('./inspireImplement');
+const { IMPLEMENT_READ_NEEDS, IMPLEMENT_SOURCE_NEEDS } = require('./implementNeeds');
 const { coarseGrants } = require('./grantScope');
 
 // AUTO-4: `steps` are the commands and Share steps an admin copies on their own (Copy steps); `instructions` are plain notes, shown once.
@@ -29,16 +29,17 @@ function folderPermission(folder, principal) {
   });
 }
 
-function readStatements(name, principal) {
+// One derivation for every read dialog: each privilege of `needs` (IMPLEMENT_READ_NEEDS for a person's reads, IMPLEMENT_SOURCE_NEEDS for
+// the App's source check, which adds READ METADATA) is named on the object it is granted on. A dialog never keeps its own list.
+function readStatements(name, principal, needs = IMPLEMENT_READ_NEEDS) {
   const who = String(principal || '').trim();
   const parts = String(name || '').replace(/`/g, '').split('.');
   if (!who || parts.length < 1 || parts.length > 3 || parts.some((p) => !p)) return [];
   const [catalog, schema, table] = parts;
+  const objects = { catalog: [catalog], schema: schema && [catalog, schema], table: table && [catalog, schema, table] };
   // PERMISSION_DIALOG: these statements go to the Permission Required dialog, which copies them (REQ-131, REQ-260)
-  const grants = [`GRANT USE CATALOG ON CATALOG \`${catalog}\` TO \`${who}\``]; // PERMISSION_DIALOG
-  if (schema) grants.push(`GRANT USE SCHEMA ON SCHEMA \`${catalog}\`.\`${schema}\` TO \`${who}\``); // PERMISSION_DIALOG
-  if (table) grants.push(`GRANT SELECT ON TABLE \`${catalog}\`.\`${schema}\`.\`${table}\` TO \`${who}\``); // PERMISSION_DIALOG
-  return [...new Set(grants)];
+  return [...new Set(needs.filter(([, level]) => objects[level]).map(([privilege, level]) => (
+    `GRANT ${privilege} ON ${level.toUpperCase()} ${objects[level].map((p) => `\`${p}\``).join('.')} TO \`${who}\``)))]; // PERMISSION_DIALOG
 }
 
 function readStatementsFor(names, principal) {
@@ -46,7 +47,7 @@ function readStatementsFor(names, principal) {
 }
 
 function appReadStatements(table, appId) {
-  return readStatements(table, appId);
+  return readStatements(table, appId, IMPLEMENT_SOURCE_NEEDS);
 }
 
 function appReadPermissions(found, appId, { wholeCatalogs = [] } = {}) {
@@ -56,10 +57,11 @@ function appReadPermissions(found, appId, { wholeCatalogs = [] } = {}) {
     const offer = found.app_unreadable;
     const names = offer.tables.map((t) => t.table || t).join(', ');
     const principal = offer.app.id || appId;
-    const permission = permissionRequired({ statements: readStatementsFor(offer.tables.map((t) => t.table || t), principal), principal: offer.app.name || principal,
+    // The grants the App's plan still lacks (the same plan its check and the Grant button run on), refusal included: one list, no second one.
+    const permission = permissionRequired({ statements: offer.grants, principal: offer.app.name || principal,
       why: `Discover reads ${names} as the App, and the App cannot read ${offer.tables.length === 1 ? 'it' : 'them'} yet.`, wholeCatalogs });
     if (permission) permissions.push(permission);
-    else warnings.push(I.discoverUnreadText(offer));
+    else warnings.push(require('./inspireImplement').discoverUnreadText(offer)); // lazy: inspireImplement requires this module at load
   }
   if (found.missing && found.missing.length) {
     const names = found.missing.map((m) => m.table).join(', ');
@@ -83,4 +85,5 @@ function builderPermission(catalog, builderGrant, builder) {
     why: `The identity Inspire builds as cannot write to this schema yet. Your data owner grants it:` });
 }
 
-module.exports = { folderPermission, permissionRequired, readStatements, readStatementsFor, appReadStatements, appReadPermissions, sampleCopyPermission, builderPermission };
+module.exports = { folderPermission, permissionRequired, readStatements, readStatementsFor, appReadStatements, appReadPermissions, sampleCopyPermission,
+  builderPermission };

@@ -63,8 +63,12 @@ def test_a_grant_the_build_identity_cannot_run_comes_back_with_its_exact_sql_for
     denied = obj._implement_app_principal_grants(BOB, [VIEW], "")
     assert denied == [f"GRANT SELECT ON TABLE `{CATALOG}`.`{SCHEMA_NAME}`.`orders_scope_view` TO `{BOB}`",
                       f"GRANT READ METADATA ON TABLE `{CATALOG}`.`{SCHEMA_NAME}`.`orders_scope_view` TO `{BOB}`"]
+    # REQ-408: the dialog asks the read grants at schema level; the exact (table-level) entry keeps the statements as denied.
     entry = agent_ns["implement_permission_entry"](BOB, denied, "why")
-    assert entry["principal"] == BOB and entry["statements"] == denied
+    assert entry["principal"] == BOB
+    assert entry["statements"] == [f"GRANT SELECT ON SCHEMA `{CATALOG}`.`{SCHEMA_NAME}` TO `{BOB}`",
+                                   f"GRANT READ METADATA ON SCHEMA `{CATALOG}`.`{SCHEMA_NAME}` TO `{BOB}`"]
+    assert agent_ns["implement_permission_entry"](BOB, denied, "why", exact=True)["statements"] == denied
 
 
 def test_the_reasons_view_is_granted_to_the_same_principal_through_the_same_path(agent_ns):

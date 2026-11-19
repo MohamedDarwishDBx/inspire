@@ -3188,15 +3188,8 @@ function outputAccess(rows, name, options = {}) {
 }
 
 const IMPLEMENT_ALL_USERS = 'account users';
-const IMPLEMENT_READ_NEEDS = [
-  ['USE CATALOG', 'catalog', ['catalog']],
-  ['USE SCHEMA', 'schema', ['catalog', 'schema']],
-  ['SELECT', 'table', ['catalog', 'schema', 'table']],
-];
-const IMPLEMENT_TRAVERSE_PRIVILEGES = IMPLEMENT_READ_NEEDS.filter(([, level]) => level !== 'table').map(([privilege]) => privilege);
-const IMPLEMENT_ABAC_READ_NEEDS = [['READ METADATA', 'table', ['catalog', 'schema', 'table']]];
-const IMPLEMENT_PRIVILEGE_COVERS = { 'READ METADATA': ['MANAGE', 'BROWSE'] };
-const IMPLEMENT_SOURCE_NEEDS = [...IMPLEMENT_READ_NEEDS, ...IMPLEMENT_ABAC_READ_NEEDS];
+const { IMPLEMENT_READ_NEEDS, IMPLEMENT_TRAVERSE_PRIVILEGES, IMPLEMENT_ABAC_READ_NEEDS, IMPLEMENT_NOT_IN_ALL_PRIVILEGES,
+  IMPLEMENT_SOURCE_NEEDS } = require('./implementNeeds');
 const BUILT_IN_SAMPLE_CATALOGS = ['samples'];
 
 function grantSql(need, who) {
@@ -3233,13 +3226,15 @@ function accessPlan(name, rows, principal = '', options = {}) {
   const ownIds = new Set([who, ...(options.aliases || [])].map((v) => str(v).trim().toLowerCase()).filter(Boolean));
   const tableExists = facts.some((f) => f.level === 'table' && f.privilege === 'OWNER');
   const createsSchema = options.createsSchema === true && schemaNotCreated(list);
+  const refused = new Set(options.refused || []);
   const plan = { grants: [], gaps: [], me };
   for (const [privilege, level, levels] of needs) {
     const owns = !!who && facts.some((f) => f.level === level && f.privilege === 'OWNER' && ownIds.has(f.principal.toLowerCase()));
-    const covers = [privilege, 'ALL PRIVILEGES', ...(IMPLEMENT_PRIVILEGE_COVERS[privilege] || [])];
+    const covers = [privilege, ...(IMPLEMENT_NOT_IN_ALL_PRIVILEGES.includes(privilege) ? [] : ['ALL PRIVILEGES'])];
     const granted = facts.some((f) => levels.includes(f.level) && covers.includes(f.privilege)
       && holders.has(f.principal.toLowerCase()));
-    if (owns || granted) continue;
+    // A refused need (the live check said no) is never treated as held, whatever the grant facts say.
+    if (!refused.has(privilege) && (owns || granted)) continue;
     const manages = facts.some((f) => f.mine && levels.includes(f.level) && ['OWNER', 'MANAGE'].includes(f.privilege));
     if (manages || (level === 'table' && !tableExists) || (createsSchema && level !== 'catalog')) {
       if (who) plan.grants.push(need(privilege, level));

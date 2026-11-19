@@ -134,7 +134,9 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
         builtin: builtIn, text: I.builtInSampleMessage(builtIn) } };
     }
     const rows = await Promise.all(grantable.map((t) => accessRowsOf(req, person, warehouseId, t)));
-    const offer = I.appReadGrantsOffer(grantable, grantable.map((t, i) => I.accessPlan(t, rows[i], who.id, { needs: I.IMPLEMENT_SOURCE_NEEDS })), who);
+    // The live policy refusal is the truth for READ METADATA: it is asked for even where the grant rows say it is held.
+    const offer = I.appReadGrantsOffer(grantable, grantable.map((t, i) => I.accessPlan(t, rows[i], who.id, { needs: I.IMPLEMENT_SOURCE_NEEDS,
+      refused: policyLost.includes(t) ? I.IMPLEMENT_ABAC_READ_NEEDS.map(([privilege]) => privilege) : [] })), who);
     const message = I.appUnreadableMessage(offer, job);
     // REQ-131, REQ-260: the exact GRANT statements travel as the Permission Required entry the App raises; the prose names the dialog
     const permissions = offer.grants.length ? [permissionRequired({ statements: offer.grants, principal: who.id, wholeCatalogs: scope.wholeCatalogs || [],

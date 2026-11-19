@@ -106,10 +106,20 @@ def test_an_unreadable_source_that_is_not_a_permission_problem_is_still_refused_
     assert not any(s.startswith("GRANT") for s in inst.spark.statements)
 
 
-def test_a_principal_who_already_holds_manage_satisfies_the_read_metadata_need(agent_ns):
+def test_manage_held_by_the_principal_does_not_satisfy_the_read_metadata_need(agent_ns):
+    # MANAGE does not confer READ METADATA (Unity Catalog privileges doc): the need stays, and the App is asked for it (must fail before the fix).
     rows = _rows(APP, "MANAGE", False)
     plan = agent_ns["implement_access_plan"](SOURCE, rows, APP, (agent_ns["IMPLEMENT_ABAC_READ_NEED"],))
-    assert plan["grants"] == [] and plan["gaps"] == []
+    assert [g["privilege"] for g in plan["grants"]] == ["READ METADATA"] and plan["gaps"] == [], plan
+
+
+def test_a_refused_read_metadata_is_asked_again_even_when_the_rows_show_it_held(agent_ns):
+    # The live policy read was refused, so the grant rows that say READ METADATA is held are not the truth (must fail before the fix).
+    rows = [{"level": "schema", "privilege": "READ METADATA", "principal": APP, "mine": False, "me": "builder@example.com"}]
+    need = (agent_ns["IMPLEMENT_ABAC_READ_NEED"],)
+    assert agent_ns["implement_access_plan"](SOURCE, rows, APP, need)["grants"] == []
+    refused = agent_ns["implement_access_plan"](SOURCE, rows, APP, need, refused=("READ METADATA",))
+    assert [g["privilege"] for g in refused["grants"] + refused["gaps"]] == ["READ METADATA"], refused
 
 
 def test_the_app_read_grants_include_read_metadata_on_the_source_tables(agent_ns):

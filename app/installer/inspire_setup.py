@@ -11,8 +11,9 @@ ASSETS_MANIFEST = "manifest.json"
 ASSETS_FORMAT = 1
 ASSETS_BUILD_ID_LEN = 12
 SCAN_SKIPPED = ("samples", "system", "__databricks_internal", "information_schema")
-SCAN_GRANTS = ("USE CATALOG", "USE SCHEMA", "SELECT", "BROWSE")
-CONSENT_PRIVILEGES = "USE CATALOG, USE SCHEMA, SELECT, BROWSE"
+# READ METADATA lets the App read a table's ABAC policies, row filters and column masks (its source check). A catalog grant covers its tables.
+SCAN_GRANTS = ("USE CATALOG", "USE SCHEMA", "SELECT", "BROWSE", "READ METADATA")
+CONSENT_PRIVILEGES = "USE CATALOG, USE SCHEMA, SELECT, BROWSE, READ METADATA"
 SCAN_GRANT_WORKERS = 8
 SCAN_PROGRESS_FROM = 50
 SCAN_PROGRESS_STEPS = 10
@@ -45,7 +46,7 @@ W_CAT_LABEL = "2) Unity Catalog for Inspire tracking tables (_inspire)"
 
 
 W_DATA = "02_data_catalogs_inspire_may_read"
-W_DATA_LABEL = "3) Data catalogs the Inspire App may read (USE CATALOG, USE SCHEMA, SELECT, BROWSE)"
+W_DATA_LABEL = "3) Data catalogs the Inspire App may read (USE CATALOG, USE SCHEMA, SELECT, BROWSE, READ METADATA)"
 DATA_ALL = "All catalogs you can use (default)"
 
 

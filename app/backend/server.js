@@ -62,7 +62,7 @@ const { loadSessionList, loadSessionOverviews, sessionListCap, SESSION_LIST_CAP 
 const { LIVE_STEP_STATUSES, liveDomainsOf, liveUseCasesOf } = require('../frontend/src/lib/liveUseCases.js');
 const { isInspireOwnName, isInspireOwnSchema } = require('../frontend/src/lib/inspireOwnObjects.js');
 const { executiveSummaryOf, parseResultsJson, runResultsStatement } = require('./lib/runSummary');
-const { appReadPermissions, sampleCopyPermission, permissionRequired, readStatementsFor } = require('./lib/permissions');
+const { appReadPermissions, sampleCopyPermission, permissionRequired } = require('./lib/permissions');
 const { modelAccessPermission } = require('./lib/modelAccess');
 const { createInstalledRuns } = require('./lib/runAsRuns');
 const PM_ERROR = require('./lib/permissionError');
@@ -2528,7 +2528,7 @@ async function discoverAppAccess(req, scope) {
       const { ran, failed } = await discoverAccess.runPersonGrants(req, person, DEFAULT_WAREHOUSE_ID, offer.grants);
       if (ran.length) console.log(`Discover: granted the App read access to ${plural(offer.tables.length, 'table')} with the sign-in: ${ran.join('; ')}`);
       if (failed.length) {
-        const refused = permissionRequired({ statements: readStatementsFor(offer.tables.map((t) => t.table || t), offer.app.id || SP_CLIENT_ID), principal: offer.app.id || SP_CLIENT_ID, wholeCatalogs: catalogs, why: 'Discover reads these tables as the App, and the grant could not run with your sign-in. Ask your workspace admin to run it.' });
+        const refused = permissionRequired({ statements: offer.grants, principal: offer.app.id || SP_CLIENT_ID, wholeCatalogs: catalogs, why: 'Discover reads these tables as the App, and the grant could not run with your sign-in. Ask your workspace admin to run it.' });
         if (refused) permissions.push(refused);
       }
       found = await discoverAccess.sourceAccess(req, DEFAULT_WAREHOUSE_ID, tables, 'discover', { wholeCatalogs: catalogs });

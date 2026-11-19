@@ -513,7 +513,7 @@ LAKEBASE_GRANT = "GRANT ALL PRIVILEGES ON CATALOG `inspire_lakebase` TO `SP`"
 VALUE_LEDGER_GRANTS = [f"GRANT {p} ON TABLE `main`.`_inspire`.`__inspire_value_ledger` TO `SP`" for p in ("SELECT", "MODIFY")]
 
 
-SCAN_PREFIX = "GRANT USE CATALOG, USE SCHEMA, SELECT, BROWSE ON CATALOG "
+SCAN_PREFIX = "GRANT USE CATALOG, USE SCHEMA, SELECT, BROWSE, READ METADATA ON CATALOG "
 
 
 def scan_grants(*catalogs):
@@ -777,7 +777,7 @@ class GrantPlanTest(unittest.TestCase):
         self.assertIn(f"Grant plan for SP: {len(essentials(grants))} statements on `main`.`_inspire`", before_first)
         for sql in essentials(grants):
             self.assertIn(f"  {sql}\n", before_first)
-        self.assertIn("Inspire's App will get read access (USE CATALOG, USE SCHEMA, SELECT, BROWSE) on: sales", before_scan(executed))
+        self.assertIn("Inspire's App will get read access (USE CATALOG, USE SCHEMA, SELECT, BROWSE, READ METADATA) on: sales", before_scan(executed))
 
 
 class LargeWorkspaceGrantTest(unittest.TestCase):
