@@ -2,7 +2,9 @@ import argparse
 import base64
 import hashlib
 import importlib.util
+import io
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -97,6 +99,97 @@ def stage_remote(w, tag, folder, mode, files):
     return json.loads(output.notebook_output.result)
 
 
+SPLIT_THRESHOLD = 64 << 20  # a file over 64 MB is uploaded in parts unless INSPIRE_RC_SPLIT_UPLOAD says otherwise
+PART_ATTEMPTS = 4
+
+
+def split_wanted(size, env=None):
+    """INSPIRE_RC_SPLIT_UPLOAD=1 always splits, =0 never splits; unset splits a file over SPLIT_THRESHOLD."""
+    value = os.environ.get("INSPIRE_RC_SPLIT_UPLOAD", "") if env is None else env
+    if value == "1":
+        return True
+    if value == "0":
+        return False
+    if value:
+        raise SystemExit(f"INSPIRE_RC_SPLIT_UPLOAD is {value!r}; use 1 (always split), 0 (never split), or leave it unset")
+    return size > SPLIT_THRESHOLD
+
+
+def part_ranges(size, part_bytes):
+    """(index, offset, length) for each part, numbered from 1. An exact multiple has no short tail part."""
+    if part_bytes <= 0:
+        raise ValueError("part_bytes must be positive")
+    return [(index, offset, min(part_bytes, size - offset))
+            for index, offset in enumerate(range(0, size, part_bytes), start=1)]
+
+
+def join_code(base, count, want_sha256):
+    """Notebook source that joins base.partNNN in order. It writes base.joining, checks the sha256, and only then
+    replaces base. A mismatch stops the job before base exists, and the parts stay for diagnosis."""
+    return (
+        "# Databricks notebook source\n"
+        "import hashlib, os\n"
+        f"base, n, want = {base!r}, {count}, {want_sha256!r}\n"
+        "tmp = base + '.joining'\n"
+        "h = hashlib.sha256()\n"
+        "with open(tmp, 'wb') as out:\n"
+        "    for i in range(1, n + 1):\n"
+        "        with open(f'{base}.part{i:03d}', 'rb') as part:\n"
+        "            data = part.read()\n"
+        "        h.update(data)\n"
+        "        out.write(data)\n"
+        "if h.hexdigest() != want:\n"
+        "    raise RuntimeError(f'joined sha256 {h.hexdigest()} is not {want}; the parts are kept')\n"
+        "os.replace(tmp, base)\n"
+        "print('joined', n, 'parts into', base, want)\n")
+
+
+def upload_part(w, folder, name, data, index, total):
+    """One part, retried on its own. A slow link can drop one request; the other parts are not sent again."""
+    for attempt in range(1, PART_ATTEMPTS + 1):
+        try:
+            w.workspace.upload(f"{folder}/{name}", io.BytesIO(data), format=workspace.ImportFormat.RAW, overwrite=True)
+            say(f"uploaded part {index} of {total} ({len(data)} bytes)")
+            return
+        except Exception as exc:
+            if attempt == PART_ATTEMPTS:
+                raise SystemExit(f"part {index} of {total} failed {PART_ATTEMPTS} times: {str(exc)[:200]}")
+            say(f"part {index} of {total} attempt {attempt} failed ({str(exc)[:160]}); sending this part again")
+            time.sleep(5 * attempt)
+
+
+def split_upload(w, path, folder):
+    """Upload path in parts into the install folder, join them inside the workspace with a sha256-checked job, then
+    delete the parts and the join notebook. The release on this computer stays four whole files."""
+    part_bytes = int(os.environ.get("INSPIRE_RC_PART_MB", "8")) << 20
+    ranges = part_ranges(path.stat().st_size, part_bytes)
+    whole = hashlib.sha256()
+    part_names = []
+    with open(path, "rb") as handle:
+        for index, _offset, length in ranges:
+            data = handle.read(length)
+            whole.update(data)
+            name = f"{path.name}.part{index:03d}"
+            upload_part(w, folder, name, data, index, len(ranges))
+            part_names.append(name)
+    want = whole.hexdigest()
+    base = f"/Workspace{folder}/{path.name}"
+    join_name = "assets_join"
+    retried(w.workspace.import_, f"{folder}/{join_name}", content=base64.b64encode(join_code(base, len(ranges), want).encode()).decode(),
+            format=workspace.ImportFormat.SOURCE, language=workspace.Language.PYTHON, overwrite=True)
+    run_id = retried(w.jobs.submit, run_name="inspire assets join (sha256 checked)", tasks=[jobs.SubmitTask(
+        task_key="join", notebook_task=jobs.NotebookTask(notebook_path=f"{folder}/{join_name}", source=jobs.Source.WORKSPACE),
+        environment_key="default", max_retries=0)],
+        environments=[jobs.JobEnvironment(environment_key="default", spec=jobs.compute.Environment(client="2"))]).response.run_id
+    done = wait(w, run_id)
+    result = done.state.result_state.value if done.state.result_state else None
+    if result != "SUCCESS":
+        raise SystemExit(f"assets join job {run_id} ended {result}; the parts are kept in {folder} for diagnosis")
+    for name in part_names + [join_name]:
+        retried(w.workspace.delete, f"{folder}/{name}")
+    say(f"joined {len(ranges)} parts of {path.name} in the workspace, sha256 {want[:12]} checked, parts and join notebook deleted")
+
+
 def prep(w, tag, folder, app_name, work, online=False, whole=False, unzip=False, tag_links=False, remote_stage="", remote_files=()):
     release = work / "downloaded"
     if not (release / "manifest.json").is_file():
@@ -132,6 +225,10 @@ def prep(w, tag, folder, app_name, work, online=False, whole=False, unzip=False,
         names = ["manifest.json", "inspire-assets.tar"]
     elif whole or not online:
         names = [name for name in WHOLE_SET if not (remote_stage and name in remote_files)]
+    tar = release / "inspire-assets.tar"
+    if "inspire-assets.tar" in names and split_wanted(tar.stat().st_size):
+        split_upload(w, tar, folder)
+        names = [name for name in names if name != "inspire-assets.tar"]
     for name in names:
         def put(name=name):
             with open(release / name, "rb") as handle:
