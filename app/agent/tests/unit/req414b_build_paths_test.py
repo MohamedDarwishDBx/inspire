@@ -97,7 +97,7 @@ def test_a_kind_without_a_build_path_has_none():
 
 def test_the_supervisor_spec_has_one_tool_per_domain_space_with_its_description():
     spec = shell_build.supervisor_spec("cross", [("space-a", "Sales"), ("space-b", "Stock")])
-    assert [t["tool_id"] for t in spec["tools"]] == ["genie_space_1", "genie_space_2"]
+    assert [t["tool_id"] for t in spec["tools"]] == ["space_space_a", "space_space_b"]
     assert spec["tools"][1]["body"] == {"tool_type": "genie_space", "genie_space": {"id": "space-b"}, "description": "Stock"}
 
 
@@ -114,9 +114,9 @@ def test_a_supervisor_needs_at_least_one_domain_space():
 def test_create_supervisor_posts_the_agent_then_one_tool_per_space_with_the_tool_id_as_a_query():
     api = FakeApi(created_id="sup-42")
     out = shell_build.create_supervisor(api, "cross", [("space-a", "Sales"), ("space-b", "Stock")])
-    assert out["supervisor_id"] == "sup-42" and out["tools"] == ["genie_space_1", "genie_space_2"]
+    assert out["supervisor_id"] == "sup-42" and out["tools"] == ["space_space_a", "space_space_b"]
     assert api.calls[0] == ("POST", "/api/2.1/supervisor-agents", {"name": "cross"}, None)
-    assert api.calls[1][1] == "/api/2.1/supervisor-agents/sup-42/tools" and api.calls[1][3] == {"tool_id": "genie_space_1"}
+    assert api.calls[1][1] == "/api/2.1/supervisor-agents/sup-42/tools" and api.calls[1][3] == {"tool_id": "space_space_a"}
 
 
 def test_a_supervisor_answer_without_an_id_attaches_no_tools_and_names_the_keys():
@@ -146,12 +146,18 @@ def test_the_agent_job_spec_is_in_the_jobs_format_with_notebook_tasks_a_cron_sch
 
 
 def test_the_agent_job_spec_is_accepted_by_the_sdks_job_settings_parser():
-    from databricks.sdk.service.jobs import JobSettings
-    settings = JobSettings.from_dict(job_spec())
-    assert settings.schedule.quartz_cron_expression == "0 0 7 * * ?"
-    assert settings.schedule.timezone_id == "UTC"
-    assert [t.task_key for t in settings.tasks] == ["detect", "write_back", "act"]
-    assert settings.tasks[0].notebook_task.notebook_path == NOTEBOOK
+    """A real SDK parse in a fresh interpreter: the notebook loader stubs databricks.sdk inside this process, so the check runs apart."""
+    import json
+    import subprocess
+    code = ("import json, sys\n"
+            "from databricks.sdk.service.jobs import JobSettings\n"
+            "s = JobSettings.from_dict(json.loads(sys.stdin.read()))\n"
+            "print(json.dumps({'cron': s.schedule.quartz_cron_expression, 'tz': s.schedule.timezone_id,\n"
+            "                  'keys': [t.task_key for t in s.tasks], 'path': s.tasks[0].notebook_task.notebook_path}))\n")
+    done = subprocess.run([sys.executable, "-c", code], input=json.dumps(job_spec()), capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr
+    parsed = json.loads(done.stdout)
+    assert parsed == {"cron": "0 0 7 * * ?", "tz": "UTC", "keys": ["detect", "write_back", "act"], "path": NOTEBOOK}
 
 
 def test_a_missing_cron_gets_the_default_schedule_not_no_schedule():

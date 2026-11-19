@@ -30,6 +30,7 @@ class Recorder:
     def __init__(self, script=None):
         self.script = script or {}
         self.calls = []
+        self.tools = []
 
     def __call__(self, method, path, body=None, query=None):
         self.calls.append((method, path, body, query))
@@ -38,6 +39,11 @@ class Recorder:
                 if isinstance(outcome, Exception):
                     raise outcome
                 return outcome
+        if method == "GET" and path.endswith("/tools"):
+            return {"tools": [{"tool_id": t} for t in self.tools]}
+        if method == "POST" and path.endswith("/tools"):
+            self.tools.append((query or {}).get("tool_id"))
+            return {}
         if method == "POST" and path == shell_build.SUPERVISOR_AGENTS_PATH:
             return {"id": "sup-1"}
         if method == "POST" and path == shell_build.JOBS_CREATE_PATH:
@@ -51,15 +57,16 @@ class Recorder:
 
 
 def build(rec, kind, status, uc="uc-1", space="", result_table="c.s.t", columns=None, text_column="", notebook=NOTEBOOK,
-          domains=None, run_sql=None, ask=None, lines=None, pg_schema="app_schema"):
+          domains=None, run_sql=None, ask=None, lines=None, pg_schema="app_schema", records_table=None, run=None):
     context = {"uc_id": uc, "kind_spec": {"kind": {"id": kind, "label": kind, "question": "How did it go?"},
                                           "columns": columns or {}},
                "asset_status": {"genie_space": {"id": space}} if space else {}, "result_table": result_table,
-               "notebook_path": notebook, "text_column": text_column}
-    domains = {} if domains is None else domains
+               "notebook_path": notebook, "text_column": text_column,
+               "records_table": records_table if records_table is not None else result_table.split(".")[-1]}
+    run = run if run is not None else {"domains": domains if domains is not None else {}, "records": []}
     out = shell_build.build_for_context(shell_build.BuildApi(rec), context, status, ask or (lambda s, q: f"{s} answered"),
-                                        (lines if lines is not None else []).append, lambda n: f'"{n}"', run_sql, domains, pg_schema)
-    return out, context, domains
+                                        (lines if lines is not None else []).append, lambda n: f'"{n}"', run_sql, run, pg_schema)
+    return out, context, run["domains"]
 
 
 # --- the dispatch ----------------------------------------------------------------------------------------------------------
@@ -71,12 +78,20 @@ def test_a_supervisor_build_attaches_its_domain_space_and_keeps_the_records():
     assert {"asset": "supervisor", "supervisor_id": "sup-1"} in context["asset_status"]["build_records"]
 
 
-def test_a_later_supervisor_attaches_every_domain_space_built_so_far_in_the_run():
-    rec, domains = Recorder(), {}
-    build(rec, "cross_domain_assistant", {"supervisor_agents": "available"}, uc="uc-1", space="space-a", domains=domains)
-    build(rec, "cross_domain_assistant", {"supervisor_agents": "available"}, uc="uc-2", space="space-b", domains=domains)
-    tool_spaces = [b["genie_space"]["id"] for m, p, b, _q in rec.calls if p.endswith("/tools")]
-    assert tool_spaces == ["space-a", "space-a", "space-b"], "the second supervisor sees both spaces (the first's tool repeats)"
+def test_early_and_late_spaces_are_both_attached_once_and_uninstalling_one_use_case_removes_only_its_tool():
+    """The cross-domain use case creates the run's supervisor with its space; a later use case of the run attaches its own space to
+    that supervisor (found through the persisted records). A repeated space is not attached twice. Uninstalling the later use case
+    deletes only its own tool."""
+    rec, run = Recorder(), {"domains": {}, "records": []}
+    build(rec, "cross_domain_assistant", {"supervisor_agents": "available"}, uc="uc-1", space="space-a", run=run)
+    late, _ctx, _d = build(rec, "lookalikes", {"vector_search": "unavailable"}, uc="uc-2", space="space-b", run=run)
+    build(rec, "lookalikes", {"vector_search": "unavailable"}, uc="uc-3", space="space-a", run=run)
+    assert rec.tools == ["space_space_a", "space_space_b"], "each space is one tool, and the repeat is not posted again"
+    assert [r for r in late["records"] if r["asset"] == "supervisor_tool"] == [{"asset": "supervisor_tool", "supervisor_id": "sup-1",
+                                                                               "tool_id": "space_space_b"}]
+    deleter = Recorder()
+    shell_build.delete_records(shell_build.BuildApi(deleter), late["records"], lambda e: False, str)
+    assert deleter.calls == [("DELETE", "/api/2.1/supervisor-agents/sup-1/tools/space_space_b", None, None)]
 
 
 def test_an_unavailable_supervisor_runs_the_orchestrator_through_the_ask_and_creates_nothing():
@@ -196,7 +211,7 @@ def test_a_use_case_without_a_kind_runs_no_build(ns):
     cls, rec = ns["DatabricksInspire"], Recorder()
     context = {"uc_id": "UC-2", "kind_spec": None, "asset_status": {}}
     cls._implement_build_paths(Stub(cls, rec), context)
-    assert rec.calls == [] and "build_records" not in context["asset_status"]
+    assert rec.calls == [] and context["asset_status"].get("build_records", []) == []
 
 
 def test_the_uninstall_method_reads_the_records_and_treats_a_missing_asset_as_silent(ns):
@@ -250,3 +265,17 @@ def test_the_orchestrator_answers_are_kept_on_the_asset_status_for_the_app_to_re
     out, context, _d = build(Recorder(), "cross_domain_assistant", {"supervisor_agents": "unavailable"}, space="space-a",
                              ask=lambda s, q: f"{s} answered")
     assert context["asset_status"]["orchestrator_answers"] == {"space-a": {"answer": "space-a answered", "error": ""}}
+
+
+def test_the_approval_ddl_targets_the_records_table_the_page_spec_names_not_the_result_table_name():
+    """(d): the Lakebase table is the one the App reads records from (the page spec's records table). The result table's name is not used."""
+    statements = []
+    build(Recorder(), "watch_act_agent", {}, result_table="c.s.orders", records_table="loss_desk_out", run_sql=statements.extend)
+    assert statements and all('"app_schema"."loss_desk_out"' in stmt for stmt in statements)
+    assert all("orders" not in stmt for stmt in statements)
+
+
+def test_no_approval_ddl_runs_when_the_page_spec_names_no_records_table():
+    statements, lines = [], []
+    build(Recorder(), "watch_act_agent", {}, result_table="c.s.orders", records_table="", run_sql=statements.extend, lines=lines)
+    assert statements == [] and any("were not added" in line for line in lines)

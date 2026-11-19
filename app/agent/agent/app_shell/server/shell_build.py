@@ -82,6 +82,11 @@ def choose_path(kind_id: str, supervisor_status: str, index_status: str = "unkno
     return "agent_job"
 
 
+def tool_id_for(space: str) -> str:
+    """A stable tool id per Genie space, so attaching the same space twice is the same tool, never a second one."""
+    return "space_" + re.sub(r"[^a-z0-9_]+", "_", str(space or "").lower()).strip("_")[:60]
+
+
 def supervisor_spec(name: str, domains) -> dict:
     """Request bodies for a Supervisor Agent over the domain Genie spaces. `domains` is a list of (space id, description); a plain
     space id is accepted with the space's own id as its description. One genie_space tool per space, with its description."""
@@ -93,9 +98,9 @@ def supervisor_spec(name: str, domains) -> dict:
             rows.append((space, str(description or space).strip() or space))
     if not rows:
         raise ValueError("a supervisor needs at least one Genie space to route to")
-    tools = [{"tool_id": f"genie_space_{i}", "description": desc,
+    tools = [{"tool_id": tool_id_for(space), "description": desc,
               "body": {"tool_type": "genie_space", "genie_space": {"id": space}, "description": desc}}
-             for i, (space, desc) in enumerate(rows, start=1)]
+             for space, desc in rows]
     return {"agent": {"name": str(name)}, "tools": tools}
 
 
@@ -127,6 +132,18 @@ def create_supervisor(api, name: str, domains) -> dict:
         api.do("POST", SUPERVISOR_TOOL_PATH.format(supervisor_id=supervisor_id), body=tool["body"], query={"tool_id": tool["tool_id"]})
         records.append({"asset": "supervisor_tool", "supervisor_id": supervisor_id, "tool_id": tool["tool_id"]})
     return {"supervisor_id": supervisor_id, "tools": [t["tool_id"] for t in spec["tools"]], "records": records}
+
+
+def attach_domain(api, supervisor_id: str, space: str, description: str) -> list:
+    """Idempotent upsert of one domain space as a tool of the run's supervisor: a tool already listed is not posted again."""
+    listed = api.do("GET", SUPERVISOR_TOOL_PATH.format(supervisor_id=supervisor_id)) or {}
+    present = {str((t or {}).get("tool_id") or (t or {}).get("name", "").rsplit("/", 1)[-1]) for t in listed.get("tools") or []}
+    tool_id = tool_id_for(space)
+    if tool_id in present:
+        return []
+    body = {"tool_type": "genie_space", "genie_space": {"id": space}, "description": description or space}
+    api.do("POST", SUPERVISOR_TOOL_PATH.format(supervisor_id=supervisor_id), body=body, query={"tool_id": tool_id})
+    return [{"asset": "supervisor_tool", "supervisor_id": supervisor_id, "tool_id": tool_id}]
 
 
 def build_index(api, spec: dict) -> dict:
@@ -346,48 +363,59 @@ class BuildApi:
         return self.call(method, path, body, query)
 
 
-def build_for_context(api, context: dict, status: dict, ask, log, quote, run_sql, domains: dict, pg_schema: str = "") -> dict:
-    """One use case's build, from the App build's context. The path comes from the probe status. The index takes its inputs from the
-    kind's detected roles and an ONLINE endpoint; with no endpoint the match uses ai_query and the plain line NO_ENDPOINT_LINE is
-    returned and kept as the build note. The agent job adds the approval columns to the result table's Lakebase copy (in pg_schema)
-    through `run_sql` (None when the build has no Lakebase connection). `domains` collects the domain Genie spaces built so far in
-    this run. Records of what was created go on the asset status for uninstall."""
+def build_for_context(api, context: dict, status: dict, ask, log, quote, run_sql, run: dict, pg_schema: str = "") -> dict:
+    """One use case's build, from the App build's context. `run` is the run's state: {"domains": {space: description}, "records": [the
+    persisted build records of every use case of the run so far]}. The supervisor is found through those records, so every domain space
+    of the run is attached as one tool (an idempotent upsert), whichever use case builds it. The rest of the path comes from the probe
+    status; the index takes its inputs from the kind's detected roles and an ONLINE endpoint, else ai_query with the plain line."""
     kind = (context.get("kind_spec") or {}).get("kind") or {}
     uc_id = str(context.get("uc_id") or "")
     asset = context.setdefault("asset_status", {})
+    records = []
     space = str((asset.get("genie_space") or {}).get("id") or "")
     if space:
-        domains.setdefault(space, f"{kind.get('label') or 'domain'} ({uc_id})")
+        run["domains"].setdefault(space, f"{kind.get('label') or 'domain'} ({uc_id})")
+    supervisor_id = next((r["supervisor_id"] for r in run["records"] if r.get("asset") == "supervisor"), None)
+    if space and supervisor_id:
+        records += attach_domain(api, supervisor_id, space, run["domains"][space])
     path = choose_path(kind.get("id") or "", status.get("supervisor_agents"), status.get("vector_search"))
-    if path in ("none", "ai_query"):
-        return {"path": path, "records": [], "note": ""}
-    inputs = {"domains": sorted(domains.items()), "question": kind.get("question") or "", "result_table": context.get("result_table") or "",
-              "notebook_path": context.get("notebook_path") or ""}
-    if path == "vector_index":
-        inputs.update(index_inputs((context.get("kind_spec") or {}).get("columns") or {}, context.get("result_table") or ""))
-        try:
-            inputs["endpoint"] = pick_endpoint(api.do("GET", VECTOR_ENDPOINTS_PATH))
-        except Exception:
-            inputs["endpoint"] = ""
-        if not inputs["endpoint"]:
-            log(f"[BUILD-PATH FIRED] {uc_id}: {NO_ENDPOINT_LINE}")
-            asset["build_note"] = NO_ENDPOINT_LINE
-            return {"path": "ai_query", "records": [], "note": NO_ENDPOINT_LINE}
-    name = "inspire_" + re.sub(r"[^a-z0-9_]+", "_", uc_id.lower()).strip("_")
-    plan, skipped = plan_for(path, kind.get("id") or "", name, inputs)
-    if plan is None:
-        log(f"[BUILD-PATH FIRED] {uc_id}: {skipped}")
-        return {"path": path, "records": [], "note": skipped}
-    out = run_build_paths(api, plan, ask, log)
-    if path == "orchestrator_job":
+    if path == "supervisor" and supervisor_id is None and run["domains"]:
+        out = run_build_paths(api, {"path": "supervisor", "kind": kind.get("id") or "", "name": "inspire_" + re.sub(r"[^a-z0-9_]+", "_", uc_id.lower()).strip("_"),
+                                    "domains": sorted(run["domains"].items())}, ask, log)
+        records += out["records"]
+    elif path == "orchestrator_job" and run["domains"]:
+        out = run_build_paths(api, {"path": "orchestrator_job", "kind": kind.get("id") or "", "domains": sorted(run["domains"].items()),
+                                    "question": kind.get("question") or ""}, ask, log)
         asset["orchestrator_answers"] = out["result"]["answers"]
-    if path == "agent_job":
-        if run_sql is None or not str(pg_schema or "").strip():
-            log(f"[BUILD-PATH FIRED] {uc_id}: the approval columns were not added: this build has no Lakebase connection")
-        else:
-            run_sql(approval_ddl(pg_schema, context.get("result_table") or "", quote))
-    asset["build_records"] = list(out["records"])
-    return {"path": path, "records": out["records"], "note": ""}
+    elif path in ("vector_index", "agent_job"):
+        inputs = {"domains": sorted(run["domains"].items()), "question": kind.get("question") or "", "result_table": context.get("result_table") or "",
+                  "notebook_path": context.get("notebook_path") or ""}
+        if path == "vector_index":
+            inputs.update(index_inputs((context.get("kind_spec") or {}).get("columns") or {}, context.get("result_table") or ""))
+            try:
+                inputs["endpoint"] = pick_endpoint(api.do("GET", VECTOR_ENDPOINTS_PATH))
+            except Exception:
+                inputs["endpoint"] = ""
+            if not inputs["endpoint"]:
+                log(f"[BUILD-PATH FIRED] {uc_id}: {NO_ENDPOINT_LINE}")
+                asset["build_note"] = NO_ENDPOINT_LINE
+                path = "ai_query"
+        if path != "ai_query":
+            name = "inspire_" + re.sub(r"[^a-z0-9_]+", "_", uc_id.lower()).strip("_")
+            plan, skipped = plan_for(path, kind.get("id") or "", name, inputs)
+            if plan is None:
+                log(f"[BUILD-PATH FIRED] {uc_id}: {skipped}")
+            else:
+                records += run_build_paths(api, plan, ask, log)["records"]
+                if path == "agent_job":
+                    records_table = str(context.get("records_table") or "").strip()
+                    if not records_table or run_sql is None or not str(pg_schema or "").strip():
+                        log(f"[BUILD-PATH FIRED] {uc_id}: the approval columns were not added: this build has no Lakebase connection or records table")
+                    else:
+                        run_sql(approval_ddl(pg_schema, records_table, quote))
+    asset["build_records"] = list(records)
+    run["records"].extend(records)
+    return {"path": path, "records": records, "note": asset.get("build_note", "")}
 
 
 def fallback_sentence(path: str) -> str:
