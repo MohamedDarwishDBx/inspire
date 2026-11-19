@@ -28,6 +28,7 @@ import logo from './databricks-logo.png?inline';
 import { integer } from './format.js';
 import { markTourSeen, tourDue, tourKey } from './tourStart.js';
 import { HelpContext } from './SectionHelp.jsx';
+import { styleOfPage } from './kinds.js';
 
 const Tour = lazy(() => import('./Tour.jsx'));
 const Performance = lazy(() => import('./Performance.jsx'));
@@ -311,7 +312,7 @@ function Shell({ app, onRefreshSiblings }) {
     <DockContext.Provider value={dockValue}>
     <HelpContext.Provider value={startHelp}>
     <div className="stage">
-      <div className="app" data-ready="" data-layout={app.layout} data-density={prefs.density}>
+      <div className="app" data-ready="" data-layout={app.layout} data-density={prefs.density} data-app-style={styleOfPage(page)?.id}>
         <header className="top">
           <button className="ibtn menu-btn" onClick={() => setNavOpen(!navOpen)} aria-label="Open the sections" aria-expanded={navOpen}><Icon name="menu" size={18} /></button>
           <button className="mark" onClick={() => go('')} aria-label={`${app.title}, home`} title={crumb ? `${app.title}\n${crumb}` : app.title}>

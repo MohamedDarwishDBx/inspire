@@ -1,15 +1,20 @@
-/* App styles (kinds.json app_styles). The page draws in its kind's style: a kicker line above the title, the style's first screen
-   (kinds.js leadSections) and these surface tokens. Dark styles only swap the tokens the page reads, so no component needs a rule. */
+/* App styles (kinds.json app_styles). The App draws in its page's style: a kicker line above the title, the style's first screen
+   (kinds.js leadSections) and surface tokens set on .app, so the header, the rail, the page and the Ask Genie panel read the same palette.
+   Dark styles swap the tokens the shell already reads, so no component needs a rule of its own. */
 .style-kicker { margin: 0 0 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.page[data-app-style="news"] { --page-bg: #f8f3e8; --card: #fffdf7; --ink: #1d1a16; background: var(--page-bg); }
-.page[data-app-style="league"] { --line: #c9d1da; }
-.page[data-app-style="mail"] { --page-bg: #eef2f7; background: var(--page-bg); }
-.page[data-app-style="kanban"] { --page-bg: #eceff4; background: var(--page-bg); }
-.page[data-app-style="sheet"] { --page-bg: #f6faf6; --line: #cfe3d3; background: var(--page-bg); }
-.page[data-app-style="lab"] { --page-bg: #fbfbfd; --line: #d8dbe6; background: var(--page-bg); }
-.page[data-app-style="cockpit"] { --page-bg: #0e1a2b; --card: #16263d; --well: #1b2f4b; --ink: #e7eef9; --muted: #9db0c9; --line: #2a3f5e; background: var(--page-bg); color: var(--ink); }
-.page[data-app-style="map"] { --page-bg: #f1f5ef; background: var(--page-bg); }
-.page[data-app-style="flow"] { --page-bg: #fbf7f2; background: var(--page-bg); }
-.page[data-app-style="graph"] { --page-bg: #0b1220; --card: #131f33; --well: #182741; --ink: #e4ebf6; --muted: #9aaccb; --line: #2a3a57; background: var(--page-bg); color: var(--ink); }
-.page[data-app-style="answer"] { --page-bg: #f7f8fb; background: var(--page-bg); }
-.page[data-app-style="agent"] { --page-bg: #0d1117; --card: #161b22; --well: #1c2128; --ink: #e6edf3; --muted: #8b949e; --line: #30363d; background: var(--page-bg); color: var(--ink); }
+.app[data-app-style="news"] { --bg: #f8f3e8; --card: #fffdf7; --well: #f3ecdb; --ink: #1d1a16; }
+.app[data-app-style="league"] { --line: #c9d1da; }
+.app[data-app-style="mail"] { --bg: #eef2f7; }
+.app[data-app-style="kanban"] { --bg: #eceff4; }
+.app[data-app-style="sheet"] { --bg: #f6faf6; --line: #cfe3d3; }
+.app[data-app-style="lab"] { --bg: #fbfbfd; --line: #d8dbe6; }
+.app[data-app-style="cockpit"] { --bg: #0e1a2b; --card: #16263d; --well: #1b2f4b; --ink: #e7eef9; --muted: #9db0c9; --line: #2a3f5e; --panel: #0f1f35; color: var(--ink); }
+.app[data-app-style="map"] { --bg: #f1f5ef; }
+.app[data-app-style="flow"] { --bg: #fbf7f2; }
+.app[data-app-style="graph"] { --bg: #0b1220; --card: #131f33; --well: #182741; --ink: #e4ebf6; --muted: #9aaccb; --line: #2a3a57; --panel: #0e1729; color: var(--ink); }
+.app[data-app-style="answer"] { --bg: #f7f8fb; }
+.app[data-app-style="agent"] { --bg: #0d1117; --card: #161b22; --well: #1c2128; --ink: #e6edf3; --muted: #8b949e; --line: #30363d; --panel: #0f141b; color: var(--ink); }
+.app[data-app-style] { background: var(--bg); }
+/* The rail's active item reads --hue-bg, which the rail sets inline, so dark styles set its colours on the item itself. */
+.app[data-app-style="cockpit"] .nav-i.is-on, .app[data-app-style="graph"] .nav-i.is-on, .app[data-app-style="agent"] .nav-i.is-on { background: var(--well); border-color: #4c7bb8; color: var(--ink); }
+.app[data-app-style="cockpit"] .nav-i.is-on b, .app[data-app-style="graph"] .nav-i.is-on b, .app[data-app-style="agent"] .nav-i.is-on b { color: var(--ink); }

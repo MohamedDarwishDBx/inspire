@@ -81,3 +81,39 @@ test('a map without coordinates draws as its league fallback and says so in the 
     await context.close();
   }
 });
+
+// Ask Genie opens over the page in every style. On the dark styles its empty-state text must still read: WCAG contrast of at least 4.5 to 1.
+const contrastOf = (page) => page.evaluate(() => {
+  const luminance = (rgb) => {
+    const [r, g, b] = rgb.map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const parse = (css) => css.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+  // The text a reader sees first in the panel (its empty state) against the conversation surface behind it.
+  const text = document.querySelector('aside.genie .g-empty') || document.querySelector('aside.genie');
+  const surface = document.querySelector('aside.genie .g-log') || document.querySelector('aside.genie');
+  const ink = getComputedStyle(text);
+  const under = getComputedStyle(surface);
+  const a = luminance(parse(ink.color)) + 0.05;
+  const b = luminance(parse(under.backgroundColor)) + 0.05;
+  return { ratio: Math.max(a, b) / Math.min(a, b), background: under.backgroundColor, color: ink.color };
+});
+
+for (const style of ['cockpit', 'graph']) {
+  for (const [width, height] of SIZES) {
+    test(`Ask Genie stays readable over the ${style} style at ${width}x${height}`, async () => {
+      const { page, seen, context } = await openKind(WHO[style], { width, height });
+      try {
+        await page.locator('.genie-btn').click();
+        await page.locator('aside.genie').waitFor({ timeout: 20000 });
+        const { ratio, background, color } = await contrastOf(page);
+        assert.ok(ratio >= 4.5, `contrast ${ratio.toFixed(2)} of text ${color} on ${background} is below 4.5`);
+        await page.screenshot({ path: join(SHOTS, `genie-${style}-${width}x${height}.png`) });
+        assert.deepEqual(errorsOf(seen), [], 'no console errors');
+      } finally {
+        await context.close();
+      }
+    });
+  }
+}
+
