@@ -454,11 +454,10 @@ async function appWrites(dbFetch, req, folder, appToken) {
   }
 }
 
-async function folderPlan(dbFetch, req, folder, { appToken, manager = false }) {
-  // REQ-418: the App writes the run's output, so the App's own write check decides the folder (no person check). An App manager skips the check.
+async function folderPlan(dbFetch, req, folder, { appToken }) {
+  // REQ-418: the App writes the run's output, so the App's own write check decides the folder, for every person, managers included.
   const shape = folderShapeVerdict(folder);
   if (shape) return { folder, refused: { status: 400, message: notAFolderText(folder, shape), unwritable: [folder] }, app: { verdict: null, unchecked: '' } };
-  if (manager) return { folder, refused: null, app: { verdict: null, unchecked: '' } };
   return { folder, refused: null, app: await appWrites(dbFetch, req, folder, appToken) };
 }
 
@@ -526,15 +525,15 @@ async function shareOwnFolder(dbFetch, req, folder, appId) {
   return { ok: true, scope: false, details: [grant(id)] };
 }
 
-async function ownFolderPlan(dbFetch, req, home, { appToken, appId, manager }) {
-  const first = await folderPlan(dbFetch, req, home, { appToken, manager });
+async function ownFolderPlan(dbFetch, req, home, { appToken, appId }) {
+  const first = await folderPlan(dbFetch, req, home, { appToken });
   if (first.refused || !first.app.verdict) return { plan: first, details: [], scope: false };
   const shared = await shareOwnFolder(dbFetch, req, home, appId);
   if (!shared.ok) {
     console.warn(`output write check: Inspire could not share ${home} with the ${IMPLEMENT_OUTPUT_LABELS.app}: ${shared.details.join('; ')}`);
     return { plan: first, details: shared.details, scope: shared.scope };
   }
-  const after = await folderPlan(dbFetch, req, home, { appToken, manager });
+  const after = await folderPlan(dbFetch, req, home, { appToken });
   if (!after.app.verdict) return { plan: after, details: [], scope: false };
   return { plan: after, details: [`${shared.details[0]} succeeded, and the App still cannot write there: ${after.app.verdict.reason}`], scope: false };
 }
@@ -570,20 +569,20 @@ async function ownFolderPreview(dbFetch, req, home, fallback, appId) {
   return { refused: null, folder: fallback, generationPath: workspaceFolderPath(fallback), warnings: [sharedFallbackText(home, fallback, ready.scope)], details: ready.details };
 }
 
-async function outputPlan(dbFetch, req, writes, { appToken = '', appId = '', preview = false, manager = false } = {}) {
+async function outputPlan(dbFetch, req, writes, { appToken = '', appId = '', preview = false } = {}) {
   const folders = ((writes && writes.folders) || []).filter(Boolean);
   if (!folders.length) return { refused: null, folder: '', generationPath: '', warnings: [], details: [] };
-  if (!writes.defaulted) return planVerdict(await folderPlan(dbFetch, req, folders[0], { appToken, manager }));
+  if (!writes.defaulted) return planVerdict(await folderPlan(dbFetch, req, folders[0], { appToken }));
   const savedIn = (plan, extra, details) => {
     const verdict = planVerdict(plan, extra, details);
     return { ...verdict, generationPath: verdict.refused ? '' : workspaceFolderPath(plan.folder) };
   };
   const home = ownFolderOf(RP.forwardedPerson(req.headers));
-  if (!home) return savedIn(await folderPlan(dbFetch, req, folders[0], { appToken, manager }));
+  if (!home) return savedIn(await folderPlan(dbFetch, req, folders[0], { appToken }));
   if (preview) return ownFolderPreview(dbFetch, req, home, folders[0], appId);
-  const { plan: own, details, scope } = await ownFolderPlan(dbFetch, req, home, { appToken, appId, manager });
+  const { plan: own, details, scope } = await ownFolderPlan(dbFetch, req, home, { appToken, appId });
   if (folderScore(own) === 2 || own.refused?.status === 401) return savedIn(own);
-  const shared = await folderPlan(dbFetch, req, folders[0], { appToken, manager });
+  const shared = await folderPlan(dbFetch, req, folders[0], { appToken });
   if (shared.refused) return own.refused ? planVerdict(shared) : unrunnableOwn(home, scope, details, appId);
   if (folderScore(shared) <= folderScore(own)) return unrunnableOwn(home, scope, details, appId);
   return savedIn(shared, [sharedFallbackText(home, shared.folder, scope)], own.refused ? [own.refused.message] : details);

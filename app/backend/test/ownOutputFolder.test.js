@@ -40,22 +40,27 @@ function workspace(folders, overrides = {}) {
 
 const response = (status, data) => ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(data), json: async () => data });
 const request = (person = ME, token = PERSON) => ({ dbHost: 'https://ws.example', headers: { ...(person ? { 'x-forwarded-email': person } : {}), ...(token ? { 'x-forwarded-access-token': token } : {}) } });
-// Not an App manager by default: the App's own write check decides the folder. A manager skips that check (checked: manager).
-const plan = (ws, writes = DEFAULTED, options = {}, req = request()) => W.outputPlan(ws.dbFetch, req, writes, { manager: false, appToken: APP, appId: APP_ID, ...options });
+const plan = (ws, writes = DEFAULTED, options = {}, req = request()) => W.outputPlan(ws.dbFetch, req, writes, { manager: true, appToken: APP, appId: APP_ID, ...options });
 const permissionCalls = (ws) => ws.calls.filter((c) => c.path.startsWith('/api/2.0/permissions/'));
 const SHARED_OPEN = { '/Shared': { id: 2, writers: '*' }, '/Shared/demos': { id: 7, writers: '*' } };
 
-test('an App manager with an empty Generation Path is sent to their own inspire_output with no App check, no folder made and no grant: the manager skip (checked: manager)', async () => {
+test('an App manager with an empty Generation Path gets their own folder: Inspire creates it with their sign-in, gives the App CAN MANAGE on it alone, and says nothing', async () => {
   for (const [label, folders] of [
     ['the folder does not exist yet', { ...SHARED_OPEN, [HOME]: { id: 12, writers: [ME] } }],
     ['the folder exists and the App cannot write it', { ...SHARED_OPEN, [HOME]: { id: 12, writers: [ME] }, [OWN]: { id: 13, writers: [ME] } }],
   ]) {
     const ws = workspace(folders);
-    const got = await plan(ws, DEFAULTED, { manager: true });
+    const got = await plan(ws);
     assert.deepEqual([got.refused, got.folder, got.generationPath, got.warnings, got.details], [null, OWN, `/Workspace${OWN}`, [], []], label);
-    assert.deepEqual(ws.calls.filter((c) => WRITES.has(c.method)), [], `${label}: no write call of any kind`);
-    assert.deepEqual(ws.model.grants, [], `${label}: no grant`);
-    assert.equal(Boolean(ws.model.folders[OWN]), Boolean(folders[OWN]), `${label}: no folder made`);
+    assert.ok(ws.model.folders[OWN], `${label}: the folder exists now`);
+    const id = ws.model.folders[OWN].id;
+    assert.deepEqual(ws.model.grants, [{ path: OWN, token: PERSON, entries: [{ service_principal_name: APP_ID, permission_level: 'CAN_MANAGE' }] }], `${label}: one grant`);
+    const patches = permissionCalls(ws);
+    assert.deepEqual(patches.map((c) => [c.method, c.path, c.token]), [['PATCH', `/api/2.0/permissions/directories/${id}`, PERSON]], `${label}: PATCH adds, never PUT, with the person token`);
+    const mkdirs = ws.calls.filter((c) => c.path === '/api/2.0/workspace/mkdirs' && c.body.path === OWN);
+    assert.deepEqual(mkdirs.map((c) => c.token), [PERSON], `${label}: the folder is made with the person sign-in`);
+    assert.ok(ws.calls.some((c) => c.token === APP && c.path === '/api/2.0/workspace/mkdirs' && c.body.path.startsWith(`${OWN}/${W.PROBE_PREFIX}`)),
+      `${label}: the App write is checked again, inside the shared folder`);
     assert.ok(!ws.calls.some((c) => c.query.includes(encodeURIComponent('/Shared/demos')) || c.body.path === '/Shared/demos'), `${label}: the shared folder is never touched`);
   }
 });

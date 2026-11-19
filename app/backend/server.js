@@ -2554,9 +2554,8 @@ async function appWriteTokenOf() {
 }
 
 async function outputWriteVerdict(req, writes, { preview = false } = {}) {
-  const manager = await routePolicy.managerOf(req).catch(() => ({ manager: false }));
-  const plan = await outputPlan(dbFetch, req, writes, { appToken: await appWriteTokenOf(), appId: SP_CLIENT_ID, preview, manager: manager.manager });
-  return { ...plan, checked: manager.manager ? 'manager' : 'passed' };
+  const plan = await outputPlan(dbFetch, req, writes, { appToken: await appWriteTokenOf(), appId: SP_CLIENT_ID, preview });
+  return { ...plan, checked: 'passed' };
 }
 
 app.post('/api/output-folder/check', requireToken, async (req, res) => {

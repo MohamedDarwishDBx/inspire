@@ -1473,8 +1473,8 @@ test('a result table the person cannot write says why on Data, with the reason t
 
 // REQ-001/REQ-265 (D-WHERE): Where it lives holds one open decision. The Apps list is the detail of "Add to an existing App": it is
 // not on screen until that card is picked, and it is picked by the person, never by the screen. (fail-pre: the list was always shown.)
-test('REQ-265: Where it lives shows the App list with the join card picked by default (the domain App)', async () => {
-  const ui = await openUi('wizard', { ...MERGE_STATE, useCase: PLACE_UC, useCaseScope: PLACE_SCOPE, policies: POLICIED_SOURCE });
+test('REQ-265: Where it lives shows no App to join until Add to an existing App is picked, and the list shows once it is (must-exclude: two open decisions)', async () => {
+  const ui = await openUi('wizard', { ...MERGE_STATE, useCase: PLACE_UC, useCaseScope: PLACE_SCOPE });
   const { page } = ui;
   try {
     await toDelivery(page);
@@ -1483,10 +1483,12 @@ test('REQ-265: Where it lives shows the App list with the join card picked by de
     await openFolded(page, 'Where it lives');
     const join = placeStep(page).getByRole('radio', { name: /^Add to an existing App/ });
     await placeStep(page).getByRole('radio', { name: /^Create a new App/ }).waitFor();
-    // REQ-265 (updated for REQ-418): a use case whose domain has an App joins it by default, so the join card is picked and its list shows.
-    assert.equal(await join.isChecked(), true, 'the domain App is the default place');
+    assert.equal(await join.isChecked(), false, 'no place is picked yet');
+    assert.equal(await placeStep(page).locator('[data-app-target]').count(), 0, 'no App to join is listed before the join card is picked (must-exclude)');
+    assert.equal(await placeStep(page).locator('input[name="app-target"]').count(), 0, 'no App radio on screen before the join card is picked (must-exclude)');
+    await join.check();
     await placeStep(page).locator('[data-app-target]').first().waitFor();
-    assert.ok(await placeStep(page).locator('[data-app-target]').count() > 0, 'the list shows with the join card picked');
+    assert.ok(await placeStep(page).locator('[data-app-target]').count() > 0, 'the list shows once Add to an existing App is picked');
     assert.deepEqual(ui.pageErrors, []);
   } finally {
     await ui.close();

@@ -846,7 +846,8 @@ export default function ImplementWizard({
   const trackedKpi = trackedKpiOf(context?.history);
   const chosenKpi = kpiTargetOf(spec);
   const sampleStake = trackedKpi && (!chosenKpi || kpiKey(chosenKpi) === kpiKey(trackedKpi.record.name)) ? trackedKpi.impact : null;
-  const placeSettled = !spec.outputs.app || (targets !== null && (placeSet === 'default' || placeSet === 'person'));
+  // Inside Inspire joins and names no App, so it never waits for the App list (REQ-418 ruling 1).
+  const placeSettled = !spec.outputs.app || insideInspire(spec) || (targets !== null && (placeSet === 'default' || placeSet === 'person'));
   const features = preflight?.features || context?.features || ALL_FEATURES;
   const blocks = useMemo(() => outputBlocks(features, outputCheck, context?.assets, preflight), [features, outputCheck, context?.assets, preflight]);
   // The verdict is dropped while a check runs (no stale reason shows), but an output it blocked stays locked until the new verdict lands.

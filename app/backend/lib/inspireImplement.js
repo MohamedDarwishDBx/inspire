@@ -109,10 +109,9 @@ const IMPLEMENT_APP_PLACEMENTS = ['domain', 'use_case', 'business', IMPLEMENT_AP
 const IMPLEMENT_APP_PLACEMENT_CHOICE = "choose how Inspire organizes Apps: 'domain' (one App per business domain), 'use_case' (one App per use case), "
   + "'business' (one App for all use cases) or 'inspire' (Inside Inspire, each use case's page in Inspire's Run tab; not recommended, only for testing)";
 const IMPLEMENT_APP_HOSTED_ERRORS = {
-  access: 'a page inside Inspire shows each viewer only the data they may read, so it always signs viewers in as themselves',
   backend: 'a page inside Inspire reads Delta tables; Lakebase needs an App of its own',
   merge: 'a page inside Inspire belongs to this use case alone, so it cannot be added to another App; leave outputs.merge.app empty',
-  warehouse: 'a page inside Inspire needs outputs.app_warehouse_id, the SQL warehouse each viewer reads with; each viewer needs CAN USE on it',
+  warehouse: 'a page inside Inspire needs outputs.app_warehouse_id, the SQL warehouse the App reads with; the App needs CAN MANAGE on it',
   inspire_url: 'outputs.inspire_url must be the https address of the Inspire App with nothing after its host, such as '
     + "https://inspire.example.com: every App page and dashboard links to its use case on Inspire's Review page",
 };
@@ -1154,7 +1153,6 @@ function inspireUrlOf(outputs, needed, errors) {
 
 function insideProblems(outputs, app, merge, warehouse) {
   const problems = [];
-  if (app.access === 'sp') problems.push(IMPLEMENT_APP_HOSTED_ERRORS.access);
   if (app.backend === 'lakebase') problems.push(IMPLEMENT_APP_HOSTED_ERRORS.backend);
   if (merge.app) problems.push(IMPLEMENT_APP_HOSTED_ERRORS.merge);
   if (!warehouse && textValue(outputs.app_warehouse_id) === '') problems.push(IMPLEMENT_APP_HOSTED_ERRORS.warehouse);

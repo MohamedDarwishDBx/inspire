@@ -135,7 +135,7 @@ export const APP_PLACEMENTS = [
   { id: 'use_case', label: 'One App per use case', blurb: 'Each use case gets an App of its own.' },
   { id: 'business', label: 'One App for all use cases', blurb: 'Every use case of this business goes into one App, whatever its domain.' },
   { id: 'inspire', label: 'Inside Inspire', note: 'For trying a page only.',
-    blurb: 'Inspire runs the page in its Run tab, with no App of its own. Each viewer sees only the data they may read. Use it to try a page, then give it its own App.' },
+    blurb: 'Inspire runs the page in its Run tab, with no App of its own. The page reads with the App\u2019s own access, so everyone sees the same rows. Use it to try a page, then give it its own App.' },
 ];
 export const APP_PLACEMENT_IDS = APP_PLACEMENTS.map((p) => p.id);
 export const APP_PLACEMENT_DEFAULT = 'domain';
@@ -144,8 +144,8 @@ export const APP_INSIDE_PLACEMENT = APP_PLACEMENTS.find((p) => p.id === APP_INSI
 export const APP_OWN_PLACEMENTS = APP_PLACEMENTS.filter((p) => p.id !== APP_INSIDE);
 export const INSIDE_BACKEND_REASON = 'Fast pages need an App of its own';
 export const INSIDE_WAREHOUSE_TOGGLE = 'SQL warehouse settings';
-export const INSIDE_WAREHOUSE_LABEL = 'SQL warehouse each viewer reads with (each viewer needs CAN USE on it)';
-export const INSIDE_WAREHOUSE_PROBLEM = 'pick the SQL warehouse each viewer reads with; each viewer needs CAN USE on it';
+export const INSIDE_WAREHOUSE_LABEL = 'SQL warehouse the App reads with (the App needs CAN MANAGE on it)';
+export const INSIDE_WAREHOUSE_PROBLEM = 'pick the SQL warehouse the App reads with; the App needs CAN MANAGE on it';
 export const RUN_LINK_LABEL = 'Open in Run';
 export const APP_PLACE_WAITING = 'wait until Inspire has listed the Apps it built, then choose where the App goes';
 
@@ -1974,7 +1974,8 @@ export function sectionErrors(section, spec, extras = {}) {
     }
   }
   if (section === 'app_storage' && spec.outputs.app) {
-    if (extras.lakebase === null && spec.outputs.app_access === 'sp' && !spec.outputs.merge?.app) errors.push(LAKEBASE_CHECKING);
+    // Inside Inspire always reads Delta (no Lakebase copy to check), so it never waits on the Lakebase check (REQ-418 ruling 1).
+    if (extras.lakebase === null && spec.outputs.app_access === 'sp' && !spec.outputs.merge?.app && !insideInspire(spec)) errors.push(LAKEBASE_CHECKING);
     errors.push(...appWarehouseProblems(spec, extras.warehouses));
   }
   if (section === 'app_look' && spec.outputs.app) {
@@ -2438,7 +2439,7 @@ export function withNewApp(spec, chosen, targets, scope = {}) {
   const placement = placementThatFits(spec, targets, scope, chosen);
   const next = { ...spec, outputs: { ...spec.outputs, app_placement: placement } };
   if (placement === APP_INSIDE) {
-    const user = withAppAccess(next, 'user');
+    const user = withAppAccess(next, APP_ACCESS_DEFAULT);
     return { ...user, outputs: { ...user.outputs, app_name: '', merge: { ...user.outputs.merge, app: '' }, app_backend: 'delta',
       app_warehouse_id: appWarehouseOf(spec) } };
   }

@@ -1245,10 +1245,10 @@ function registerImplementRoutes(app, deps) {
       }
       checks.genie_code = GC.genieCodeLine(features.genie_code);
       if (wantsGenie) {
-        checks.genie_spaces = { ok: features.genie_spaces, detail: features.genie_spaces ? 'you can create Genie Agents' : 'you cannot create Genie Agents in this workspace' };
+        checks.genie_spaces = { ok: features.genie_spaces, detail: features.genie_spaces ? 'the App can create Genie Agents' : 'the App cannot create Genie Agents in this workspace' };
       }
       if (wantsAlert) {
-        checks.alerts = { ok: features.alerts, detail: features.alerts ? 'you can create SQL alerts' : 'you cannot create SQL alerts in this workspace' };
+        checks.alerts = { ok: features.alerts, detail: features.alerts ? 'the App can create SQL alerts' : 'the App cannot create SQL alerts in this workspace' };
       }
       res.json({
         ok: Object.values(checks).every((c) => c.ok),
@@ -2103,7 +2103,7 @@ function registerImplementRoutes(app, deps) {
       const listed = await jsonOf(dbFetch, req.dbHost, token, '/api/2.0/serving-endpoints');
       if (!listed.ok) throw I.badRequest(`Inspire could not list the serving endpoints as the App: ${listed.data.message || listed.data.error || `HTTP ${listed.status}`}`, listed.status);
       const endpoint = FB.chatEndpoint(spec, (listed.data.endpoints || []).map((e) => ({ name: e.name, state: e.state, task: e.task })));
-      if (!endpoint) throw I.badRequest('no chat model you can use is ready on this workspace, so Inspire cannot draft a vibe; write it yourself', 409);
+      if (!endpoint) throw I.badRequest('no chat model the App can use is ready on this workspace, so Inspire cannot draft a vibe; write the vibe by hand', 409);
       const [useCase, page] = await Promise.all([
         loadUseCase(req.dbHost, req.dbToken, ctx.warehouseId, ctx.catalog, ctx.schema, ctx.sid, ctx.useCaseId).catch(() => null),
         feedbackPage(req, ctx),
@@ -2360,7 +2360,7 @@ function registerImplementRoutes(app, deps) {
       const listed = await jsonOf(dbFetch, req.dbHost, token, '/api/2.0/serving-endpoints');
       if (!listed.ok) throw I.badRequest(`Inspire could not list the serving endpoints as the App: ${listed.data.message || listed.data.error || `HTTP ${listed.status}`}`, listed.status);
       const endpoint = FB.chatEndpoint({}, (listed.data.endpoints || []).map((e) => ({ name: e.name, state: e.state, task: e.task })));
-      if (!endpoint) throw I.badRequest('no chat model you can use is ready on this workspace, so Inspire cannot turn the description into a value; choose the value yourself', 409);
+      if (!endpoint) throw I.badRequest('no chat model the App can use is ready on this workspace, so Inspire cannot turn the description into a value; choose the value by hand', 409);
       const messages = MD.describeMessages({ text, columns, currencyColumn: String(req.body?.currency_column ?? '') });
       const got = await jsonOf(dbFetch, req.dbHost, token, `/serving-endpoints/${encodeURIComponent(endpoint)}/invocations`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages, max_tokens: 400, temperature: 0 }),

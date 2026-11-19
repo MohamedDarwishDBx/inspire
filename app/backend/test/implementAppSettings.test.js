@@ -510,7 +510,7 @@ test('the App look endpoint serves the shell\'s 13 palettes, and preflight check
     assert.equal(joined.status, 200, JSON.stringify(joined.data));
     assert.ok(joined.data.checks.app_access, 'the joined App must read the result table');
     assert.equal(joined.data.checks.app_name, undefined, 'joining an App never checks its name as a new one');
-    assert.equal(joined.data.checks.genie_spaces.detail, 'you can create Genie Agents');
+    assert.equal(joined.data.checks.genie_spaces.detail, 'the App can create Genie Agents');
   } finally {
     await srv.close();
   }

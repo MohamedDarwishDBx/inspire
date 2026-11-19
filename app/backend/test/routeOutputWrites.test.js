@@ -145,17 +145,21 @@ test('a volume needs a probe the App can create, read with the App token, and a 
   }
 });
 
-test('an App manager skips the write check, and the launch record says manager', async () => {
-  // HOME is not writable by the App. A manager's run must still start, because managers skip the App's write check.
+test('an App manager is checked like everyone else: a folder the App cannot write refuses the launch, and one it can write launches as passed (REQ-418: no manager skip)', async () => {
   const folders = { [HOME]: { id: 11, writers: [OWNER] } };
   S.reset({ notebookPresent: true, managers: [BOSS], folders });
-  const boss = await launch(`${HOME}/inspire_out`, { person: BOSS });
-  assert.equal(boss.status, 200, boss.text);
-  assert.deepEqual([S.state.launches[0].output_folder, S.state.launches[0].output_checked], [`${HOME}/inspire_out`, 'manager']);
-  assert.deepEqual(probes(), [], 'a manager skip runs no write probe');
+  const refused = await launch(`${HOME}/inspire_out`, { person: BOSS });
+  assert.equal(refused.status, 403, refused.text);
+  assert.equal(refused.data.error, APP_CANT_CREATE(`${HOME}/inspire_out`));
+  assert.deepEqual(submitted(), [], 'nothing is submitted');
+  S.reset({ notebookPresent: true, managers: [BOSS], folders: { [HOME]: { id: 11, writers: [OWNER, S.APP_SP] } } });
+  const ok = await launch(`${HOME}/inspire_out`, { person: BOSS });
+  assert.equal(ok.status, 200, ok.text);
+  assert.deepEqual([S.state.launches[0].output_folder, S.state.launches[0].output_checked], [`${HOME}/inspire_out`, 'passed']);
+  assert.ok(probes().length > 0, 'the App probe runs for a manager too');
 });
 
-test('a CAN MANAGE grant on the App through a nested group refuses a person outside it, and that group skips the write check', async () => {
+test('a CAN MANAGE grant on the App through a nested group refuses a person outside it, and that group is checked like everyone else', async () => {
   const folders = { [HOME]: { id: 11, writers: [OWNER] } };
   S.reset({ notebookPresent: true, managerGroups: ['app-admins'], personGroups: ['analysts'], groupParents: { analysts: ['data'] }, folders });
   const outside = await launch(`${HOME}/inspire_out`);
@@ -164,9 +168,9 @@ test('a CAN MANAGE grant on the App through a nested group refuses a person outs
   assert.deepEqual(submitted(), []);
   S.reset({ notebookPresent: true, managerGroups: ['app-admins'], personGroups: ['analysts', 'app-admins'], indirectGroups: ['app-admins'], folders });
   const nested = await launch(`${HOME}/inspire_out`);
-  assert.equal(nested.status, 200, nested.text);
-  assert.equal(S.state.launches[0].output_checked, 'manager');
-  assert.deepEqual(probes(), [], 'a manager skip runs no write probe');
+  assert.equal(nested.status, 403, `a nested manager is checked too, and the App cannot write there (REQ-418): ${nested.text}`);
+  assert.equal(nested.data.error, APP_CANT_CREATE(`${HOME}/inspire_out`));
+  assert.ok(probes().length > 0, 'the App probe runs for a nested manager too');
 });
 
 test('a launch with no person sign-in still runs as the App: no 401, the App token on every write check, and the shared folder when there is no own folder', async () => {
@@ -184,7 +188,7 @@ test('a launch with no person sign-in still runs as the App: no 401, the App tok
   assert.equal(S.state.createdJob.tasks[0].notebook_task.base_parameters['11_generation_path'], '/Workspace/Shared/demos');
 });
 
-test('the output folder check answers the same verdict a launch would, without launching anything, and says when a manager skipped it', async () => {
+test('the output folder check answers the same verdict a launch would, without launching anything, for a manager too', async () => {
   const ask = (person, path = `${HOME}/inspire_out`) => S.request('POST', '/api/output-folder/check', { person, body: { generation_path: path } });
   S.reset({ folders: { [HOME]: { id: 11, writers: [OWNER, S.APP_SP] } } });
   const writable = await ask(OWNER);
@@ -217,7 +221,9 @@ test('the output folder check answers the same verdict a launch would, without l
   assert.deepEqual(S.state.calls.filter((c) => c.path.startsWith('/api/2.1/jobs/') || c.statement.startsWith('INSERT')), []);
   S.reset({ folders, managers: [BOSS] });
   const boss = await ask(BOSS);
-  assert.deepEqual([boss.status, boss.data.checked], [200, 'manager'], 'must fail until the manager skip exists, see the report');
+  assert.equal(boss.status, 403, boss.text);
+  assert.equal(boss.data.error, APP_CANT_CREATE(`${HOME}/inspire_out`));
+  assert.deepEqual(S.state.created, [], 'the refused probe created nothing');
 });
 
 test('a launched run opens its output folder with the App token, for a passed check and for a manager skip of that exact folder', async () => {
