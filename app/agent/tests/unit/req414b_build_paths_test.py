@@ -252,10 +252,24 @@ def test_an_asset_with_no_uninstall_call_is_refused():
         shell_build.uninstall_requests([{"asset": "table"}])
 
 
-def test_the_approval_columns_are_added_with_the_quoting_the_notebook_passes_in():
-    stmts = shell_build.approval_ddl("c.s.orders", lambda name: f"`{name}`")
-    assert stmts == ["ALTER TABLE `c.s.orders` ADD COLUMN IF NOT EXISTS `approval_status` STRING",
-                     "ALTER TABLE `c.s.orders` ADD COLUMN IF NOT EXISTS `approval_note` STRING"]
+def test_the_result_table_name_is_quoted_part_by_part_in_postgres_form():
+    quote = lambda name: f'"{name}"'
+    assert shell_build.postgres_table("app_schema", "catalog.schema.loss_desk_out", quote) == '"app_schema"."loss_desk_out"'
+    with pytest.raises(ValueError, match="schema"):
+        shell_build.postgres_table("", "catalog.schema.t", quote)
+
+
+def test_the_approval_ddl_creates_the_table_with_its_columns_or_adds_the_missing_ones_and_never_fails_on_either():
+    quote = lambda name: f'"{name}"'
+    stmts = shell_build.approval_ddl("app_schema", "catalog.schema.loss_desk_out", quote)
+    assert stmts[0] == 'CREATE TABLE IF NOT EXISTS "app_schema"."loss_desk_out" ("approval_status" TEXT, "approval_note" TEXT)'
+    assert stmts[1].startswith('ALTER TABLE "app_schema"."loss_desk_out" ADD COLUMN IF NOT EXISTS "approval_status" TEXT')
+    assert all("IF NOT EXISTS" in stmt for stmt in stmts), "neither statement fails when the table is there or missing"
+
+
+def test_the_no_endpoint_line_is_the_plain_sentence_the_build_and_the_app_show():
+    assert shell_build.NO_ENDPOINT_LINE == ("No vector search endpoint is ready, so this use case matches with ai_query. "
+                                            "A workspace admin can create one to switch to AI Search.")
 
 
 def test_approve_and_reject_are_a_persons_click_and_the_agent_never_offers_them():

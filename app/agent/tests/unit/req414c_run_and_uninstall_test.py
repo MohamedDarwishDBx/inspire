@@ -51,14 +51,14 @@ class Recorder:
 
 
 def build(rec, kind, status, uc="uc-1", space="", result_table="c.s.t", columns=None, text_column="", notebook=NOTEBOOK,
-          domains=None, run_sql=None, ask=None, lines=None):
+          domains=None, run_sql=None, ask=None, lines=None, pg_schema="app_schema"):
     context = {"uc_id": uc, "kind_spec": {"kind": {"id": kind, "label": kind, "question": "How did it go?"},
                                           "columns": columns or {}},
                "asset_status": {"genie_space": {"id": space}} if space else {}, "result_table": result_table,
                "notebook_path": notebook, "text_column": text_column}
     domains = {} if domains is None else domains
     out = shell_build.build_for_context(shell_build.BuildApi(rec), context, status, ask or (lambda s, q: f"{s} answered"),
-                                        (lines if lines is not None else []).append, lambda n: f"`{n}`", run_sql, domains)
+                                        (lines if lines is not None else []).append, lambda n: f'"{n}"', run_sql, domains, pg_schema)
     return out, context, domains
 
 
@@ -101,7 +101,7 @@ def test_an_index_is_built_on_an_online_endpoint_with_its_detected_inputs():
 def test_without_an_online_endpoint_the_index_is_not_created_and_the_match_uses_ai_query():
     rec, lines = Recorder({("GET", "/api/2.0/vector-search/endpoints"): {"endpoints": []}}), []
     out, _ctx, _d = build(rec, "lookalikes", {"vector_search": "available"}, result_table="c.s.t", text_column="n", lines=lines)
-    assert out == {"path": "ai_query", "records": []} and not rec.paths("POST")
+    assert out["path"] == "ai_query" and out["records"] == [] and not rec.paths("POST")
     assert any("ai_query" in line for line in lines)
 
 
@@ -111,8 +111,8 @@ def test_an_agent_build_creates_its_job_in_the_jobs_format_after_the_approval_co
     assert out["path"] == "agent_job" and {"asset": "job", "job_id": 77} in context["asset_status"]["build_records"]
     job = next(b for m, p, b, _q in rec.calls if p == "/api/2.2/jobs/create")
     assert job["schedule"]["quartz_cron_expression"] == shell_build.DEFAULT_CRON and job["tasks"][0]["notebook_task"]["notebook_path"] == NOTEBOOK
-    assert statements == ["ALTER TABLE `c.s.orders` ADD COLUMN IF NOT EXISTS `approval_status` STRING",
-                          "ALTER TABLE `c.s.orders` ADD COLUMN IF NOT EXISTS `approval_note` STRING"]
+    assert statements[0] == 'CREATE TABLE IF NOT EXISTS "app_schema"."orders" ("approval_status" TEXT, "approval_note" TEXT)'
+    assert statements[1].startswith('ALTER TABLE "app_schema"."orders" ADD COLUMN IF NOT EXISTS "approval_status" TEXT')
 
 
 def test_an_agent_build_without_a_lakebase_connection_says_the_columns_were_not_added():
@@ -130,7 +130,7 @@ def test_an_agent_build_with_no_notebook_is_skipped_and_nothing_is_created():
 def test_the_ai_query_path_creates_nothing():
     rec = Recorder()
     out, _ctx, _d = build(rec, "lookalikes", {"vector_search": "unavailable"}, result_table="c.s.t")
-    assert out == {"path": "ai_query", "records": []} and rec.calls == []
+    assert out["path"] == "ai_query" and out["records"] == [] and rec.calls == []
 
 
 # --- REQ-354: Uninstall all removes what a build created, and leaves nothing behind -----------------------------------
@@ -221,3 +221,32 @@ def test_the_orchestrator_fallback_reaches_the_genie_helper_through_the_hook(ns)
     finally:
         ns["TECHNICAL_CONTEXT"]["ai_function_status"] = previous
     assert asked == [("space-a", "How?")]
+
+
+def test_without_an_online_endpoint_the_build_result_and_the_asset_status_carry_the_plain_line():
+    rec, lines = Recorder({("GET", "/api/2.0/vector-search/endpoints"): {"endpoints": []}}), []
+    out, context, _d = build(rec, "lookalikes", {"vector_search": "available"}, result_table="c.s.t", text_column="n", lines=lines)
+    assert out["note"] == shell_build.NO_ENDPOINT_LINE
+    assert context["asset_status"]["build_note"] == shell_build.NO_ENDPOINT_LINE
+    assert not rec.paths("POST"), "no endpoint is created, and no index is posted without one"
+
+
+def test_a_build_with_no_lakebase_schema_does_not_run_the_approval_ddl():
+    statements, lines = [], []
+    build(Recorder(), "watch_act_agent", {}, result_table="c.s.orders", run_sql=statements.extend, pg_schema="", lines=lines)
+    assert statements == [] and any("were not added" in line for line in lines)
+
+
+def test_the_approval_ddl_is_idempotent_on_a_table_that_is_missing_and_one_that_exists():
+    """The DDL is safe to run first or second: CREATE ... IF NOT EXISTS creates the missing table with the columns, and the ALTER adds
+    them to an existing table that lacks them. Run twice, nothing fails."""
+    statements = []
+    build(Recorder(), "watch_act_agent", {}, result_table="c.s.orders", run_sql=statements.extend)
+    build(Recorder(), "watch_act_agent", {}, result_table="c.s.orders", run_sql=statements.extend)
+    assert len(statements) == 4 and all("IF NOT EXISTS" in stmt for stmt in statements)
+
+
+def test_the_orchestrator_answers_are_kept_on_the_asset_status_for_the_app_to_read():
+    out, context, _d = build(Recorder(), "cross_domain_assistant", {"supervisor_agents": "unavailable"}, space="space-a",
+                             ask=lambda s, q: f"{s} answered")
+    assert context["asset_status"]["orchestrator_answers"] == {"space-a": {"answer": "space-a answered", "error": ""}}

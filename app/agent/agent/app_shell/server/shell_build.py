@@ -16,6 +16,8 @@ SUPERVISOR_AGENT_PATH = "/api/2.1/supervisor-agents/{supervisor_id}"
 SUPERVISOR_TOOL_ITEM_PATH = "/api/2.1/supervisor-agents/{supervisor_id}/tools/{tool_id}"
 VECTOR_INDEXES_PATH = "/api/2.0/vector-search/indexes"
 VECTOR_ENDPOINTS_PATH = "/api/2.0/vector-search/endpoints"
+NO_ENDPOINT_LINE = ("No vector search endpoint is ready, so this use case matches with ai_query. "
+                  "A workspace admin can create one to switch to AI Search.")
 DEFAULT_CRON = "0 0 7 * * ?"
 DEFAULT_TIMEZONE = "UTC"
 JOBS_CREATE_PATH = "/api/2.2/jobs/create"
@@ -228,14 +230,23 @@ def rows_ready_to_act(rows) -> list:
     return [row for row in rows or [] if str(row.get(APPROVAL_COLUMN) or "").strip() == APPROVED]
 
 
-def approval_ddl(table: str, quote) -> list:
-    """The statements that add the approval columns to the agent job's Lakebase table. `quote` is the notebook's identifier quoting
-    (implement_lakebase_ident), passed in so the rule is not written twice."""
-    if not str(table or "").strip():
-        raise ValueError("the approval columns need the Lakebase table they are added to")
-    target = quote(table)
-    return [f"ALTER TABLE {target} ADD COLUMN IF NOT EXISTS {quote(APPROVAL_COLUMN)} STRING",
-            f"ALTER TABLE {target} ADD COLUMN IF NOT EXISTS {quote(APPROVAL_NOTE_COLUMN)} STRING"]
+def postgres_table(schema: str, result_table: str, quote) -> str:
+    """The Lakebase (Postgres) name of a use case's result table: each part quoted, schema.table. The Unity Catalog name's catalog
+    is not used; the table keeps its own name in the App's Lakebase schema."""
+    table = str(result_table or "").split(".")[-1].strip()
+    if not str(schema or "").strip() or not table:
+        raise ValueError("the approval columns need the Lakebase schema and the result table name")
+    return f"{quote(str(schema).strip())}.{quote(table)}"
+
+
+def approval_ddl(schema: str, result_table: str, quote) -> list:
+    """Idempotent DDL for the approval columns on the result table's Lakebase copy. CREATE TABLE IF NOT EXISTS creates the table with
+    the approval columns when it is missing; ADD COLUMN IF NOT EXISTS adds them when it exists without them. Either way no statement
+    fails on a missing or already-complete table, and the table name is quoted part by part."""
+    target = postgres_table(schema, result_table, quote)
+    status, note = quote(APPROVAL_COLUMN), quote(APPROVAL_NOTE_COLUMN)
+    return [f"CREATE TABLE IF NOT EXISTS {target} ({status} TEXT, {note} TEXT)",
+            f"ALTER TABLE {target} ADD COLUMN IF NOT EXISTS {status} TEXT, ADD COLUMN IF NOT EXISTS {note} TEXT"]
 
 
 def run_build_paths(api, plan: dict, ask, log) -> dict:
@@ -335,19 +346,21 @@ class BuildApi:
         return self.call(method, path, body, query)
 
 
-def build_for_context(api, context: dict, status: dict, ask, log, quote, run_sql, domains: dict) -> dict:
+def build_for_context(api, context: dict, status: dict, ask, log, quote, run_sql, domains: dict, pg_schema: str = "") -> dict:
     """One use case's build, from the App build's context. The path comes from the probe status. The index takes its inputs from the
-    kind's detected roles and an ONLINE endpoint; the agent job takes the approval columns on the use case's own result table (it exists
-    after the run) through `run_sql` (None when the build has no Lakebase connection). `domains` collects the domain Genie spaces built
-    so far in this run; a supervisor attaches them all. Records of what was created go on the asset status for uninstall."""
+    kind's detected roles and an ONLINE endpoint; with no endpoint the match uses ai_query and the plain line NO_ENDPOINT_LINE is
+    returned and kept as the build note. The agent job adds the approval columns to the result table's Lakebase copy (in pg_schema)
+    through `run_sql` (None when the build has no Lakebase connection). `domains` collects the domain Genie spaces built so far in
+    this run. Records of what was created go on the asset status for uninstall."""
     kind = (context.get("kind_spec") or {}).get("kind") or {}
     uc_id = str(context.get("uc_id") or "")
-    space = str(((context.get("asset_status") or {}).get("genie_space") or {}).get("id") or "")
+    asset = context.setdefault("asset_status", {})
+    space = str((asset.get("genie_space") or {}).get("id") or "")
     if space:
         domains.setdefault(space, f"{kind.get('label') or 'domain'} ({uc_id})")
     path = choose_path(kind.get("id") or "", status.get("supervisor_agents"), status.get("vector_search"))
     if path in ("none", "ai_query"):
-        return {"path": path, "records": []}
+        return {"path": path, "records": [], "note": ""}
     inputs = {"domains": sorted(domains.items()), "question": kind.get("question") or "", "result_table": context.get("result_table") or "",
               "notebook_path": context.get("notebook_path") or ""}
     if path == "vector_index":
@@ -357,22 +370,24 @@ def build_for_context(api, context: dict, status: dict, ask, log, quote, run_sql
         except Exception:
             inputs["endpoint"] = ""
         if not inputs["endpoint"]:
-            path_note = "no ONLINE vector search endpoint is available to build the index on, so the match uses ai_query"
-            log(f"[BUILD-PATH FIRED] {uc_id}: {path_note}")
-            return {"path": "ai_query", "records": []}
+            log(f"[BUILD-PATH FIRED] {uc_id}: {NO_ENDPOINT_LINE}")
+            asset["build_note"] = NO_ENDPOINT_LINE
+            return {"path": "ai_query", "records": [], "note": NO_ENDPOINT_LINE}
     name = "inspire_" + re.sub(r"[^a-z0-9_]+", "_", uc_id.lower()).strip("_")
     plan, skipped = plan_for(path, kind.get("id") or "", name, inputs)
     if plan is None:
         log(f"[BUILD-PATH FIRED] {uc_id}: {skipped}")
-        return {"path": path, "records": []}
+        return {"path": path, "records": [], "note": skipped}
     out = run_build_paths(api, plan, ask, log)
+    if path == "orchestrator_job":
+        asset["orchestrator_answers"] = out["result"]["answers"]
     if path == "agent_job":
-        if run_sql is None:
+        if run_sql is None or not str(pg_schema or "").strip():
             log(f"[BUILD-PATH FIRED] {uc_id}: the approval columns were not added: this build has no Lakebase connection")
         else:
-            run_sql(approval_ddl(plan["lakebase_table"], quote))
-    context.setdefault("asset_status", {})["build_records"] = list(out["records"])
-    return {"path": path, "records": out["records"]}
+            run_sql(approval_ddl(pg_schema, context.get("result_table") or "", quote))
+    asset["build_records"] = list(out["records"])
+    return {"path": path, "records": out["records"], "note": ""}
 
 
 def fallback_sentence(path: str) -> str:
