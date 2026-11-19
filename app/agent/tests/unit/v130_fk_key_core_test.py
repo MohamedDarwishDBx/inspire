@@ -134,8 +134,12 @@ def test_the_catch_all_keeps_reference_tables_a_foreign_key_path_joins_and_sends
     assert "join through them where the foreign keys below require it: c.s.household_demographics" in instruction
 
 
-def test_the_catch_all_still_excludes_a_reference_table_nothing_joins(agent_ns):
+def test_the_catch_all_gives_a_reference_table_nothing_joins_one_standalone_retry(agent_ns):
+    # REQ-413 R4 (D-COV-1A): no business table is silently dropped. A master or reference table with no join path
+    # gets one standalone retry, stated as standalone in the prompt, instead of being excluded from the gate.
     obj, new, sent = _catchall(agent_ns, {})
     logs = " ".join(m for _level, m in obj.logger.records)
-    assert "excluded 2 MASTER/REFERENCE tables with no foreign key path and no column-name overlap" in logs
-    assert sent == [] and new == []
+    assert "2 MASTER/REFERENCE tables have no join path" in logs
+    retried = sorted(t for batch, _feedback in sent for t in batch)
+    assert retried == ["c.s.customer_demographics", "c.s.income_band"]
+    assert any("CATCH-ALL STANDALONE MASTER/REFERENCE TABLES" in fb for _batch, fb in sent)
