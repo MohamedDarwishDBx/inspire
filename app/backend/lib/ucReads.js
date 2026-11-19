@@ -19,7 +19,8 @@ const FALLBACK_FOLDER = 'inspire_output';
 const SWEEP_LIMIT = 20;
 const SCOPE_RE = /does not have required scopes|required scope/i;
 const SCOPE_VERDICT = {
-  reason: "Inspire's sign-in for you lacks a scope this check needs",
+  kind: 'scope',
+  reason: "the App's sign-in lacks a scope this check needs",
   fix: 'ask an App manager to re-run the Inspire installer, which adds the scopes Inspire needs',
 };
 
@@ -369,10 +370,12 @@ async function workspaceVerdict(dbFetch, host, token, path) {
   const { at, got } = await nearestExisting((p) => call(`/api/2.0/workspace/get-status?path=${encodeURIComponent(p)}`), path, '/');
   if (!got.ok) {
     if (scopeMissing(got)) return SCOPE_VERDICT;
-    if ([403, 404].includes(got.status)) return { reason: `you cannot see ${at}`, fix, at };
+    if ([403, 404].includes(got.status)) return { kind: 'hidden', reason: `the App cannot see ${at}`, fix: 'pick a folder the App can see', at };
     throw failed(got);
   }
-  if (String(got.data.object_type || '').toUpperCase() !== 'DIRECTORY') return { reason: `${at} is not a folder`, fix, at };
+  if (String(got.data.object_type || '').toUpperCase() !== 'DIRECTORY') {
+    return { kind: 'notFolder', reason: `${at} is not a folder`, fix: 'pick a folder, not a notebook or a file', at };
+  }
   return probeIn({
     at,
     make: (probe) => call('/api/2.0/workspace/mkdirs', json('POST', { path: probe })),
@@ -382,7 +385,7 @@ async function workspaceVerdict(dbFetch, host, token, path) {
       return listed.ok && Array.isArray(listed.data.objects)
         ? listed.data.objects.filter(Boolean).map((o) => ({ path: o.path, directory: String(o.object_type || '').toUpperCase() === 'DIRECTORY' })) : [];
     },
-    denied: { reason: `you cannot create anything in ${at}`, fix, at },
+    denied: { kind: 'denied', reason: `the App cannot create anything in ${at}`, fix, at },
   });
 }
 
@@ -395,7 +398,10 @@ async function volumeVerdict(dbFetch, host, token, path) {
   const { at, got } = await nearestExisting((p) => call(fsDirectory(p), { method: 'HEAD' }), path, root);
   if (!got.ok) {
     if (scopeMissing(got)) return SCOPE_VERDICT;
-    if ([403, 404].includes(got.status)) return { reason: at === root ? `the volume ${full} does not exist or you cannot see it` : `you cannot see ${at}`, fix, at };
+    if ([403, 404].includes(got.status)) {
+      return at === root ? { kind: 'hidden', reason: `the volume ${full} does not exist or the App cannot see it`, fix: 'create the volume, or ask your data owner for access to it', at }
+        : { kind: 'hidden', reason: `the App cannot see ${at}`, fix: 'pick a volume folder the App can see', at };
+    }
     throw failed(got);
   }
   return probeIn({
@@ -407,7 +413,7 @@ async function volumeVerdict(dbFetch, host, token, path) {
       return listed.ok && Array.isArray(listed.data.contents)
         ? listed.data.contents.filter(Boolean).map((c) => ({ path: c.path, directory: c.is_directory === true })) : [];
     },
-    denied: { reason: `you hold no WRITE VOLUME on the volume ${full}`, fix, at },
+    denied: { kind: 'volumeDenied', reason: `the App holds no WRITE VOLUME on the volume ${full}`, fix, at },
   });
 }
 
@@ -456,12 +462,20 @@ async function folderPlan(dbFetch, req, folder, { appToken, manager = false }) {
   return { folder, refused: null, app: await appWrites(dbFetch, req, folder, appToken) };
 }
 
+// Every reason names the App and gives the fix for that reason only (a hidden folder is not a missing one, a scope is not a grant).
 function appCantWriteText(folder, verdict) {
-  if (folder.startsWith('/Volumes/')) {
-    return `The Inspire App can't write to ${folder}, so the run saves no files there. Ask your data owner to give the App WRITE VOLUME on it.`;
+  const tail = 'so the run saves no files there';
+  const noun = folder.startsWith('/Volumes/') ? 'volume' : 'folder';
+  if (verdict.kind === 'scope') return `The Inspire App can't write to ${folder}, ${tail}: ${verdict.reason}. Ask an App manager to re-run the Inspire installer, which adds the scopes Inspire needs.`;
+  if (verdict.kind === 'notFolder') return `${verdict.at} is not a folder, ${tail}. Pick a folder, not a notebook or a file.`;
+  if (verdict.kind === 'hidden') {
+    if (verdict.missing) return `${folder} does not exist yet, and the Inspire App cannot see ${verdict.at} to create it, ${tail}. Pick a ${noun} the App can see.`;
+    return `The Inspire App can't write to ${folder}, ${tail}: the App cannot see it. Pick a ${noun} the App can see.`;
   }
-  if (!verdict.missing) return `The Inspire App can't write to ${folder}, so the run saves no files there. Ask an App manager to give the App CAN MANAGE on it.`;
-  return `${folder} does not exist yet, and the Inspire App can't create it, so the run saves no files there. Create ${folder}, then give the App CAN MANAGE on it.`;
+  if (verdict.kind === 'volumeDenied') return `The Inspire App can't write to ${folder}, ${tail}. Ask your data owner to give the App WRITE VOLUME on it.`;
+  if (folder.startsWith('/Volumes/')) return `The Inspire App can't write to ${folder}, ${tail}. Ask your data owner to give the App WRITE VOLUME on it.`;
+  if (!verdict.missing) return `The Inspire App can't write to ${folder}, ${tail}. Ask an App manager to give the App CAN MANAGE on it.`;
+  return `${folder} does not exist yet, and the Inspire App can't create it, ${tail}. Create ${folder}, then give the App CAN MANAGE on it.`;
 }
 
 const folderScore = (plan) => (plan.refused ? 0 : plan.app.verdict ? 1 : 2);

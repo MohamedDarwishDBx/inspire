@@ -134,6 +134,7 @@ let SERVICE_TOKEN = (process.env.DATABRICKS_TOKEN || '').trim();
 // SP OAuth credentials — Databricks App runtime injects these automatically
 // when a service principal resource is declared in app.yaml.
 // Fallback: installer may also set these via SP_CLIENT_ID/SP_CLIENT_SECRET env vars.
+const LAUNCHER_UNKNOWN = 'unknown';
 const SP_CLIENT_ID = process.env.DATABRICKS_CLIENT_ID || process.env.SP_CLIENT_ID || '';
 const SP_CLIENT_SECRET = process.env.DATABRICKS_CLIENT_SECRET || process.env.SP_CLIENT_SECRET || '';
 let spTokenCache = '';    // cached OAuth token
@@ -1121,10 +1122,10 @@ async function triggerInspireNotebookJob(host, token, { params, notebook_path, c
   rememberViewer(runId, viewer);
   const jobRunUrl = databricksJobRunUrl(host, job_id, runId);
   console.log(`✅ Run submitted: ${runId}, job_id=${job_id}, notebook: ${resolvedPath}`);
-  const launch = launchedBy
-    ? await recordLaunchOrStop(host, token, { runId, jobId: job_id, runType: inspireRunType, inspireDatabase: launchDatabase, sessionId: launchSession, openedSession, launchedBy,
-      outputFolder, outputChecked }, token)
-    : { recorded: false, note: 'no signed-in person launched this run, so only App managers can cancel it' };
+  // Every launch is recorded. With no signed-in person the launcher is recorded as unknown, which no person matches, so only App managers can stop it.
+  const launch = await recordLaunchOrStop(host, token, { runId, jobId: job_id, runType: inspireRunType, inspireDatabase: launchDatabase, sessionId: launchSession,
+    openedSession, launchedBy: launchedBy || LAUNCHER_UNKNOWN, outputFolder, outputChecked }, token);
+  if (!launchedBy) launch.note = 'no signed-in person launched this run, so the launcher is recorded as unknown and only App managers can cancel it';
   if (launch.warning) warnings.push(launch.warning);
   return {
     run_id: runId,

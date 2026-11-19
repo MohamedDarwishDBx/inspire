@@ -98,14 +98,19 @@ async function withInspire(run, broken = {}) {
 }
 
 const signedIn = { 'x-forwarded-access-token': PERSON, 'x-forwarded-email': PERSON_EMAIL };
+// A non-JSON answer names its status and the start of its body, so a recurrence says what answered instead of a bare parse error.
+const jsonOf = async (resp, what) => {
+  const text = await resp.text();
+  try { return JSON.parse(text); } catch (err) { throw new Error(`${what}: HTTP ${resp.status} answered non-JSON: ${text.slice(0, 200)}`); }
+};
 async function get(url, path, headers = signedIn) {
   const resp = await fetch(`${url}${path}`, { headers });
-  return { status: resp.status, data: await resp.json() };
+  return { status: resp.status, data: await jsonOf(resp, `GET ${path}`) };
 }
 async function launch(url, params, headers = signedIn) {
   const resp = await fetch(`${url}/api/run`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ params: { '00_business_name': 'Acme', '02_inspire_database': 'main._inspire', '11_generation_path': '/Shared/demos', ...params } }) });
-  return { status: resp.status, data: await resp.json() };
+  return { status: resp.status, data: await jsonOf(resp, 'POST /api/run') };
 }
 const ucCalls = (workspace) => workspace.calls.filter((c) => c.path.startsWith('/api/2.1/unity-catalog') || c.path === '/api/2.0/sql/statements');
 const launched = (workspace) => workspace.calls.filter((c) => c.path.startsWith('/api/2.1/jobs/'));

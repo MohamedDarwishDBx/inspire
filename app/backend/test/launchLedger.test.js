@@ -94,8 +94,12 @@ test('a launch with no signed-in person starts as the App, is recorded with no l
   S.reset({ notebookPresent: true });
   const got = await S.request('POST', '/api/run', { signedIn: false, body: runParams('5004') });
   assert.equal(got.status, 200, got.text);
-  assert.equal(got.data.launcher_recorded, false);
-  assert.equal(got.data.launcher_note, 'no signed-in person launched this run, so only App managers can cancel it');
+  // Every launch is recorded: with no person the launcher is recorded as unknown, so only App managers can stop it.
+  assert.equal(got.data.launcher_recorded, true);
+  assert.match(got.data.launcher_note, /launcher is recorded as unknown and only App managers can cancel it/);
+  const row = S.state.calls.find((c) => /INSERT INTO .*__inspire_launch/.test(String(c.statement || c.sql || '')));
+  assert.ok(row, 'the launch row is written');
+  assert.ok(JSON.stringify(row.parameters || row).includes('unknown'), 'the launcher is recorded as unknown');
   const jobCalls = S.state.calls.filter((c) => c.path.startsWith('/api/2.1/jobs/'));
   assert.deepEqual(jobCalls.map((c) => [c.path, c.token]), [['/api/2.1/jobs/create', S.APP_TOKEN], ['/api/2.1/jobs/run-now', S.APP_TOKEN]]);
 });
