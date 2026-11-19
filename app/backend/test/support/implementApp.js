@@ -105,7 +105,7 @@ function makeApp(overrides = {}, { mount } = {}) {
           const got = await state.workspace({ token, path, method: String(opts.method || 'GET').toUpperCase(), body: opts.body ? JSON.parse(opts.body) : null });
           if (got !== undefined) return json(got[0], got[1] || 200);
         }
-        if (/^\/api\/2\.1\/unity-catalog\/policies\/table\//.test(path)) {
+        if (/^\/api\/2\.1\/unity-catalog\/policies\/TABLE\//i.test(path)) {
           const denied = typeof state.abacUnreadable === 'function' ? state.abacUnreadable(token)
             : state.abacUnreadable && (!state.abacUnreadableAppOnly || token === (state.dbToken || 'tok'));
           return denied ? json({ error_code: 'PERMISSION_DENIED', message: 'User does not have READ METADATA on Table' }, 403)
@@ -123,7 +123,8 @@ function makeApp(overrides = {}, { mount } = {}) {
           const [data, status = 200] = state.responses[routed];
           return json(data, status);
         }
-        if (path.includes('/scim/v2/Me')) return json(state.me);
+        // REQ-418: the App's own token answers as the App's service principal; a person's token answers as the person.
+        if (path.includes('/scim/v2/Me')) return json(token === (state.dbToken || 'tok') ? (state.appMe || { applicationId: state.builtAppSp || 'app-sp-id', displayName: 'inspire-manual' }) : state.me);
         if (path.startsWith('/api/2.0/permissions/sql/warehouses/')) {
           return json(state.warehousePermissions, state.warehousePermissionsStatus || 200);
         }

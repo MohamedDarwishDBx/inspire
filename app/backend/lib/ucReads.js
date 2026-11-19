@@ -14,7 +14,6 @@ const UNREADABLE_SHOWN = 10;
 const SCHEMAS_AT_ONCE = 8;
 const SYSTEM_SCHEMA = 'information_schema';
 const UC = '/api/2.1/unity-catalog';
-const WRITE_NO_SIGN_IN = "Inspire needs your sign-in to check the output folder. Reload the App and try again.";
 const PROBE_PREFIX = '.inspire_write_check_';
 const FALLBACK_FOLDER = 'inspire_output';
 const SWEEP_LIMIT = 20;
@@ -546,7 +545,7 @@ const sharedFallbackText = (home, shared, scope) =>
   `Inspire cannot save to your own folder ${home}${scope ? SCOPE_REASON : ''}, so it saves to ${shared}, a shared folder that everyone in the workspace can open.`;
 
 async function ownFolderPreview(dbFetch, req, home, fallback, appId) {
-  if (!P.personTokenOf(req)) return planVerdict({ folder: home, refused: { status: 401, message: WRITE_NO_SIGN_IN, unwritable: [] } });
+  // REQ-418: sharing the person's own folder never blocks a run. With no sign-in of the person, or no share, the run uses the shared folder and says so.
   const ready = await ownFolderShareable(dbFetch, req, home, appId);
   if (ready.ok) return { refused: null, folder: home, generationPath: workspaceFolderPath(home), warnings: [], details: [] };
   return { refused: null, folder: fallback, generationPath: workspaceFolderPath(fallback), warnings: [sharedFallbackText(home, fallback, ready.scope)], details: ready.details };
@@ -586,7 +585,6 @@ module.exports = {
   RUN_NO_APP_TOKEN,
   nearestExisting,
   UNREADABLE_SHOWN,
-  WRITE_NO_SIGN_IN,
   PROBE_PREFIX,
   listCatalogs,
   listSchemas,

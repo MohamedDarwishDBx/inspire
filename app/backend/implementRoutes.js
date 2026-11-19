@@ -229,10 +229,8 @@ function registerImplementRoutes(app, deps) {
   }
 
 
-  async function buildsAsAnother(req) {
-    const person = req.dbToken;
-    return Boolean(person && person !== await appTokenOf(req));
-  }
+  // The App's service principal as the build names it: its display name, else its application id.
+  const builderLabelOf = (me) => String((me && (me.displayName || me.applicationId)) || '').trim();
 
   async function loadBuilderPrincipal(req) {
     const got = await readMeFor(req)(await appTokenOf(req));
@@ -444,12 +442,15 @@ function registerImplementRoutes(app, deps) {
       elsewhere ? sqlRows(req.dbHost, req.dbToken, warehouseId, I.outputAccessStatement(modelName)) : null,
       loadResultTableHolder(req, warehouseId, catalog, schema, table),
     ]);
-    const person = req.dbToken;
-    const [builder, createsSchema] = await Promise.all([buildsAsAnother(req),
-      I.schemaNotCreated(rows) ? createsUseCaseSchema(req, warehouseId, table, useCaseId) : false]);
-    const access = I.outputAccess(rows, table, { builder, createsSchema });
+    // REQ-418: whether the person can grant the App access is read with their own sign-in (the grant authority); the App reads the rest.
+    const person = P.forwardedTokenOf(req) || req.dbToken;
+    // REQ-418: every build runs as the App's service principal, so the App is the builder of the result table.
+    const builder = true;
+    const createsSchema = I.schemaNotCreated(rows) ? await createsUseCaseSchema(req, warehouseId, table, useCaseId) : false;
+    const builderName = builderLabelOf(await loadBuilderPrincipal(req));
+    const access = I.outputAccess(rows, table, { builder, createsSchema, identity: builderName });
     const model = I.trainsModel(useCase)
-      ? I.modelAccess(elsewhere ? modelRows : rows, modelName, { builder, createsSchema: !elsewhere && createsSchema }) : null;
+      ? I.modelAccess(elsewhere ? modelRows : rows, modelName, { builder, createsSchema: !elsewhere && createsSchema, identity: builderName }) : null;
     const warehouse = await appWarehouseCheck(req, warehouseId, access.identity, options.warehouseName);
     const own = Boolean(options.appWarehouse) && options.appWarehouse !== warehouseId;
     const appWarehouse = own ? await appWarehouseCheck(req, options.appWarehouse, access.identity, '', true) : warehouse;
@@ -1313,7 +1314,8 @@ function registerImplementRoutes(app, deps) {
       const warehouseId = warehouseOf(req);
       const kind = q(req, 'kind');
       if (!I.IMPLEMENT_GRANT_KINDS.includes(kind)) throw I.badRequest(`kind must be one of ${I.IMPLEMENT_GRANT_KINDS.join(', ')}`);
-      const token = req.dbToken;
+      // REQ-418: a grant is the signed-in person's own act (their GRANT right), so it runs with their sign-in, never the App's token.
+      const token = P.forwardedTokenOf(req);
       if (!token) throw I.badRequest(I.IMPLEMENT_GRANT_NO_SIGN_IN, 401);
       if (kind === 'new_apps') {
         const table = q(req, 'table');
@@ -1434,7 +1436,8 @@ function registerImplementRoutes(app, deps) {
         await executeSql(req.dbHost, token, warehouseId, tagged)
           .catch((err) => warnings.push(`Inspire could not tag ${catalog}.${schema}: ${String((err && err.message) || err).slice(0, 200)}`));
       }
-      if (await buildsAsAnother(req)) {
+      {
+        // REQ-418: the build runs as the App's service principal, which is the identity the use case schema is granted to.
         const builder = await loadBuilderPrincipal(req);
         const grant = I.useCaseSchemaBuilderGrant(catalog, schema, builder.applicationId || builder.userName);
         const { failed } = grant ? await runPersonGrants(req, token, warehouseId, [grant]) : { failed: ['the identity Inspire builds as could not be read'] };
@@ -1702,7 +1705,7 @@ function registerImplementRoutes(app, deps) {
     }
     if (!output.ok) throw I.badRequest(output.write.ok ? output.safety.detail : output.write.detail, 403);
     if (output.grant.ok || !planned.sharing.principals.length) return { spec: planned, warnings: [] };
-    const who = (await buildsAsAnother(req)) ? 'it' : 'you';
+    const who = 'it';
     return {
       spec: { ...planned, sharing: { ...planned.sharing, principals: [] } },
       warnings: [`Built without sharing: ${output.grant.detail}. Share ${output.table} once ${who} can.`],

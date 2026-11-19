@@ -21,7 +21,7 @@ function workspace({ policy = {} } = {}) {
   const calls = [];
   const dbFetch = async (host, token, path) => {
     calls.push({ token, path });
-    if (path.includes('/policies/table/')) return token === SP ? reply(200, policy) : reply(403, { error_code: 'PERMISSION_DENIED', message: "User does not have READ METADATA on Table 'main.sales.orders'." });
+    if (path.includes('/policies/TABLE/')) return token === SP ? reply(200, policy) : reply(403, { error_code: 'PERMISSION_DENIED', message: "User does not have READ METADATA on Table 'main.sales.orders'." });
     if (path.includes('/unity-catalog/tables/')) return token === SP ? reply(200, { full_name: TABLE }) : reply(403, { error_code: 'PERMISSION_DENIED', message: "User does not have SELECT on Table 'main.sales.orders'." });
     if (path.endsWith('/Me')) return reply(200, { userName: 'builder@example.com', displayName: 'Builder' });
     return reply(404, {});
@@ -47,7 +47,7 @@ test('the App service principal decides what a run reads, not the person (every 
 });
 
 test('a source with a row filter is reported as policied, and one without is not', async () => {
-  const withFilter = workspace({ policy: { row_filter: { function_name: 'main.sales.region_filter' } } });
+  const withFilter = workspace({ policy: { policies: [{ policy_type: 'POLICY_TYPE_ROW_FILTER', row_filter: { function_name: 'main.sales.region_filter' } }] } });
   const SA = createSourceAccess({ executeSql: async () => [], sqlResultToObjects: (rows) => rows, dbFetch: withFilter.dbFetch,
     appToken: async () => SP, logger: { warn: () => {} } });
   const req = { dbHost: 'https://ws.example', dbToken: SP, dbTokenKind: 'app', headers: {} };
@@ -63,12 +63,12 @@ test('a source with a row filter is reported as policied, and one without is not
 });
 
 test('the policy read of a source runs with the App token, never the person token (one detector: the same read REQ-417 uses)', async () => {
-  const { dbFetch, calls } = workspace({ policy: { policies: [{ name: 'mask' }] } });
+  const { dbFetch, calls } = workspace({ policy: { policies: [{ policy_type: 'POLICY_TYPE_COLUMN_MASK', column_mask: { function_name: 'main.sales.mask_fn' } }] } });
   const SA = createSourceAccess({ executeSql: async () => [], sqlResultToObjects: (rows) => rows, dbFetch, appToken: async () => SP,
     logger: { warn: () => {} } });
   const req = { dbHost: 'https://ws.example', dbToken: SP, dbTokenKind: 'app', headers: { 'x-forwarded-access-token': PERSON } };
   await SA.sourceAccess(req, 'wh1', [TABLE]);
-  const policyCalls = calls.filter((c) => c.path.includes('/policies/table/'));
+  const policyCalls = calls.filter((c) => c.path.includes('/policies/TABLE/'));
   assert.ok(policyCalls.length > 0);
   assert.deepEqual([...new Set(policyCalls.map((c) => c.token))], [SP]);
 });

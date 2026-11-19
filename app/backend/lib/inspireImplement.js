@@ -1,6 +1,6 @@
 const { joinSentences } = require('./sentences');
 const { appShellCatalog } = require('./appShell');
-const { IMPLEMENT_RUN_AS_PARAM, IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, useCaseNameTag, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
+const { IMPLEMENT_RUN_ID_PARAM, parseMaybeJson, resourceTagKey, useCaseNameTag, resourceTagValue, withInspireInstallParams } = require('./inspireJobParams');
 const { parseExactJson } = require('./exactJson');
 const { permissionRequired } = require('./permissions');
 const { moneyRuleProblems, moneyRuleClean } = require('./moneyRule');
@@ -3106,7 +3106,8 @@ function schemaAccess(rows, t, options = {}) {
   const mine = list.filter((r) => r.mine === true || str(r.mine).toLowerCase() === 'true');
   const holds = (levels, privilege) => mine.some((r) => levels.includes(r.level)
     && ['OWNER', 'ALL PRIVILEGES', privilege].includes(privilegeOf(r.privilege)));
-  const access = { list, owner, mine, holds, identity: str((list[0] || {}).me), needs: [], creates: '' };
+  // REQ-418: the identity a build checks is the App's service principal, named by the caller; otherwise the rows' own identity.
+  const access = { list, owner, mine, holds, identity: str(options.identity || (list[0] || {}).me), needs: [], creates: '' };
   if (!owner('catalog')) return { ...access, missing: `catalog ${t.catalog} does not exist or you have no access to it` };
   const creates = !owner('schema') && options.createsSchema === true;
   if (!owner('schema') && !creates) {

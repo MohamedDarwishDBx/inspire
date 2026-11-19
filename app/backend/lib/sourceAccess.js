@@ -5,15 +5,20 @@ const { redactSecrets } = require('./redact');
 const { permissionRequired } = require('./permissions');
 
 // REQ-418: the ABAC policy read (the same read REQ-417 checks READ METADATA with) says whether a table has a row filter or a column mask.
-// Only those tables need the per-user identity choice in the build wizard, so the policy body is read once, here, for both answers.
-function policiesOf(body) {
-  const data = body && typeof body === 'object' ? body : {};
-  const listed = Array.isArray(data.policies) ? data.policies : [];
-  return listed.length > 0 || Boolean(data.row_filter) || (Array.isArray(data.column_masks) && data.column_masks.length > 0);
+// Documented shape (Unity Catalog, "List policies"): { policies: [{ policy_type, row_filter, column_mask, ... }], next_page_token }, with
+// policy_type POLICY_TYPE_ROW_FILTER | POLICY_TYPE_COLUMN_MASK | POLICY_TYPE_DENY | POLICY_TYPE_GRANT. Only a row filter or column mask makes a
+// table policied; a deny or grant policy does not. Every page is read until next_page_token is absent.
+const ROW_OR_MASK_POLICY_TYPES = ['POLICY_TYPE_ROW_FILTER', 'POLICY_TYPE_COLUMN_MASK'];
+const POLICY_PAGE_CAP = 20;
+
+function policyIsRowOrMask(policy) {
+  const p = policy && typeof policy === 'object' ? policy : {};
+  return ROW_OR_MASK_POLICY_TYPES.includes(p.policy_type) || Boolean(p.row_filter) || Boolean(p.column_mask);
 }
 
-function policyPath(table) {
-  return `/api/2.1/unity-catalog/policies/table/${encodeURIComponent(table)}`;
+function policyPath(table, pageToken = '') {
+  const query = pageToken ? `?page_token=${encodeURIComponent(pageToken)}` : '';
+  return `/api/2.1/unity-catalog/policies/TABLE/${encodeURIComponent(table)}${query}`;
 }
 
 
@@ -45,15 +50,22 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
   // { unreadable, policied }: whether the App could read the table's ABAC policies, and whether the table has a row filter or column mask.
   async function abacRead(req, app, table) {
     try {
-      const resp = await dbFetch(req.dbHost, app, policyPath(table));
-      if (resp.status === 404) return { unreadable: false, policied: false };
-      if (resp.ok) {
+      let policied = false;
+      let token = '';
+      for (let page = 0; page < POLICY_PAGE_CAP; page += 1) {
+        const resp = await dbFetch(req.dbHost, app, policyPath(table, token));
+        if (resp.status === 404) return { unreadable: false, policied };
+        if (!resp.ok) {
+          const body = await resp.text().catch(() => '');
+          logger.warn(`[SOURCE-ACCESS] the App could not read the ABAC policies of ${table} (HTTP ${resp.status}): ${redactSecrets(body).slice(0, 300)}`);
+          return { unreadable: true, policied: false };
+        }
         const body = parseExactJson((await resp.text()) || '{}');
-        return { unreadable: false, policied: policiesOf(body) };
+        if ((Array.isArray(body.policies) ? body.policies : []).some(policyIsRowOrMask)) policied = true;
+        token = String(body.next_page_token || '');
+        if (!token) break;
       }
-      const body = await resp.text().catch(() => '');
-      logger.warn(`[SOURCE-ACCESS] the App could not read the ABAC policies of ${table} (HTTP ${resp.status}): ${redactSecrets(body).slice(0, 300)}`);
-      return { unreadable: true, policied: false };
+      return { unreadable: false, policied };
     } catch (error) {
       logger.warn(`[SOURCE-ACCESS] the App could not read the ABAC policies of ${table}: ${redactSecrets(String((error && error.message) || error)).slice(0, 300)}`);
       return { unreadable: true, policied: false };
@@ -93,7 +105,10 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
       return { missing: lost, policied, app_unreadable: { tables: builtIn, app: { name: who.name, id: who.id }, grants: [], can_grant: false,
         builtin: builtIn, text: I.builtInSampleMessage(builtIn) } };
     }
-    const rows = await Promise.all(shareable.map((t) => accessRowsOf(req, app, warehouseId, t)));
+    // The grant rows are read with the signed-in person's own sign-in when there is one: they say whether that person may grant (can_grant),
+    // which is the grant authority. The reads themselves stay the App's (REQ-418).
+    const grantRowsToken = P.forwardedTokenOf(req) || app;
+    const rows = await Promise.all(shareable.map((t) => accessRowsOf(req, grantRowsToken, warehouseId, t)));
     // The live policy refusal is the truth for READ METADATA: it is asked for even where the grant rows say it is held.
     const offer = I.appReadGrantsOffer(shareable, shareable.map((t, i) => I.accessPlan(t, rows[i], who.id, { needs: I.IMPLEMENT_SOURCE_NEEDS,
       refused: policyLost.includes(t) ? I.IMPLEMENT_ABAC_READ_NEEDS.map(([privilege]) => privilege) : [] })), who);
@@ -103,7 +118,8 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
       why: "Inspire reads these source tables with the App's service principal, the same for every person." })] : [];
     const opener = policyLost.length ? `${I.abacUnreadableSentence(who.name || who.id, { app: true })}. ${message.charAt(0).toUpperCase()}${message.slice(1)}` : message;
     const text = opener + (builtIn.length ? `. ${I.builtInSampleMessage(builtIn)}` : '');
-    return { missing: lost, policied, app_unreadable: { ...offer, permissions, builtin: builtIn, text } };
+    // A table the App cannot read that a grant can cover is an offer, not a missing table (REQ-418: the App's own read decides).
+    return { missing: lost.filter((m) => !shareable.includes(m.table)), policied, app_unreadable: { ...offer, permissions, builtin: builtIn, text } };
   }
 
   async function runPersonGrants(req, token, warehouseId, statements) {
@@ -138,8 +154,10 @@ function createSourceAccess({ executeSql, sqlResultToObjects, dbFetch, appToken 
     const before = await sourceAccess(req, warehouseId, tables, job, scope);
     const offer = before.app_unreadable;
     const abac = await abacGrantsOf(req, token, warehouseId, tables);
-    const readGrants = offer && offer.can_grant ? offer.grants : [];
-    const statements = [...new Set([...readGrants, ...abac.grants])];
+    // A person who cannot grant runs no grant: the offer names the owner (can_grant false), and so does the ABAC plan.
+    const mayGrant = !offer || offer.can_grant;
+    const readGrants = offer && mayGrant ? offer.grants : [];
+    const statements = [...new Set([...readGrants, ...(mayGrant ? abac.grants : [])])];
     if (!statements.length) {
       if (offer && !offer.can_grant) {
         const err = I.badRequest(offer.text, 403);

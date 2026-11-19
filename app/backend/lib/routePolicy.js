@@ -146,7 +146,8 @@ const ROUTE_POLICY = {
   'POST /api/inspire/implement/app-reads': { ...reads('check the read access an App Inspire built has'),
     ruleWhen: (req) => (requestAction(req) === 'grant' ? { rule: 'owners', action: 'grant read access to the App its build made', target: useCaseTarget,
       permissionRequired: true, why: GATED } : null) },
-  'POST /api/inspire/implement/create-schema': yours('create a catalog or schema with your own sign-in', ['sql']),
+  // REQ-418 (D-SL-10B): the App's service principal creates the schema; the requester is recorded in Inspire's own records.
+  'POST /api/inspire/implement/create-schema': reads('create a catalog or schema the App owns for the use case'),
   'GET /api/inspire/implement/serving-endpoints': reads('list serving endpoints'),
   'POST /api/run/check': reads('check the grants a run needs before it starts'),
   'POST /api/run': anyone('launch a run', 'launches the run as the App, which owns the job and its tracking tables'),
