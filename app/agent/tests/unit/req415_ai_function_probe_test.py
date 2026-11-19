@@ -19,6 +19,8 @@ REGION = "This function is only available in some regions, see AI function avail
 CLASSIC = "This function is not available on Databricks SQL Classic."
 RAN_BUT_BAD_DATA = "[AI_PREDICT_INSUFFICIENT_TRAINING_DATA] Not enough labelled rows to train {name}."
 TIMEOUT = "[function probe {name}] Spark work timed out after 30.0s (budget 30)"
+INDEX_NOT_FOUND = "Vector search index __inspire_probe_index__ not found"
+FORECAST_HISTORY = "[AI_FORECAST] insufficient history: at least two seasonal cycles are needed to forecast"
 PERMISSION = "[INSUFFICIENT_PERMISSIONS] User does not have USE SCHEMA on schema `c`.`s`"
 NAME = re.compile(r"\b(ai_top_drivers|ai_decide|ai_predict_class|ai_predict_value|ai_detect_anomalies|ai_enrich|ai_similarity|"
                   r"ai_forecast|vector_search)\b", re.IGNORECASE)
@@ -93,6 +95,8 @@ def test_the_probe_list_is_the_documented_names_without_bare_ai_predict(fresh):
     (REGION, "unavailable"),
     (CLASSIC, "unavailable"),
     (RAN_BUT_BAD_DATA.format(name="ai_predict_class"), "available"),
+    (INDEX_NOT_FOUND, "available"),
+    (FORECAST_HISTORY, "available"),
     (TIMEOUT.format(name="ai_decide"), "unknown"),
     (PERMISSION, "unknown"),
     ("", "unknown"),
@@ -180,3 +184,16 @@ def test_the_probe_is_called_at_startup_so_it_has_a_real_call_site():
         tree = ast.parse(source)
         calls += [node for node in ast.walk(tree) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "probe_ai_functions"]
     assert calls, "probe_ai_functions has no call site in the agent notebook"
+
+
+def test_the_vector_search_probe_targets_a_constant_index_name_that_cannot_exist(fresh):
+    """The probe names no catalog: it uses one constant, whose answer is "index not found", which is available."""
+    call = fresh["AI_FUNCTION_PROBE_CALLS"]["vector_search"][0]
+    assert fresh["AI_PROBE_INDEX"] == "__inspire_probe_index__"
+    assert "__inspire_probe_index__" in call and "." not in fresh["AI_PROBE_INDEX"]
+    assert fresh["classify_ai_function_result"](INDEX_NOT_FOUND) == "available"
+
+
+def test_an_index_that_does_not_exist_is_available_only_when_the_message_says_so(fresh):
+    """Must-fail: a not-found routine stays unavailable even when the word 'not found' appears in it."""
+    assert fresh["classify_ai_function_result"]("[ROUTINE_NOT_FOUND] The routine `vector_search` cannot be found.") == "unavailable"
