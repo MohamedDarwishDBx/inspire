@@ -278,7 +278,7 @@ function exportPdf(design, useCase) {
   if (!w) return;
   const rows = design.components.map((c) => `<tr><td class="ic"><img src="${origin}${iconUrl(c.id)}"/></td><td><b>${esc(c.name)}</b></td><td>${esc(c.role)}</td><td><i>${esc(c.why)}</i></td></tr>`).join('');
   const cost = design.cost_items.map((c) => `<tr><td>${esc(c.name)}</td><td>${usd(c.usd_low)}–${usd(c.usd_high)}</td><td>${esc(c.basis)}</td></tr>`).join('');
-  const phases = design.phases.map((p, i) => `<li><b>${i + 1}. ${esc(p.name)}</b>${p.weeks ? ` (weeks ${esc(p.weeks)})` : ''}<ul>${p.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></li>`).join('');
+  const phases = design.phases.map((p) => `<li><b>${esc(p.name)}</b>${p.weeks ? ` (weeks ${esc(p.weeks)})` : ''}<ul>${p.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></li>`).join('');
   const list = (title, items) => (items.length ? `<h2>${title}</h2><ul>${items.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : '');
   w.document.write(`<!doctype html><html><head><title>${esc(useCase?.name || 'Solution architecture')}</title><style>
     @page{size:A4 landscape;margin:14mm} body{font-family:-apple-system,"Segoe UI",sans-serif;color:#111;margin:0;font-size:12px}
