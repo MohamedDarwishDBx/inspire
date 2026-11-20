@@ -2146,10 +2146,14 @@ function registerImplementRoutes(app, deps) {
     return { sid, warehouseId, catalog, schema, useCaseId, table: SAR.architectureTable(catalog, schema) };
   }
 
+  // Temperature 0 keeps designs steady, but some chat models accept only their default temperature: such a refusal is asked again
+  // without it, once.
   async function architectureChat(req, token, endpoint, messages, maxTokens) {
-    const got = await jsonOf(dbFetch, req.dbHost, token, `/serving-endpoints/${encodeURIComponent(endpoint)}/invocations`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages, max_tokens: maxTokens, temperature: 0 }),
+    const ask = (body) => jsonOf(dbFetch, req.dbHost, token, `/serving-endpoints/${encodeURIComponent(endpoint)}/invocations`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
+    let got = await ask({ messages, max_tokens: maxTokens, temperature: 0 });
+    if (!got.ok && SAR.refusesTemperature(got)) got = await ask({ messages, max_tokens: maxTokens });
     if (!got.ok) throw I.badRequest(`the model ${endpoint} did not answer: ${got.data.message || got.data.error || `HTTP ${got.status}`}`, 502);
     return got.data;
   }

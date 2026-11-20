@@ -238,6 +238,14 @@ function firstJson(text, open, close) {
   try { return parseExactJson(raw.slice(start, end + 1)); } catch { return undefined; }
 }
 
+/** True when a chat endpoint refused the request because of its temperature setting, not for any other reason. */
+function refusesTemperature(got) {
+  if (!got || got.ok || got.status !== 400) return false;
+  const d = got.data || {};
+  const text = [d.message, d.error && typeof d.error === 'object' ? d.error.message : d.error, d.error && d.error.param, d.raw].map(str).join(' ');
+  return /temperature/i.test(text);
+}
+
 /** The design object of a chat reply. A reply with no design object is a 502, so the person can try again. */
 function designOf(data) {
   const got = firstJson(replyContent(data), '{', '}');
@@ -316,6 +324,7 @@ module.exports = {
   groundingOf,
   insertStatement,
   latestStatement,
+  refusesTemperature,
   reviewerMessages,
   reviseMessages,
 };

@@ -33,6 +33,7 @@ function architectureApp(overrides = {}) {
     if (path === '/api/2.0/serving-endpoints') return [overrides.endpoints || ENDPOINTS];
     if (path.startsWith('/serving-endpoints/')) {
       asked.push({ token, path, method, body });
+      if (overrides.invoke) return overrides.invoke(body);
       return [answers[Math.min(asked.length - 1, answers.length - 1)]];
     }
     return undefined;
@@ -130,5 +131,20 @@ test('reading returns no design before the first one, the saved design after, an
   await withApp({ readError: 'PERMISSION_DENIED: no SELECT' }, async (url) => {
     const got = await call(url, `/api/inspire/implement/architecture?${Q}`);
     assert.notEqual(got.status, 200, 'a real read failure is not reported as "no design yet"');
+  });
+});
+
+test('a model that accepts only its default temperature is asked again without one; any other refusal is not retried (must-fail)', async () => {
+  const refusal = [{ error: { message: "Unsupported value: 'temperature' does not support 0.0 with this model.", param: 'temperature' } }, 400];
+  const answers = [reply(JSON.stringify(DRAFT)), reply('[]')];
+  await withApp({ invoke: (body) => ('temperature' in body ? refusal : [answers.shift()]) }, async (url, { asked }) => {
+    const got = await call(url, `/api/inspire/implement/architecture?${Q}`, { method: 'POST', body: {} });
+    assert.equal(got.status, 200, JSON.stringify(got.data));
+    assert.deepEqual(asked.map((a) => 'temperature' in a.body), [true, false, true, false], 'each call is refused once, then answered without a temperature');
+  });
+  await withApp({ invoke: () => [{ error: { message: 'PERMISSION_DENIED: no access to this endpoint' } }, 403] }, async (url, { asked }) => {
+    const got = await call(url, `/api/inspire/implement/architecture?${Q}`, { method: 'POST', body: {} });
+    assert.equal(got.status, 502);
+    assert.equal(asked.length, 1, 'a refusal that is not about temperature is not retried');
   });
 });

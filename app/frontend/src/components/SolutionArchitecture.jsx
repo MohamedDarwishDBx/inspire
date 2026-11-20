@@ -46,7 +46,7 @@ export default function SolutionArchitecture({ apiFetch, apiPostJson, query, use
   const action = !readOnly && (
     <button type="button" onClick={generate} disabled={busy} className={BUTTON} data-architecture-generate="">
       {design ? <RefreshCw size={12} aria-hidden /> : <Network size={12} aria-hidden />}
-      {busy ? 'Designing… (about a minute)' : design ? 'Design again' : 'Design the architecture'}
+      {busy ? 'Designing… (about two minutes)' : design ? 'Design again' : 'Design the architecture'}
     </button>
   );
 
